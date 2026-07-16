@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Numeri — Your personal study tutor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="nav">
+    <div class="nav-left"><a class="brand" href="/"><span>∑</span> Numeri</a><button id="settingsButton"
+        class="settings-button" aria-label="Settings">⚙ <span data-i18n="settings">Settings</span></button></div>
+    <div class="nav-note"><i></i> <span data-i18n="aiTutor">AI study tutor</span></div>
+  </header>
+
+  <main>
+    <section id="uploadView" class="hero study-home">
+      <div class="eyebrow" data-i18n="heroEyebrow">YOUR PERSONAL STUDY SPACE</div>
+      <h1><span data-i18n="heroTitle">What do you want to</span> <em data-i18n="heroAccent">learn today?</em></h1>
+      <p class="hero-copy" data-i18n="heroCopy">Choose a subject and tell Numeri what you need help with. Add school material only when it is useful.</p>
+
+      <form id="uploadForm" class="study-card">
+        <fieldset class="subject-picker"><legend data-i18n="chooseSubject">Choose a subject</legend>
+          <label><input type="radio" name="subject" value="Mathematics" checked><span>∑ <b data-i18n="subjectMath">Mathematics</b></span></label>
+          <label><input type="radio" name="subject" value="English"><span>Aa <b>English</b></span></label>
+          <label><input type="radio" name="subject" value="German"><span>Ä <b>Deutsch</b></span></label>
+          <label><input type="radio" name="subject" value="History"><span>⌛ <b data-i18n="subjectHistory">History</b></span></label>
+          <label><input type="radio" name="subject" value="Biology"><span>🌿 <b data-i18n="subjectBiology">Biology</b></span></label>
+          <label><input type="radio" name="subject" value="Chemistry"><span>⚗ <b data-i18n="subjectChemistry">Chemistry</b></span></label>
+          <label><input type="radio" name="subject" value="Physics"><span>⚛ <b data-i18n="subjectPhysics">Physics</b></span></label>
+          <label><input type="radio" name="subject" value="Other"><span>＋ <b data-i18n="subjectOther">Other</b></span></label>
+        </fieldset>
+
+        <label class="goal-field" for="studyGoal"><span data-i18n="studyQuestion">What should we work on?</span>
+          <textarea id="studyGoal" name="study_goal" rows="4" data-i18n-placeholder="studyPlaceholder" placeholder="For example: Explain the causes of World War I and then test me…"></textarea>
+        </label>
+
+        <div class="study-actions">
+          <label id="attachmentButton" class="attachment-button" for="images"><input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple><span>＋</span><span data-i18n="addMaterial">Add photos or notes</span></label>
+          <small data-i18n="optionalMaterial">Optional · up to 4 images</small>
+        </div>
+        <div id="previews" class="previews"></div>
+        <button class="primary-button begin-button" type="submit"><span data-i18n="startLesson">Build my lesson</span><b>→</b></button>
+        <p class="privacy" data-i18n="privacy">🔒 Your material is used only to create this lesson.</p>
+      </form>
+
+      <div class="prompt-ideas"><span data-i18n="tryPrompt">Try asking:</span><button type="button" data-subject="Biology" data-i18n="promptPhotosynthesis" data-prompt-en="Explain photosynthesis step by step" data-prompt-de="Erkläre mir die Photosynthese Schritt für Schritt">“Explain photosynthesis”</button><button type="button" data-subject="English" data-i18n="promptPoem" data-prompt-en="Help me analyze a poem and identify its literary devices" data-prompt-de="Hilf mir, ein Gedicht zu analysieren und seine Stilmittel zu erkennen">“Analyze a poem”</button><button type="button" data-subject="History" data-i18n="promptRevolution" data-prompt-en="Explain the causes and consequences of the French Revolution" data-prompt-de="Erkläre die Ursachen und Folgen der Französischen Revolution">“French Revolution”</button></div>
+    </section>
+
+    <section id="lessonView" class="lesson hidden">
+      <aside class="lesson-sidebar">
+        <a class="brand sidebar-brand" href="/"><span>∑</span> Numeri</a>
+        <div class="side-label" data-i18n="yourLesson">YOUR LESSON</div>
+        <h2 id="sideTitle">Study lesson</h2>
+        <div id="conceptList" class="concept-list"></div>
+        <div class="side-label mastery-label" data-i18n="mastery">MASTERY</div>
+        <div id="masteryList" class="mastery-list"></div>
+        <div class="score-card"><small data-i18n="sessionScore">SESSION SCORE</small><strong><span
+              id="score">—</span><i>/100</i></strong>
+          <p id="answered" data-i18n="noAnswers">No questions answered yet</p>
+        </div>
+        <button id="newLesson" class="text-button" data-i18n="newMaterial">＋ New material</button>
+      </aside>
+
+      <div class="lesson-main">
+        <div id="loading" class="loading hidden">
+          <div class="spinner"></div><strong data-i18n="reading">Building your lesson…</strong><span
+            data-i18n="finding">Finding concepts and building your lesson</span>
+        </div>
+        <div id="lessonContent">
+          <div id="testProgress" class="test-progress hidden">
+            <div class="progress-copy"><strong id="progressLabel">Question 1 of 5</strong><span id="progressPercent">0%</span></div>
+            <div class="progress-track"><i id="progressFill"></i></div>
+            <div id="progressSteps" class="progress-steps"></div>
+          </div>
+          <div class="lesson-top">
+            <div>
+              <div class="eyebrow" data-i18n="personalLesson">YOUR PERSONAL LESSON</div>
+              <h1 id="lessonTitle"></h1>
+            </div><span id="levelBadge" class="level-badge"></span>
+          </div>
+          <article class="content-card explanation-card">
+            <div class="card-number">01</div>
+            <div><span class="card-kicker" data-i18n="understand">UNDERSTAND</span>
+              <h2 data-i18n="makeClear">Let's make this clear</h2>
+              <div id="explanation" class="prose"></div>
+            </div>
+          </article>
+          <article class="content-card example-card">
+            <div class="card-number">02</div>
+            <div class="wide"><span class="card-kicker" data-i18n="seeAction">SEE IT IN ACTION</span>
+              <h2 id="exampleProblem"></h2>
+              <ol id="exampleSteps"></ol>
+              <div id="exampleAnswer" class="example-answer"></div>
+            </div>
+          </article>
+          <article class="content-card teacher-notes-card">
+            <div class="card-number">03</div>
+            <div class="wide"><span class="card-kicker" data-i18n="teacherNotes">TEACHER NOTES</span>
+              <h2 data-i18n="tipsAndExceptions">Tips, traps, and exceptions</h2>
+              <div class="teacher-notes-grid">
+                <section class="tips-box"><h3 data-i18n="teacherTips">Teacher tips</h3><ul id="teacherTips"></ul></section>
+                <section class="exceptions-box"><h3 data-i18n="exceptions">Exceptions and special cases</h3><ul id="exceptionsList"></ul></section>
+              </div>
+            </div>
+          </article>
+          <article id="startTestCard" class="start-test-card">
+            <div><span class="card-kicker" data-i18n="readyTest">READY TO PRACTICE?</span><h2 data-i18n="testTitle">Test your understanding</h2><p data-i18n="testCopy">Five questions will move from easy to advanced and adapt to your weak points.</p></div>
+            <button id="startTest" class="primary-button" type="button"><span data-i18n="startTest">Start test</span><b>→</b></button>
+          </article>
+          <article id="questionCard" class="content-card question-card hidden">
+            <div class="card-number" id="questionNumber">01</div>
+            <div class="wide">
+              <div class="question-meta"><span class="card-kicker" data-i18n="yourTurn">YOUR TURN</span><span
+                  id="difficulty"></span></div>
+              <h2 id="questionPrompt"></h2><button id="hintButton" class="hint-button" data-i18n="showHint">💡 Show a
+                hint</button>
+              <p id="hint" class="hint hidden"></p>
+              <form id="answerForm"><div id="answerControl" class="answer-control"></div><button class="primary-button" type="submit"><span data-i18n="checkAnswer">Check my answer</span><b>→</b></button></form>
+              <div id="feedback" class="feedback hidden"></div>
+            </div>
+          </article>
+          <section id="testSummary" class="test-summary hidden">
+            <div class="summary-hero"><span>✓</span><div><div class="card-kicker" data-i18n="testComplete">TEST COMPLETE</div><h2 data-i18n="yourResults">Your learning summary</h2><p id="summaryOverall"></p></div><strong id="summaryScore">0<small>/100</small></strong></div>
+            <div class="summary-grid">
+              <article class="summary-card"><h3 data-i18n="weaknessChart">Concept mastery</h3><div id="summaryChart" class="summary-chart"></div></article>
+              <article class="summary-card"><h3 data-i18n="weakPoints">Weak points</h3><ul id="summaryWeaknesses"></ul><h3 data-i18n="nextSteps">Next steps</h3><ul id="summaryNextSteps"></ul></article>
+            </div>
+            <button id="restartTest" class="primary-button" type="button"><span data-i18n="newMaterial">New material</span><b>→</b></button>
+          </section>
+        </div>
+      </div>
+      <button id="chatToggle" class="chat-toggle" aria-label="Open tutor chat"><span>✦</span> <span
+          data-i18n="askTutor">Ask your tutor</span></button>
+      <aside id="chatPanel" class="chat-panel hidden">
+        <div class="chat-header">
+          <div><span class="chat-avatar">✦</span>
+            <div><strong>Numeri Tutor</strong><small data-i18n="chatKnows">Knows your lesson and weak points</small>
+            </div>
+          </div><button id="chatClose" aria-label="Close chat">×</button>
+        </div>
+        <div id="chatMessages" class="chat-messages">
+          <div class="message tutor-message" data-i18n="chatWelcome">I’m here while you practice. Ask me to explain a
+            step, give a hint, or help you understand a mistake.</div>
+        </div>
+        <div class="chat-suggestions"><button data-i18n="giveHint">Give me a hint</button><button
+            data-i18n="whatPractice">What should I practice?</button></div>
+        <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" placeholder="Ask about this lesson…"
+            data-i18n-placeholder="chatPlaceholder" required></textarea><button type="submit"
+            aria-label="Send">➤</button></form>
+      </aside>
+    </section>
+  </main>
+  <div id="settingsBackdrop" class="settings-backdrop hidden"></div>
+  <aside id="settingsPanel" class="settings-panel hidden">
+    <div class="settings-head">
+      <div><small>NUMERI</small>
+        <h2 data-i18n="settings">Settings</h2>
+      </div><button id="settingsClose" aria-label="Close settings">×</button>
+    </div>
+    <div class="setting-group"><label for="languageSelect" data-i18n="language">Language</label>
+      <p data-i18n="languageCopy">Choose the language used by your tutor.</p><select id="languageSelect">
+        <option value="English">English</option>
+        <option value="German">Deutsch</option>
+      </select>
+    </div>
+  </aside>
+  <div id="toast" class="toast hidden"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+
+</html>
