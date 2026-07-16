@@ -73,7 +73,7 @@ body:before {
 
 .settings-button {
   position: fixed;
-  left: 190px;
+  left: 225px;
   top: 26px;
   z-index: 10;
   border: 1px solid #ded9cf;
@@ -108,6 +108,13 @@ body:before {
   background: var(--ink);
   color: white;
   font-size: 21px;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  filter: drop-shadow(0 5px 10px rgba(16, 46, 40, .18));
 }
 
 .nav-note {
@@ -1622,9 +1629,54 @@ body:before {
   }
 }
 
+.nav-note { display:flex; align-items:center; gap:16px; }
+.nav-note a { color:inherit; font-weight:700; text-decoration:none; }
+.nav-note form { margin:0; }
+.nav-logout { border:0; background:transparent; color:inherit; cursor:pointer; font:inherit; font-weight:700; }
+.account-page,.dashboard-page { min-height:100vh; background:#f7f5ef; color:#20231f; }
+.account-shell { width:min(480px,calc(100% - 32px)); margin:0 auto; padding:48px 0; }
+.account-card,.dashboard-card { background:#fff; border:1px solid #deddd5; border-radius:24px; box-shadow:0 14px 45px rgba(32,35,31,.07); }
+.account-card { margin-top:36px; padding:36px; }
+.account-card h1,.dashboard-heading h1 { margin:8px 0; font-family:Manrope,sans-serif; }
+.account-card form { display:grid; gap:18px; margin:28px 0 18px; }
+.account-card label { display:grid; gap:8px; font-weight:700; }
+.account-card input { border:1px solid #c9c9c1; border-radius:12px; font:inherit; padding:13px; }
+.account-card .remember { display:flex; grid-template-columns:auto 1fr; align-items:center; font-weight:500; }
+.form-alert { margin:18px 0; padding:12px 15px; border-radius:10px; background:#fff0e8; color:#8b321d; }
+.dashboard-shell { width:min(1180px,calc(100% - 36px)); margin:0 auto; padding:120px 0 60px; }
+.dashboard-heading { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:30px; }
+.dashboard-grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+.dashboard-card { padding:26px; }
+.dashboard-card h2 { margin-top:0; }
+.mistakes-card { grid-column:1/-1; }
+.sessions-card { grid-column:1/-1; }
+.language-switch { display:flex; justify-content:flex-end; gap:4px; margin-bottom:18px; }
+.language-switch a { border:1px solid #d7d6ce; border-radius:999px; color:#55584f; padding:8px 13px; text-decoration:none; }
+.language-switch a.active { background:#20231f; border-color:#20231f; color:#fff; }
+.lesson-history-list { display:grid; gap:2px; }
+.saved-lesson { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 0; border-bottom:1px solid #ecebe5; }
+.saved-lesson>div:first-child { display:flex; flex-direction:column; gap:5px; }
+.saved-lesson span,.saved-lesson small { color:#777970; }
+.saved-actions { display:flex; align-items:center; gap:12px; }
+.saved-actions form { margin:0; }
+.saved-actions a,.saved-actions button { border:0; background:transparent; color:#365a49; cursor:pointer; font:inherit; font-weight:700; text-decoration:none; }
+.history-shell .dashboard-card { min-width:0; }
+.history-message { border-radius:15px; margin:12px 0; padding:14px 16px; }
+.history-message.student { background:#edf5ef; margin-left:40px; }
+.history-message.tutor { background:#f3f1eb; margin-right:40px; }
+.history-message p { line-height:1.55; margin:7px 0; white-space:pre-wrap; }
+.history-message small { color:#777970; }
+.metric-row { display:flex; justify-content:space-between; gap:15px; padding:15px 0; border-bottom:1px solid #ecebe5; }
+.metric-row span,.mistake div { display:flex; flex-direction:column; gap:4px; }
+.metric-row small,.mistake small,.mistake span { color:#777970; }
+.mistake { padding:18px 0; border-bottom:1px solid #ecebe5; }
+.mistake p { margin:10px 0; }
+.mistake small { display:block; margin-top:5px; }
+@media(max-width:760px) { .dashboard-heading { align-items:stretch; flex-direction:column; } .dashboard-grid { grid-template-columns:1fr; } .mistakes-card,.sessions-card { grid-column:auto; } .saved-lesson { align-items:flex-start; flex-direction:column; } .saved-actions { flex-wrap:wrap; } }
+
 @media(max-width:760px) {
   .settings-button {
-    left: 170px;
+    left: 210px;
     top: 18px
   }
 

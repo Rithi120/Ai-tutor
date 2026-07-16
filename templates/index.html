@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Numeri — Your personal study tutor</title>
+  <title>Learnova — Your personal study tutor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -17,16 +17,16 @@
   <div class="ambient ambient-one"></div>
   <div class="ambient ambient-two"></div>
   <header class="nav">
-    <div class="nav-left"><a class="brand" href="/"><span>∑</span> Numeri</a><button id="settingsButton"
+    <div class="nav-left"><a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a><button id="settingsButton"
         class="settings-button" aria-label="Settings">⚙ <span data-i18n="settings">Settings</span></button></div>
-    <div class="nav-note"><i></i> <span data-i18n="aiTutor">AI study tutor</span></div>
+    <div class="nav-note"><a href="{{ url_for('dashboard') }}">Dashboard</a><form method="post" action="{{ url_for('logout') }}"><button class="nav-logout" type="submit">Log out</button></form></div>
   </header>
 
   <main>
     <section id="uploadView" class="hero study-home">
       <div class="eyebrow" data-i18n="heroEyebrow">YOUR PERSONAL STUDY SPACE</div>
       <h1><span data-i18n="heroTitle">What do you want to</span> <em data-i18n="heroAccent">learn today?</em></h1>
-      <p class="hero-copy" data-i18n="heroCopy">Choose a subject and tell Numeri what you need help with. Add school material only when it is useful.</p>
+      <p class="hero-copy" data-i18n="heroCopy">Choose a subject and tell Learnova what you need help with. Add school material only when it is useful.</p>
 
       <form id="uploadForm" class="study-card">
         <fieldset class="subject-picker"><legend data-i18n="chooseSubject">Choose a subject</legend>
@@ -58,7 +58,7 @@
 
     <section id="lessonView" class="lesson hidden">
       <aside class="lesson-sidebar">
-        <a class="brand sidebar-brand" href="/"><span>∑</span> Numeri</a>
+        <a class="brand sidebar-brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a>
         <div class="side-label" data-i18n="yourLesson">YOUR LESSON</div>
         <h2 id="sideTitle">Study lesson</h2>
         <div id="conceptList" class="concept-list"></div>
@@ -144,7 +144,7 @@
       <aside id="chatPanel" class="chat-panel hidden">
         <div class="chat-header">
           <div><span class="chat-avatar">✦</span>
-            <div><strong>Numeri Tutor</strong><small data-i18n="chatKnows">Knows your lesson and weak points</small>
+            <div><strong>Learnova Tutor</strong><small data-i18n="chatKnows">Knows your lesson and weak points</small>
             </div>
           </div><button id="chatClose" aria-label="Close chat">×</button>
         </div>
@@ -163,7 +163,7 @@
   <div id="settingsBackdrop" class="settings-backdrop hidden"></div>
   <aside id="settingsPanel" class="settings-panel hidden">
     <div class="settings-head">
-      <div><small>NUMERI</small>
+      <div><small>LEARNOVA</small>
         <h2 data-i18n="settings">Settings</h2>
       </div><button id="settingsClose" aria-label="Close settings">×</button>
     </div>
@@ -175,6 +175,7 @@
     </div>
   </aside>
   <div id="toast" class="toast hidden"></div>
+  <script>window.lessonBootstrap = {{ bootstrap|tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 

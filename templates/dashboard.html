@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ text.title }} — Learnova</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="dashboard-page">
+  <header class="nav"><a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a><div class="nav-note"><a href="/">{{ text.new }}</a><form method="post" action="{{ url_for('logout') }}"><button class="nav-logout">{{ text.logout }}</button></form></div></header>
+  <main class="dashboard-shell">
+    <div class="language-switch" aria-label="Language"><a class="{{ 'active' if language == 'en' }}" href="?lang=en">English</a><a class="{{ 'active' if language == 'de' }}" href="?lang=de">Deutsch</a></div>
+    <div class="dashboard-heading"><div><div class="eyebrow">{{ text.progress }}</div><h1>{{ text.title }}</h1><p>{{ current_user.email }}</p></div>
+      <form method="post" action="{{ url_for('practice_weak') }}"><button class="primary-button" type="submit">{{ text.practice }} →</button></form>
+    </div>
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ message }}</div>{% endfor %}
+    <section class="dashboard-grid">
+      <article class="dashboard-card"><h2>{{ text.subjects }}</h2>{% if subjects %}{% for subject, average, attempts in subjects %}<div class="metric-row"><span>{{ subject }}<small>{{ attempts }} {{ text.attempts }}</small></span><strong>{{ average|round|int }}%</strong></div>{% endfor %}{% else %}<p>{{ text.no_results }}</p>{% endif %}</article>
+      <article class="dashboard-card"><h2>{{ text.weak }}</h2>{% if masteries %}{% for item in masteries %}<div class="metric-row"><span>{{ item.concept }}<small>{{ item.subject }}</small></span><strong>{{ item.mastery_score|round|int }}%</strong></div>{% endfor %}{% else %}<p>{{ text.weak_empty }}</p>{% endif %}</article>
+      <article class="dashboard-card sessions-card"><h2>{{ text.sessions }}</h2>{% if lessons %}<div class="lesson-history-list">{% for lesson in lessons %}<div class="saved-lesson"><div><b>{{ lesson.title }}</b><span>{{ lesson.subject }} · {{ lesson.created_at.strftime('%d.%m.%Y %H:%M') }}</span><small>{{ lesson.attempts|length }} {{ text.attempts }} · {{ lesson.chat_messages|length }} {{ text.chat_messages }}</small></div><div class="saved-actions"><a href="{{ url_for('lesson_history', lesson_id=lesson.id) }}">{{ text.view }}</a>{% if lesson.study_session %}<form method="post" action="{{ url_for('resume_lesson', lesson_id=lesson.id) }}"><button type="submit">{{ text.resume }} →</button></form>{% endif %}</div></div>{% endfor %}</div>{% else %}<p>{{ text.no_sessions }}</p>{% endif %}</article>
+      <article class="dashboard-card mistakes-card"><h2>{{ text.mistakes }}</h2>{% if mistakes %}{% for item in mistakes %}<div class="mistake"><div><b>{{ item.concept }}</b><span>{{ item.lesson.subject }} · {{ item.score }}%</span></div><p>{{ item.question }}</p><small>{{ text.your_answer }}: {{ item.student_answer }}</small><small>{{ item.feedback }}</small></div>{% endfor %}{% else %}<p>{{ text.no_mistakes }}</p>{% endif %}</article>
+    </section>
+  </main>
+</body>
+</html>

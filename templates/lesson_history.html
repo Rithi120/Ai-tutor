@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ lesson.title }} — Learnova</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+<body class="dashboard-page">
+  <header class="nav"><a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a><div class="nav-note"><a href="{{ url_for('dashboard') }}">← {{ text.title }}</a></div></header>
+  <main class="dashboard-shell history-shell">
+    <div class="dashboard-heading"><div><div class="eyebrow">{{ lesson.subject }}</div><h1>{{ lesson.title }}</h1><p>{{ lesson.created_at.strftime('%d.%m.%Y %H:%M') }}</p></div>{% if lesson.study_session %}<form method="post" action="{{ url_for('resume_lesson', lesson_id=lesson.id) }}"><button class="primary-button">{{ text.resume }} →</button></form>{% endif %}</div>
+    <section class="dashboard-grid">
+      <article class="dashboard-card"><h2>{{ text.attempts|capitalize }}</h2>{% if lesson.attempts %}{% for item in lesson.attempts|sort(attribute='timestamp', reverse=true) %}<div class="mistake"><div><b>{{ item.concept }}</b><span>{{ item.score }}% · {{ text.level }} {{ item.difficulty }}</span></div><p>{{ item.question }}</p><small>{{ text.your_answer }}: {{ item.student_answer }}</small><small>{{ item.feedback }}</small></div>{% endfor %}{% else %}<p>{{ text.no_results }}</p>{% endif %}</article>
+      <article class="dashboard-card chat-history"><h2>Chat</h2>{% if lesson.chat_messages %}{% for message in lesson.chat_messages|sort(attribute='timestamp') %}<div class="history-message {{ message.role }}"><b>{{ text.you if message.role == 'student' else 'Learnova' }}</b><p>{{ message.content }}</p><small>{{ message.timestamp.strftime('%d.%m.%Y %H:%M') }}</small></div>{% endfor %}{% else %}<p>{{ text.no_chat }}</p>{% endif %}</article>
+    </section>
+  </main>
+</body></html>

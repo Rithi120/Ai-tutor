@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ 'Create account' if mode == 'register' else 'Log in' }} — Learnova</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="account-page">
+  <main class="account-shell">
+    <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a>
+    <section class="account-card">
+      <div class="eyebrow">YOUR PERSONAL STUDY SPACE</div>
+      <h1>{{ 'Create your account' if mode == 'register' else 'Welcome back' }}</h1>
+      <p>Your lessons and progress stay connected to your account.</p>
+      {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ message }}</div>{% endfor %}
+      <form method="post">
+        <label>Email<input name="email" type="email" autocomplete="email" maxlength="255" required></label>
+        <label>Password<input name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required></label>
+        {% if mode == 'login' %}<label class="remember"><input name="remember" type="checkbox"> Keep me logged in</label>{% endif %}
+        <button class="primary-button" type="submit">{{ 'Create account' if mode == 'register' else 'Log in' }}</button>
+      </form>
+      {% if mode == 'register' %}<p>Already registered? <a href="{{ url_for('login') }}">Log in</a></p>{% else %}<p>New here? <a href="{{ url_for('register') }}">Create an account</a></p>{% endif %}
+    </section>
+  </main>
+</body>
+</html>

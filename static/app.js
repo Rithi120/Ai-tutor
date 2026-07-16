@@ -11,13 +11,13 @@ let currentQuestion = null;
 let questionResults = [];
 const testTotal = 5;
 const languageSelect = document.querySelector("#languageSelect");
-let selectedLanguage = localStorage.getItem("numeriLanguage") || "English";
+let selectedLanguage = localStorage.getItem("learnovaLanguage") || localStorage.getItem("numeriLanguage") || "English";
 languageSelect.value = selectedLanguage;
 
 const translations = {
   English: {
     settings: "Settings", aiTutor: "AI study tutor", heroEyebrow: "YOUR PERSONAL STUDY SPACE",
-    heroTitle: "What do you want to", heroAccent: "learn today?", heroCopy: "Choose a subject and tell Numeri what you need help with. Add school material only when it is useful.",
+    heroTitle: "What do you want to", heroAccent: "learn today?", heroCopy: "Choose a subject and tell Learnova what you need help with. Add school material only when it is useful.",
     startLesson: "Build my lesson", privacy: "🔒 Your material is used only to create this lesson.", chooseSubject: "Choose a subject", subjectMath: "Mathematics", subjectHistory: "History", subjectBiology: "Biology", subjectChemistry: "Chemistry", subjectPhysics: "Physics", subjectOther: "Other", studyQuestion: "What should we work on?", studyPlaceholder: "For example: Explain the causes of World War I and then test me…", addMaterial: "Add photos or notes", optionalMaterial: "Optional · up to 4 images", tryPrompt: "Try asking:", promptPhotosynthesis: "“Explain photosynthesis”", promptPoem: "“Analyze a poem”", promptRevolution: "“French Revolution”",
     share: "Share", shareCopy: "Your notes or worksheet", understand: "Understand", understandCopy: "A clear, tailored explanation", practice: "Practice", practiceCopy: "Questions that adapt to you",
     yourLesson: "YOUR LESSON", mastery: "MASTERY", sessionScore: "SESSION SCORE", noAnswers: "No questions answered yet", newMaterial: "＋ New material",
@@ -107,7 +107,7 @@ document.querySelector("#settingsClose").addEventListener("click", () => setSett
 settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
 languageSelect.addEventListener("change", async () => {
   selectedLanguage = languageSelect.value;
-  localStorage.setItem("numeriLanguage", selectedLanguage);
+  localStorage.setItem("learnovaLanguage", selectedLanguage);
   applyTranslations();
   languageSelect.disabled = true;
   try {
@@ -418,3 +418,10 @@ chatForm.addEventListener("submit", async event => {
     showError(error.message || "Tutor chat failed.");
   }
 });
+
+if (window.lessonBootstrap) {
+  sessionId = window.lessonBootstrap.session_id;
+  uploadView.classList.add("hidden");
+  lessonView.classList.remove("hidden");
+  renderLesson(window.lessonBootstrap);
+}
