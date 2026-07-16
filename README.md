@@ -41,3 +41,15 @@ Missing tables are also created automatically when the application starts, so a 
 - Uploaded images are sent to the configured Groq vision model for analysis.
 
 For production, use HTTPS and a production WSGI server, add database migrations and rate limiting, and define appropriate student-data retention and consent policies.
+
+## Deploy to Render
+
+This repository includes `render.yaml` for a Free Render web service and Free Render Postgres database.
+
+1. Push the repository to GitHub.
+2. In Render, select **New → Blueprint** and connect the repository.
+3. Render reads `render.yaml` and creates `learnova` plus `learnova-db`.
+4. When prompted for `GROQ_API_KEY`, paste the key as a secret environment variable.
+5. Deploy, then open the generated `onrender.com` URL.
+
+The Blueprint generates `SECRET_KEY`, connects `DATABASE_URL`, runs Gunicorn, and exposes `/health`. Do not use SQLite on Render's Free web service because its filesystem is temporary. Free Render Postgres is appropriate for the short tester phase but currently expires after 30 days; move to a longer-lived Postgres provider or paid database before that deadline if progress must remain available.

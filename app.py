@@ -251,6 +251,16 @@ def persist_lesson(session_id, subject, lesson):
 
 def owned_session(session_id):
     session = SESSIONS.get(session_id)
+    if not session and session_id and current_user.is_authenticated:
+        lesson = db.session.scalar(db.select(Lesson).where(
+            Lesson.session_id == session_id, Lesson.user_id == current_user.id))
+        if lesson and lesson.study_session:
+            try:
+                session = json.loads(lesson.study_session.state_json)
+                session["user_id"] = current_user.id
+                SESSIONS[session_id] = session
+            except (json.JSONDecodeError, TypeError):
+                session = None
     if not session or session.get("user_id") != current_user.id:
         return None
     return session
@@ -346,6 +356,11 @@ def index():
             "question": {key: value for key, value in session["current_question"].items() if key != "expected_answer"},
         }
     return render_template("index.html", bootstrap=bootstrap)
+
+
+@app.get("/health")
+def health():
+    return jsonify(status="ok")
 
 
 @app.get("/dashboard")
