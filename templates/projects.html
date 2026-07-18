@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Learning Projects') }} — Learnova{% endblock %}
+{% block body_class %}project-page{% endblock %}
+{% block content %}
+  <main class="project-shell">
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
+    <section class="project-hero document-hero">
+      <div><span class="eyebrow">{{ _('EXAM PREPARATION') }}</span><h1>{{ _('Turn your school papers into a study plan.') }}</h1><p>{{ _('Scan or upload 10–15 pages. Learnova improves image quality, recognizes print and handwriting, asks you to verify uncertain content, then builds source-grounded learning sections.') }}</p><ol class="document-flow"><li>{{ _('Scan or upload') }}</li><li>{{ _('Recognize') }}</li><li>{{ _('Review uncertain text') }}</li><li>{{ _('Learn and test') }}</li></ol></div>
+      <form id="projectCreateForm" class="project-create-card" method="post" enctype="multipart/form-data">
+        <h2>{{ _('Start a study project') }}</h2>
+        <label>{{ _('Project name') }}<input name="title" maxlength="255" placeholder="{{ _('e.g. Physics exam — mechanics') }}" required></label>
+        <div class="form-pair"><label>{{ _('Subject') }}<input name="subject" maxlength="80" placeholder="{{ _('Physics') }}" required></label><label>{{ _('Exam date') }} <small>({{ _('optional') }})</small><input name="exam_date" type="date"></label></div>
+        <fieldset class="document-input-options"><legend>{{ _('Add school papers') }}</legend>
+          <label class="document-input-option"><input id="pdfInput" name="materials" type="file" accept="application/pdf" multiple><span class="input-icon">PDF</span><b>{{ _('Upload PDF') }}</b><small>{{ _('Select one or more PDFs') }}</small></label>
+          <label class="document-input-option"><input id="imageUploadInput" name="materials" type="file" accept="image/jpeg,image/png,image/webp" multiple><span class="input-icon">IMG</span><b>{{ _('Upload Images') }}</b><small>JPG, PNG, WebP</small></label>
+          <button id="openScanner" class="document-input-option" type="button"><span class="input-icon">▣</span><b>{{ _('Scan with Camera') }}</b><small>{{ _('Phone or laptop camera') }}</small></button>
+        </fieldset>
+        <div id="selectedMaterial" class="selected-material" aria-live="polite">{{ _('No pages selected yet.') }}</div>
+        <button id="createProjectButton" class="primary-button" type="submit">{{ _('Upload pages for recognition') }} <b>→</b></button>
+        <div id="uploadProgress" class="upload-progress hidden" aria-live="polite"><i></i><span>{{ _('Uploading pages securely…') }}</span></div>
+        <p class="privacy">🔒 Learnova stores the original file and a conservatively improved recognition copy. Camera video is never recorded or stored; only pages you capture are uploaded.</p>
+      </form>
+    </section>
+    <section class="project-list-section"><div class="section-heading"><div><span class="eyebrow">{{ _('YOUR MATERIAL') }}</span><h2>{{ _('Study projects') }}</h2></div></div>
+      {% if projects %}<div class="project-grid">{% for project in projects %}{% set active = project.sections|rejectattr('excluded')|list %}<a class="project-tile" href="{{ url_for('project_dashboard', project_id=project.id) }}"><span class="project-subject">{{ project.subject }}</span><h3>{{ project.title }}</h3><p>{{ project.pages|length }} {{ _('pages') }} · {{ active|length }} {{ _('sections') }}</p><div><span class="status-badge">{{ _(project.status|replace('_', ' ')|capitalize) }}</span><b>{{ _('Open') }} →</b></div></a>{% endfor %}</div>{% else %}<div class="empty-project"><h3>{{ _('No projects yet') }}</h3><p>{{ _('Your first scanned or uploaded study pack will appear here.') }}</p></div>{% endif %}
+    </section>
+  </main>
+
+  <div id="scannerModal" class="scanner-modal hidden" role="dialog" aria-modal="true" aria-labelledby="scannerTitle">
+    <div class="scanner-panel">
+      <header><div><span class="eyebrow">{{ _('LEARNOVA DOCUMENT SCANNER') }}</span><h2 id="scannerTitle">{{ _('Scan one page at a time') }}</h2></div><button id="closeScanner" type="button" aria-label="{{ _('Close camera scanner') }}">×</button></header>
+      <div id="cameraFallback" class="camera-fallback hidden" role="alert"><h3>{{ _('Camera access is unavailable') }}</h3><p>{{ _('Camera unavailable. Close the scanner and use Upload Images instead.') }}</p></div>
+      <section id="liveCapture" class="scanner-live">
+        <div class="camera-stage"><video id="cameraPreview" autoplay playsinline muted aria-label="Live camera preview"></video><div class="document-frame"><span>Place the full paper inside the frame</span></div></div>
+        <div class="capture-guidance"><span>Use good lighting</span><span>Avoid shadows and glare</span><span>Keep the camera steady</span><span>Make handwriting clearly visible</span></div>
+        <div class="scanner-controls"><button id="switchCamera" type="button">{{ _('Switch camera') }}</button><button id="capturePage" class="capture-button" type="button" aria-label="{{ _('Capture page') }}"><i></i></button><span id="pageCounter">0 {{ _('pages accepted') }}</span></div>
+        <p class="flash-guidance">If the page is dark, improve room lighting or use your device’s camera light before capturing.</p>
+      </section>
+      <section id="captureReview" class="capture-review hidden">
+        <div class="capture-preview-wrap"><img id="capturedPreview" alt="Captured page preview"><div class="crop-frame"></div></div>
+        <div class="crop-controls"><h3>{{ _('Review and crop') }}</h3><p>{{ _('Keep minus signs, accents, exponents, handwriting, and diagram labels inside the crop.') }}</p><label>{{ _('Crop left') }}<input data-crop="left" type="range" min="0" max="25" value="0"></label><label>{{ _('Crop right') }}<input data-crop="right" type="range" min="0" max="25" value="0"></label><label>{{ _('Crop top') }}<input data-crop="top" type="range" min="0" max="25" value="0"></label><label>{{ _('Crop bottom') }}<input data-crop="bottom" type="range" min="0" max="25" value="0"></label></div>
+        <div class="review-capture-actions"><button id="retakePage" type="button">{{ _('Retake') }}</button><button id="rotateCapture" type="button">{{ _('Rotate 90°') }}</button><button id="acceptPage" class="primary-button" type="button">{{ _('Accept page') }}</button></div>
+      </section>
+      <section class="accepted-scans"><div><h3>{{ _('Accepted camera pages') }}</h3><button id="finishScanning" type="button">{{ _('Finish scanning') }}</button></div><div id="scanThumbnails" class="scan-thumbnails"></div></section>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='scanner.js') }}"></script>{% endblock %}

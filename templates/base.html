@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="{{ current_language }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ _('Learnova — Your personal study tutor') }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="nav global-nav">
+    <a class="brand" href="{{ url_for('index') if current_user.is_authenticated else url_for('login') }}"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a>
+    <button class="mobile-nav-toggle" type="button" aria-controls="globalNavLinks" aria-expanded="false" aria-label="{{ _('Open navigation') }}">☰</button>
+    <nav id="globalNavLinks" class="nav-note global-nav-links" aria-label="{{ _('Main navigation') }}">
+      {% if current_user.is_authenticated %}
+      <a href="{{ url_for('dashboard') }}">{{ _('Dashboard') }}</a>
+      <a href="{{ url_for('projects') }}">{{ _('Learning Projects') }}</a>
+      <a href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
+      <a href="{{ url_for('todays_practice') }}">{{ _("Today's Practice") }}</a>
+      <a href="{{ url_for('projects') }}">{{ _('Exam Mode') }}</a>
+      {% endif %}
+      <a class="settings-link" href="{{ url_for('settings', next=request.full_path if request.query_string else request.path) }}">{{ _('Settings') }}</a>
+      {% if current_user.is_authenticated %}<form method="post" action="{{ url_for('logout') }}"><button class="nav-logout" type="submit">{{ _('Log out') }}</button></form>{% endif %}
+    </nav>
+  </header>
+  {% block content %}{% endblock %}
+  <script>
+    window.LEARNOVA_LANGUAGE = {{ current_language|tojson }};
+    window.LEARNOVA_I18N = {{ frontend_translations|tojson }};
+    const navToggle = document.querySelector('.mobile-nav-toggle');
+    const navLinks = document.querySelector('#globalNavLinks');
+    navToggle?.addEventListener('click', () => {
+      const open = navToggle.getAttribute('aria-expanded') !== 'true';
+      navToggle.setAttribute('aria-expanded', String(open));
+      navLinks?.classList.toggle('open', open);
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

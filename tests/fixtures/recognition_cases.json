@@ -1,0 +1,9 @@
+{
+  "printed_notes": {"type": "printed_text", "content": "Photosynthesis converts light energy into chemical energy.", "confidence": 0.98},
+  "neat_handwriting": {"type": "handwriting", "content": "v = s / t", "confidence": 0.91},
+  "difficult_handwriting": {"type": "uncertain", "content": "mitochondria?", "confidence": 0.38},
+  "formula": {"type": "formula", "content": "2H₂ + O₂ → 2H₂O", "confidence": 0.82},
+  "highlighted_text": {"type": "annotation", "content": "Important: learn this for the exam", "confidence": 0.88, "teacher_highlight_candidate": true},
+  "diagram": {"type": "diagram", "content": "cell wall; nucleus; vacuole", "confidence": 0.76, "nearby_text": "Plant cell"},
+  "mixed_print_handwriting": {"type": "handwriting", "content": "Teacher correction: x², not x³", "confidence": 0.74}
+}

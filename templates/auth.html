@@ -1,26 +1,27 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ 'Create account' if mode == 'register' else 'Log in' }} — Learnova</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-</head>
-<body class="account-page">
-  <main class="account-shell">
-    <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="">Learnova</a>
-    <section class="account-card">
-      <div class="eyebrow">YOUR PERSONAL STUDY SPACE</div>
-      <h1>{{ 'Create your account' if mode == 'register' else 'Welcome back' }}</h1>
-      <p>Your lessons and progress stay connected to your account.</p>
-      {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ message }}</div>{% endfor %}
-      <form method="post">
-        <label>Email<input name="email" type="email" autocomplete="email" maxlength="255" required></label>
-        <label>Password<input name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required></label>
-        {% if mode == 'login' %}<label class="remember"><input name="remember" type="checkbox"> Keep me logged in</label>{% endif %}
-        <button class="primary-button" type="submit">{{ 'Create account' if mode == 'register' else 'Log in' }}</button>
-      </form>
-      {% if mode == 'register' %}<p>Already registered? <a href="{{ url_for('login') }}">Log in</a></p>{% else %}<p>New here? <a href="{{ url_for('register') }}">Create an account</a></p>{% endif %}
-    </section>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}{{ _('Create account') if mode == 'register' else _('Log in') }} — Learnova{% endblock %}
+{% block body_class %}account-page{% endblock %}
+{% block content %}
+<main class="account-shell">
+  <section class="account-card">
+    <div class="eyebrow">{{ _('YOUR PERSONAL STUDY SPACE') }}</div>
+    <h1>{{ _('Create your account') if mode == 'register' else _('Welcome back') }}</h1>
+    <p>{{ _('Your lessons and progress stay connected to your account.') }}</p>
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
+    <form method="post">
+      {% if request.args.get('next') %}<input type="hidden" name="next" value="{{ request.args.get('next') }}">{% endif %}
+      {% if mode == 'register' %}
+      <label>{{ _('Username') }}<input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,29}" required></label>
+      <label>{{ _('Email') }}<input name="email" type="email" autocomplete="email" maxlength="255" required></label>
+      <label>{{ _('Language') }}<select name="language" required><option value="en" {{ 'selected' if current_language == 'en' }}>{{ _('English') }}</option><option value="de" {{ 'selected' if current_language == 'de' }}>{{ _('German') }}</option></select></label>
+      {% else %}
+      <label>{{ _('Username or email') }}<input name="identifier" autocomplete="username" maxlength="255" required></label>
+      {% endif %}
+      <label>{{ _('Password') }}<input name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required></label>
+      {% if mode == 'login' %}<label class="remember"><input name="remember" type="checkbox"> {{ _('Keep me logged in') }}</label>{% endif %}
+      <button class="primary-button" type="submit">{{ _('Create account') if mode == 'register' else _('Log in') }}</button>
+    </form>
+    {% if mode == 'register' %}<p>{{ _('Already registered?') }} <a href="{{ url_for('login') }}">{{ _('Log in') }}</a></p>{% else %}<p>{{ _('New here?') }} <a href="{{ url_for('register') }}">{{ _('Create account') }}</a></p>{% endif %}
+  </section>
+</main>
+{% endblock %}
