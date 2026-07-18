@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ project.title }} — Learnova{% endblock %}
+{% block body_class %}project-page{% endblock %}
+{% block content %}
+  <main class="project-shell">
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
+    <section class="project-title-row"><div><span class="eyebrow">{{ project.subject }} · {{ pages|length }} {{ _('pages')|upper }}</span><h1>{{ project.title }}</h1><p>{% if project.exam_date %}{{ _('Exam date') }}: {{ project.exam_date.strftime('%d.%m.%Y') }}{% else %}{{ _('No exam date set') }}{% endif %}</p></div><div class="project-main-actions">{% if sections %}<a class="secondary-button" href="{{ url_for('new_final_exam', project_id=project.id) }}">{{ _('Final Exam Mode') }}</a>{% endif %}{% if current_section %}<a class="primary-button" href="{{ url_for('learn_section', project_id=project.id, section_id=current_section.id) }}">{{ _('Continue learning') }} →</a>{% endif %}</div></section>
+
+    <section class="readiness-grid">
+      <article class="readiness-score"><span>{{ _('EXAM READINESS') }}</span><strong>{{ readiness }}<small>%</small></strong><div class="readiness-track"><i style="width:{{ readiness }}%"></i></div></article>
+      <article><span>{{ _('Completed') }}</span><strong>{{ completed }}/{{ sections|length }}</strong><small>{{ _('learning sections') }}</small></article>
+      <article><span>{{ _('Strong') }}</span><strong>{{ strong }}</strong><small>{{ _('sections ready') }}</small></article>
+      <article><span>{{ _('Needs review') }}</span><strong>{{ weak }}</strong><small>{{ _('sections to revisit') }}</small></article>
+    </section>
+
+    {% if preparation %}<section class="preparation-card"><div><span class="eyebrow">PREPARATION PLAN</span><h2>{{ preparation.days_remaining }} days remaining</h2></div><p>Study about <b>{{ preparation.sections_per_day }} section{{ '' if preparation.sections_per_day == 1 else 's' }} per learning day</b>, then reserve {{ preparation.review_days }} day{{ '' if preparation.review_days == 1 else 's' }} for review and a final exam.</p></section>{% endif %}
+
+    <section class="material-card">
+      <div class="section-heading"><div><span class="eyebrow">{{ _('SOURCE MATERIAL') }}</span><h2>{{ _('Pages in study order') }}</h2></div>{% if pages %}<div class="project-main-actions"><a class="secondary-button" href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Review recognition') }}</a>{% if project.status == 'confirmed' %}<form method="post" action="{{ url_for('process_project', project_id=project.id) }}"><button class="secondary-button" type="submit">{{ _('Rebuild sections') if sections else _('Build learning sections') }} →</button></form>{% endif %}</div>{% endif %}</div>
+      {% if pages %}<p class="section-help">Drag pages into the order used by your teacher. Learnova stores both the original source and the improved recognition copy. Lessons remain blocked until recognition is confirmed or explicitly bypassed.</p><div id="pageList" class="source-page-list" data-reorder-url="{{ url_for('reorder_project_pages', project_id=project.id) }}">{% for page in pages %}
+        <article class="source-page {{ 'section-excluded' if page.excluded }}" draggable="true" data-id="{{ page.id }}"><span class="drag-grip">⋮⋮</span><div><b>Page {{ page.page_order }}</b><small>{{ page.source_file.original_filename }}{% if page.source_file.source_kind == 'camera' %} · Camera scan{% elif page.source_file.pages|length > 1 %} · PDF page {{ page.page_number }}{% endif %} · {{ page.processing_stage|replace('_', ' ') }}</small>{% if page.extracted_text %}<p>{{ page.extracted_text[:180] }}{{ '…' if page.extracted_text|length > 180 }}</p>{% endif %}{% if page.warning %}<em>{{ page.warning }}</em>{% endif %}</div>{% if not project.sections %}<form method="post" action="{{ url_for('delete_project_page', project_id=project.id, page_id=page.id) }}" onsubmit="return confirm('Remove this page from the project?')"><button type="submit" aria-label="Remove page">Remove</button></form>{% endif %}</article>
+      {% endfor %}</div><p id="pageSaveStatus" class="save-status" aria-live="polite"></p>{% else %}<p>No pages remain in this project.</p>{% endif %}
+    </section>
+
+    <section class="sections-card">
+      <div class="section-heading"><div><span class="eyebrow">{{ _('EDITABLE STUDY PLAN') }}</span><h2>{{ _('Learning sections') }}</h2></div>{% if all_sections %}<form id="mergeForm" method="post" action="{{ url_for('merge_sections', project_id=project.id) }}"><input name="title" placeholder="{{ _('Optional merged title') }}"><button class="secondary-button" type="submit">{{ _('Merge selected') }}</button></form>{% endif %}</div>
+      {% if all_sections %}<p class="section-help">Rename, exclude, split, merge, or drag sections. Excluded sections stay saved but are omitted from learning and exams.</p><div id="sectionList" class="learning-section-list" data-reorder-url="{{ url_for('reorder_sections', project_id=project.id) }}">{% for section in all_sections %}
+        <article class="learning-section-row {{ 'section-excluded' if section.excluded }}" draggable="true" data-id="{{ section.id }}"><span class="drag-grip">⋮⋮</span><input form="mergeForm" type="checkbox" name="section_ids" value="{{ section.id }}" aria-label="{{ _('Select section to merge') }}"><a class="section-position" href="{{ url_for('learn_section', project_id=project.id, section_id=section.id) }}">{{ '%02d'|format(section.position) }}</a><div class="section-copy"><form class="section-edit" method="post" action="{{ url_for('edit_section', project_id=project.id, section_id=section.id) }}"><input name="title" value="{{ section.title }}" maxlength="255" required><label><input type="checkbox" name="excluded" value="1" {{ 'checked' if section.excluded }}> {{ _('Exclude') }}</label><button type="submit">{{ _('Save') }}</button></form><p>{{ section.main_topic or _('Focused review from the uploaded source') }}</p><div class="section-meta"><span>{{ section.estimated_minutes }} min</span><span>{{ section.mastery_score|round|int }}% {{ _('mastery') }}</span><span class="status-badge status-{{ section.status }}">{{ _(section.status|replace('_', ' ')|capitalize) }}</span><span>{{ _('Source pages') }}: {% for page_number in source_page_orders(project.id, section.source_page_ids_json) %}{{ page_number }}{{ ', ' if not loop.last }}{% endfor %}</span></div></div><div class="section-row-actions"><a href="{{ url_for('learn_section', project_id=project.id, section_id=section.id) }}">{{ _('Learn') }} →</a><form method="post" action="{{ url_for('split_section', project_id=project.id, section_id=section.id) }}"><button type="submit">{{ _('Split') }}</button></form></div></article>
+      {% endfor %}</div><p id="sectionSaveStatus" class="save-status" aria-live="polite"></p>{% else %}<div class="empty-project"><h3>Your pages are saved</h3><p>Recognize and verify them, then create the editable learning plan.</p></div>{% endif %}
+    </section>
+
+    {% if project.exams %}<section class="material-card"><div class="section-heading"><div><span class="eyebrow">{{ _('EXAM HISTORY') }}</span><h2>{{ _('Final exams') }}</h2></div></div><div class="exam-history">{% for exam in project.exams|sort(attribute='started_at', reverse=true) %}<a href="{{ url_for('final_exam_results' if exam.status == 'submitted' else 'take_final_exam', exam_id=exam.id) }}"><b>{{ exam.started_at.strftime('%d.%m.%Y %H:%M') }}</b><span>{{ exam.question_count }} {{ _('questions') }} · {{ _(exam.difficulty_mode|capitalize) }}</span><strong>{{ (exam.score|round|int ~ '%') if exam.score is not none else _('Continue learning') ~ ' →' }}</strong></a>{% endfor %}</div></section>{% endif %}
+  </main>
+{% endblock %}
+{% block scripts %}<script>
+  const ui = key => window.LEARNOVA_I18N?.[key] || key;
+  function sortableList(id, statusId) {
+    const list = document.querySelector(id); if (!list) return;
+    let dragged;
+    list.addEventListener('dragstart', event => { dragged = event.target.closest('[data-id]'); dragged?.classList.add('dragging'); });
+    list.addEventListener('dragend', async () => {
+      dragged?.classList.remove('dragging'); dragged = null;
+      const ids = [...list.children].map(item => Number(item.dataset.id));
+      const status = document.querySelector(statusId); status.textContent = ui('savingOrder');
+      try { const response = await fetch(list.dataset.reorderUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[id === '#pageList' ? 'page_ids' : 'section_ids']: ids})}); if (!response.ok) throw new Error(); status.textContent = ui('orderSaved'); }
+      catch { status.textContent = ui('orderFailed'); }
+    });
+    list.addEventListener('dragover', event => { event.preventDefault(); if (!dragged) return; const item = event.target.closest('[data-id]'); if (!item || item === dragged) return; const box = item.getBoundingClientRect(); list.insertBefore(dragged, event.clientY < box.top + box.height / 2 ? item : item.nextSibling); });
+  }
+  sortableList('#pageList', '#pageSaveStatus'); sortableList('#sectionList', '#sectionSaveStatus');
+  </script>{% endblock %}

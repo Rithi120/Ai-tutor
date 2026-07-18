@@ -9,38 +9,20 @@ let sessionId = null;
 let nextQuestion = null;
 let currentQuestion = null;
 let questionResults = [];
-const testTotal = 5;
-const languageSelect = document.querySelector("#languageSelect");
-let selectedLanguage = localStorage.getItem("learnovaLanguage") || localStorage.getItem("numeriLanguage") || "English";
-languageSelect.value = selectedLanguage;
-
-const translations = {
-  English: {
-    settings: "Settings", aiTutor: "AI study tutor", heroEyebrow: "YOUR PERSONAL STUDY SPACE",
-    heroTitle: "What do you want to", heroAccent: "learn today?", heroCopy: "Choose a subject and tell Learnova what you need help with. Add school material only when it is useful.",
-    startLesson: "Build my lesson", privacy: "🔒 Your material is used only to create this lesson.", chooseSubject: "Choose a subject", subjectMath: "Mathematics", subjectHistory: "History", subjectBiology: "Biology", subjectChemistry: "Chemistry", subjectPhysics: "Physics", subjectOther: "Other", studyQuestion: "What should we work on?", studyPlaceholder: "For example: Explain the causes of World War I and then test me…", addMaterial: "Add photos or notes", optionalMaterial: "Optional · up to 4 images", tryPrompt: "Try asking:", promptPhotosynthesis: "“Explain photosynthesis”", promptPoem: "“Analyze a poem”", promptRevolution: "“French Revolution”",
-    share: "Share", shareCopy: "Your notes or worksheet", understand: "Understand", understandCopy: "A clear, tailored explanation", practice: "Practice", practiceCopy: "Questions that adapt to you",
-    yourLesson: "YOUR LESSON", mastery: "MASTERY", sessionScore: "SESSION SCORE", noAnswers: "No questions answered yet", newMaterial: "＋ New material",
-    reading: "Building your lesson…", finding: "Finding key concepts and preparing your personal study path", personalLesson: "YOUR PERSONAL LESSON", makeClear: "Let's make this clear", seeAction: "SEE IT IN ACTION", yourTurn: "YOUR TURN",
-    showHint: "💡 Show a hint", answerPlaceholder: "Write your answer and show your thinking…", checkAnswer: "Check my answer", askTutor: "Ask your tutor", chatKnows: "Knows your lesson and weak points",
-    chatWelcome: "I’m here while you practice. Ask me to explain a step, give a hint, or help you understand a mistake.", giveHint: "Give me a hint", whatPractice: "What should I practice?", chatPlaceholder: "Ask about this lesson…",
-    language: "Language", languageCopy: "Choose the language used by your tutor.", teacherNotes: "TEACHER NOTES", tipsAndExceptions: "Tips, traps, and exceptions", teacherTips: "Teacher tips", exceptions: "Exceptions and special cases", noExceptions: "No special exceptions are needed for this material.", tip: "Teacher tip", exceptionNote: "Important exception", readyTest: "READY TO PRACTICE?", testTitle: "Test your understanding", testCopy: "Five questions will move from easy to advanced and adapt to your weak points.", startTest: "Start test", testComplete: "TEST COMPLETE", yourResults: "Your learning summary", weaknessChart: "Concept mastery", weakPoints: "Weak points", nextSteps: "Next steps", selectAnswer: "Choose an answer", selectAll: "Select every correct answer", arrangeOrder: "Drag into the correct order", moveUp: "Move up", moveDown: "Move down", viewResults: "View results", level: "Level", answer: "Answer", correction: "Correction", correctTitle: "Nice work — that's correct.", incorrectTitle: "Not quite yet — let's fix it.", nextQuestion: "Next question →", newLabel: "New", thinking: "Thinking…", question: "question", questions: "questions", answered: "answered", of: "of"
-  },
-  German: {
-    settings: "Einstellungen", aiTutor: "KI-Lerntutor", heroEyebrow: "DEIN PERSÖNLICHER LERNBEREICH",
-    heroTitle: "Was möchtest du heute", heroAccent: "lernen?", heroCopy: "Wähle ein Fach und beschreibe, wobei du Hilfe brauchst. Schulmaterial kannst du optional hinzufügen.",
-    startLesson: "Meine Lektion erstellen", privacy: "🔒 Dein Material wird nur für diese Lektion verwendet.", chooseSubject: "Wähle ein Fach", subjectMath: "Mathematik", subjectHistory: "Geschichte", subjectBiology: "Biologie", subjectChemistry: "Chemie", subjectPhysics: "Physik", subjectOther: "Anderes", studyQuestion: "Woran sollen wir arbeiten?", studyPlaceholder: "Zum Beispiel: Erkläre die Ursachen des Ersten Weltkriegs und teste mich danach…", addMaterial: "Fotos oder Notizen hinzufügen", optionalMaterial: "Optional · bis zu 4 Bilder", tryPrompt: "Beispiele:", promptPhotosynthesis: "„Photosynthese erklären“", promptPoem: "„Ein Gedicht analysieren“", promptRevolution: "„Französische Revolution“",
-    share: "Hochladen", shareCopy: "Notizen oder Arbeitsblatt", understand: "Verstehen", understandCopy: "Eine klare, passende Erklärung", practice: "Üben", practiceCopy: "Fragen, die sich an dich anpassen",
-    yourLesson: "DEINE LEKTION", mastery: "LERNSTAND", sessionScore: "PUNKTE DIESER SITZUNG", noAnswers: "Noch keine Fragen beantwortet", newMaterial: "＋ Neues Material",
-    reading: "Deine Lektion wird erstellt…", finding: "Wichtige Themen werden erkannt und dein persönlicher Lernweg wird vorbereitet", personalLesson: "DEINE PERSÖNLICHE LEKTION", makeClear: "Machen wir es verständlich", seeAction: "BEISPIEL SCHRITT FÜR SCHRITT", yourTurn: "DU BIST DRAN",
-    showHint: "💡 Hinweis anzeigen", answerPlaceholder: "Schreibe deine Antwort und deinen Rechenweg…", checkAnswer: "Antwort prüfen", askTutor: "Tutor fragen", chatKnows: "Kennt deine Lektion und deine Schwachstellen",
-    chatWelcome: "Ich begleite dich beim Üben. Bitte mich um eine Erklärung, einen Hinweis oder Hilfe bei einem Fehler.", giveHint: "Gib mir einen Hinweis", whatPractice: "Was soll ich üben?", chatPlaceholder: "Frage etwas zu dieser Lektion…",
-    language: "Sprache", languageCopy: "Wähle die Sprache der App und deines Tutors.", teacherNotes: "TIPPS DER LEHRKRAFT", tipsAndExceptions: "Tipps, Stolperfallen und Ausnahmen", teacherTips: "Lehrertipps", exceptions: "Ausnahmen und Sonderfälle", noExceptions: "Für diesen Stoff sind keine besonderen Ausnahmen nötig.", tip: "Lehrertipp", exceptionNote: "Wichtige Ausnahme", readyTest: "BEREIT ZUM ÜBEN?", testTitle: "Teste dein Verständnis", testCopy: "Fünf Fragen werden von leicht bis anspruchsvoll schwieriger und passen sich deinen Schwächen an.", startTest: "Test starten", testComplete: "TEST ABGESCHLOSSEN", yourResults: "Deine Lernzusammenfassung", weaknessChart: "Beherrschung der Themen", weakPoints: "Schwachstellen", nextSteps: "Nächste Schritte", selectAnswer: "Wähle eine Antwort", selectAll: "Wähle alle richtigen Antworten", arrangeOrder: "Ziehe die Elemente in die richtige Reihenfolge", moveUp: "Nach oben", moveDown: "Nach unten", viewResults: "Ergebnisse ansehen", level: "Stufe", answer: "Antwort", correction: "Korrektur", correctTitle: "Sehr gut — das ist richtig.", incorrectTitle: "Noch nicht ganz — wir korrigieren es.", nextQuestion: "Nächste Frage →", newLabel: "Neu", thinking: "Ich denke nach…", question: "Frage", questions: "Fragen", answered: "beantwortet", of: "von"
-  }
-};
+let testTotal = 5;
+let hintUsed = false;
+const answerSymbols = [
+  ["√", "√()", "Square root"], ["x²", "²", "Squared"], ["x³", "³", "Cubed"],
+  ["π", "π", "Pi"], ["±", "±", "Plus or minus"], ["×", "×", "Multiply"],
+  ["÷", "÷", "Divide"], ["≤", "≤", "Less than or equal"], ["≥", "≥", "Greater than or equal"],
+  ["≠", "≠", "Not equal"], ["≈", "≈", "Approximately"], ["Δ", "Δ", "Delta"],
+  ["θ", "θ", "Theta"], ["α", "α", "Alpha"], ["β", "β", "Beta"],
+  ["→", "→", "Arrow"], ["°", "°", "Degrees"], ["½", "½", "One half"]
+];
+const selectedLanguage = window.LEARNOVA_LANGUAGE === "de" ? "German" : "English";
 
 function t(key) {
-  return translations[selectedLanguage][key] || translations.English[key] || key;
+  return window.LEARNOVA_I18N?.[key] || key;
 }
 
 function applyTranslations() {
@@ -54,76 +36,12 @@ function applyTranslations() {
   }
 }
 
-function dynamicTranslationNodes() {
-  const selectors = [
-    "#sideTitle", "#lessonTitle", "#levelBadge", "#explanation", "#exampleProblem",
-    "#exampleSteps li", "#teacherTips li", "#exceptionsList li", "#conceptList .concept",
-    "#masteryList b", "#questionPrompt", "#hint", ".answer-option span",
-    "#dropdownAnswer option:not(:first-child)", ".ordering-item b", "#summaryOverall",
-    "#summaryWeaknesses li", "#summaryNextSteps li", ".chart-row span",
-    ".tutor-message:not([data-i18n])"
-  ];
-  return [...document.querySelectorAll(selectors.join(","))].filter(node => node.textContent.trim());
-}
-
-async function translateDynamicContent(language) {
-  if (!sessionId) return;
-  const nodes = dynamicTranslationNodes();
-  const entries = nodes.map(node => ({
-    text: node.textContent,
-    apply: translated => { node.textContent = translated; }
-  }));
-  const addQuestionEntries = question => {
-    if (!question) return;
-    ["prompt", "hint"].forEach(key => {
-      if (question[key]) entries.push({ text: question[key], apply: translated => { question[key] = translated; } });
-    });
-    (question.options || []).forEach(option => {
-      if (option.label) entries.push({ text: option.label, apply: translated => { option.label = translated; } });
-    });
-  };
-  addQuestionEntries(currentQuestion);
-  if (nextQuestion && nextQuestion !== currentQuestion) addQuestionEntries(nextQuestion);
-  if (!entries.length) return;
-  const response = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, language, texts: entries.map(entry => entry.text) })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error);
-  if (selectedLanguage !== language) return;
-  entries.forEach((entry, index) => entry.apply(data.translations[index]));
-}
-
-const settingsPanel = document.querySelector("#settingsPanel");
-const settingsBackdrop = document.querySelector("#settingsBackdrop");
-function setSettingsOpen(open) {
-  settingsPanel.classList.toggle("hidden", !open);
-  settingsBackdrop.classList.toggle("hidden", !open);
-}
-document.querySelector("#settingsButton").addEventListener("click", () => setSettingsOpen(true));
-document.querySelector("#settingsClose").addEventListener("click", () => setSettingsOpen(false));
-settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
-languageSelect.addEventListener("change", async () => {
-  selectedLanguage = languageSelect.value;
-  localStorage.setItem("learnovaLanguage", selectedLanguage);
-  applyTranslations();
-  languageSelect.disabled = true;
-  try {
-    await translateDynamicContent(selectedLanguage);
-  } catch (error) {
-    showError(error.message || (selectedLanguage === "German" ? "Die Inhalte konnten nicht übersetzt werden." : "The content could not be translated."));
-  } finally {
-    languageSelect.disabled = false;
-  }
-});
 applyTranslations();
 
 function renderMastery(items = []) {
   const list = document.querySelector("#masteryList");
   if (!items.length) {
-    list.innerHTML = `<div class="mastery-item"><b>${selectedLanguage === "German" ? "Beantworte Fragen, um zu beginnen" : "Answer questions to begin"}</b></div>`;
+    list.innerHTML = `<div class="mastery-item"><b>${t("noMastery")}</b></div>`;
     return;
   }
   list.innerHTML = items.map((item, index) => {
@@ -196,8 +114,30 @@ function enableOrdering() {
   });
 }
 
+function symbolKeyboardMarkup() {
+  const label = t("symbols");
+  return `<div class="symbol-keyboard" aria-label="${label}"><small>${label}</small><div>${answerSymbols.map(([visible, value, title]) => `<button type="button" data-symbol="${value}" title="${title}">${visible}</button>`).join("")}</div></div>`;
+}
+
+function enableSymbolKeyboard() {
+  const textarea = document.querySelector("#writtenAnswer");
+  const keyboard = document.querySelector(".symbol-keyboard");
+  if (!textarea || !keyboard) return;
+  keyboard.addEventListener("click", event => {
+    const button = event.target.closest("button[data-symbol]");
+    if (!button) return;
+    const symbol = button.dataset.symbol;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.setRangeText(symbol, start, end, "end");
+    if (symbol.endsWith("()")) textarea.setSelectionRange(start + symbol.length - 1, start + symbol.length - 1);
+    textarea.focus();
+  });
+}
+
 function renderQuestion(question) {
   currentQuestion = question;
+  hintUsed = false;
   const questionNumber = questionResults.length + 1;
   document.querySelector("#questionNumber").textContent = String(questionNumber).padStart(2, "0");
   document.querySelector("#questionPrompt").textContent = question.prompt;
@@ -218,7 +158,8 @@ function renderQuestion(question) {
     control.innerHTML = `<p>${t("arrangeOrder")}</p><div id="orderingList" class="ordering-list">${options.map(option => `<div class="ordering-item" draggable="true" data-id="${escapeHtml(option.id)}"><span class="drag-handle">⋮⋮</span><b>${escapeHtml(option.label)}</b><span class="order-buttons"><button type="button" data-move="up" aria-label="${t("moveUp")}">↑</button><button type="button" data-move="down" aria-label="${t("moveDown")}">↓</button></span></div>`).join("")}</div>`;
     enableOrdering();
   } else {
-    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>`;
+    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${symbolKeyboardMarkup()}`;
+    enableSymbolKeyboard();
   }
   answerForm.classList.remove("hidden");
   answerForm.querySelector(".primary-button").classList.remove("hidden");
@@ -235,6 +176,7 @@ function collectAnswer() {
 
 function renderLesson(data) {
   const { lesson, question } = data;
+  testTotal = Number(data.test_total || 5);
   document.querySelector("#lessonTitle").textContent = lesson.lesson_title;
   document.querySelector("#sideTitle").textContent = lesson.lesson_title;
   document.querySelector("#levelBadge").textContent = lesson.detected_level;
@@ -267,9 +209,9 @@ function escapeHtml(value) {
 
 uploadForm.addEventListener("submit", async event => {
   event.preventDefault();
-  if (imageInput.files.length > 4) return showError("Please choose no more than four photos.");
+  if (imageInput.files.length > 4) return showError(t("photoLimit"));
   if (!studyGoal.value.trim() && imageInput.files.length === 0) {
-    return showError(selectedLanguage === "German" ? "Beschreibe dein Lernziel oder füge Material hinzu." : "Describe your study goal or add material.");
+    return showError(t("goalRequired"));
   }
   uploadForm.querySelector("button").disabled = true;
   uploadView.classList.add("hidden");
@@ -278,7 +220,6 @@ uploadForm.addEventListener("submit", async event => {
   document.querySelector("#loading").classList.remove("hidden");
   try {
     const formData = new FormData(uploadForm);
-    formData.append("language", selectedLanguage);
     const response = await fetch("/api/analyze", { method: "POST", body: formData });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -289,13 +230,16 @@ uploadForm.addEventListener("submit", async event => {
   } catch (error) {
     lessonView.classList.add("hidden");
     uploadView.classList.remove("hidden");
-    showError(error.message || "Could not start the lesson.");
+    showError(error.message || t("lessonStartFailed"));
   } finally {
     uploadForm.querySelector("button").disabled = false;
   }
 });
 
-document.querySelector("#hintButton").addEventListener("click", () => document.querySelector("#hint").classList.toggle("hidden"));
+document.querySelector("#hintButton").addEventListener("click", () => {
+  hintUsed = true;
+  document.querySelector("#hint").classList.toggle("hidden");
+});
 document.querySelector("#newLesson").addEventListener("click", () => location.reload());
 document.querySelector("#restartTest").addEventListener("click", () => location.reload());
 document.querySelector("#startTest").addEventListener("click", () => {
@@ -307,20 +251,27 @@ document.querySelector("#startTest").addEventListener("click", () => {
 
 function renderSummary(data) {
   const summary = data.summary || {};
-  const mastery = data.progress.mastery || [];
+  const practice = data.practice_results;
+  const mastery = practice ? practice.mastery_changes.map(item => ({
+    concept: item.concept, attempts: 1, average_score: item.after
+  })) : (data.progress.mastery || []);
   document.querySelector("#questionCard").classList.add("hidden");
   document.querySelector("#testProgress").classList.add("hidden");
   document.querySelector("#testSummary").classList.remove("hidden");
   document.querySelector("#summaryScore").innerHTML = `${data.progress.average_score}<small>/100</small>`;
-  document.querySelector("#summaryOverall").textContent = summary.overall || "";
+  document.querySelector("#summaryOverall").textContent = practice?.recommended_next_action || summary.overall || "";
   document.querySelector("#summaryChart").innerHTML = mastery.map(item => {
     const score = item.attempts ? item.average_score : 0;
     const status = score >= 80 ? "strong" : score >= 55 ? "developing" : "weak";
     return `<div class="chart-row"><div><span>${escapeHtml(item.concept)}</span><b>${score}%</b></div><div class="chart-track"><i class="${status}" style="width:${Math.max(score, 3)}%"></i></div></div>`;
   }).join("");
-  const weaknesses = summary.weaknesses?.length ? summary.weaknesses : mastery.filter(item => item.average_score < 80).map(item => item.concept);
+  const weaknesses = practice ? practice.concepts_still_weak : (summary.weaknesses?.length ? summary.weaknesses : mastery.filter(item => item.average_score < 80).map(item => item.concept));
   document.querySelector("#summaryWeaknesses").innerHTML = weaknesses.map(item => `<li>${escapeHtml(item)}</li>`).join("");
-  document.querySelector("#summaryNextSteps").innerHTML = (summary.next_steps || []).map(item => `<li>${escapeHtml(item)}</li>`).join("");
+  const nextSteps = practice ? [
+    practice.recommended_next_action,
+    practice.next_recommended_review_date ? `Next review: ${practice.next_recommended_review_date}` : ""
+  ].filter(Boolean) : (summary.next_steps || []);
+  document.querySelector("#summaryNextSteps").innerHTML = nextSteps.map(item => `<li>${escapeHtml(item)}</li>`).join("");
   document.querySelector("#testSummary").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -329,7 +280,7 @@ answerForm.addEventListener("submit", async event => {
   const button = answerForm.querySelector(".primary-button");
   const submittedAnswer = collectAnswer();
   if (submittedAnswer === "" || (Array.isArray(submittedAnswer) && submittedAnswer.length === 0)) {
-    showError(selectedLanguage === "German" ? "Bitte wähle oder schreibe eine Antwort." : "Please choose or write an answer.");
+    showError(t("answerRequired"));
     return;
   }
   button.disabled = true;
@@ -337,7 +288,7 @@ answerForm.addEventListener("submit", async event => {
     const response = await fetch("/api/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, answer: submittedAnswer, language: selectedLanguage })
+      body: JSON.stringify({ session_id: sessionId, answer: submittedAnswer, hints_used: hintUsed })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -350,7 +301,7 @@ answerForm.addEventListener("submit", async event => {
     document.querySelectorAll("#answerControl input, #answerControl select, #answerControl textarea, #answerControl button").forEach(control => { control.disabled = true; });
     feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
     const continueLabel = data.complete ? t("viewResults") : t("nextQuestion");
-    feedback.innerHTML = `<strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div>${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div><b>${t("correction")}:</b> ${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}<button class="next-button" type="button">${continueLabel}</button>`;
+    feedback.innerHTML = `<strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}<button class="next-button" type="button">${continueLabel}</button>`;
     button.classList.add("hidden");
     document.querySelector("#score").textContent = data.progress.average_score;
     document.querySelector("#answered").textContent = `${data.progress.answered} ${data.progress.answered === 1 ? t("question") : t("questions")} ${t("answered")}`;
@@ -364,7 +315,7 @@ answerForm.addEventListener("submit", async event => {
       }
     });
   } catch (error) {
-    showError(error.message || "Could not check your answer.");
+    showError(error.message || t("answerFailed"));
   } finally {
     button.disabled = false;
   }
@@ -405,7 +356,7 @@ chatForm.addEventListener("submit", async event => {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message, language: selectedLanguage })
+      body: JSON.stringify({ session_id: sessionId, message })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -414,14 +365,16 @@ chatForm.addEventListener("submit", async event => {
     renderMastery(data.mastery);
   } catch (error) {
     typing.remove();
-    addChatMessage("I couldn't respond just now. Please try again.", "tutor");
-    showError(error.message || "Tutor chat failed.");
+    addChatMessage(t("chatFailed"), "tutor");
+    showError(error.message || t("chatError"));
   }
 });
 
-if (window.lessonBootstrap) {
-  sessionId = window.lessonBootstrap.session_id;
+const bootstrapElement = document.querySelector("#lessonBootstrap");
+const lessonBootstrap = bootstrapElement ? JSON.parse(bootstrapElement.textContent) : null;
+if (lessonBootstrap) {
+  sessionId = lessonBootstrap.session_id;
   uploadView.classList.add("hidden");
   lessonView.classList.remove("hidden");
-  renderLesson(window.lessonBootstrap);
+  renderLesson(lessonBootstrap);
 }

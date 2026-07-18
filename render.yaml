@@ -32,6 +32,8 @@ services:
         value: "350"
       - key: TRANSLATE_TOKEN_LIMIT
         value: "2500"
+      - key: PROJECT_TOKEN_LIMIT
+        value: "5000"
 
 databases:
   - name: learnova-db

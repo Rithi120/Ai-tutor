@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Final Exam Mode') }} — {{ project.title }}{% endblock %}
+{% block body_class %}project-page{% endblock %}
+{% block content %}
+  <main class="exam-setup-shell">
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
+    <section class="exam-setup-heading"><span class="eyebrow">{{ _('Final Exam Mode')|upper }}</span><h1>{{ _('Build a realistic exam from your pages.') }}</h1><p>{{ _('No hints, tutor chat, corrections, or revealed answers appear until submission.') }}</p></section>
+    {% if readiness < 70 %}<div class="readiness-warning"><strong>{{ _('Your current readiness is') }} {{ readiness }}%.</strong><span>{{ _('You can still take the exam, but reviewing weak sections first may make the result more useful.') }}</span></div>{% endif %}
+    <form class="exam-setup-form" method="post">
+      <section class="exam-config-card"><h2>{{ _('Exam settings') }}</h2><div class="form-pair"><label>{{ _('Number of questions') }}<input type="number" name="question_count" min="5" max="50" value="15" required></label><label>{{ _('Time limit (minutes)') }}<input type="number" name="duration_minutes" min="5" max="180" value="30" required></label></div><fieldset><legend>{{ _('Difficulty') }}</legend><div class="choice-pills"><label><input type="radio" name="difficulty" value="mixed" checked><span>{{ _('Mixed') }} · 30/50/20</span></label><label><input type="radio" name="difficulty" value="easy"><span>{{ _('Easy') }}</span></label><label><input type="radio" name="difficulty" value="medium"><span>{{ _('Medium') }}</span></label><label><input type="radio" name="difficulty" value="hard"><span>{{ _('Hard') }}</span></label></div></fieldset></section>
+      <section class="exam-config-card"><h2>{{ _('Included sections') }}</h2><p>{{ _('Question counts are distributed proportionally, with more attention to weaker and information-rich sections.') }}</p><div class="exam-check-list">{% for section in sections %}<label><input type="checkbox" name="section_ids" value="{{ section.id }}" checked><span><b>{{ section.title }}</b><small>{{ section.mastery_score|round|int }}% {{ _('mastery') }} · {{ section.estimated_minutes }} min</small></span></label>{% endfor %}</div></section>
+      <section class="exam-config-card"><h2>{{ _('Question types') }}</h2><div class="choice-pills question-types">{% for value, label in [('multiple_choice','Multiple choice'),('true_false','True / false'),('matching','Matching'),('fill_blank','Fill in the blank'),('short_answer','Short answer'),('explanation','Explanation'),('calculation','Calculation')] %}<label><input type="checkbox" name="question_types" value="{{ value }}" {{ 'checked' if value in ['multiple_choice','short_answer','explanation','calculation'] }}><span>{{ _(label) }}</span></label>{% endfor %}</div></section>
+      <div class="exam-start-bar"><div><b>{{ _('Before you start') }}</b><span>{{ _('The server controls the timer. Answers autosave while you work. Submission is safe to retry.') }}</span></div><button class="primary-button" type="submit">{{ _('Generate and start exam') }} →</button></div>
+    </form>
+  </main>
+{% endblock %}
