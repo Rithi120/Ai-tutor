@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Study Planner') }} — Learnova{% endblock %}
+{% block body_class %}planner-page{% endblock %}
+{% block content %}
+<main class="planner-shell">
+  <header class="planner-hero"><div><span class="eyebrow">{{ _('PERSONAL STUDY COACH') }}</span><h1>{{ _('Exam Study Planner') }}</h1><p>{{ _('Turn your saved material, mastery, and available time into a clear daily plan.') }}</p></div><a class="primary-button" href="{{ url_for('new_study_plan') }}">{{ _('Create study plan') }} →</a></header>
+  {% if plans %}<section class="planner-plan-grid" aria-label="{{ _('Study plans') }}">{% for plan in plans %}<a class="planner-plan-card" href="{{ url_for('study_plan_detail', plan_id=plan.id) }}"><div><span class="planner-status status-{{ plan.status }}">{{ _(plan.status|capitalize) }}</span><small>{{ plan.project.subject }}</small></div><h2>{{ plan.project.title }}</h2><p>{{ _('Exam date') }}: <strong>{{ plan.exam_date.strftime('%d.%m.%Y') }}</strong></p><dl><div><dt>{{ _('Time per day') }}</dt><dd>{{ plan.daily_minutes }} {{ _('minutes') }}</dd></div><div><dt>{{ _('Target grade') }}</dt><dd>{{ plan.target_grade }}</dd></div><div><dt>{{ _('Days remaining') }}</dt><dd>{{ [(plan.exam_date - today).days, 0]|max }}</dd></div></dl></a>{% endfor %}</section>
+  {% else %}<section class="planner-empty"><span aria-hidden="true">◇</span><h2>{{ _('No study plan yet') }}</h2><p>{{ _('Choose a project and exam date to receive your first personalized schedule.') }}</p><a class="primary-button" href="{{ url_for('new_study_plan') }}">{{ _('Create study plan') }} →</a></section>{% endif %}
+</main>
+{% endblock %}

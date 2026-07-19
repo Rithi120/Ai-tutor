@@ -199,9 +199,9 @@ class DocumentWorkflowTests(unittest.TestCase):
 
     def test_pdf_is_rendered_into_independent_processed_pages(self):
         document = pymupdf.open()
-        first = document.new_page()
+        first = document.new_page()  # pyright: ignore[reportAttributeAccessIssue]
         first.insert_text((72, 72), "Printed formula: E = m * g * h")
-        document.new_page()
+        document.new_page()  # pyright: ignore[reportAttributeAccessIssue]
         pdf_data = document.tobytes()
         document.close()
         uploaded = self.client.post("/projects", data={

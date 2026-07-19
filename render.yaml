@@ -8,6 +8,10 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
+      - key: APP_ENV
+        value: production
+      - key: AI_MODE
+        value: live
       - key: PYTHON_VERSION
         value: 3.13.7
       - key: SECRET_KEY

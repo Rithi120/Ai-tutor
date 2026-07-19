@@ -1,0 +1,19 @@
+{% macro microphone_control(target, control_id, hidden=false) -%}
+<div id="{{ control_id }}" class="speech-input-control{{ ' hidden' if hidden }}" data-speech-input data-speech-target="{{ target }}" role="group" aria-label="{{ _('Voice input controls') }}">
+  <button class="speech-record-button" type="button" data-speech-record aria-label="{{ _('Start recording') }}" aria-pressed="false"><span aria-hidden="true">●</span><span>{{ _('Use microphone') }}</span></button>
+  <button class="speech-stop-button hidden" type="button" data-speech-stop aria-label="{{ _('Stop recording') }}"><span aria-hidden="true">■</span><span>{{ _('Stop') }}</span></button>
+  <button class="speech-cancel-button hidden" type="button" data-speech-cancel aria-label="{{ _('Cancel recording') }}"><span aria-hidden="true">×</span><span>{{ _('Cancel recording') }}</span></button>
+  <span class="speech-status" data-speech-status role="status" aria-live="polite" aria-atomic="true"></span>
+</div>
+{%- endmacro %}
+
+{% macro listen_control(target, control_id, hidden=false) -%}
+<div id="{{ control_id }}" class="listen-control{{ ' hidden' if hidden }}" data-listen-control data-speech-target="{{ target }}" role="group" aria-label="{{ _('Listen') }}">
+  <button type="button" data-speech-play aria-label="{{ _('Play') }}"><span aria-hidden="true">▶</span><span>{{ _('Listen') }}</span></button>
+  <button type="button" data-speech-pause aria-label="{{ _('Pause') }}" disabled><span aria-hidden="true">Ⅱ</span><span>{{ _('Pause') }}</span></button>
+  <button type="button" data-speech-resume aria-label="{{ _('Resume') }}" disabled><span aria-hidden="true">▶</span><span>{{ _('Resume') }}</span></button>
+  <button type="button" data-speech-stop-playback aria-label="{{ _('Stop') }}" disabled><span aria-hidden="true">■</span><span>{{ _('Stop') }}</span></button>
+  <label><span>{{ _('Playback speed') }}</span><select data-speech-rate aria-label="{{ _('Playback speed') }}"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+  <span class="speech-status" data-playback-status role="status" aria-live="polite" aria-atomic="true"></span>
+</div>
+{%- endmacro %}

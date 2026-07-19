@@ -3,8 +3,6 @@ import hashlib
 import io
 import json
 import os
-import re
-import secrets
 import uuid
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -12,25 +10,20 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session as flask_session, url_for
-from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
-from flask_sqlalchemy import SQLAlchemy
-from openai import OpenAI
-from pypdf import PdfReader
-from sqlalchemy import UniqueConstraint, func, inspect, or_, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from flask import Flask, flash, has_request_context, jsonify, redirect, render_template, request, send_file, session as flask_session, url_for
+from flask_login import UserMixin, current_user, login_required, login_user, logout_user
+from flask_wtf.csrf import CSRFError
+from sqlalchemy import Index, UniqueConstraint, func, inspect, or_, text
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from adaptive_learning import (
+from learnova.quizzes.adaptive import (
     difficulty_label,
-    estimated_question_count,
-    mastery_status,
     prioritize_concepts,
-    review_is_due,
     update_mastery,
 )
-from document_processing import (
+from learnova.ocr.service import (
     crop_image_region,
     normalize_recognition,
     preprocess_document_image,
@@ -38,7 +31,7 @@ from document_processing import (
     recognition_instructions,
     validate_document_upload,
 )
-from study_projects import (
+from learnova.projects.planning import (
     ALLOWED_QUESTION_TYPES,
     clean_extracted_pages,
     deterministic_question_score,
@@ -47,41 +40,62 @@ from study_projects import (
     preparation_plan,
     proportional_section_counts,
 )
-from i18n import SUPPORTED_LANGUAGES, frontend_catalog, translate
+from learnova.translations import SUPPORTED_LANGUAGES, frontend_catalog, translate
+from learnova.config import configure_app
+from learnova.extensions import csrf, db, limiter, login_manager
+from learnova.ai_services import service as ai_service
+from learnova.ai_services.prompts import TUTOR_RULES
+from learnova.authentication.service import (
+    AccountConflict,
+    authenticate,
+    create_user,
+    identity_conflict,
+    normalize_registration,
+    validate_registration,
+)
+from learnova.uploads import create_project_from_uploads
+from learnova.dashboard import dashboard_context, todays_practice_context
+from learnova.study_planner import (
+    adapt_future_schedule,
+    build_plan_schedule,
+    calendar_days,
+    normalize_preferred_days,
+    planner_metrics,
+    redistribute_after_skip,
+    redistribute_overdue_sessions,
+    session_task_ids,
+)
+from learnova.web.responses import api_error
+from learnova.web.security import apply_security_headers
 
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
-legacy_database = os.path.join(app.instance_path, "numeri.db")
-branded_database = os.path.join(app.instance_path, "learnova.db")
-default_database_url = "sqlite:///numeri.db" if (
-    os.path.exists(legacy_database) and not os.path.exists(branded_database)
-) else "sqlite:///learnova.db"
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", default_database_url)
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+APP_ENV = configure_app(app)
+db.init_app(app)
+login_manager.init_app(app)
+csrf.init_app(app)
+limiter.init_app(app)
 
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
+
+@limiter.request_filter
+def disable_rate_limits_during_tests():
+    return app.testing
 login_manager.login_view = "login"  # pyright: ignore[reportAttributeAccessIssue]
 login_manager.login_message = ""
 login_manager.session_protection = "strong"
 
-VISION_MODEL = os.getenv(
-    "GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
-TUTOR_MODEL = os.getenv("GROQ_TUTOR_MODEL", "openai/gpt-oss-20b")
-FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
-LESSON_TOKEN_LIMIT = int(os.getenv("LESSON_TOKEN_LIMIT", "1800"))
-ANSWER_TOKEN_LIMIT = int(os.getenv("ANSWER_TOKEN_LIMIT", "1100"))
-CHAT_TOKEN_LIMIT = int(os.getenv("CHAT_TOKEN_LIMIT", "350"))
-TRANSLATE_TOKEN_LIMIT = int(os.getenv("TRANSLATE_TOKEN_LIMIT", "2500"))
-PROJECT_TOKEN_LIMIT = int(os.getenv("PROJECT_TOKEN_LIMIT", "5000"))
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+VISION_MODEL = app.config["GROQ_VISION_MODEL"]
+TUTOR_MODEL = app.config["GROQ_TUTOR_MODEL"]
+FAST_MODEL = app.config["GROQ_FAST_MODEL"]
+LESSON_TOKEN_LIMIT = app.config["LESSON_TOKEN_LIMIT"]
+ANSWER_TOKEN_LIMIT = app.config["ANSWER_TOKEN_LIMIT"]
+CHAT_TOKEN_LIMIT = app.config["CHAT_TOKEN_LIMIT"]
+TRANSLATE_TOKEN_LIMIT = app.config["TRANSLATE_TOKEN_LIMIT"]
+PROJECT_TOKEN_LIMIT = app.config["PROJECT_TOKEN_LIMIT"]
+GROQ_BASE_URL = app.config["GROQ_BASE_URL"]
+ALLOWED_IMAGE_TYPES = ai_service.ALLOWED_IMAGE_TYPES
 SESSIONS = {}
 
 
@@ -103,6 +117,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     lessons = db.relationship("Lesson", back_populates="user", cascade="all, delete-orphan")
     concept_masteries = db.relationship("ConceptMastery", back_populates="user", cascade="all, delete-orphan")
+    study_plans = db.relationship("StudyPlan", back_populates="user", cascade="all, delete-orphan")
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -133,11 +148,16 @@ class Lesson(db.Model):
 
 
 class Attempt(db.Model):
+    __table_args__ = (
+        Index("ix_attempt_lesson_timestamp", "lesson_id", "timestamp"),
+        Index("ix_attempt_lesson_score", "lesson_id", "score"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     lesson_id = db.Column(db.Integer, db.ForeignKey("lesson.id"), nullable=False, index=True)
     question = db.Column(db.Text, nullable=False)
     subject = db.Column(db.String(80), nullable=True, index=True)
     concept = db.Column(db.String(255), nullable=False, index=True)
+    concepts_json = db.Column(db.Text, nullable=False, default="[]")
     student_answer = db.Column(db.Text, nullable=False)
     score = db.Column(db.Integer, nullable=False)
     feedback = db.Column(db.Text, nullable=False)
@@ -145,6 +165,8 @@ class Attempt(db.Model):
     timestamp = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
     understood_at = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
     hints_used = db.Column(db.Boolean, nullable=False, default=False)
+    retry_count = db.Column(db.Integer, nullable=False, default=0)
+    response_confidence = db.Column(db.Float, nullable=True)
     mastery_before = db.Column(db.Float, nullable=True)
     mastery_after = db.Column(db.Float, nullable=True)
     lesson = db.relationship("Lesson", back_populates="attempts")
@@ -154,7 +176,11 @@ class Attempt(db.Model):
 
 
 class ConceptMastery(db.Model):
-    __table_args__ = (UniqueConstraint("user_id", "subject", "concept", name="uq_user_subject_concept"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "subject", "concept", name="uq_user_subject_concept"),
+        Index("ix_mastery_user_review", "user_id", "next_review_at"),
+        Index("ix_mastery_user_score", "user_id", "mastery_score"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     subject = db.Column(db.String(80), nullable=False, index=True)
@@ -166,12 +192,49 @@ class ConceptMastery(db.Model):
     incorrect_attempts = db.Column(db.Integer, nullable=False, default=0)
     consecutive_correct = db.Column(db.Integer, nullable=False, default=0)
     consecutive_incorrect = db.Column(db.Integer, nullable=False, default=0)
+    recent_mistake_count = db.Column(db.Integer, nullable=False, default=0, index=True)
+    confidence_trend = db.Column(db.Float, nullable=False, default=50)
     last_practised_at = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
     next_review_at = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
     difficulty_level = db.Column(db.Integer, nullable=False, default=1)
     status = db.Column(db.String(20), nullable=False, default="weak", index=True)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
     user = db.relationship("User", back_populates="concept_masteries")
+    history = db.relationship(
+        "MasteryHistory", back_populates="mastery", cascade="all, delete-orphan"
+    )
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class MasteryHistory(db.Model):
+    __table_args__ = (
+        Index("ix_mastery_history_user_practised", "user_id", "practised_at"),
+        Index("ix_mastery_history_mastery_practised", "mastery_id", "practised_at"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    mastery_id = db.Column(
+        db.Integer, db.ForeignKey("concept_mastery.id"), nullable=False, index=True
+    )
+    attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=True, index=True)
+    subject = db.Column(db.String(80), nullable=False, index=True)
+    concept = db.Column(db.String(255), nullable=False, index=True)
+    mastery_before = db.Column(db.Float, nullable=False)
+    mastery_after = db.Column(db.Float, nullable=False)
+    delta = db.Column(db.Float, nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+    difficulty = db.Column(db.Integer, nullable=False)
+    hints_used = db.Column(db.Boolean, nullable=False, default=False)
+    retry_count = db.Column(db.Integer, nullable=False, default=0)
+    response_confidence = db.Column(db.Float, nullable=False, default=50)
+    confidence_before = db.Column(db.Float, nullable=False, default=50)
+    confidence_after = db.Column(db.Float, nullable=False, default=50)
+    outcome = db.Column(db.String(20), nullable=False, index=True)
+    practised_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    mastery = db.relationship("ConceptMastery", back_populates="history")
+    attempt = db.relationship("Attempt")
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -201,6 +264,7 @@ class ChatMessage(db.Model):
 
 
 class LearningProject(db.Model):
+    __table_args__ = (Index("ix_project_user_updated", "user_id", "updated_at"),)
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     title = db.Column(db.String(255), nullable=False)
@@ -213,6 +277,75 @@ class LearningProject(db.Model):
     pages = db.relationship("ProjectPage", back_populates="project", cascade="all, delete-orphan")
     sections = db.relationship("LearningSection", back_populates="project", cascade="all, delete-orphan")
     exams = db.relationship("FinalExam", back_populates="project", cascade="all, delete-orphan")
+    study_plans = db.relationship("StudyPlan", back_populates="project", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class StudyPlan(db.Model):
+    """A student's exam target and scheduling preferences for one project."""
+
+    __table_args__ = (
+        Index("ix_study_plan_user_status_exam", "user_id", "status", "exam_date"),
+        Index("ix_study_plan_project_status", "project_id", "status"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    project_id = db.Column(
+        db.Integer, db.ForeignKey("learning_project.id"), nullable=False, index=True
+    )
+    exam_date = db.Column(db.Date, nullable=False, index=True)
+    target_grade = db.Column(db.String(40), nullable=False)
+    daily_minutes = db.Column(db.Integer, nullable=False)
+    preferred_days = db.Column(db.Text, nullable=False, default="[0,1,2,3,4,5,6]")
+    difficulty_preference = db.Column(db.String(20), nullable=False, default="medium")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
+    user = db.relationship("User", back_populates="study_plans")
+    project = db.relationship("LearningProject", back_populates="study_plans")
+    sessions = db.relationship(
+        "StudyPlanSession", back_populates="study_plan", cascade="all, delete-orphan",
+        order_by="StudyPlanSession.date",
+    )
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class StudyPlanSession(db.Model):
+    """One calendar day in a StudyPlan.
+
+    The project already used ``StudySession`` for persisted lesson UI state, so
+    this intentionally scoped name prevents corrupting existing saved lessons.
+    """
+
+    __tablename__ = "study_plan_session"
+    __table_args__ = (
+        UniqueConstraint("study_plan_id", "date", name="uq_study_plan_session_date"),
+        Index("ix_study_plan_session_plan_status_date", "study_plan_id", "status", "date"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    study_plan_id = db.Column(
+        db.Integer, db.ForeignKey("study_plan.id"), nullable=False, index=True
+    )
+    date = db.Column(db.Date, nullable=False, index=True)
+    planned_minutes = db.Column(db.Integer, nullable=False, default=0)
+    completed_minutes = db.Column(db.Integer, nullable=False, default=0)
+    lesson_ids = db.Column(db.Text, nullable=False, default="[]")
+    quiz_ids = db.Column(db.Text, nullable=False, default="[]")
+    review_ids = db.Column(db.Text, nullable=False, default="[]")
+    exam_ids = db.Column(db.Text, nullable=False, default="[]")
+    tasks_json = db.Column(db.Text, nullable=False, default="[]")
+    status = db.Column(db.String(20), nullable=False, default="planned", index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+    study_plan = db.relationship("StudyPlan", back_populates="sessions")
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -235,6 +368,7 @@ class ProjectFile(db.Model):
 
 
 class ProjectPage(db.Model):
+    __table_args__ = (Index("ix_project_page_project_order", "project_id", "page_order"),)
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("learning_project.id"), nullable=False, index=True)
     file_id = db.Column(db.Integer, db.ForeignKey("project_file.id"), nullable=False, index=True)
@@ -268,6 +402,7 @@ class ProjectPage(db.Model):
 
 
 class DocumentBlock(db.Model):
+    __table_args__ = (Index("ix_document_block_page_order", "page_id", "block_order"),)
     id = db.Column(db.Integer, primary_key=True)
     page_id = db.Column(db.Integer, db.ForeignKey("project_page.id"), nullable=False, index=True)
     block_order = db.Column(db.Integer, nullable=False)
@@ -288,6 +423,7 @@ class DocumentBlock(db.Model):
 
 
 class LearningSection(db.Model):
+    __table_args__ = (Index("ix_section_project_position", "project_id", "position"),)
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("learning_project.id"), nullable=False, index=True)
     position = db.Column(db.Integer, nullable=False, index=True)
@@ -324,6 +460,7 @@ class RecallCard(db.Model):
     section_id = db.Column(db.Integer, db.ForeignKey("learning_section.id"), nullable=False, index=True)
     kind = db.Column(db.String(40), nullable=False)
     prompt = db.Column(db.Text, nullable=False)
+    concepts_json = db.Column(db.Text, nullable=False, default="[]")
     answer = db.Column(db.Text, nullable=False)
     source_text = db.Column(db.Text, nullable=False, default="")
     attempts = db.Column(db.Integer, nullable=False, default=0)
@@ -335,6 +472,7 @@ class RecallCard(db.Model):
 
 
 class FinalExam(db.Model):
+    __table_args__ = (Index("ix_exam_project_status", "project_id", "status"),)
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("learning_project.id"), nullable=False, index=True)
     question_count = db.Column(db.Integer, nullable=False)
@@ -357,6 +495,7 @@ class FinalExam(db.Model):
 
 
 class ExamQuestion(db.Model):
+    __table_args__ = (Index("ix_exam_question_exam_position", "exam_id", "position"),)
     id = db.Column(db.Integer, primary_key=True)
     exam_id = db.Column(db.Integer, db.ForeignKey("final_exam.id"), nullable=False, index=True)
     section_id = db.Column(db.Integer, db.ForeignKey("learning_section.id"), nullable=False, index=True)
@@ -364,6 +503,7 @@ class ExamQuestion(db.Model):
     difficulty = db.Column(db.String(20), nullable=False, index=True)
     question_type = db.Column(db.String(40), nullable=False)
     prompt = db.Column(db.Text, nullable=False)
+    concepts_json = db.Column(db.Text, nullable=False, default="[]")
     options_json = db.Column(db.Text, nullable=False, default="[]")
     expected_answer = db.Column(db.Text, nullable=False)
     explanation = db.Column(db.Text, nullable=False, default="")
@@ -610,6 +750,81 @@ def ensure_database():
                     ))
             apply_schema_migration("007_add_document_recognition", add_document_recognition_fields)
 
+        def add_query_path_indexes():
+            indexes = (
+                "CREATE INDEX IF NOT EXISTS ix_attempt_lesson_timestamp ON attempt (lesson_id, timestamp)",
+                "CREATE INDEX IF NOT EXISTS ix_attempt_lesson_score ON attempt (lesson_id, score)",
+                "CREATE INDEX IF NOT EXISTS ix_mastery_user_review ON concept_mastery (user_id, next_review_at)",
+                "CREATE INDEX IF NOT EXISTS ix_mastery_user_score ON concept_mastery (user_id, mastery_score)",
+                "CREATE INDEX IF NOT EXISTS ix_project_user_updated ON learning_project (user_id, updated_at)",
+                "CREATE INDEX IF NOT EXISTS ix_project_page_project_order ON project_page (project_id, page_order)",
+                "CREATE INDEX IF NOT EXISTS ix_document_block_page_order ON document_block (page_id, block_order)",
+                "CREATE INDEX IF NOT EXISTS ix_section_project_position ON learning_section (project_id, position)",
+                "CREATE INDEX IF NOT EXISTS ix_exam_project_status ON final_exam (project_id, status)",
+                "CREATE INDEX IF NOT EXISTS ix_exam_question_exam_position ON exam_question (exam_id, position)",
+            )
+            with db.engine.begin() as connection:
+                for statement in indexes:
+                    connection.execute(text(statement))
+
+        apply_schema_migration("009_add_query_path_indexes", add_query_path_indexes)
+
+        concept_tracking_tables = {
+            "attempt": {
+                "concepts_json": "TEXT NOT NULL DEFAULT '[]'",
+                "retry_count": "INTEGER NOT NULL DEFAULT 0",
+                "response_confidence": "FLOAT",
+            },
+            "concept_mastery": {
+                "recent_mistake_count": "INTEGER NOT NULL DEFAULT 0",
+                "confidence_trend": "FLOAT NOT NULL DEFAULT 50",
+            },
+            "recall_card": {
+                "concepts_json": "TEXT NOT NULL DEFAULT '[]'",
+            },
+            "exam_question": {
+                "concepts_json": "TEXT NOT NULL DEFAULT '[]'",
+            },
+        }
+        missing_concept_tracking = {}
+        for table_name, definitions in concept_tracking_tables.items():
+            existing = {
+                column["name"] for column in inspect(db.engine).get_columns(table_name)
+            }
+            missing_concept_tracking[table_name] = {
+                name: definition for name, definition in definitions.items()
+                if name not in existing
+            }
+
+        if any(missing_concept_tracking.values()):
+            def add_concept_level_tracking():
+                with db.engine.begin() as connection:
+                    for table_name, definitions in missing_concept_tracking.items():
+                        for name, definition in definitions.items():
+                            connection.execute(text(
+                                f"ALTER TABLE {table_name} ADD COLUMN {name} {definition}"
+                            ))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_concept_mastery_recent_mistake_count "
+                        "ON concept_mastery (recent_mistake_count)"
+                    ))
+            apply_schema_migration("010_add_concept_level_tracking", add_concept_level_tracking)
+
+        def add_study_planner_indexes():
+            statements = (
+                "CREATE INDEX IF NOT EXISTS ix_study_plan_user_status_exam "
+                "ON study_plan (user_id, status, exam_date)",
+                "CREATE INDEX IF NOT EXISTS ix_study_plan_project_status "
+                "ON study_plan (project_id, status)",
+                "CREATE INDEX IF NOT EXISTS ix_study_plan_session_plan_status_date "
+                "ON study_plan_session (study_plan_id, status, date)",
+            )
+            with db.engine.begin() as connection:
+                for statement in statements:
+                    connection.execute(text(statement))
+
+        apply_schema_migration("011_add_intelligent_study_planner", add_study_planner_indexes)
+
 
 ensure_database()
 
@@ -649,6 +864,30 @@ def tr(message: str, **values) -> str:
     return translate(message, get_current_language(), **values)
 
 
+def planner_task_title(task: dict[str, Any]) -> str:
+    """Localize a stored planner task without storing translated database text."""
+
+    kind = task.get("kind")
+    if kind == "learn":
+        return tr("Learn {section}", section=task.get("section_title") or tr("Learning section"))
+    if kind == "quiz":
+        return tr("Quiz: {section}", section=task.get("section_title") or tr("Learning section"))
+    if kind in {"review", "retention"}:
+        return tr("Review {concept}", concept=task.get("concept") or tr("saved concepts"))
+    if kind == "mistakes":
+        return tr("Practice mistakes: {concept}", concept=task.get("concept") or tr("recent mistakes"))
+    if kind == "mock_exam":
+        return tr("Mock exam")
+    return tr("Study activity")
+
+
+def planner_date(value: date) -> str:
+    return tr(
+        "{weekday}, {day} {month} {year}", weekday=tr(value.strftime("%A")),
+        day=value.day, month=tr(value.strftime("%B")), year=value.year,
+    )
+
+
 def safe_internal_url(value: str | None) -> str | None:
     if not value:
         return None
@@ -661,10 +900,19 @@ def safe_internal_url(value: str | None) -> str | None:
 @app.context_processor
 def inject_i18n():
     language = get_current_language()
+    ai_mode = app.config.get("AI_MODE", "mock")
     return {
         "_": lambda message, **values: translate(message, language, **values),
         "current_language": language,
+        "learning_content_language_code": "de-DE" if learning_content_language() == "German" else "en-US",
         "frontend_translations": frontend_catalog(language),
+        "ai_mode_badge": (
+            {"mock": "Mock AI", "cached": "Cached AI", "live": "Live AI"}.get(ai_mode)
+            if app.config.get("ENV_NAME") == "development" else None
+        ),
+        "ai_mode": ai_mode,
+        "planner_task_title": planner_task_title,
+        "planner_date": planner_date,
     }
 
 
@@ -676,17 +924,14 @@ def unauthorized():
 
 @app.after_request
 def security_headers(response):
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("Referrer-Policy", "same-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=()")
-    return response
+    return apply_security_headers(response)
 
 
 @app.errorhandler(413)
 def request_too_large(_error):
     message = tr("The upload is too large. Keep the complete request under 40 MB.")
     if request.path.startswith("/api/"):
-        return jsonify(error=message), 413
+        return api_error(message, 413, "upload_too_large")
     flash(message, "error")
     return redirect(request.referrer or url_for("index"))
 
@@ -696,69 +941,89 @@ def database_error(_error):
     db.session.rollback()
     app.logger.exception("Database operation failed")
     if request.path.startswith("/api/"):
-        return jsonify(error=tr("The database is temporarily unavailable.")), 503
+        return api_error(tr("The database is temporarily unavailable."), 503, "database_unavailable")
     flash(tr("The database is temporarily unavailable."), "error")
     return redirect(url_for("dashboard") if current_user.is_authenticated else url_for("login"))
 
 
-TUTOR_RULES = """You are a patient expert tutor for students of any age and level.
-Teach only the selected subject, study goal, and concepts supported by the student's material.
-Use the student's apparent level and explain in respectful baby steps without childish language.
-Define unfamiliar terms, show how each step connects, identify common mistakes, give practical teacher tips, and mention relevant exceptions or disputed interpretations.
-Adapt your teaching method to the subject: use worked calculations for mathematics and science, examples and corrections for languages, chronology and cause/effect for history, and evidence-based explanations for other subjects.
-For mathematics and physics, never skip transformations or combine multiple operations into one unexplained jump.
-Use plain Unicode notation instead of LaTeX: ×, ÷, √, ², ³, π, Δ, ≤, ≥, parentheses, and readable units.
-Put each calculation transformation on its own line. Name the rule or operation first, show the changed expression next, and explain why it is valid.
-Follow the order of operations explicitly. For example, explain 5 + 4 − 6 × 3 as:
-Step 1 — Multiply first
-6 × 3 = 18
-5 + 4 − 18
-Step 2 — Add 5 and 4
-5 + 4 = 9
-9 − 18
-Step 3 — Subtract
-9 − 18 = −9
-Distinguish subtraction from multiplication of signed numbers; never use misleading sign shortcuts.
-For formulas, define every variable and unit before substitution, show the substituted formula, include units on intermediate values, and finish with a clearly labelled final answer.
-Never reveal hidden chain-of-thought. Give concise instructional explanations and verifiable steps instead."""
+@app.errorhandler(CSRFError)
+def csrf_error(_error):
+    message = tr("Your form expired. Refresh the page and try again.")
+    if request.path.startswith("/api/") or request.is_json:
+        return api_error(message, 400, "csrf_failed")
+    flash(message, "error")
+    return redirect(request.referrer or url_for("index" if current_user.is_authenticated else "login"))
 
 
-def client():
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not configured.")
-    return OpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+@app.errorhandler(429)
+def rate_limit_error(_error):
+    message = tr("Too many requests. Please wait a moment and try again.")
+    if request.path.startswith("/api/") or request.is_json:
+        return api_error(message, 429, "rate_limited")
+    flash(message, "error")
+    return redirect(request.referrer or url_for("index" if current_user.is_authenticated else "login"))
 
 
-def create_response(**kwargs: Any):
-    """Typed boundary for Groq's OpenAI-compatible Responses API."""
-    return client().responses.create(**kwargs)
+def create_response(*, task_type: str, language: str | None = None, **kwargs: Any):
+    private_scope = None
+    session_scope = kwargs.pop("session_scope", None)
+    if has_request_context() and current_user.is_authenticated:
+        private_scope = current_user.get_id()
+        if session_scope is None and request.is_json:
+            session_scope = (request.get_json(silent=True) or {}).get("session_id")
+    return ai_service.create_response(
+        task_type=task_type,
+        language=language or learning_content_language(),
+        private_scope=private_scope,
+        session_scope=session_scope,
+        **kwargs,
+    )
+
+
+def ai_failure_message(error: Exception) -> tuple[str, int, str]:
+    """Return a translated, non-sensitive failure suitable for a student response."""
+
+    category, _summary = ai_service._failure_details(error)
+    messages = {
+        "schema_validation": ("The AI response could not be validated. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
+        "invalid_json": ("The AI response could not be validated. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
+        "source_reference_validation": ("The AI response could not be validated against your material. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
+        "request_limit_reached": ("Your AI request limit has been reached. Try again later or use your saved content.", 429, "ai_limit_reached"),
+        "token_limit_exceeded": ("The uploaded material is too large for one AI request. Split it into smaller sections and try again. Your saved work remains safe.", 413, "ai_input_too_large"),
+        "provider_timeout": ("Generation timed out. You can retry. Your saved work remains safe.", 504, "ai_timeout"),
+    }
+    message, status, code = messages.get(category, (
+        "AI is temporarily unavailable. You can retry. Your saved work remains safe.",
+        503, "ai_unavailable",
+    ))
+    return tr(message), status, code
+
+
+def flash_ai_failure(error: Exception) -> None:
+    message, _status, _code = ai_failure_message(error)
+    flash(message, "error")
+
+
+@app.get("/internal/ai-diagnostics")
+@login_required
+def ai_diagnostics():
+    allowed = app.config.get("AI_DIAGNOSTICS_ADMINS", set())
+    identities = {current_user.username.casefold(), current_user.email.casefold()}
+    if app.config.get("ENV_NAME") != "development" or not identities.intersection(allowed):
+        return "Not found", 404
+    return render_template("ai_diagnostics.html", diagnostics=ai_service.diagnostics_summary())
 
 
 def quality_options() -> dict[str, Any]:
-    """Keep reasoning useful but small on GPT-OSS; allow model overrides safely."""
-    return {"reasoning": {"effort": "low"}} if TUTOR_MODEL.startswith("openai/gpt-oss") else {}
-
-
-def log_usage(response, task):
-    usage = getattr(response, "usage", None)
-    if usage:
-        app.logger.info("AI usage task=%s model=%s input=%s output=%s total=%s", task,
-                        getattr(response, "model", "unknown"),
-                        getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0),
-                        getattr(usage, "total_tokens", 0))
+    return ai_service.quality_options(TUTOR_MODEL)
 
 
 def parse_json(text):
-    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    return json.loads(cleaned)
+    return ai_service.parse_json(text)
 
 
 def image_data_url(upload):
-    if upload.mimetype not in ALLOWED_IMAGE_TYPES:
-        raise ValueError("Please upload a JPG, PNG, or WebP image.")
-    payload = base64.b64encode(upload.read()).decode("ascii")
-    return f"data:{upload.mimetype};base64,{payload}"
+    return ai_service.image_data_url(upload)
 
 
 def mastery_snapshot(session):
@@ -780,16 +1045,29 @@ def mastery_snapshot(session):
 
 
 def normalize_question_concept(session, question):
+    """Canonicalize one-or-more concepts and retain the legacy primary concept."""
     names = list(session["mastery"])
-    requested = str(question.get("concept", "")).strip().casefold()
-    exact = next(
-        (name for name in names if name.casefold() == requested), None)
-    if exact:
-        question["concept"] = exact
-        return
-    weakest = mastery_snapshot(session)
-    question["concept"] = weakest[0]["concept"] if weakest else (
-        names[0] if names else session.get("subject", "General studies"))
+    requested_values = question.get("concepts", [])
+    if not isinstance(requested_values, list):
+        requested_values = []
+    selected = []
+    for value in [question.get("concept"), *requested_values]:
+        requested = str(value or "").strip()
+        if not requested:
+            continue
+        canonical = next(
+            (name for name in names if name.casefold() == requested.casefold()), requested
+        )
+        if canonical.casefold() not in {item.casefold() for item in selected}:
+            selected.append(canonical[:255])
+        if len(selected) == 3:
+            break
+    if not selected:
+        weakest = mastery_snapshot(session)
+        selected = [weakest[0]["concept"] if weakest else (
+            names[0] if names else session.get("subject", "General studies"))]
+    question["concepts"] = selected
+    question["concept"] = selected[0]
 
 
 def persist_lesson(session_id, subject, lesson):
@@ -845,6 +1123,8 @@ def mastery_state(record):
         "incorrect_attempts": record.incorrect_attempts,
         "consecutive_correct": record.consecutive_correct,
         "consecutive_incorrect": record.consecutive_incorrect,
+        "recent_mistake_count": record.recent_mistake_count,
+        "confidence_trend": record.confidence_trend,
         "last_practised_at": record.last_practised_at,
         "next_review_at": record.next_review_at,
         "difficulty_level": record.difficulty_level,
@@ -870,6 +1150,8 @@ def get_or_create_mastery(user_id, subject, concept):
             incorrect_attempts=0,
             consecutive_correct=0,
             consecutive_incorrect=0,
+            recent_mistake_count=0,
+            confidence_trend=50,
             difficulty_level=1,
             status="weak",
         )
@@ -878,20 +1160,86 @@ def get_or_create_mastery(user_id, subject, concept):
     return record
 
 
-def apply_mastery_update(record, score, hints_used=False, practised_at=None):
+def apply_mastery_update(
+    record,
+    score,
+    hints_used=False,
+    practised_at=None,
+    *,
+    difficulty=None,
+    retry_count=0,
+    response_confidence=None,
+):
     before = float(record.mastery_score or 0)
     updated = update_mastery(
-        mastery_state(record), score, hints_used=hints_used, practised_at=practised_at
+        mastery_state(record),
+        score,
+        hints_used=hints_used,
+        practised_at=practised_at,
+        difficulty=difficulty,
+        retry_count=retry_count,
+        response_confidence=response_confidence,
     )
     for field in (
         "mastery_score", "attempts", "correct_attempts", "incorrect_attempts",
         "consecutive_correct", "consecutive_incorrect", "last_practised_at",
-        "next_review_at", "difficulty_level", "status",
+        "next_review_at", "difficulty_level", "status", "recent_mistake_count",
+        "confidence_trend",
     ):
         setattr(record, field, updated[field])
     record.total_score = int(record.total_score or 0) + int(score)
     record.updated_at = updated["last_practised_at"]
     return before, updated
+
+
+def saved_concepts(value, fallback):
+    parsed = json_value(value, [])
+    values = parsed if isinstance(parsed, list) else []
+    concepts = []
+    for item in [*values, fallback]:
+        name = str(item or "").strip()[:255]
+        if name and name.casefold() not in {value.casefold() for value in concepts}:
+            concepts.append(name)
+    return concepts or ["General"]
+
+
+def add_mastery_history(
+    record,
+    before,
+    updated,
+    *,
+    score,
+    difficulty,
+    hints_used=False,
+    retry_count=0,
+    response_confidence: float = 50.0,
+    attempt=None,
+):
+    previous_confidence = float(record.confidence_trend or 50)
+    if updated.get("confidence_trend") is not None:
+        previous_confidence = round(
+            (float(updated["confidence_trend"]) - float(response_confidence) * 0.3) / 0.7,
+            2,
+        )
+    db.session.add(MasteryHistory(
+        user_id=record.user_id,
+        mastery_id=record.id,
+        attempt_id=attempt.id if attempt else None,
+        subject=record.subject,
+        concept=record.concept,
+        mastery_before=before,
+        mastery_after=updated["mastery_score"],
+        delta=updated["delta"],
+        score=int(score),
+        difficulty=int(difficulty),
+        hints_used=bool(hints_used),
+        retry_count=int(retry_count),
+        response_confidence=float(response_confidence),
+        confidence_before=previous_confidence,
+        confidence_after=updated["confidence_trend"],
+        outcome=updated["outcome"],
+        practised_at=updated["last_practised_at"],
+    ))
 
 
 def user_mastery_plan(user_id, question_count=None, now=None):
@@ -1033,6 +1381,8 @@ def recognize_single_project_page(page, project):
         page.processing_stage = "recognizing"
         db.session.commit()
         response = create_response(
+            task_type="ocr_document_recognition",
+            language=learning_content_language(),
             model=VISION_MODEL,
             instructions=(
                 "You are a conservative school-document recognition system. Never guess missing words, "
@@ -1048,7 +1398,6 @@ def recognize_single_project_page(page, project):
             max_output_tokens=PROJECT_TOKEN_LIMIT,
             temperature=0,
         )
-        log_usage(response, "document-recognition")
         recognized = normalize_recognition(parse_json(response.output_text))
         if not recognized["readable"]:
             raise ValueError("No reliable printed or handwritten content was recognized")
@@ -1064,13 +1413,18 @@ def recognize_single_project_page(page, project):
             saved_page.processing_stage = "failed"
             saved_page.review_status = "pending"
             saved_page.retry_count += 1
-            saved_page.warning = f"Recognition failed: {error}"
+            if isinstance(error, (ai_service.AIGatewayError, ai_service.AIValidationError)):
+                saved_page.warning = ai_failure_message(error)[0]
+            else:
+                saved_page.warning = "Recognition failed safely. Retry is available."
             saved_project = db.session.get(LearningProject, saved_page.project_id)
             if saved_project:
                 saved_project.status = "reviewing"
             db.session.commit()
         app.logger.exception("Recognition failed for project %s page %s", project.id, page_id)
-        return False, str(error)
+        if isinstance(error, (ai_service.AIGatewayError, ai_service.AIValidationError)):
+            return False, ai_failure_message(error)[0]
+        return False, "Recognition failed safely. Retry is available."
 
 
 def owned_section(project_id, section_id):
@@ -1192,27 +1546,22 @@ Learning context: {json.dumps(context, ensure_ascii=False)}
 Return JSON exactly as:
 {{"question":{{"id":"q{question_number}","subject":"{target['subject']}","concept":"{target['concept']}","difficulty":{target['difficulty_level']},"type":"{question_type}","prompt":"new question","hint":"small hint","options":[{{"id":"a","label":"choice"}}],"expected_answer":"answer id, list, order, or text"}}}}
 Match the requested easy/medium/hard difficulty. Do not duplicate a recent question. For multiple choice or dropdown return four options with one correct answer; for checkboxes return four or five options with two or three correct answers; for ordering return four shuffled items; for text return an empty options list."""
-    question = None
-    recent_normalized = {item.strip().casefold() for item in recent_questions}
-    for generation_attempt in range(2):
-        retry_note = "" if generation_attempt == 0 else "\nThe previous generated prompt duplicated a recent question. Use a distinctly different scenario and wording."
-        response = create_response(
-            model=TUTOR_MODEL,
-            instructions=tutor_instructions(),
-            input=prompt + retry_note,
-            max_output_tokens=ANSWER_TOKEN_LIMIT,
-            temperature=0.15,
-            **quality_options(),
-        )
-        log_usage(response, "adaptive-question")
-        result = parse_json(response.output_text)
-        question = result.get("question") or result.get("next_question")
-        if not isinstance(question, dict):
-            raise KeyError("question")
-        if str(question.get("prompt", "")).strip().casefold() not in recent_normalized:
-            break
-    else:
-        raise ValueError("The generated question duplicated a recent question")
+    response = create_response(
+        task_type="adaptive_practice",
+        language=session["language"],
+        fixture_context={
+            "subject": target["subject"], "concept": target["concept"],
+            "question_number": question_number,
+        },
+        validation_context={"recent_questions": recent_questions},
+        model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
+        max_output_tokens=ANSWER_TOKEN_LIMIT, temperature=0.15,
+        **quality_options(),
+    )
+    result = parse_json(response.output_text)
+    question = result.get("question") or result.get("next_question")
+    if not isinstance(question, dict):
+        raise KeyError("question")
     for key in ("prompt", "hint", "expected_answer"):
         if key not in question:
             raise KeyError(f"question.{key}")
@@ -1220,6 +1569,7 @@ Match the requested easy/medium/hard difficulty. Do not duplicate a recent quest
         "id": f"q{question_number}",
         "subject": target["subject"],
         "concept": target["concept"],
+        "concepts": [target["concept"]],
         "difficulty": target["difficulty_level"],
         "type": question_type,
     })
@@ -1249,70 +1599,39 @@ def adaptive_session_results(session):
     }
 
 
-DASHBOARD_TEXT = {
-    "en": {"progress": "YOUR PROGRESS", "title": "Learning dashboard", "new": "New lesson",
-           "logout": "Log out", "practice": "Practise weak points", "subjects": "Subjects",
-           "attempts": "attempts", "no_results": "No quiz results yet.", "weak_concepts": "Weakest concepts",
-           "weak_empty": "Your weak points will appear after your first quiz.", "mistakes": "Recent mistakes",
-           "no_mistakes": "No mistakes match these filters.", "your_answer": "Your answer", "sessions": "Saved lessons and chats",
-           "mistake_notebook": "Mistake Notebook", "filters": "Filters", "all_subjects": "All subjects",
-           "all_statuses": "All mastery statuses", "weak": "Weak", "learning": "Learning", "strong": "Strong",
-           "mastered": "Mastered", "understood": "Understood", "try_similar": "Try similar question",
-           "mark_understood": "Mark as understood", "feedback": "Feedback", "score": "Score", "date": "Date",
-           "apply_filters": "Apply filters", "practice_weakest": "Practice weakest concepts",
-           "due_today": "Due today", "next_review": "Next review", "mastery_trend": "Mastery trend",
-           "continue_learning": "Continue learning", "todays_practice": "Today's Practice",
-           "no_sessions": "No saved lessons yet.", "resume": "Resume", "view": "View history",
-           "chat_messages": "chat messages", "level": "Level", "no_chat": "No chat messages yet.", "you": "You"},
-    "de": {"progress": "DEIN FORTSCHRITT", "title": "Lernübersicht", "new": "Neue Lektion",
-           "logout": "Abmelden", "practice": "Schwachstellen üben", "subjects": "Fächer",
-           "attempts": "Versuche", "no_results": "Noch keine Testergebnisse.", "weak_concepts": "Schwächste Konzepte",
-           "weak_empty": "Deine Schwachstellen erscheinen nach dem ersten Quiz.", "mistakes": "Letzte Fehler",
-           "no_mistakes": "Keine Fehler entsprechen diesen Filtern.", "your_answer": "Deine Antwort", "sessions": "Gespeicherte Lektionen und Chats",
-           "mistake_notebook": "Fehlernotizbuch", "filters": "Filter", "all_subjects": "Alle Fächer",
-           "all_statuses": "Alle Lernstände", "weak": "Schwach", "learning": "Lernend", "strong": "Stark",
-           "mastered": "Gemeistert", "understood": "Verstanden", "try_similar": "Ähnliche Frage versuchen",
-           "mark_understood": "Als verstanden markieren", "feedback": "Feedback", "score": "Punktzahl", "date": "Datum",
-           "apply_filters": "Filter anwenden", "practice_weakest": "Schwächste Konzepte üben",
-           "due_today": "Heute fällig", "next_review": "Nächste Wiederholung", "mastery_trend": "Lerntrend",
-           "continue_learning": "Weiterlernen", "todays_practice": "Heutige Übung",
-           "no_sessions": "Noch keine Lektionen gespeichert.", "resume": "Fortsetzen", "view": "Verlauf ansehen",
-           "chat_messages": "Chatnachrichten", "level": "Stufe", "no_chat": "Noch keine Chatnachrichten.", "you": "Du"},
-}
-
-
 @app.route("/register", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
     if request.method == "POST":
-        username = request.form.get("username", "").strip().casefold()
-        email = request.form.get("email", "").strip().lower()[:255]
-        password = request.form.get("password", "")
-        language = request.form.get("language", get_current_language())
-        if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,29}", username):
+        registration = normalize_registration(
+            request.form.get("username", ""),
+            request.form.get("email", ""),
+            request.form.get("password", ""),
+            request.form.get("language", get_current_language()),
+        )
+        validation_error = validate_registration(registration, SUPPORTED_LANGUAGES)
+        conflict = identity_conflict(db, User, registration) if validation_error is None else None
+        if validation_error == "username":
             flash(tr("Username must be 3–30 characters using letters, numbers, dots, hyphens, or underscores."), "error")
-        elif language not in SUPPORTED_LANGUAGES:
+        elif validation_error == "language":
             flash(tr("Unsupported language."), "error")
-        elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        elif validation_error == "email":
             flash(tr("Enter a valid email address."), "error")
-        elif len(password) < 8 or len(password) > 256:
+        elif validation_error == "password":
             flash(tr("Use a password with 8–256 characters."), "error")
-        elif db.session.scalar(db.select(User).where(User.username == username)):
+        elif conflict == "username_taken":
             flash(tr("That username is already registered."), "error")
-        elif db.session.scalar(db.select(User).where(User.email == email)):
+        elif conflict == "email_taken":
             flash(tr("An account with that email already exists."), "error")
         else:
             try:
-                user = User(username=username, email=email, preferred_language=language)
-                user.set_password(password)
-                db.session.add(user)
-                db.session.commit()
+                user = create_user(db, User, registration)
                 login_user(user)
-                flask_session["language"] = language
+                flask_session["language"] = registration.language
                 return redirect(url_for("index"))
-            except IntegrityError:
-                db.session.rollback()
+            except AccountConflict:
                 flash(tr("That username or email is already registered."), "error")
             except SQLAlchemyError:
                 db.session.rollback()
@@ -1322,15 +1641,18 @@ def register():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("20 per minute", methods=["POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
     if request.method == "POST":
-        identifier = (request.form.get("identifier") or request.form.get("email", "")).strip().casefold()[:255]
-        user = db.session.scalar(db.select(User).where(
-            (User.email == identifier) | (User.username == identifier)
-        ))
-        if not user or not user.check_password(request.form.get("password", "")):
+        user = authenticate(
+            db,
+            User,
+            request.form.get("identifier") or request.form.get("email", ""),
+            request.form.get("password", ""),
+        )
+        if not user:
             flash(tr("Invalid username, email, or password."), "error")
         else:
             login_user(user, remember=bool(request.form.get("remember")))
@@ -1390,10 +1712,11 @@ def index():
 
 @app.get("/health")
 def health():
-    return jsonify(status="ok")
+    return jsonify(ok=True, status="ok")
 
 
 @app.route("/projects", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
 @login_required
 def projects():
     if request.method == "POST":
@@ -1423,72 +1746,18 @@ def projects():
         elif not uploads:
             flash(tr("Add at least one image or PDF."), "error")
         else:
-            project = LearningProject(
-                user_id=current_user.id, title=title, subject=subject,
-                exam_date=exam_date, status="uploaded",
-            )
-            db.session.add(project)
-            db.session.flush()
-            page_order = 1
-            seen_hashes = set()
             try:
-                for upload, source_kind, transform in uploads:
-                    data = upload.read()
-                    filename = secure_filename(upload.filename or "material")[:255] or "material"
-                    mime_type = validate_document_upload(data, filename, upload.mimetype)
-                    digest = hashlib.sha256(data).hexdigest()
-                    if digest in seen_hashes:
-                        continue
-                    seen_hashes.add(digest)
-                    source_file = ProjectFile(
-                        project_id=project.id, original_filename=filename,
-                        mime_type=mime_type, original_data=data, source_kind=source_kind,
-                        sha256=digest,
-                    )
-                    db.session.add(source_file)
-                    db.session.flush()
-                    if mime_type == "application/pdf":
-                        try:
-                            reader = PdfReader(io.BytesIO(data))
-                            if page_order - 1 + len(reader.pages) > 20:
-                                raise ValueError("Keep one project to 20 pages or fewer")
-                            for pdf_index, pdf_page in enumerate(reader.pages, start=1):
-                                extracted = (pdf_page.extract_text() or "").strip()
-                                rendered = render_pdf_page(data, pdf_index - 1)
-                                processed = preprocess_document_image(rendered)
-                                db.session.add(ProjectPage(
-                                    project_id=project.id, file_id=source_file.id,
-                                    page_number=pdf_index, page_order=page_order,
-                                    extracted_text=extracted,
-                                    processed_data=processed.data,
-                                    processed_mime_type=processed.mime_type,
-                                    image_width=processed.width, image_height=processed.height,
-                                    extraction_status="pending", processing_stage="improved",
-                                    warning=" ".join(processed.warnings),
-                                ))
-                                page_order += 1
-                        except Exception as error:
-                            raise ValueError(f"Could not read PDF {filename}: {error}") from error
-                    else:
-                        if page_order > 20:
-                            raise ValueError("Keep one project to 20 pages or fewer")
-                        processed = preprocess_document_image(data, transform)
-                        db.session.add(ProjectPage(
-                            project_id=project.id, file_id=source_file.id,
-                            page_number=1, page_order=page_order,
-                            processed_data=processed.data,
-                            processed_mime_type=processed.mime_type,
-                            image_width=processed.width, image_height=processed.height,
-                            rotation=int(transform.get("rotation", 0) or 0) % 360,
-                            extraction_status="pending", processing_stage="improved",
-                            warning=" ".join(processed.warnings),
-                        ))
-                        page_order += 1
-                if page_order == 1:
-                    raise ValueError("No unique supported pages were uploaded")
-                if page_order - 1 > 20:
-                    raise ValueError("Keep one project to 20 pages or fewer")
-                db.session.commit()
+                project = create_project_from_uploads(
+                    db,
+                    LearningProject,
+                    ProjectFile,
+                    ProjectPage,
+                    user_id=current_user.id,
+                    title=title,
+                    subject=subject,
+                    exam_date=exam_date,
+                    uploads=uploads,
+                )
                 return redirect(url_for("review_project_recognition", project_id=project.id))
             except (ValueError, SQLAlchemyError) as error:
                 db.session.rollback()
@@ -1582,6 +1851,7 @@ def review_project_recognition(project_id):
 
 
 @app.post("/projects/<int:project_id>/recognize")
+@limiter.limit("10 per hour")
 @login_required
 def recognize_project_pages(project_id):
     project = owned_project(project_id)
@@ -1619,13 +1889,13 @@ def recognize_one_project_page(project_id, page_id):
     project = owned_project(project_id)
     page = owned_project_page(project_id, page_id) if project else None
     if not project or not page:
-        return jsonify(error="Page not found"), 404
+        return api_error("Page not found", 404, "not_found")
     if page.excluded:
-        return jsonify(error="Excluded pages are not recognized"), 400
+        return api_error("Excluded pages are not recognized", 400, "page_excluded")
     success, error = recognize_single_project_page(page, project)
     if not success:
-        return jsonify(status="failed", error=error, page_id=page_id), 422
-    return jsonify(
+        return jsonify(ok=False, status="failed", error=error, code="recognition_failed", page_id=page_id), 422
+    return jsonify(ok=True,
         status="ready_for_review", page_id=page_id,
         confidence=page.recognition_confidence, confidence_status=page.confidence_status,
     )
@@ -1792,17 +2062,17 @@ def project_dashboard(project_id):
 def reorder_project_pages(project_id):
     project = owned_project(project_id)
     if not project:
-        return jsonify(error="Project not found"), 404
+        return api_error("Project not found", 404, "not_found")
     order = (request.get_json(silent=True) or {}).get("page_ids", [])
     owned_ids = {page.id for page in project.pages}
     if not isinstance(order, list) or set(order) != owned_ids:
-        return jsonify(error="Page order must contain every project page exactly once."), 400
+        return api_error("Page order must contain every project page exactly once.", 400, "invalid_page_order")
     lookup = {page.id: page for page in project.pages}
     for position, page_id in enumerate(order, start=1):
         lookup[page_id].page_order = position
     project.updated_at = utcnow()
     db.session.commit()
-    return jsonify(status="ok")
+    return jsonify(ok=True, status="ok")
 
 
 @app.post("/projects/<int:project_id>/pages/<int:page_id>/delete")
@@ -1882,9 +2152,16 @@ def process_project(project_id):
     prompt = f"""Divide this student's uploaded {project.subject} material into focused 5–15 minute learning sections.
 Uploaded pages are the only source of truth: {json.dumps(source_payload, ensure_ascii=False)}
 Return JSON exactly as {{"sections":[{{"title":"...","main_topic":"...","learning_goals":[],"important_facts":[],"definitions":[],"formulas":[],"examples":[],"vocabulary":[],"relationships":[],"likely_exam_questions":[],"source_page_ids":[1],"simple_explanation":"...","standard_explanation":"...","detailed_explanation":"...","estimated_minutes":10,"recall_cards":[{{"kind":"flashcard|recall|fill_blank|definition|formula|timeline|vocabulary","prompt":"...","answer":"...","source_text":"exact supporting excerpt"}}]}}]}}.
-Preserve formulas and dates exactly. Give confirmed_high_priority content greater weight in summaries, recall cards, Test Yourself, and likely exam questions. Diagrams may support label/function questions only when their visible labels and nearby source text support the answer; never invent diagram meaning. Do not add topics absent from the pages. Every section must reference valid page_id values and every recall answer must be supported by source_text."""
+	Preserve formulas and dates exactly. Give confirmed_high_priority content greater weight in summaries, recall cards, Test Yourself, and likely exam questions. Diagrams may support label/function questions only when their visible labels and nearby source text support the answer; never invent diagram meaning. Do not add topics absent from the pages. Every section must reference valid page_id values and every recall answer must be supported by source_text."""
+    valid_page_ids = {page.id for page in readable_pages}
     try:
         response = create_response(
+            task_type="project_section_generation",
+            language=learning_content_language(),
+            fixture_context={
+                "source_page_ids": sorted(valid_page_ids),
+                "section_count": 1,
+            },
             model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
             max_output_tokens=PROJECT_TOKEN_LIMIT, temperature=0.1, **quality_options(),
         )
@@ -1892,7 +2169,6 @@ Preserve formulas and dates exactly. Give confirmed_high_priority content greate
         raw_sections = result["sections"]
         if not isinstance(raw_sections, list) or not raw_sections:
             raise ValueError("No learning sections were returned")
-        valid_page_ids = {page.id for page in readable_pages}
         normalized = [
             normalize_section(item, position, valid_page_ids)
             for position, item in enumerate(raw_sections, start=1)
@@ -1933,11 +2209,17 @@ Preserve formulas and dates exactly. Give confirmed_high_priority content greate
                 db.session.add(RecallCard(
                     section_id=section.id, kind=str(card.get("kind", "recall"))[:40],
                     prompt=str(card["prompt"]), answer=str(card["answer"]),
+                    concepts_json=json.dumps(
+                        [section.main_topic or section.title], ensure_ascii=False
+                    ),
                     source_text=supporting,
                 ))
         project.status = "planned"
         project.updated_at = utcnow()
         db.session.commit()
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
     except Exception:
         db.session.rollback()
         app.logger.exception("Section planning failed")
@@ -1993,16 +2275,16 @@ def edit_section(project_id, section_id):
 def reorder_sections(project_id):
     project = owned_project(project_id)
     if not project:
-        return jsonify(error="Project not found"), 404
+        return api_error("Project not found", 404, "not_found")
     order = (request.get_json(silent=True) or {}).get("section_ids", [])
     owned_ids = {section.id for section in project.sections}
     if not isinstance(order, list) or set(order) != owned_ids:
-        return jsonify(error="Section order must contain every section exactly once."), 400
+        return api_error("Section order must contain every section exactly once.", 400, "invalid_section_order")
     lookup = {section.id: section for section in project.sections}
     for position, section_id in enumerate(order, start=1):
         lookup[section_id].position = position
     db.session.commit()
-    return jsonify(status="ok")
+    return jsonify(ok=True, status="ok")
 
 
 @app.post("/projects/<int:project_id>/sections/merge")
@@ -2059,6 +2341,14 @@ Source: {source[:18000]}
 Return JSON as {{"sections":[{{"title":"...","main_topic":"...","simple_explanation":"...","standard_explanation":"...","detailed_explanation":"..."}},{{"title":"...","main_topic":"...","simple_explanation":"...","standard_explanation":"...","detailed_explanation":"..."}}]}}. Do not add new topics."""
     try:
         response = create_response(
+            task_type="project_section_generation",
+            language=learning_content_language(),
+            fixture_context={
+                "source_page_ids": json_value(section.source_page_ids_json),
+                "section_count": 2,
+                "exact_section_count": True,
+                "operation": "split",
+            },
             model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
             max_output_tokens=PROJECT_TOKEN_LIMIT, temperature=0.1, **quality_options(),
         )
@@ -2096,6 +2386,9 @@ Return JSON as {{"sections":[{{"title":"...","main_topic":"...","simple_explanat
         section.estimated_minutes = max(5, section.estimated_minutes // 2)
         db.session.add(second)
         db.session.commit()
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
     except Exception:
         db.session.rollback()
         app.logger.exception("Section split failed")
@@ -2111,14 +2404,60 @@ def answer_recall_card(project_id, section_id, card_id):
         RecallCard.id == card_id, RecallCard.section_id == section_id
     )) if section else None
     if not card:
-        return jsonify(error="Recall card not found"), 404
+        return api_error("Recall card not found", 404, "not_found")
     answer = request.form.get("answer", "").strip()
     correct = answer.casefold() == card.answer.strip().casefold()
+    try:
+        response_confidence = float(request.form.get("response_confidence", 50))
+    except (TypeError, ValueError):
+        return api_error("Confidence must be a number", 400, "invalid_confidence")
+    if not 0 <= response_confidence <= 100:
+        return api_error("Confidence must be between 0 and 100", 400, "invalid_confidence")
+    retry_count = max(0, card.attempts)
+    concepts = saved_concepts(card.concepts_json, section.main_topic or section.title)
+    card.concepts_json = json.dumps(concepts, ensure_ascii=False)
     card.attempts += 1
     if correct:
         card.correct_attempts += 1
+    score = 100 if correct else 0
+    mastery_changes = []
+    for concept_name in concepts:
+        mastery = get_or_create_mastery(
+            section.project.user_id, section.project.subject, concept_name
+        )
+        before, updated = apply_mastery_update(
+            mastery,
+            score,
+            difficulty=1,
+            retry_count=retry_count,
+            response_confidence=response_confidence,
+        )
+        add_mastery_history(
+            mastery,
+            before,
+            updated,
+            score=score,
+            difficulty=1,
+            retry_count=retry_count,
+            response_confidence=response_confidence,
+        )
+        mastery_changes.append({
+            "concept": concept_name,
+            "before": before,
+            "after": updated["mastery_score"],
+        })
+    record_planner_activity(
+        section.project.user_id, activity_kind="review", score=score,
+        subject=section.project.subject, concepts=concepts, section_id=section.id,
+    )
     db.session.commit()
-    return jsonify(correct=correct, answer=card.answer, source_text=card.source_text)
+    return jsonify(
+        ok=True,
+        correct=correct,
+        answer=card.answer,
+        source_text=card.source_text,
+        mastery_changes=mastery_changes,
+    )
 
 
 @app.post("/projects/<int:project_id>/sections/<int:section_id>/test")
@@ -2150,6 +2489,10 @@ Return the normal lesson JSON shape with lesson_title, detected_level, concepts,
         save_session_state(session_id, commit=False)
         db.session.commit()
         return redirect(url_for("index", session_id=session_id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
+        return redirect(url_for("learn_section", project_id=project_id, section_id=section_id))
     except Exception:
         db.session.rollback()
         app.logger.exception("Section test generation failed")
@@ -2203,6 +2546,9 @@ def submit_exam_record(exam):
 {json.dumps(open_items, ensure_ascii=False)}
 Return JSON as {{"results":[{{"question_id":1,"score":0,"evaluation":"brief source-grounded explanation"}}]}}. Scores must be 0–100. Give partial credit for partially correct reasoning. Never add facts absent from supporting_source."""
         response = create_response(
+            task_type="final_exam_evaluation",
+            language=learning_content_language(),
+            fixture_context={"question_ids": [item["question_id"] for item in open_items]},
             model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
             max_output_tokens=PROJECT_TOKEN_LIMIT, temperature=0, **quality_options(),
         )
@@ -2260,18 +2606,66 @@ Return JSON as {{"results":[{{"question_id":1,"score":0,"evaluation":"brief sour
     for question in questions:
         answer = answers[question.id]
         section = db.session.get(LearningSection, question.section_id)
-        if answer.score is not None and answer.score < 80 and section:
-            db.session.add(Attempt(
-                lesson_id=mistake_lesson.id, subject=exam.project.subject,
-                question=question.prompt, concept=section.title,
-                student_answer=answer.answer_text or "(unanswered)", score=round(answer.score),
-                feedback=answer.evaluation or question.explanation,
-                difficulty={"easy": 1, "medium": 2, "hard": 3}.get(question.difficulty, 2),
-            ))
+        difficulty = {"easy": 1, "medium": 2, "hard": 3}.get(question.difficulty, 2)
+        score = round(float(answer.score or 0))
+        concepts = saved_concepts(
+            question.concepts_json,
+            (section.main_topic or section.title) if section else exam.project.subject,
+        )[:3]
+        question.concepts_json = json.dumps(concepts, ensure_ascii=False)
+        mastery_updates = []
+        for concept_name in concepts:
+            mastery = get_or_create_mastery(
+                exam.project.user_id, exam.project.subject, concept_name
+            )
+            before, updated = apply_mastery_update(
+                mastery,
+                score,
+                difficulty=difficulty,
+                response_confidence=50,
+            )
+            mastery_updates.append((mastery, before, updated))
+        _primary, mastery_before, mastery_update = mastery_updates[0]
+        attempt = Attempt(
+            lesson_id=mistake_lesson.id,
+            subject=exam.project.subject,
+            question=question.prompt,
+            concept=concepts[0],
+            concepts_json=json.dumps(concepts, ensure_ascii=False),
+            student_answer=answer.answer_text or "(unanswered)",
+            score=score,
+            feedback=answer.evaluation or question.explanation,
+            difficulty=difficulty,
+            hints_used=False,
+            retry_count=0,
+            response_confidence=50,
+            mastery_before=mastery_before,
+            mastery_after=mastery_update["mastery_score"],
+        )
+        db.session.add(attempt)
+        db.session.flush()
+        for mastery, before, updated in mastery_updates:
+            add_mastery_history(
+                mastery,
+                before,
+                updated,
+                score=score,
+                difficulty=difficulty,
+                response_confidence=50,
+                attempt=attempt,
+            )
         if section:
             section_score = result["section_scores"][str(section.id)]
             section.mastery_score = round((section.mastery_score + section_score) / 2, 2)
             section.status = section_status_from_score(section.mastery_score, completed=True)
+    record_planner_activity(
+        exam.project.user_id, activity_kind="mock_exam", score=exam.score,
+        subject=exam.project.subject,
+        concepts=[value for question in questions for value in saved_concepts(
+            question.concepts_json, exam.project.subject
+        )],
+        exam_id=exam.id,
+    )
     db.session.commit()
 
 
@@ -2320,10 +2714,25 @@ def new_final_exam(project_id):
         prompt = f"""Create a realistic final exam grounded primarily and strictly in the student's uploaded material.
 Sections and sources: {json.dumps(source_sections, ensure_ascii=False)}
 Settings: question_count={count}, difficulty_distribution={json.dumps(distribution)}, allowed_types={json.dumps(selected_types)}.
-Return JSON as {{"questions":[{{"section_id":1,"source_page_ids":[1],"supporting_text":"exact excerpt supporting the answer","difficulty":"easy|medium|hard","question_type":"multiple_choice|true_false|matching|fill_blank|short_answer|explanation|calculation","prompt":"...","options":[],"expected_answer":"...","explanation":"source-grounded explanation shown only after submission"}}]}}.
+Return JSON as {{"questions":[{{"id":"q1","section_id":1,"concepts":["specific concept"],"source_page_ids":[1],"supporting_text":"exact excerpt supporting the answer","difficulty":"easy|medium|hard","question_type":"multiple_choice|true_false|matching|fill_blank|short_answer|explanation|calculation","prompt":"...","options":[],"expected_answer":"...","explanation":"source-grounded explanation shown only after submission"}}]}}.
 Return exactly {count} questions and follow each section's question_count proportionally. Easy tests direct recall, medium tests connections/application, hard tests synthesis or unfamiliar application. Hard means deeper reasoning, not confusing wording. Every answer must be supported by supporting_text and valid source_page_ids."""
         try:
             response = create_response(
+                task_type="final_exam_generation",
+                language=learning_content_language(),
+                fixture_context={
+                    "question_count": count,
+                    "section_ids": [item.id for item in included],
+                    "section_allocation": {str(key): value for key, value in allocation.items()},
+                    "difficulty_distribution": distribution,
+                    "question_types": selected_types,
+                    "source_page_ids": {
+                        str(item.id): json_value(item.source_page_ids_json) for item in included
+                    },
+                    "supporting_text": {
+                        str(item.id): section_source_text(item)[:300] for item in included
+                    },
+                },
                 model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
                 max_output_tokens=max(PROJECT_TOKEN_LIMIT, count * 350), temperature=0.1,
                 **quality_options(),
@@ -2360,10 +2769,18 @@ Return exactly {count} questions and follow each section's question_count propor
                     raise ValueError(f"Question {position} is not supported by its source pages")
                 actual_sections[section_id] += 1
                 actual_difficulties[difficulty] += 1
+                raw_concepts = item.get("concepts", [])
+                if not isinstance(raw_concepts, list):
+                    raw_concepts = []
+                question_concepts = saved_concepts(
+                    json.dumps(raw_concepts, ensure_ascii=False),
+                    section.main_topic or section.title,
+                )[:3]
                 db.session.add(ExamQuestion(
                     exam_id=exam.id, section_id=section_id, position=position,
                     difficulty=difficulty, question_type=question_type,
                     prompt=str(item["prompt"]),
+                    concepts_json=json.dumps(question_concepts, ensure_ascii=False),
                     options_json=json.dumps(item.get("options", []), ensure_ascii=False),
                     expected_answer=str(item["expected_answer"]),
                     explanation=str(item.get("explanation", "")),
@@ -2376,6 +2793,9 @@ Return exactly {count} questions and follow each section's question_count propor
                 raise ValueError("Exam questions did not follow the required difficulty distribution")
             db.session.commit()
             return redirect(url_for("take_final_exam", exam_id=exam.id))
+        except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+            db.session.rollback()
+            flash_ai_failure(error)
         except Exception:
             db.session.rollback()
             app.logger.exception("Final exam generation failed")
@@ -2412,27 +2832,27 @@ def take_final_exam(exam_id):
 def autosave_exam(exam_id):
     exam = owned_exam(exam_id)
     if not exam:
-        return jsonify(error="Exam not found"), 404
+        return api_error("Exam not found", 404, "not_found")
     if exam.status == "submitted":
-        return jsonify(status="submitted"), 409
+        return jsonify(ok=True, status="submitted"), 409
     if utcnow() >= as_utc(exam.expires_at):
         try:
             submit_exam_record(exam)
         except Exception:
             db.session.rollback()
             app.logger.exception("Automatic exam submission failed during autosave")
-            return jsonify(error="Your saved answers are safe, but evaluation is temporarily unavailable."), 503
-        return jsonify(status="submitted", redirect=url_for("final_exam_results", exam_id=exam.id)), 409
+            return api_error("Your saved answers are safe, but evaluation is temporarily unavailable.", 503, "evaluation_unavailable")
+        return jsonify(ok=True, status="submitted", redirect=url_for("final_exam_results", exam_id=exam.id)), 409
     payload = request.get_json(silent=True) or {}
     question_id = payload.get("question_id")
     question = db.session.scalar(db.select(ExamQuestion).where(
         ExamQuestion.id == question_id, ExamQuestion.exam_id == exam.id
     ))
     if not question:
-        return jsonify(error="Question not found"), 404
+        return api_error("Question not found", 404, "not_found")
     save_exam_answer(exam, question, payload.get("answer", ""))
     db.session.commit()
-    return jsonify(status="saved", saved_at=utcnow().isoformat())
+    return jsonify(ok=True, status="saved", saved_at=utcnow().isoformat())
 
 
 @app.post("/exams/<int:exam_id>/submit")
@@ -2476,81 +2896,398 @@ def final_exam_results(exam_id):
     )
 
 
+def owned_study_plan(plan_id):
+    return db.session.scalar(
+        db.select(StudyPlan).join(LearningProject).where(
+            StudyPlan.id == plan_id,
+            StudyPlan.user_id == current_user.id,
+            LearningProject.user_id == current_user.id,
+        )
+    )
+
+
+def owned_plan_session(plan_id, session_id):
+    return db.session.scalar(
+        db.select(StudyPlanSession).join(StudyPlan).join(LearningProject).where(
+            StudyPlanSession.id == session_id,
+            StudyPlanSession.study_plan_id == plan_id,
+            StudyPlan.user_id == current_user.id,
+            LearningProject.user_id == current_user.id,
+        )
+    )
+
+
+def _planner_masteries(project):
+    return db.session.scalars(
+        db.select(ConceptMastery).where(
+            ConceptMastery.user_id == project.user_id,
+            ConceptMastery.subject == project.subject,
+        ).order_by(ConceptMastery.mastery_score, ConceptMastery.next_review_at)
+    ).all()
+
+
+def _planner_mistakes(project, limit=50):
+    return db.session.scalars(
+        db.select(Attempt).join(Lesson).where(
+            Lesson.user_id == project.user_id,
+            func.coalesce(Attempt.subject, Lesson.subject) == project.subject,
+            Attempt.score < 80,
+        ).order_by(Attempt.timestamp.desc()).limit(limit)
+    ).all()
+
+
+def _mastery_payload(item):
+    return {
+        "id": item.id, "subject": item.subject, "concept": item.concept,
+        "mastery_score": item.mastery_score,
+        "recent_mistake_count": item.recent_mistake_count,
+        "next_review_at": item.next_review_at,
+        "last_practised_at": item.last_practised_at,
+    }
+
+
+def _section_payload(item):
+    return {
+        "id": item.id, "position": item.position, "title": item.title,
+        "estimated_minutes": item.estimated_minutes, "status": item.status,
+        "mastery_score": item.mastery_score, "excluded": item.excluded,
+    }
+
+
+def _plan_session_payload(item):
+    return {
+        "id": item.id, "date": item.date, "planned_minutes": item.planned_minutes,
+        "completed_minutes": item.completed_minutes, "status": item.status,
+        "tasks": json_value(item.tasks_json),
+    }
+
+
+def _save_planner_tasks(session_record, tasks):
+    task_ids = session_task_ids(tasks)
+    session_record.tasks_json = json.dumps(tasks, ensure_ascii=False)
+    session_record.planned_minutes = sum(int(item.get("minutes") or 0) for item in tasks)
+    for name, values in task_ids.items():
+        setattr(session_record, name, json.dumps(values))
+    session_record.updated_at = utcnow()
+
+
+def _planner_context(plan, today=None):
+    today = today or date.today()
+    raw_rows = [_plan_session_payload(item) for item in plan.sessions]
+    missed_dates, redistributed = redistribute_overdue_sessions(
+        raw_rows, today=today, daily_minutes=plan.daily_minutes
+    )
+    if missed_dates:
+        for item in plan.sessions:
+            if item.date in missed_dates:
+                item.status = "skipped"
+                item.completed_minutes = 0
+            elif item.date >= today and item.status != "completed":
+                _save_planner_tasks(item, redistributed.get(item.date, []))
+        plan.updated_at = utcnow()
+        db.session.commit()
+    session_rows = [_plan_session_payload(item) for item in plan.sessions]
+    masteries = _planner_masteries(plan.project)
+    mastery_rows = [_mastery_payload(item) for item in masteries]
+    section_rows = [_section_payload(item) for item in plan.project.sections]
+    metrics = planner_metrics(
+        exam_date=plan.exam_date, sessions=session_rows, masteries=mastery_rows,
+        sections=section_rows, today=today,
+    )
+    today_session = next((item for item in plan.sessions if item.date == today), None)
+    next_review = next(
+        (item for item in masteries if item.next_review_at and item.next_review_at.date() >= today),
+        None,
+    )
+    reminders = []
+    if today_session and today_session.status == "planned":
+        reminders.append(tr("Today's study session is ready."))
+    overdue = sum(
+        1 for item in masteries
+        if item.next_review_at is None or item.next_review_at.date() < today
+    )
+    if overdue:
+        reminders.append(tr("You have {count} overdue reviews.", count=overdue))
+    if metrics["countdown"] <= 3:
+        reminders.append(tr("Your exam is in {count} days.", count=metrics["countdown"]))
+    recently_mastered = next((item for item in masteries if item.status == "mastered"), None)
+    if recently_mastered:
+        reminders.append(tr("You mastered {concept}.", concept=recently_mastered.concept))
+    return {
+        "plan": plan, "planner_sessions": plan.sessions, "today_session": today_session,
+        "weakest_concepts": masteries[:3], "next_review": next_review,
+        "planner_metrics": metrics, "planner_reminders": reminders,
+    }
+
+
+def _active_plan_for_user(user_id, subject=None):
+    query = db.select(StudyPlan).join(LearningProject).where(
+        StudyPlan.user_id == user_id,
+        LearningProject.user_id == user_id,
+        StudyPlan.status == "active",
+        StudyPlan.exam_date >= date.today(),
+    )
+    if subject:
+        query = query.where(LearningProject.subject == subject)
+    return db.session.scalar(query.order_by(StudyPlan.exam_date, StudyPlan.updated_at.desc()))
+
+
+def record_planner_activity(
+    user_id, *, activity_kind, score, subject, concepts=(), section_id=None, exam_id=None
+):
+    """Record matching work and incrementally rebalance only future plan days."""
+
+    plan = _active_plan_for_user(user_id, subject)
+    if not plan:
+        return
+    today = date.today()
+    today_record = next((item for item in plan.sessions if item.date == today), None)
+    if today_record:
+        tasks = json_value(today_record.tasks_json)
+        completed_one = False
+        for task in tasks:
+            kind_matches = task.get("kind") == activity_kind or (
+                activity_kind == "quiz" and task.get("kind") in {"quiz", "review"}
+            )
+            reference_matches = (
+                section_id is None or task.get("section_id") in {None, section_id}
+            ) and (exam_id is None or task.get("exam_id") in {None, exam_id})
+            if kind_matches and reference_matches and not task.get("completed"):
+                task["completed"] = True
+                completed_one = True
+                break
+        if completed_one:
+            today_record.completed_minutes = sum(
+                int(item.get("minutes") or 0) for item in tasks if item.get("completed")
+            )
+            if tasks and all(item.get("completed") for item in tasks):
+                today_record.status = "completed"
+            _save_planner_tasks(today_record, tasks)
+    session_rows = [_plan_session_payload(item) for item in plan.sessions]
+    updates = adapt_future_schedule(
+        session_rows, today=today, score=float(score), subject=subject,
+        concepts=concepts, daily_minutes=plan.daily_minutes,
+    )
+    for item in plan.sessions:
+        if item.date > today and item.status != "completed" and item.date in updates:
+            _save_planner_tasks(item, updates[item.date])
+    plan.updated_at = utcnow()
+
+
+def planner_dashboard_widget(user_id):
+    plan = _active_plan_for_user(user_id)
+    return _planner_context(plan) if plan else None
+
+
+@app.get("/study-plans")
+@login_required
+def study_plans():
+    plans = db.session.scalars(
+        db.select(StudyPlan).join(LearningProject).where(
+            StudyPlan.user_id == current_user.id,
+            LearningProject.user_id == current_user.id,
+        ).order_by(StudyPlan.status, StudyPlan.exam_date)
+    ).all()
+    return render_template("study_plans.html", plans=plans, today=date.today())
+
+
+@app.route("/study-plans/new", methods=["GET", "POST"])
+@login_required
+def new_study_plan():
+    projects = db.session.scalars(
+        db.select(LearningProject).where(LearningProject.user_id == current_user.id)
+        .order_by(LearningProject.updated_at.desc())
+    ).all()
+    selected_project_id = request.form.get("project_id") or request.args.get("project_id")
+    if request.method == "POST":
+        try:
+            project_id = int(selected_project_id or 0)
+            exam_date = date.fromisoformat(request.form.get("exam_date", ""))
+            daily_minutes = int(request.form.get("daily_minutes", ""))
+        except (TypeError, ValueError):
+            flash(tr("Enter a valid project, exam date, and study time."), "error")
+            return render_template(
+                "study_plan_wizard.html", projects=projects,
+                selected_project_id=selected_project_id, today=date.today(),
+            ), 400
+        project = db.session.scalar(db.select(LearningProject).where(
+            LearningProject.id == project_id, LearningProject.user_id == current_user.id
+        ))
+        target_grade = request.form.get("target_grade", "").strip()[:40]
+        difficulty = request.form.get("difficulty_preference", "medium")
+        requested_days = request.form.getlist("preferred_days")
+        preferred_days = normalize_preferred_days(requested_days)
+        if not project or exam_date <= date.today() or not 10 <= daily_minutes <= 480:
+            flash(tr("Choose a future exam date and 10 to 480 minutes per day."), "error")
+            return render_template(
+                "study_plan_wizard.html", projects=projects,
+                selected_project_id=selected_project_id, today=date.today(),
+            ), 400
+        if not target_grade or not requested_days or difficulty not in {"easy", "medium", "hard"}:
+            flash(tr("Choose a target grade, study weekdays, and difficulty preference."), "error")
+            return render_template(
+                "study_plan_wizard.html", projects=projects,
+                selected_project_id=selected_project_id, today=date.today(),
+            ), 400
+        for existing in db.session.scalars(db.select(StudyPlan).where(
+            StudyPlan.user_id == current_user.id,
+            StudyPlan.project_id == project.id,
+            StudyPlan.status == "active",
+        )).all():
+            existing.status = "archived"
+        plan = StudyPlan(
+            user_id=current_user.id, project_id=project.id, exam_date=exam_date,
+            target_grade=target_grade, daily_minutes=daily_minutes,
+            preferred_days=json.dumps(preferred_days),
+            difficulty_preference=difficulty, status="active",
+        )
+        db.session.add(plan)
+        db.session.flush()
+        masteries = _planner_masteries(project)
+        mistakes = _planner_mistakes(project)
+        schedule = build_plan_schedule(
+            today=date.today(), exam_date=exam_date, daily_minutes=daily_minutes,
+            preferred_days=preferred_days, difficulty_preference=difficulty,
+            sections=[_section_payload(item) for item in project.sections],
+            masteries=[_mastery_payload(item) for item in masteries],
+            mistakes=[{
+                "id": item.id, "subject": item.subject or item.lesson.subject,
+                "concept": item.concept,
+            } for item in mistakes],
+        )
+        for row in schedule:
+            saved = StudyPlanSession(study_plan_id=plan.id, date=row["date"], status="planned")
+            _save_planner_tasks(saved, row["tasks"])
+            db.session.add(saved)
+        project.exam_date = exam_date
+        db.session.commit()
+        flash(tr("Your study plan is ready."), "success")
+        return redirect(url_for("study_plan_detail", plan_id=plan.id))
+    return render_template(
+        "study_plan_wizard.html", projects=projects,
+        selected_project_id=selected_project_id, today=date.today(),
+    )
+
+
+@app.get("/study-plans/<int:plan_id>")
+@login_required
+def study_plan_detail(plan_id):
+    plan = owned_study_plan(plan_id)
+    if not plan:
+        return tr("Study plan not found"), 404
+    context = _planner_context(plan)
+    context["planner_mastery_growth"] = list(reversed(db.session.scalars(
+        db.select(MasteryHistory).where(
+            MasteryHistory.user_id == current_user.id,
+            MasteryHistory.subject == plan.project.subject,
+        ).order_by(MasteryHistory.practised_at.desc()).limit(12)
+    ).all()))
+    return render_template("study_plan_detail.html", **context)
+
+
+@app.get("/study-plans/<int:plan_id>/calendar")
+@login_required
+def study_plan_calendar(plan_id):
+    plan = owned_study_plan(plan_id)
+    if not plan:
+        return tr("Study plan not found"), 404
+    month_value = request.args.get("month", date.today().strftime("%Y-%m"))
+    try:
+        year, month = (int(value) for value in month_value.split("-", 1))
+        if not 1 <= month <= 12:
+            raise ValueError
+    except (TypeError, ValueError):
+        year, month = date.today().year, date.today().month
+    sessions = [_plan_session_payload(item) for item in plan.sessions]
+    first = date(year, month, 1)
+    previous = (first - timedelta(days=1)).strftime("%Y-%m")
+    next_month = (date(year + (month == 12), 1 if month == 12 else month + 1, 1)).strftime("%Y-%m")
+    return render_template(
+        "study_plan_calendar.html", plan=plan,
+        calendar_rows=calendar_days(year=year, month=month, sessions=sessions),
+        month_label=f"{tr(first.strftime('%B'))} {year}", previous_month=previous,
+        next_month=next_month, today=date.today(),
+    )
+
+
+@app.get("/study-plans/<int:plan_id>/sessions/<int:session_id>")
+@login_required
+def study_plan_session_detail(plan_id, session_id):
+    plan = owned_study_plan(plan_id)
+    session_record = owned_plan_session(plan_id, session_id)
+    if not plan or not session_record:
+        return tr("Study session not found"), 404
+    return render_template(
+        "study_plan_session.html", plan=plan, study_day=session_record,
+        tasks=json_value(session_record.tasks_json), today=date.today(),
+    )
+
+
+@app.post("/study-plans/<int:plan_id>/sessions/<int:session_id>/complete")
+@login_required
+def complete_study_plan_session(plan_id, session_id):
+    session_record = owned_plan_session(plan_id, session_id)
+    if not session_record:
+        return tr("Study session not found"), 404
+    try:
+        completed_minutes = int(request.form.get("completed_minutes", session_record.planned_minutes))
+    except (TypeError, ValueError):
+        completed_minutes = session_record.planned_minutes
+    session_record.completed_minutes = max(0, min(480, completed_minutes))
+    session_record.status = "completed"
+    tasks = json_value(session_record.tasks_json)
+    for task in tasks:
+        task["completed"] = True
+    _save_planner_tasks(session_record, tasks)
+    session_record.study_plan.updated_at = utcnow()
+    db.session.commit()
+    flash(tr("Study session completed."), "success")
+    return redirect(url_for("study_plan_detail", plan_id=plan_id))
+
+
+@app.post("/study-plans/<int:plan_id>/sessions/<int:session_id>/skip")
+@login_required
+def skip_study_plan_session(plan_id, session_id):
+    plan = owned_study_plan(plan_id)
+    session_record = owned_plan_session(plan_id, session_id)
+    if not plan or not session_record:
+        return tr("Study session not found"), 404
+    rows = [_plan_session_payload(item) for item in plan.sessions]
+    redistributed = redistribute_after_skip(
+        rows, skipped_date=session_record.date, daily_minutes=plan.daily_minutes
+    )
+    session_record.status = "skipped"
+    session_record.completed_minutes = 0
+    for item in plan.sessions:
+        if item.date > session_record.date and item.status != "completed":
+            _save_planner_tasks(item, redistributed.get(item.date, []))
+    plan.updated_at = utcnow()
+    db.session.commit()
+    flash(tr("Missed work was balanced across your existing future study days."), "success")
+    return redirect(url_for("study_plan_detail", plan_id=plan_id))
+
+
 @app.get("/dashboard")
 @login_required
 def dashboard():
     language = get_current_language()
-    masteries = db.session.scalars(
-        db.select(ConceptMastery).where(ConceptMastery.user_id == current_user.id)
-        .order_by(ConceptMastery.mastery_score, ConceptMastery.updated_at.desc())
-    ).all()
-    subject_rows = db.session.execute(
-        db.select(ConceptMastery.subject, func.avg(ConceptMastery.mastery_score), func.sum(ConceptMastery.attempts))
-        .where(ConceptMastery.user_id == current_user.id).group_by(ConceptMastery.subject)
-        .order_by(func.avg(ConceptMastery.mastery_score))
-    ).all()
-    subject_filter = request.args.get("subject", "").strip()[:80]
-    status_filter = request.args.get("status", "").strip()
-    allowed_statuses = {"weak", "learning", "strong", "mastered", "understood"}
-    if status_filter not in allowed_statuses:
-        status_filter = ""
-    mistake_query = (
-        db.select(Attempt).join(Lesson).where(Lesson.user_id == current_user.id, Attempt.score < 80)
-        .order_by(Attempt.timestamp.desc())
-    )
-    if subject_filter:
-        mistake_query = mistake_query.where(
-            func.coalesce(Attempt.subject, Lesson.subject) == subject_filter
-        )
-    attempts = db.session.scalars(mistake_query.limit(100)).all()
-    mastery_lookup = {
-        (item.subject, item.concept): item.mastery_score for item in masteries
-    }
-    mistakes = []
-    for item in attempts:
-        item_subject = item.subject or item.lesson.subject
-        score = mastery_lookup.get((item_subject, item.concept), 0)
-        status = "understood" if item.understood_at else mastery_status(score)
-        if status_filter and status != status_filter:
-            continue
-        mistakes.append({"attempt": item, "mastery_status": status})
-    mistake_subjects = db.session.scalars(
-        db.select(func.coalesce(Attempt.subject, Lesson.subject)).select_from(Attempt).join(Lesson).where(
-            Lesson.user_id == current_user.id, Attempt.score < 80
-        ).distinct().order_by(func.coalesce(Attempt.subject, Lesson.subject))
-    ).all()
     now = utcnow()
-    due_today = db.session.scalar(
-        db.select(func.count(ConceptMastery.id)).where(
-            ConceptMastery.user_id == current_user.id,
-            or_(ConceptMastery.next_review_at.is_(None), ConceptMastery.next_review_at <= now),
-        )
-    ) or 0
-    next_review = db.session.scalar(
-        db.select(func.min(ConceptMastery.next_review_at)).where(
-            ConceptMastery.user_id == current_user.id,
-            ConceptMastery.next_review_at.is_not(None),
-        )
+    study_planner = planner_dashboard_widget(current_user.id)
+    context = dashboard_context(
+        db,
+        user_id=current_user.id,
+        concept_mastery_model=ConceptMastery,
+        attempt_model=Attempt,
+        lesson_model=Lesson,
+        project_model=LearningProject,
+        final_exam_model=FinalExam,
+        mastery_history_model=MasteryHistory,
+        subject_filter=request.args.get("subject", ""),
+        status_filter=request.args.get("status", "").strip(),
+        now=now,
     )
-    trend_attempts = db.session.scalars(
-        db.select(Attempt).join(Lesson).where(
-            Lesson.user_id == current_user.id, Attempt.mastery_after.is_not(None)
-        ).order_by(Attempt.timestamp.desc()).limit(12)
-    ).all()
-    mastery_trend = list(reversed(trend_attempts))
-    lessons = db.session.scalars(
-        db.select(Lesson).where(Lesson.user_id == current_user.id)
-        .order_by(Lesson.created_at.desc()).limit(20)).all()
-    projects = db.session.scalars(
-        db.select(LearningProject).where(LearningProject.user_id == current_user.id)
-        .order_by(LearningProject.updated_at.desc()).limit(6)
-    ).all()
-    return render_template("dashboard.html", masteries=masteries[:3], subjects=subject_rows,
-                           mistakes=mistakes, mistake_subjects=mistake_subjects,
-                           subject_filter=subject_filter, status_filter=status_filter,
-                           due_today=due_today, next_review=next_review,
-                           mastery_trend=mastery_trend, lessons=lessons, projects=projects,
-                           language=language)
+    context["study_planner"] = study_planner
+    return render_template("dashboard.html", **context, language=language)
 
 
 @app.get("/lessons/<int:lesson_id>")
@@ -2567,39 +3304,18 @@ def lesson_history(lesson_id):
 @login_required
 def todays_practice():
     now = utcnow()
-    masteries = db.session.scalars(
-        db.select(ConceptMastery).where(ConceptMastery.user_id == current_user.id)
-        .order_by(ConceptMastery.mastery_score, ConceptMastery.next_review_at)
-    ).all()
-    due = [item for item in masteries if review_is_due(item.next_review_at, now)]
-    weakest = masteries[:5]
-    failed_attempts = db.session.scalars(
-        db.select(Attempt).join(Lesson).where(
-            Lesson.user_id == current_user.id, Attempt.score < 50
-        ).order_by(Attempt.timestamp.desc()).limit(30)
-    ).all()
-    recently_failed = []
-    seen = set()
-    for attempt in failed_attempts:
-        key = (attempt.subject or attempt.lesson.subject, attempt.concept)
-        if key not in seen:
-            recently_failed.append({"subject": key[0], "concept": key[1], "date": attempt.timestamp})
-            seen.add(key)
-        if len(recently_failed) == 5:
-            break
-    states = [mastery_state(item) for item in masteries]
-    question_count = estimated_question_count(states, now) if states else 0
     language = get_current_language()
-    return render_template(
-        "todays_practice.html",
-        due=due,
-        weakest=weakest,
-        recently_failed=recently_failed,
-        question_count=question_count,
-        estimated_minutes=question_count * 2,
+    context = todays_practice_context(
+        db,
+        user_id=current_user.id,
+        concept_mastery_model=ConceptMastery,
+        attempt_model=Attempt,
+        lesson_model=Lesson,
+        now=now,
+        mastery_serializer=mastery_state,
         difficulty_label=difficulty_label,
-        language=language,
     )
+    return render_template("todays_practice.html", **context, language=language)
 
 
 @app.post("/practice/today/start")
@@ -2643,6 +3359,10 @@ Match the requested difficulty. Do not repeat any recent question exactly. Make 
             adaptive_plan=plan,
         )
         return redirect(url_for("index", session_id=session_id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
+        return redirect(url_for("todays_practice"))
     except Exception:
         db.session.rollback()
         app.logger.exception("Today's practice generation failed")
@@ -2670,6 +3390,16 @@ def resume_lesson(lesson_id):
 
 def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=None):
     response = create_response(
+        task_type=("adaptive_practice" if adaptive_plan or "practice" in log_task else "lesson_generation"),
+        language=learning_content_language(),
+        fixture_context=(
+            {
+                "subject": adaptive_plan[0]["subject"],
+                "concept": adaptive_plan[0]["concept"],
+                "lesson": True,
+            }
+            if adaptive_plan else {"subject": subject}
+        ),
         model=TUTOR_MODEL,
         instructions=tutor_instructions(),
         input=prompt,
@@ -2677,7 +3407,6 @@ def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=No
         temperature=0.2,
         **quality_options(),
     )
-    log_usage(response, log_task)
     lesson = parse_json(response.output_text)
     for key in ("lesson_title", "concepts", "explanation", "worked_example", "question"):
         if key not in lesson:
@@ -2805,6 +3534,10 @@ Use exactly one correct option and do not repeat the original question. When upl
             save_session_state(session_id, commit=False)
             db.session.commit()
         return redirect(url_for("index", session_id=session_id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
+        return redirect(url_for("dashboard"))
     except Exception:
         db.session.rollback()
         app.logger.exception("Similar-mistake practice generation failed")
@@ -2842,6 +3575,10 @@ Use only the listed concepts, target the weakest first, and make exactly one opt
             adaptive_plan=weak_plan,
         )
         return redirect(url_for("index", session_id=session_id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
+        return redirect(url_for("dashboard"))
     except Exception:
         db.session.rollback()
         app.logger.exception("Weak-point practice generation failed")
@@ -2849,7 +3586,109 @@ Use only the listed concepts, target the weakest first, and make exactly one opt
         return redirect(url_for("dashboard"))
 
 
+@app.get("/concepts/<int:mastery_id>")
+@login_required
+def concept_detail(mastery_id):
+    mastery = db.session.scalar(db.select(ConceptMastery).where(
+        ConceptMastery.id == mastery_id,
+        ConceptMastery.user_id == current_user.id,
+    ))
+    if not mastery:
+        return "Concept not found", 404
+    candidate_attempts = db.session.scalars(
+        db.select(Attempt)
+        .join(Lesson)
+        .where(
+            Lesson.user_id == current_user.id,
+            func.coalesce(Attempt.subject, Lesson.subject) == mastery.subject,
+        )
+        .order_by(Attempt.timestamp.desc())
+        .limit(200)
+    ).all()
+    attempts = [
+        item for item in candidate_attempts
+        if mastery.concept.casefold() in {
+            concept.casefold() for concept in saved_concepts(item.concepts_json, item.concept)
+        }
+    ][:30]
+    history = db.session.scalars(
+        db.select(MasteryHistory).where(
+            MasteryHistory.user_id == current_user.id,
+            MasteryHistory.mastery_id == mastery.id,
+        ).order_by(MasteryHistory.practised_at.desc()).limit(50)
+    ).all()
+    section_ids = {
+        item.lesson.section_id for item in attempts if item.lesson.section_id
+    }
+    section_conditions = [
+        LearningSection.title == mastery.concept,
+        LearningSection.main_topic == mastery.concept,
+    ]
+    if section_ids:
+        section_conditions.append(LearningSection.id.in_(section_ids))
+    source_sections = db.session.scalars(
+        db.select(LearningSection)
+        .join(LearningProject)
+        .where(
+            LearningProject.user_id == current_user.id,
+            LearningProject.subject == mastery.subject,
+            or_(*section_conditions),
+        )
+        .order_by(LearningProject.updated_at.desc(), LearningSection.position)
+    ).all()
+    return render_template(
+        "concept_detail.html",
+        mastery=mastery,
+        history=history,
+        attempts=attempts,
+        mistakes=[item for item in attempts if item.score < 80],
+        source_sections=source_sections,
+        difficulty=difficulty_label(mastery.difficulty_level),
+    )
+
+
+@app.post("/concepts/<int:mastery_id>/practice")
+@login_required
+def practice_concept(mastery_id):
+    mastery = db.session.scalar(db.select(ConceptMastery).where(
+        ConceptMastery.id == mastery_id,
+        ConceptMastery.user_id == current_user.id,
+    ))
+    if not mastery:
+        return "Concept not found", 404
+    recent_questions = recent_concept_questions(
+        current_user.id, mastery.subject, mastery.concept
+    )
+    prompt = f"""Create the opening lesson and first question for targeted adaptive practice.
+Subject: {mastery.subject}
+Concept: {mastery.concept}
+Mastery: {mastery.mastery_score}
+Difficulty: {difficulty_label(mastery.difficulty_level)}
+Recent questions that must not be repeated: {json.dumps(recent_questions, ensure_ascii=False)}
+Return the normal lesson JSON shape. Use this exact concept, include it in question.concepts, and create a new question with different wording and scenario from every recent question."""
+    plan = prioritize_concepts([mastery_state(mastery)], question_count=5)
+    try:
+        session_id = start_saved_practice(
+            prompt,
+            mastery.subject,
+            "targeted-concept-practice",
+            test_total=5,
+            adaptive_plan=plan,
+        )
+        return redirect(url_for("index", session_id=session_id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        flash_ai_failure(error)
+        return redirect(url_for("concept_detail", mastery_id=mastery.id))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Targeted concept practice generation failed")
+        flash("Targeted practice could not be generated right now.", "error")
+        return redirect(url_for("concept_detail", mastery_id=mastery.id))
+
+
 @app.post("/api/analyze")
+@limiter.limit("10 per minute")
 @login_required
 def analyze_material():
     uploads = [upload for upload in request.files.getlist("images") if upload.filename]
@@ -2857,9 +3696,9 @@ def analyze_material():
     subject = request.form.get("subject", "Other").strip()[:80] or "Other"
     language = learning_content_language()
     if not uploads and not study_goal:
-        return jsonify(error=tr("Describe what you want to learn or attach study material.")), 400
+        return api_error(tr("Describe what you want to learn or attach study material."), 400, "missing_material")
     if len(uploads) > 4:
-        return jsonify(error="Upload no more than four images for this MVP."), 400
+        return api_error("Upload no more than four images for this MVP.", 400, "too_many_images")
 
     try:
         content = [{
@@ -2885,6 +3724,8 @@ The first question must be easy, check understanding of the explanation, and not
                 {"type": "input_image", "image_url": image_data_url(upload), "detail": "high"})
 
         response = create_response(
+            task_type="lesson_generation",
+            language=language,
             model=VISION_MODEL if uploads else TUTOR_MODEL,
             instructions=tutor_instructions(),
             input=[{"role": "user", "content": content}],
@@ -2892,7 +3733,6 @@ The first question must be easy, check understanding of the explanation, and not
             temperature=0.2,
             **(quality_options() if not uploads else {}),
         )
-        log_usage(response, "vision-lesson" if uploads else "text-lesson")
         lesson = parse_json(response.output_text)
         session_id = uuid.uuid4().hex
         SESSIONS[session_id] = {
@@ -2915,19 +3755,22 @@ The first question must be easy, check understanding of the explanation, and not
                          value in lesson.items() if key != "question"}
         question = {key: value for key, value in lesson["question"].items(
         ) if key != "expected_answer"}
-        return jsonify(session_id=session_id, test_total=5, lesson=public_lesson, question=question)
-    except (ValueError, json.JSONDecodeError, KeyError) as error:
+        return jsonify(ok=True, session_id=session_id, test_total=5, lesson=public_lesson, question=question)
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
-        return jsonify(error=f"The material could not be read reliably: {error}"), 422
-    except Exception as error:
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (ValueError, json.JSONDecodeError, KeyError):
+        db.session.rollback()
+        return api_error(tr("The material could not be read reliably because the AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
+    except Exception:
         db.session.rollback()
         app.logger.exception("Material analysis failed")
-        message = str(error) if isinstance(
-            error, RuntimeError) else "The tutor service is temporarily unavailable."
-        return jsonify(error=message), 500
+        return api_error(tr("AI is temporarily unavailable. You can retry. Your saved work remains safe."), 503, "ai_unavailable")
 
 
 @app.post("/api/answer")
+@limiter.limit("30 per minute")
 @login_required
 def check_answer():
     payload = request.get_json(silent=True) or {}
@@ -2936,16 +3779,29 @@ def check_answer():
     answer = json.dumps(raw_answer, ensure_ascii=False) if isinstance(
         raw_answer, list) else str(raw_answer).strip()
     if not session:
-        return jsonify(error=tr("This lesson expired. Upload the material again.")), 404
+        return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
     if raw_answer is None or raw_answer == "" or (isinstance(raw_answer, list) and not raw_answer):
-        return jsonify(error=tr("Write an answer before checking it.")), 400
+        return api_error(tr("Write an answer before checking it."), 400, "answer_required")
     if len(answer) > 12000:
-        return jsonify(error=tr("Keep the answer under 12,000 characters.")), 400
+        return api_error(tr("Keep the answer under 12,000 characters."), 400, "answer_too_long")
     session["language"] = learning_content_language()
 
     question = session["current_question"]
+    normalize_question_concept(session, question)
     question_subject = str(question.get("subject") or session.get("subject", "Other"))[:80]
     hints_used = bool(payload.get("hints_used", False))
+    try:
+        retry_count = max(0, min(10, int(payload.get("retry_count", 0))))
+        response_confidence = float(payload.get("response_confidence", 50))
+        question_difficulty = max(1, min(3, int(question.get("difficulty", 1))))
+    except (TypeError, ValueError):
+        return api_error(tr("Confidence and retry values must be numbers."), 400, "invalid_learning_context")
+    if not 0 <= response_confidence <= 100:
+        return api_error(tr("Confidence must be between 0 and 100."), 400, "invalid_confidence")
+    question_concepts = saved_concepts(
+        json.dumps(question.get("concepts", []), ensure_ascii=False),
+        question.get("concept", "General"),
+    )
     question_number = len(session["history"]) + 1
     is_final = question_number >= session["test_total"]
     next_question_number = question_number + 1
@@ -3023,6 +3879,9 @@ Follow the exact null/object structure shown above. Do not replace a required ob
     original_session = json.loads(json.dumps(session, ensure_ascii=False))
     try:
         response = create_response(
+            task_type="answer_evaluation",
+            language=session["language"],
+            validation_context={"is_final": bool(is_final or adaptive_plan)},
             model=TUTOR_MODEL,
             instructions=tutor_instructions(),
             input=prompt,
@@ -3030,7 +3889,6 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             temperature=0.1,
             **quality_options(),
         )
-        log_usage(response, "answer")
         result = parse_json(response.output_text)
         evaluation = result["evaluation"]
         score = max(0, min(100, int(evaluation["score"])))
@@ -3049,42 +3907,71 @@ Follow the exact null/object structure shown above. Do not replace a required ob
         session["history"].append({
             "subject": question_subject,
             "concept": question["concept"],
-            "difficulty": question["difficulty"],
+            "concepts": question_concepts,
+            "difficulty": question_difficulty,
             "score": score,
             "hints_used": hints_used,
+            "retry_count": retry_count,
+            "response_confidence": response_confidence,
         })
-        concept_record = session["mastery"].setdefault(
-            question["concept"], {"attempts": 0, "total_score": 0}
-        )
-        concept_record["attempts"] += 1
-        concept_record["total_score"] += score
+        for concept_name in question_concepts:
+            concept_record = session["mastery"].setdefault(
+                concept_name, {"attempts": 0, "total_score": 0}
+            )
+            concept_record["attempts"] += 1
+            concept_record["total_score"] += score
         lesson_record = db.session.scalar(
             db.select(Lesson).where(Lesson.session_id == payload.get("session_id"),
                                     Lesson.user_id == current_user.id)
         )
         if not lesson_record:
             raise KeyError("lesson")
-        persistent_mastery = get_or_create_mastery(
-            current_user.id, question_subject, str(question.get("concept", "General"))[:255]
-        )
-        mastery_before, mastery_update = apply_mastery_update(
-            persistent_mastery, score, hints_used=hints_used
-        )
+        mastery_updates = []
+        for concept_name in question_concepts:
+            persistent_mastery = get_or_create_mastery(
+                current_user.id, question_subject, concept_name
+            )
+            mastery_before, mastery_update = apply_mastery_update(
+                persistent_mastery,
+                score,
+                hints_used=hints_used,
+                difficulty=question_difficulty,
+                retry_count=retry_count,
+                response_confidence=response_confidence,
+            )
+            mastery_updates.append((persistent_mastery, mastery_before, mastery_update))
+        _primary_mastery, mastery_before, mastery_update = mastery_updates[0]
         evaluation["skill_status"] = mastery_update["status"]
         attempt = Attempt(
             lesson=lesson_record,
             question=str(question.get("prompt", "")),
             subject=question_subject,
-            concept=str(question.get("concept", "General"))[:255],
+            concept=question_concepts[0],
+            concepts_json=json.dumps(question_concepts, ensure_ascii=False),
             student_answer=answer,
             score=score,
             feedback=str(evaluation.get("feedback", "")),
-            difficulty=int(question.get("difficulty", 1)),
+            difficulty=question_difficulty,
             hints_used=hints_used,
+            retry_count=retry_count,
+            response_confidence=response_confidence,
             mastery_before=mastery_before,
             mastery_after=mastery_update["mastery_score"],
         )
         db.session.add(attempt)
+        db.session.flush()
+        for record, before, updated in mastery_updates:
+            add_mastery_history(
+                record,
+                before,
+                updated,
+                score=score,
+                difficulty=question_difficulty,
+                hints_used=hints_used,
+                retry_count=retry_count,
+                response_confidence=response_confidence,
+                attempt=attempt,
+            )
         if lesson_record.section_id:
             section = db.session.scalar(
                 db.select(LearningSection).join(LearningProject).where(
@@ -3095,18 +3982,27 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             if not section:
                 raise KeyError("section")
             update_section_mastery(section, completed=is_final)
+        record_planner_activity(
+            current_user.id,
+            activity_kind="quiz" if lesson_record.section_id else "review",
+            score=score,
+            subject=question_subject,
+            concepts=question_concepts,
+            section_id=lesson_record.section_id,
+        )
         if session.get("session_kind") == "adaptive_practice":
-            change_key = f"{question_subject}::{attempt.concept}"
-            initial = session.get("initial_mastery", {}).get(change_key, mastery_before)
-            session["mastery_changes"][change_key] = {
-                "subject": question_subject,
-                "concept": attempt.concept,
-                "before": initial,
-                "after": mastery_update["mastery_score"],
-                "change": mastery_update["mastery_score"] - initial,
-                "status": mastery_update["status"],
-                "next_review_at": mastery_update["next_review_at"].date().isoformat(),
-            }
+            for record, before, updated in mastery_updates:
+                change_key = f"{question_subject}::{record.concept}"
+                initial = session.get("initial_mastery", {}).get(change_key, before)
+                session["mastery_changes"][change_key] = {
+                    "subject": question_subject,
+                    "concept": record.concept,
+                    "before": initial,
+                    "after": updated["mastery_score"],
+                    "change": updated["mastery_score"] - initial,
+                    "status": updated["status"],
+                    "next_review_at": updated["next_review_at"].date().isoformat(),
+                }
         if not is_final:
             if adaptive_plan:
                 if not planned_next_target:
@@ -3136,7 +4032,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             sum(item["score"] for item in session["history"]) / len(session["history"]))
         mastery = mastery_snapshot(session)
         practice_results = adaptive_session_results(session) if is_final and adaptive_plan else None
-        return jsonify(evaluation=evaluation, next_question=public_question,
+        return jsonify(ok=True, evaluation=evaluation, next_question=public_question,
                        complete=is_final, summary=result.get("summary") if is_final else None, progress={
             "answered": len(session["history"]),
             "total": session["test_total"],
@@ -3144,31 +4040,59 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             "mastery": mastery,
             "weakest_concept": mastery[0]["concept"] if mastery else None,
         }, practice_results=practice_results)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
         SESSIONS[payload.get("session_id")] = original_session
-        return jsonify(error=f"The feedback could not be prepared reliably: {error}"), 422
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        db.session.rollback()
+        SESSIONS[payload.get("session_id")] = original_session
+        return api_error(tr("The AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
     except Exception:
         db.session.rollback()
         SESSIONS[payload.get("session_id")] = original_session
         app.logger.exception("Answer evaluation failed")
-        return jsonify(error=tr("The tutor service is temporarily unavailable.")), 500
+        return api_error(tr("The tutor service is temporarily unavailable."), 500, "tutor_unavailable")
 
 
 @app.post("/api/chat")
+@limiter.limit("30 per minute")
 @login_required
 def tutor_chat():
     payload = request.get_json(silent=True) or {}
     session = owned_session(payload.get("session_id"))
     message = str(payload.get("message", "")).strip()
     if not session:
-        return jsonify(error=tr("This lesson expired. Upload the material again.")), 404
+        return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
     if not message:
-        return jsonify(error=tr("Write a message for your tutor.")), 400
+        return api_error(tr("Write a message for your tutor."), 400, "message_required")
     if len(message) > 4000:
-        return jsonify(error="Keep tutor messages under 4,000 characters."), 400
+        return api_error("Keep tutor messages under 4,000 characters.", 400, "message_too_long")
     session["language"] = learning_content_language()
 
+    active_plan = _active_plan_for_user(current_user.id, session.get("subject", "Other"))
+    scheduled_context = None
+    if active_plan:
+        scheduled = next(
+            (item for item in active_plan.sessions if item.date == date.today()),
+            next((item for item in active_plan.sessions if item.date > date.today()), None),
+        )
+        if scheduled:
+            scheduled_context = {
+                "date": scheduled.date.isoformat(),
+                "exam_date": active_plan.exam_date.isoformat(),
+                "target_grade": active_plan.target_grade,
+                "tasks": [
+                    {
+                        "kind": item.get("kind"), "concept": item.get("concept"),
+                        "section": item.get("section_title"), "minutes": item.get("minutes"),
+                        "reason": item.get("reason"), "difficulty": item.get("difficulty"),
+                    }
+                    for item in json_value(scheduled.tasks_json)
+                    if not item.get("completed")
+                ],
+            }
     chat_context = {
         "subject": session.get("subject", "Other"),
         "lesson_title": session["lesson"]["lesson_title"],
@@ -3182,17 +4106,20 @@ def tutor_chat():
         "recent_chat": session["chat_history"][-4:],
         "student_message": message,
         "response_language": session["language"],
+        "scheduled_study_plan": scheduled_context,
     }
     prompt = f"""Tutor the student using this lesson state:
 {json.dumps(chat_context, ensure_ascii=False)}
 
 Reply only in response_language in at most 120 words. Be accurate and use small, explicit steps.
-Use the saved context and weakest concept. For question help, give one useful hint, not the final answer.
+Use the saved context and today's scheduled_study_plan when present. Explain recommendations from its mastery/reason/date evidence instead of suggesting a random topic. For question help, give one useful hint, not the final answer.
 Verify calculations; allow valid interpretations in humanities/languages. Mention an exception only when relevant.
 Treat a short reply as an answer to the latest chat question. End with one short checking question."""
 
     try:
         response = create_response(
+            task_type="tutor_chat",
+            language=session["language"],
             model=FAST_MODEL,
             instructions=(
                 "You are a careful, friendly Socratic tutor across school subjects. "
@@ -3203,7 +4130,6 @@ Treat a short reply as an answer to the latest chat question. End with one short
             max_output_tokens=CHAT_TOKEN_LIMIT,
             temperature=0.2,
         )
-        log_usage(response, "chat")
         reply = response.output_text.strip()
         session["chat_history"].extend([
             {"role": "student", "content": message},
@@ -3218,14 +4144,19 @@ Treat a short reply as an answer to the latest chat question. End with one short
             ])
             save_session_state(payload.get("session_id"), commit=False)
             db.session.commit()
-        return jsonify(reply=reply, mastery=mastery_snapshot(session))
+        return jsonify(ok=True, reply=reply, mastery=mastery_snapshot(session))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
     except Exception:
         db.session.rollback()
         app.logger.exception("Tutor chat failed")
-        return jsonify(error=tr("The tutor service is temporarily unavailable.")), 500
+        return api_error(tr("AI is temporarily unavailable. You can retry. Your saved work remains safe."), 503, "ai_unavailable")
 
 
 @app.post("/api/translate")
+@limiter.limit("20 per minute")
 @login_required
 def translate_content():
     payload = request.get_json(silent=True) or {}
@@ -3233,14 +4164,14 @@ def translate_content():
     language = payload.get("language")
     texts = payload.get("texts", [])
     if not session:
-        return jsonify(error=tr("This lesson expired. Upload the material again.")), 404
+        return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
     if language not in {"English", "German"}:
-        return jsonify(error=tr("Unsupported language.")), 400
+        return api_error(tr("Unsupported language."), 400, "unsupported_language")
     if not isinstance(texts, list) or not texts or len(texts) > 80:
-        return jsonify(error="Invalid translation request."), 400
+        return api_error("Invalid translation request.", 400, "invalid_translation_request")
     cleaned = [str(item)[:3000] for item in texts]
     if sum(len(item) for item in cleaned) > 30000:
-        return jsonify(error="Too much text to translate at once."), 400
+        return api_error("Too much text to translate at once.", 400, "translation_too_large")
 
     prompt = f"""Translate each string into {language}.
 Return JSON exactly as {{"translations": ["translated string"]}} with the same number and order of items.
@@ -3249,26 +4180,32 @@ Translate the explanatory language naturally. If a string is already in {languag
 Strings: {json.dumps(cleaned, ensure_ascii=False)}"""
     try:
         response = create_response(
+            task_type="translation",
+            language=language,
+            fixture_context={"texts": cleaned},
             model=FAST_MODEL,
             instructions="You are a precise educational translator. Return valid JSON only.",
             input=prompt,
             max_output_tokens=TRANSLATE_TOKEN_LIMIT,
             temperature=0,
         )
-        log_usage(response, "translation")
         result = parse_json(response.output_text)
         translations = result["translations"]
         if not isinstance(translations, list) or len(translations) != len(cleaned):
             raise ValueError("Translation count mismatch")
         save_session_state(payload.get("session_id"))
-        return jsonify(translations=translations)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        return jsonify(ok=True, translations=translations)
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
-        return jsonify(error=f"The content could not be translated reliably: {error}"), 422
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        db.session.rollback()
+        return api_error(tr("The AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
     except Exception:
         db.session.rollback()
         app.logger.exception("Content translation failed")
-        return jsonify(error="The translation service is temporarily unavailable."), 500
+        return api_error("The translation service is temporarily unavailable.", 500, "translation_unavailable")
 
 
 if __name__ == "__main__":

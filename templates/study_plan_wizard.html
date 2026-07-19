@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Create study plan') }} — Learnova{% endblock %}
+{% block body_class %}planner-page{% endblock %}
+{% block content %}
+<main class="planner-shell planner-wizard-shell">
+  <header class="planner-hero compact"><div><span class="eyebrow">{{ _('PERSONAL STUDY COACH') }}</span><h1>{{ _('Create your exam plan') }}</h1><p>{{ _('Tell Learnova when you can study. Your saved progress decides what comes next.') }}</p></div></header>
+  {% if projects %}<form class="planner-wizard" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <section><span class="wizard-step">1</span><div><h2>{{ _('Choose the subject and project') }}</h2><label>{{ _('Project') }}<select name="project_id" required>{% for project in projects %}<option value="{{ project.id }}" {{ 'selected' if selected_project_id|string == project.id|string }}>{{ project.subject }} — {{ project.title }}</option>{% endfor %}</select></label></div></section>
+    <section><span class="wizard-step">2</span><div class="wizard-fields"><h2>{{ _('Set your exam goal') }}</h2><label>{{ _('Exam date') }}<input type="date" name="exam_date" min="{{ today.isoformat() }}" required></label><label>{{ _('Target grade') }}<input name="target_grade" maxlength="40" placeholder="{{ _('For example: Grade 1') }}" required></label></div></section>
+    <section><span class="wizard-step">3</span><div class="wizard-fields"><h2>{{ _('Choose your study rhythm') }}</h2><label>{{ _('Available minutes per day') }}<input type="number" name="daily_minutes" min="10" max="480" value="30" required></label><label>{{ _('Difficulty preference') }}<select name="difficulty_preference"><option value="easy">{{ _('Easy') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select></label><fieldset><legend>{{ _('Available weekdays') }}</legend><div class="weekday-picker">{% for value, label in [(0, _('Mon')), (1, _('Tue')), (2, _('Wed')), (3, _('Thu')), (4, _('Fri')), (5, _('Sat')), (6, _('Sun'))] %}<label><input type="checkbox" name="preferred_days" value="{{ value }}" {{ 'checked' if value < 5 }}><span>{{ label }}</span></label>{% endfor %}</div></fieldset></div></section>
+    <button class="primary-button wizard-submit" type="submit">{{ _('Build my study plan') }} →</button>
+  </form>{% else %}<section class="planner-empty"><h2>{{ _('Create a learning project first') }}</h2><p>{{ _('The planner needs uploaded learning material and sections to build your schedule.') }}</p><a class="primary-button" href="{{ url_for('projects') }}">{{ _('Create project') }} →</a></section>{% endif %}
+</main>
+{% endblock %}

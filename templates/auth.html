@@ -1,27 +1,47 @@
-{% extends "base.html" %}
+{% extends "auth_base.html" %}
+{% from "components/_language_selector.html" import language_selector with context %}
 {% block title %}{{ _('Create account') if mode == 'register' else _('Log in') }} — Learnova{% endblock %}
-{% block body_class %}account-page{% endblock %}
+{% block body_class %}account-page auth-body{% endblock %}
 {% block content %}
-<main class="account-shell">
-  <section class="account-card">
-    <div class="eyebrow">{{ _('YOUR PERSONAL STUDY SPACE') }}</div>
-    <h1>{{ _('Create your account') if mode == 'register' else _('Welcome back') }}</h1>
-    <p>{{ _('Your lessons and progress stay connected to your account.') }}</p>
-    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
-    <form method="post">
+<main class="auth-page">
+  <div class="auth-background" aria-hidden="true">
+    <div class="auth-ellipse auth-ellipse-1"></div>
+    <div class="auth-ellipse auth-ellipse-2"></div>
+    <div class="auth-ellipse auth-ellipse-3"></div>
+    <div class="auth-ellipse auth-ellipse-4"></div>
+    <div class="auth-ellipse auth-ellipse-5"></div>
+    <div class="auth-ellipse auth-ellipse-6"></div>
+  </div>
+
+  <section class="auth-card" data-auth-mode="{{ mode }}">
+    <a class="auth-brand auth-reveal" href="{{ url_for('login') }}" aria-label="Learnova">
+      <img src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span>
+    </a>
+    <div class="auth-heading auth-reveal">
+      <div class="eyebrow">{{ _('YOUR PERSONAL STUDY SPACE') }}</div>
+      <h1>{{ _('Create your account') if mode == 'register' else _('Welcome back') }}</h1>
+      <p>{{ _('Your lessons and progress stay connected to your account.') }}</p>
+    </div>
+    {% include 'components/_alerts.html' %}
+    <form id="authForm" class="auth-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if request.args.get('next') %}<input type="hidden" name="next" value="{{ request.args.get('next') }}">{% endif %}
       {% if mode == 'register' %}
-      <label>{{ _('Username') }}<input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,29}" required></label>
-      <label>{{ _('Email') }}<input name="email" type="email" autocomplete="email" maxlength="255" required></label>
-      <label>{{ _('Language') }}<select name="language" required><option value="en" {{ 'selected' if current_language == 'en' }}>{{ _('English') }}</option><option value="de" {{ 'selected' if current_language == 'de' }}>{{ _('German') }}</option></select></label>
+      <label class="auth-field auth-reveal"><span>{{ _('Username') }}</span><input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,29}" value="{{ request.form.get('username', '') }}" required></label>
+      <label class="auth-field auth-reveal"><span>{{ _('Email') }}</span><input name="email" type="email" autocomplete="email" maxlength="255" value="{{ request.form.get('email', '') }}" required></label>
+      <label class="auth-field auth-reveal"><span>{{ _('Language') }}</span>{{ language_selector(selected=request.form.get('language', current_language)) }}</label>
       {% else %}
-      <label>{{ _('Username or email') }}<input name="identifier" autocomplete="username" maxlength="255" required></label>
+      <label class="auth-field auth-reveal"><span>{{ _('Username or email') }}</span><input name="identifier" autocomplete="username" maxlength="255" value="{{ request.form.get('identifier', request.form.get('email', '')) }}" required></label>
       {% endif %}
-      <label>{{ _('Password') }}<input name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required></label>
-      {% if mode == 'login' %}<label class="remember"><input name="remember" type="checkbox"> {{ _('Keep me logged in') }}</label>{% endif %}
-      <button class="primary-button" type="submit">{{ _('Create account') if mode == 'register' else _('Log in') }}</button>
+      <label class="auth-field auth-reveal"><span>{{ _('Password') }}</span><span class="auth-password-control"><input id="authPassword" name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required><button class="password-toggle" type="button" aria-controls="authPassword" aria-label="{{ _('Show password') }}" title="{{ _('Show password') }}"><span aria-hidden="true">◉</span></button></span></label>
+      {% if mode == 'login' %}<label class="remember auth-reveal"><input name="remember" type="checkbox" {{ 'checked' if request.form.get('remember') }}> <span>{{ _('Keep me logged in') }}</span></label>{% endif %}
+      <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Create account') if mode == 'register' else _('Log in') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
     </form>
-    {% if mode == 'register' %}<p>{{ _('Already registered?') }} <a href="{{ url_for('login') }}">{{ _('Log in') }}</a></p>{% else %}<p>{{ _('New here?') }} <a href="{{ url_for('register') }}">{{ _('Create account') }}</a></p>{% endif %}
+    <div class="auth-card-footer auth-reveal">
+      <p>{% if mode == 'register' %}{{ _('Already registered?') }} <a href="{{ url_for('login') }}">{{ _('Log in') }}</a>{% else %}{{ _('New here?') }} <a href="{{ url_for('register') }}">{{ _('Create account') }}</a>{% endif %}</p>
+      <a class="auth-language-access" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+    </div>
   </section>
 </main>
 {% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/auth.js') }}"></script>{% endblock %}

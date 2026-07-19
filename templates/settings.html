@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/_language_selector.html" import language_selector with context %}
 {% block title %}{{ _('Settings') }} — Learnova{% endblock %}
 {% block body_class %}account-page settings-page{% endblock %}
 {% block content %}
@@ -6,14 +7,10 @@
   <section class="account-card">
     <div class="eyebrow">LEARNOVA</div>
     <h1>{{ _('Settings') }}</h1>
-    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
     <form method="post" action="{{ url_for('update_language') }}">
       <label for="language">{{ _('Language') }}</label>
       <p>{{ _('Choose the language used for the interface and AI learning content.') }}</p>
-      <select id="language" name="language" required>
-        <option value="en" {{ 'selected' if current_language == 'en' }}>{{ _('English') }}</option>
-        <option value="de" {{ 'selected' if current_language == 'de' }}>{{ _('German') }}</option>
-      </select>
+      {{ language_selector() }}
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <button class="primary-button" type="submit">{{ _('Save') }}</button>
     </form>

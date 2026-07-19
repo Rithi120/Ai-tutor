@@ -1,0 +1,1 @@
+{"quiz_generation":{"output_text":{"questions":[{"id":"q1","concept":"Fractions","difficulty":1,"type":"text","prompt":"First unique prompt","hint":"Think","options":[],"expected_answer":"A"},{"id":"q1","concept":"Fractions","difficulty":1,"type":"text","prompt":"Second unique prompt","hint":"Think","options":[],"expected_answer":"B"}]}}}

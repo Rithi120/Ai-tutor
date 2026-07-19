@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from adaptive_learning import (
+    is_recent_duplicate,
     mastery_status,
     prioritize_concepts,
     review_interval_days,
@@ -76,6 +77,57 @@ class AdaptiveLearningRuleTests(unittest.TestCase):
         self.assertEqual(plan[0]["concept"], "Overdue")
         self.assertIn("Repeated", [item["concept"] for item in plan[:3]])
         self.assertTrue(all(plan[index]["id"] != plan[index + 1]["id"] for index in range(len(plan) - 1)))
+
+    def test_mastery_uses_difficulty_retries_confidence_and_recency(self):
+        baseline = update_mastery(
+            state(score=50, difficulty_level=1), 100, difficulty=1,
+            response_confidence=50, practised_at=NOW,
+        )
+        difficult = update_mastery(
+            state(score=50, difficulty_level=3), 100, difficulty=3,
+            response_confidence=85, practised_at=NOW,
+        )
+        retried = update_mastery(
+            state(score=50, difficulty_level=3), 100, difficulty=3,
+            retry_count=2, response_confidence=85, practised_at=NOW,
+        )
+        retained = update_mastery(
+            state(score=50, difficulty_level=2, last_practised_at=NOW - timedelta(days=30)),
+            100, difficulty=2, response_confidence=50, practised_at=NOW,
+        )
+        self.assertGreater(difficult["mastery_score"], baseline["mastery_score"])
+        self.assertLess(retried["mastery_score"], difficult["mastery_score"])
+        self.assertGreater(retained["mastery_score"], baseline["mastery_score"])
+        self.assertGreater(difficult["confidence_trend"], 50)
+
+    def test_recent_mistakes_and_low_confidence_affect_deterministic_selection(self):
+        concepts = [
+            {"id": 1, "subject": "Math", "concept": "Weak", "mastery_score": 20,
+             "recent_mistake_count": 0, "confidence_trend": 70,
+             "last_practised_at": NOW, "next_review_at": NOW + timedelta(days=1)},
+            {"id": 2, "subject": "Math", "concept": "Low confidence", "mastery_score": 55,
+             "recent_mistake_count": 0, "confidence_trend": 20,
+             "last_practised_at": NOW, "next_review_at": NOW + timedelta(days=1)},
+            {"id": 3, "subject": "Math", "concept": "Repeated", "mastery_score": 50,
+             "recent_mistake_count": 4, "confidence_trend": 60,
+             "last_practised_at": NOW, "next_review_at": NOW + timedelta(days=1)},
+            {"id": 4, "subject": "Math", "concept": "Strong", "mastery_score": 90,
+             "recent_mistake_count": 0, "confidence_trend": 80,
+             "last_practised_at": NOW, "next_review_at": NOW + timedelta(days=20)},
+        ]
+        first = prioritize_concepts(concepts, question_count=7, now=NOW)
+        second = prioritize_concepts(concepts, question_count=7, now=NOW)
+        self.assertEqual([item["id"] for item in first], [item["id"] for item in second])
+        selected = [item["concept"] for item in first]
+        self.assertIn("Weak", selected[:3])
+        self.assertIn("Repeated", selected[:4])
+        self.assertIn("Low confidence", selected[:4])
+        self.assertIn("Strong", selected)
+
+    def test_recent_question_duplicate_detection_is_normalized(self):
+        recent = ["Solve: 2x + 4 = 10"]
+        self.assertTrue(is_recent_duplicate(" solve 2X + 4 = 10! ", recent))
+        self.assertFalse(is_recent_duplicate("Solve 3x + 4 = 10", recent))
 
 
 if __name__ == "__main__":

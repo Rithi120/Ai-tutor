@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Study Calendar') }} · Learnova{% endblock %}
+{% block body_class %}planner-page{% endblock %}
+{% block content %}
+<div class="planner-skeleton" data-planner-skeleton aria-hidden="true"><i></i><i></i><i></i></div>
+<main class="planner-shell"><header class="planner-hero compact"><div><span class="eyebrow">{{ plan.project.subject }}</span><h1>{{ _('Study Calendar') }}</h1><p>{{ plan.project.title }}</p></div><a class="secondary-button" href="{{ url_for('study_plan_detail', plan_id=plan.id) }}">← {{ _('Back to plan') }}</a></header>
+  <nav class="calendar-nav" aria-label="{{ _('Calendar navigation') }}"><a href="{{ url_for('study_plan_calendar', plan_id=plan.id, month=previous_month) }}" aria-label="{{ _('Previous month') }}">←</a><h2>{{ _(month_label) }}</h2><a href="{{ url_for('study_plan_calendar', plan_id=plan.id, month=next_month) }}" aria-label="{{ _('Next month') }}">→</a></nav>
+  <section class="study-calendar" aria-label="{{ _('Monthly study calendar') }}"><div class="calendar-weekdays">{% for day in [_('Mon'),_('Tue'),_('Wed'),_('Thu'),_('Fri'),_('Sat'),_('Sun')] %}<span>{{ day }}</span>{% endfor %}</div><div class="calendar-grid">{% for day in calendar_rows %}{% if day.session %}<a class="calendar-day {{ 'outside' if not day.in_month }} status-{{ day.session.status }} {{ 'today' if day.date == today }}" href="{{ url_for('study_plan_session_detail', plan_id=plan.id, session_id=day.session.id) }}"><time>{{ day.date.day }}</time><strong>{{ _(day.session.status|capitalize) }}</strong><small>{% for task in day.session.tasks[:2] %}{{ _(task.kind|replace('_',' ')|title) }}{{ ' · ' if not loop.last }}{% endfor %}</small></a>{% else %}<div class="calendar-day empty {{ 'outside' if not day.in_month }} {{ 'today' if day.date == today }}"><time>{{ day.date.day }}</time></div>{% endif %}{% endfor %}</div></section>
+  <div class="calendar-legend" aria-label="{{ _('Calendar legend') }}"><span class="study">{{ _('Study') }}</span><span class="quiz">{{ _('Quiz') }}</span><span class="review">{{ _('Review') }}</span><span class="mock">{{ _('Mock Exam') }}</span><span class="completed">{{ _('Completed') }}</span><span class="skipped">{{ _('Skipped') }}</span></div>
+</main>
+{% endblock %}
