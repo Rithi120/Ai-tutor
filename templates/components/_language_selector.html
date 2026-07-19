@@ -1,0 +1,6 @@
+{% macro language_selector(name='language', selected=current_language) -%}
+<select id="{{ name }}" name="{{ name }}" required>
+  <option value="en" {{ 'selected' if selected == 'en' }}>{{ _('English') }}</option>
+  <option value="de" {{ 'selected' if selected == 'de' }}>{{ _('German') }}</option>
+</select>
+{%- endmacro %}

@@ -112,7 +112,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertTrue({
             "user", "lesson", "attempt", "concept_mastery", "study_session", "chat_message",
             "learning_project", "project_file", "project_page", "learning_section", "recall_card",
-            "document_block", "final_exam", "exam_question", "exam_answer",
+            "document_block", "final_exam", "exam_question", "exam_answer", "mastery_history",
         } <= tables)
 
         response = self.register("alice", "alice@example.com")
@@ -213,17 +213,22 @@ class ReliabilityTests(unittest.TestCase):
             }
             legacy = application.db.session.get(application.User, 1)
             self.assertTrue({"username", "preferred_language"} <= columns)
-            self.assertTrue({"subject", "hints_used", "mastery_before", "mastery_after"} <= attempt_columns)
+            self.assertTrue({
+                "subject", "hints_used", "mastery_before", "mastery_after",
+                "concepts_json", "retry_count", "response_confidence",
+            } <= attempt_columns)
             self.assertTrue({
                 "correct_attempts", "incorrect_attempts", "consecutive_correct",
                 "consecutive_incorrect", "last_practised_at", "next_review_at",
                 "difficulty_level", "status",
+                "recent_mistake_count", "confidence_trend",
             } <= mastery_columns)
             for version in (
                 "001_add_username", "002_add_understood_at", "003_add_adaptive_attempt_fields",
                 "004_add_attempt_subject", "005_add_adaptive_mastery_fields",
                 "006_link_lessons_to_sections", "007_add_document_recognition",
                 "008_add_user_preferred_language",
+                "009_add_query_path_indexes", "010_add_concept_level_tracking",
             ):
                 self.assertIsNotNone(application.db.session.get(application.SchemaMigration, version))
             assert legacy is not None

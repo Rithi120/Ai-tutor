@@ -1,14 +1,5 @@
-:root {
-  --ink: #18233f;
-  --muted: #68728a;
-  --cream: #f7f5ef;
-  --white: #fff;
-  --orange: #f27a49;
-  --coral: #ff9d74;
-  --purple: #7565e8;
-  --line: #e7e3da;
-  --green: #2d9b73;
-}
+@import url("css/tokens.css");
+@import url("css/components.css");
 
 * {
   box-sizing: border-box;
@@ -20,6 +11,134 @@ body {
   color: var(--ink);
   background: var(--cream);
   min-height: 100vh;
+}
+
+.ai-mode-badge {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1200;
+  padding: 7px 11px;
+  border: 1px solid rgba(15, 23, 42, .16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  color: #24324a;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  pointer-events: none;
+}
+
+.ai-mode-mock { color: #2563eb; }
+.ai-mode-cached { color: #7c3aed; }
+.ai-mode-live { color: #b42318; border-color: rgba(180, 35, 24, .3); }
+
+.speech-input-control,
+.listen-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0;
+}
+
+.speech-input-control button,
+.listen-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid #d8d4e5;
+  border-radius: 9px;
+  color: #423b70;
+  background: #f8f6ff;
+  font: 700 12px/1 "DM Sans", sans-serif;
+  cursor: pointer;
+}
+
+.speech-input-control button:hover,
+.listen-control button:hover:not(:disabled) {
+  border-color: var(--purple);
+  background: #f0edff;
+}
+
+.speech-input-control button:focus-visible,
+.listen-control button:focus-visible,
+.listen-control select:focus-visible {
+  outline: 3px solid rgba(112, 92, 214, .28);
+  outline-offset: 2px;
+}
+
+.speech-input-control button:disabled,
+.listen-control button:disabled {
+  opacity: .46;
+  cursor: not-allowed;
+}
+
+.speech-input-control.is-recording {
+  padding: 8px;
+  border: 1px solid rgba(190, 37, 52, .35);
+  border-radius: 11px;
+  background: #fff5f5;
+}
+
+.speech-input-control.is-recording .speech-stop-button {
+  color: #a51d2d;
+  border-color: #e4a7ae;
+  background: #fff;
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+
+.listen-control label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #606778;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.listen-control select {
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid #d8d4e5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.speech-status {
+  flex-basis: 100%;
+  min-height: 16px;
+  color: #5f6674;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.compact-listen-control {
+  margin: 8px 0 0;
+}
+
+.compact-listen-control button:not([data-speech-play]),
+.compact-listen-control select {
+  display: none;
+}
+
+.compact-listen-control.is-playing button,
+.compact-listen-control.is-paused button,
+.compact-listen-control.is-playing select,
+.compact-listen-control.is-paused select {
+  display: inline-flex;
+}
+
+@keyframes recording-pulse {
+  50% { box-shadow: 0 0 0 5px rgba(190, 37, 52, .12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speech-input-control.is-recording .speech-stop-button { animation: none; }
 }
 
 body:before {
@@ -969,6 +1088,54 @@ body:before {
   resize: vertical;
 }
 
+.response-confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0;
+  padding: 0;
+  border: 0;
+}
+
+.response-confidence legend {
+  margin-bottom: 8px;
+  color: #566078;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.response-confidence label { cursor: pointer; }
+.response-confidence input { position: absolute; opacity: 0; pointer-events: none; }
+.response-confidence span {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid #dedfe7;
+  border-radius: 999px;
+  background: #fff;
+  color: #566078;
+  font-size: 13px;
+  font-weight: 800;
+  transition: border-color .16s, background .16s, color .16s;
+}
+
+.response-confidence input:checked + span {
+  border-color: rgba(117, 101, 232, .45);
+  background: #f0effc;
+  color: #5146ba;
+}
+
+.response-confidence input:focus-visible + span {
+  outline: 3px solid rgba(117, 101, 232, .2);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .response-confidence { flex-wrap: wrap; }
+  .response-confidence legend { width: 100%; }
+}
+
 .symbol-keyboard {
   margin-top: 10px;
   padding: 11px;
@@ -1674,6 +1841,68 @@ body:before {
     bottom: 15px;
     height: calc(100vh - 30px)
   }
+}
+
+/* Voice controls are progressive enhancements and must keep their compact
+   control styling inside form-specific button systems. */
+.recall-card .speech-input-control button,
+.recall-card .listen-control button,
+.chat-form .speech-input-control button,
+.exam-question .speech-input-control button,
+.exam-question .listen-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid #d8d4e5;
+  border-radius: 9px;
+  color: #423b70;
+  background: #f8f6ff;
+  font: 700 12px/1 "DM Sans", sans-serif;
+}
+
+.chat-form {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto 39px;
+}
+
+.chat-form .speech-input-control {
+  flex-wrap: nowrap;
+  margin: 0;
+}
+
+.chat-form .speech-input-control button {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.chat-form .speech-input-control button span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.chat-form .speech-status {
+  position: absolute;
+  right: 12px;
+  bottom: 100%;
+  max-width: 280px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(255,255,255,.96);
+}
+
+@media (max-width: 520px) {
+  .listen-control { align-items: flex-start; }
+  .listen-control label { flex-basis: 100%; }
+  .speech-input-control button span:last-child,
+  .listen-control button span:last-child { display: none; }
 }
 
 .nav-note {
@@ -2590,4 +2819,19 @@ button.document-input-option { font: inherit; }
 @media(max-width: 800px) {
   .document-input-options { grid-template-columns: 1fr; }.document-input-option { min-height: 76px; }.scanner-modal { padding: 0; }.scanner-panel { max-height: 100vh; min-height: 100vh; border-radius: 0; }.capture-review { grid-template-columns: 1fr; }.capture-preview-wrap { min-height: 300px; }.crop-controls { grid-row: 2; }.scanner-controls { grid-template-columns: 1fr auto 1fr; gap: 8px; }.scanner-controls>button:not(.capture-button) { justify-self: start; font-size: 10px; }.capture-button { width: 62px; height: 62px; }.capture-button i { width: 40px; height: 40px; }
   .review-shell { width: min(100% - 20px, 1240px); padding-top: 92px; }.review-heading, .recognition-start-card { align-items: stretch; flex-direction: column; }.review-summary { min-width: 0; }.recognition-start-card form, .recognition-start-card button { width: 100%; }.recognition-page-card>header { grid-template-columns: 25px 1fr; }.confidence-pill { grid-column: 2; justify-self: start; }.page-review-grid, .image-comparison { grid-template-columns: 1fr; }.image-comparison img, .image-comparison iframe { height: 340px; }.uncertain-blocks>div, .recognized-formulas, .diagram-blocks { grid-template-columns: 1fr; }.uncertain-blocks article { grid-template-columns: 100px 1fr; }.uncertain-blocks img { width: 100px; }.diagram-blocks article { grid-template-columns: 110px 1fr; }.diagram-blocks img { width: 110px; }.review-confirm-bar { align-items: stretch; flex-direction: column; }.review-confirm-bar button { width: 100%; }.rescan-control { width: 100%; flex-wrap: wrap; }.page-review-actions>button { flex: 1; }
+}
+
+.recall-card .speech-input-control button,
+.recall-card .listen-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid #d8d4e5;
+  border-radius: 9px;
+  color: #423b70;
+  background: #f8f6ff;
+  font: 700 12px/1 "DM Sans", sans-serif;
 }

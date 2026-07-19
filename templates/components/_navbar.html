@@ -1,0 +1,55 @@
+{% set endpoint = request.endpoint or '' %}
+{% set dashboard_active = endpoint in ['dashboard', 'lesson_history', 'resume_lesson'] %}
+{% set lesson_creation_active = endpoint == 'index' %}
+{% set projects_active = endpoint == 'projects' or endpoint.startswith('project_') or endpoint in ['review_project_recognition', 'recognize_project_pages', 'recognize_one_project_page', 'retry_project_page', 'rotate_project_page', 'replace_project_page', 'document_block_region', 'reorder_project_pages', 'delete_project_page', 'process_project', 'learn_section', 'edit_section', 'reorder_sections', 'merge_sections', 'split_section', 'answer_recall_card', 'start_section_test'] %}
+{% set practice_active = endpoint in ['todays_practice', 'start_todays_practice', 'practice_weak', 'practice_similar_mistake', 'concept_detail', 'practice_concept'] %}
+{% set exam_active = endpoint in ['new_final_exam', 'take_final_exam', 'autosave_exam', 'submit_final_exam', 'final_exam_results'] %}
+{% set planner_active = endpoint in ['study_plans', 'new_study_plan', 'study_plan_detail', 'study_plan_calendar', 'study_plan_session_detail', 'complete_study_plan_session', 'skip_study_plan_session'] %}
+{% set profile_active = endpoint in ['settings', 'update_language'] %}
+<header class="app-nav global-nav" data-app-navigation>
+  <div class="app-nav-inner">
+    <a class="app-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span></a>
+    {% if current_user.is_authenticated %}
+    <nav class="desktop-app-nav global-nav-links" aria-label="{{ _('Main navigation') }}">
+      <a class="app-nav-link {{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %}>{{ _('Overview') }}</a>
+      <a class="app-nav-link nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
+      <a class="app-nav-link {{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>
+      <div class="app-menu">
+        <button class="app-menu-trigger {{ 'is-active' if practice_active or exam_active }}" type="button" aria-expanded="false" aria-controls="moreMenu">{{ _('More') }} <span aria-hidden="true">⌄</span></button>
+        <div id="moreMenu" class="app-dropdown" role="menu" aria-hidden="true">
+          <a role="menuitem" href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
+          <a role="menuitem" class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
+          <a role="menuitem" class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>
+          <a role="menuitem" class="{{ 'is-active' if exam_active }}" href="{{ url_for('projects') }}" {% if exam_active %}aria-current="page"{% endif %}>{{ _('Exam Mode') }}</a>
+        </div>
+      </div>
+    </nav>
+    <div class="desktop-profile-menu app-menu">
+      <button class="app-menu-trigger profile-trigger {{ 'is-active' if profile_active }}" type="button" aria-expanded="false" aria-controls="profileMenu"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[:1]|upper }}</span><span>{{ _('Account') }}</span><span aria-hidden="true">⌄</span></button>
+      <div id="profileMenu" class="app-dropdown app-dropdown-right" role="menu" aria-hidden="true">
+        <a class="settings-link {{ 'is-active' if profile_active }}" role="menuitem" href="{{ url_for('settings', next=request.full_path if request.query_string else request.path) }}">{{ _('Settings') }}</a>
+        <a role="menuitem" href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+        <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout" role="menuitem" type="submit">{{ _('Log out') }}</button></form>
+      </div>
+    </div>
+    <button class="mobile-nav-toggle" type="button" aria-controls="mobileAppMenu" aria-expanded="false" aria-label="{{ _('Open navigation') }}"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
+    {% else %}<a class="app-nav-link settings-link" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>{% endif %}
+  </div>
+  {% if current_user.is_authenticated %}
+  <div class="mobile-nav-backdrop" data-mobile-nav-close></div>
+  <nav id="mobileAppMenu" class="mobile-app-menu" aria-label="{{ _('Main navigation') }}" aria-hidden="true" tabindex="-1">
+    <div class="mobile-menu-head"><span>{{ _('Menu') }}</span><button type="button" data-mobile-nav-close aria-label="{{ _('Close navigation') }}">×</button></div>
+    <a class="{{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %}>{{ _('Overview') }}</a>
+    <a class="nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
+    <a class="{{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>
+    <a href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
+    <a class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
+    <a class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>
+    <a class="{{ 'is-active' if exam_active }}" href="{{ url_for('projects') }}" {% if exam_active %}aria-current="page"{% endif %}>{{ _('Exam Mode') }}</a>
+    <div class="mobile-menu-divider"></div>
+    <a class="settings-link {{ 'is-active' if profile_active }}" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
+    <a href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+    <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout" type="submit">{{ _('Log out') }}</button></form>
+  </nav>
+  {% endif %}
+</header>

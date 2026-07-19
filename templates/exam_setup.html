@@ -3,7 +3,6 @@
 {% block body_class %}project-page{% endblock %}
 {% block content %}
   <main class="exam-setup-shell">
-    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
     <section class="exam-setup-heading"><span class="eyebrow">{{ _('Final Exam Mode')|upper }}</span><h1>{{ _('Build a realistic exam from your pages.') }}</h1><p>{{ _('No hints, tutor chat, corrections, or revealed answers appear until submission.') }}</p></section>
     {% if readiness < 70 %}<div class="readiness-warning"><strong>{{ _('Your current readiness is') }} {{ readiness }}%.</strong><span>{{ _('You can still take the exam, but reviewing weak sections first may make the result more useful.') }}</span></div>{% endif %}
     <form class="exam-setup-form" method="post">

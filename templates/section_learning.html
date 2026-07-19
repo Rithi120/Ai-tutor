@@ -1,16 +1,16 @@
 {% extends "base.html" %}
+{% from "components/_speech_controls.html" import microphone_control, listen_control with context %}
 {% block title %}{{ section.title }} — Learnova{% endblock %}
 {% block body_class %}project-page learning-page{% endblock %}
 {% block content %}
   <main class="learning-shell">
-    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="form-alert {{ category }}">{{ _(message) }}</div>{% endfor %}
     <div class="learning-breadcrumb"><a href="{{ url_for('project_dashboard', project_id=project.id) }}">{{ project.title }}</a><span>›</span><span>Section {{ section.position }}</span></div>
-    <section class="learning-heading"><div><span class="eyebrow">{{ project.subject }} · {{ section.estimated_minutes }} MINUTES</span><h1>{{ section.title }}</h1><p>{{ section.main_topic }}</p></div><div class="mastery-dial"><strong>{{ section.mastery_score|round|int }}%</strong><span>{{ section.status|replace('_', ' ') }}</span></div></section>
+    <section class="learning-heading"><div><span class="eyebrow">{{ project.subject }} · {{ section.estimated_minutes }} MINUTES</span><h1>{{ section.title }}</h1><p>{{ section.main_topic }}</p></div><div class="mastery-dial"><strong data-count-progress="{{ section.mastery_score|round|int }}" data-count-suffix="%">{{ section.mastery_score|round|int }}%</strong><span>{{ section.status|replace('_', ' ') }}</span></div></section>
     <nav class="explanation-levels" aria-label="{{ _('Explanation level') }}"><span>{{ _('Explanation level') }}</span><a class="{{ 'active' if level == 'simple' }}" href="?level=simple">{{ _('Simple') }}</a><a class="{{ 'active' if level == 'standard' }}" href="?level=standard">{{ _('Standard') }}</a><a class="{{ 'active' if level == 'detailed' }}" href="?level=detailed">{{ _('Detailed') }}</a></nav>
 
     <section class="learning-content-grid">
       <div class="learning-main-column">
-        <article class="learning-block explanation-block"><span class="block-number">01</span><div><span class="card-kicker">{{ _('UNDERSTAND') }}</span><h2>{{ _('Build the idea step by step') }}</h2><div class="structured-prose">{{ explanation }}</div></div></article>
+        <article class="learning-block explanation-block"><span class="block-number">01</span><div><span class="card-kicker">{{ _('UNDERSTAND') }}</span><h2>{{ _('Build the idea step by step') }}</h2><div id="sectionExplanation" class="structured-prose">{{ explanation }}</div>{{ listen_control('#sectionExplanation', 'sectionExplanationListenControl') }}</div></article>
         {% if fields.important_facts %}<article class="learning-block"><span class="block-number">02</span><div><span class="card-kicker">{{ _('CORE KNOWLEDGE') }}</span><h2>{{ _('Important facts') }}</h2><ul class="study-list">{% for item in fields.important_facts %}<li>{{ item }}</li>{% endfor %}</ul></div></article>{% endif %}
         {% if fields.formulas %}<article class="learning-block formula-block"><span class="block-number">ƒx</span><div><span class="card-kicker">{{ _('FORMULAS') }}</span><h2>{{ _('Symbols and formulas') }}</h2><div class="formula-list">{% for item in fields.formulas %}<div>{{ item }}</div>{% endfor %}</div></div></article>{% endif %}
         {% if fields.examples %}<article class="learning-block"><span class="block-number">03</span><div><span class="card-kicker">{{ _('WORKED EXAMPLES') }}</span><h2>{{ _('See it in context') }}</h2><ol class="study-list numbered">{% for item in fields.examples %}<li>{{ item }}</li>{% endfor %}</ol></div></article>{% endif %}
@@ -24,7 +24,7 @@
       </aside>
     </section>
 
-    {% if section.recall_cards %}<section class="recall-section"><div class="section-heading"><div><span class="eyebrow">{{ _('ACTIVE RECALL') }}</span><h2>{{ _('Remember without looking') }}</h2><p>{{ _('Answer first, then reveal the source-grounded correction.') }}</p></div></div><div class="recall-grid">{% for card in section.recall_cards %}<form class="recall-card" method="post" action="{{ url_for('answer_recall_card', project_id=project.id, section_id=section.id, card_id=card.id) }}"><span>{{ card.kind|replace('_', ' ') }}</span><h3>{{ card.prompt }}</h3><input name="answer" autocomplete="off" placeholder="{{ _('Write what you remember') }}" required><button type="submit">{{ _('Check recall') }}</button><div class="recall-result" aria-live="polite"></div></form>{% endfor %}</div></section>{% endif %}
+    {% if section.recall_cards %}<section class="recall-section"><div class="section-heading"><div><span class="eyebrow">{{ _('ACTIVE RECALL') }}</span><h2>{{ _('Remember without looking') }}</h2><p>{{ _('Answer first, then reveal the source-grounded correction.') }}</p></div></div><div class="recall-grid">{% for card in section.recall_cards %}<form class="recall-card" method="post" action="{{ url_for('answer_recall_card', project_id=project.id, section_id=section.id, card_id=card.id) }}"><span>{{ card.kind|replace('_', ' ') }}</span><h3 id="recallPrompt{{ card.id }}">{{ card.prompt }}</h3>{{ listen_control('#recallPrompt' ~ card.id, 'recallListen' ~ card.id) }}<input id="recallAnswer{{ card.id }}" name="answer" autocomplete="off" placeholder="{{ _('Write what you remember') }}" required>{{ microphone_control('#recallAnswer' ~ card.id, 'recallMicrophone' ~ card.id) }}<button type="submit">{{ _('Check recall') }}</button><div class="recall-result" aria-live="polite"></div></form>{% endfor %}</div></section>{% endif %}
 
     <section class="section-test-callout"><div><span class="eyebrow">{{ _('SECTION CHECK') }}</span><h2>{{ _('Test your understanding') }}</h2><p>{{ _('Your attempts are saved and update this section’s mastery.') }}</p></div><form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=section.id) }}"><button class="primary-button" type="submit">{{ _('Start section test') }} →</button></form></section>
   </main>
@@ -35,7 +35,7 @@
   const recallSource = {{ _('Source:')|tojson }};
   const recallFailed = {{ _('The answer could not be checked.')|tojson }};
   document.querySelectorAll('.recall-card').forEach(form => form.addEventListener('submit', async event => {
-    event.preventDefault(); const button = form.querySelector('button'); const output = form.querySelector('.recall-result'); button.disabled = true;
+    event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const output = form.querySelector('.recall-result'); button.disabled = true;
     try { const response = await fetch(form.action, {method:'POST', body:new FormData(form)}); const data = await response.json(); if (!response.ok) throw new Error(data.error); output.className = `recall-result ${data.correct ? 'correct' : 'incorrect'}`; output.textContent = data.correct ? recallCorrect : `${recallNotYet} ${data.answer}${data.source_text ? `\n${recallSource} ${data.source_text}` : ''}`; }
     catch (error) { output.textContent = error.message || recallFailed; }
     finally { button.disabled = false; }

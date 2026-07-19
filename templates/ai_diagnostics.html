@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}AI diagnostics — Learnova{% endblock %}
+{% block content %}
+<main class="page-shell" aria-labelledby="diagnostics-title">
+  <section class="dashboard-hero">
+    <p class="eyebrow">Internal · sanitized metadata only</p>
+    <h1 id="diagnostics-title">AI diagnostics</h1>
+    <p>No prompts, uploads, credentials, or student content are shown here.</p>
+  </section>
+  <section class="dashboard-grid" aria-label="AI summary">
+    <article class="stat-card"><strong>{{ diagnostics.total_requests }}</strong><span>Requests</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.cache_hit_rate }}%</strong><span>Cache hit rate</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.validation_failure_rate }}%</strong><span>Validation failures</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.average_duration_ms }} ms</strong><span>Average response</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.total_tokens }}</strong><span>Total tokens</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.retries }}</strong><span>Corrective retries</span></article>
+  </section>
+  <section class="panel">
+    <h2>Requests by task</h2>
+    <div class="table-scroll"><table><thead><tr><th>Task</th><th>Requests</th><th>Tokens</th><th>Estimated cost</th><th>Failures</th></tr></thead>
+      <tbody>{% for task, item in diagnostics.by_task.items() %}<tr><td>{{ task }}</td><td>{{ item.requests }}</td><td>{{ item.tokens }}</td><td>{{ item.cost }}</td><td>{{ item.failures }}</td></tr>{% else %}<tr><td colspan="5">No requests recorded.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  <section class="panel"><h2>Modes</h2><p>Mock {{ diagnostics.modes.mock }} · Cached {{ diagnostics.modes.cached }} · Live {{ diagnostics.modes.live }}</p></section>
+  <section class="panel"><h2>Most expensive task types</h2><ol>{% for item in diagnostics.most_expensive_tasks %}<li><code>{{ item.task_type }}</code> — {{ item.tokens }} tokens · estimated {{ item.cost }}</li>{% else %}<li>No usage recorded.</li>{% endfor %}</ol></section>
+  <section class="panel"><h2>Current prompt versions</h2><ul>{% for version in diagnostics.prompt_versions %}<li><code>{{ version }}</code></li>{% else %}<li>No versions recorded.</li>{% endfor %}</ul></section>
+  <section class="panel"><h2>Recent safe failures</h2><div class="table-scroll"><table><thead><tr><th>Time</th><th>Request</th><th>Task</th><th>Category</th><th>Summary</th></tr></thead><tbody>
+    {% for item in diagnostics.recent_failures %}<tr><td>{{ item.timestamp }}</td><td><code>{{ item.request_id }}</code></td><td>{{ item.task_type }}</td><td>{{ item.error_category }}</td><td>{{ item.error_summary }}</td></tr>{% else %}<tr><td colspan="5">No failures recorded.</td></tr>{% endfor %}
+  </tbody></table></div></section>
+</main>
+{% endblock %}

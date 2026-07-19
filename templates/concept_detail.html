@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ mastery.concept }} — Learnova{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+{% block content %}
+<main class="dashboard-shell concept-detail-shell">
+  <header class="concept-detail-hero reveal-card">
+    <div><span class="eyebrow">{{ mastery.subject }}</span><h1>{{ mastery.concept }}</h1><p>{{ _('See why this concept is scheduled and how your mastery changes over time.') }}</p></div>
+    <div class="concept-score"><strong>{{ mastery.mastery_score|round|int }}%</strong><span>{{ _(mastery.status|capitalize) }}</span></div>
+    <form method="post" action="{{ url_for('practice_concept', mastery_id=mastery.id) }}"><button class="primary-button" type="submit">{{ _('Start targeted practice') }} →</button></form>
+  </header>
+
+  <section class="concept-stat-grid reveal-card">
+    <div><span>{{ _('Attempts') }}</span><strong>{{ mastery.attempts }}</strong></div>
+    <div><span>{{ _('Correct') }}</span><strong>{{ mastery.correct_attempts }}</strong></div>
+    <div><span>{{ _('Recent mistakes') }}</span><strong>{{ mastery.recent_mistake_count }}</strong></div>
+    <div><span>{{ _('Difficulty') }}</span><strong>{{ _(difficulty|capitalize) }}</strong></div>
+    <div><span>{{ _('Confidence trend') }}</span><strong>{{ mastery.confidence_trend|round|int }}%</strong></div>
+    <div><span>{{ _('Next review') }}</span><strong>{{ mastery.next_review_at.strftime('%d.%m.%Y') if mastery.next_review_at else _('Due now') }}</strong></div>
+  </section>
+
+  <section class="dashboard-grid concept-detail-grid">
+    <article class="dashboard-card concept-history-card">
+      <h2>{{ _('Mastery history') }}</h2>
+      {% if history %}<div class="mastery-history-list">{% for item in history %}<div><span class="history-dot {{ item.outcome }}" aria-hidden="true"></span><p><b>{{ item.mastery_before|round|int }}% → {{ item.mastery_after|round|int }}%</b><small>{{ item.practised_at.strftime('%d.%m.%Y %H:%M') }} · {{ _('Score') }} {{ item.score }}% · {{ _('Confidence') }} {{ item.response_confidence|round|int }}%</small></p><strong class="{{ 'positive-change' if item.delta > 0 else 'negative-change' }}">{{ '+' if item.delta > 0 }}{{ item.delta|round|int }}</strong></div>{% endfor %}</div>{% else %}<div class="empty-state compact"><span class="empty-state-icon" aria-hidden="true">↗</span><h3>{{ _('No mastery history yet') }}</h3><p>{{ _('Your next answer will create the first history entry.') }}</p></div>{% endif %}
+    </article>
+
+    <article class="dashboard-card">
+      <h2>{{ _('Source sections') }}</h2>
+      {% if source_sections %}<div class="source-section-list">{% for section in source_sections %}<a href="{{ url_for('learn_section', project_id=section.project_id, section_id=section.id) }}"><span>{{ section.project.title }}</span><b>{{ section.title }}</b><small>{{ section.main_topic }}</small></a>{% endfor %}</div>{% else %}<div class="empty-state compact"><span class="empty-state-icon" aria-hidden="true">▤</span><h3>{{ _('No linked project sections') }}</h3><p>{{ _('This concept currently comes from a standalone lesson or practice session.') }}</p></div>{% endif %}
+    </article>
+
+    <article class="dashboard-card sessions-card">
+      <h2>{{ _('Recent attempts') }}</h2>
+      {% if attempts %}<div class="concept-attempt-list">{% for item in attempts %}<section><div><b>{{ item.question }}</b><span>{{ item.timestamp.strftime('%d.%m.%Y %H:%M') }}</span></div><strong class="{{ 'positive-change' if item.score >= 80 else 'negative-change' }}">{{ item.score }}%</strong><p>{{ item.feedback }}</p></section>{% endfor %}</div>{% else %}<div class="empty-state compact"><span class="empty-state-icon" aria-hidden="true">◌</span><h3>{{ _('No attempts yet') }}</h3><p>{{ _('Start targeted practice to answer your first question for this concept.') }}</p></div>{% endif %}
+    </article>
+
+    <article class="dashboard-card sessions-card">
+      <h2>{{ _('Mistakes') }}</h2>
+      {% if mistakes %}<div class="concept-attempt-list">{% for item in mistakes %}<section><div><b>{{ item.question }}</b><span>{{ item.timestamp.strftime('%d.%m.%Y') }}</span></div><strong class="negative-change">{{ item.score }}%</strong><p><b>{{ _('Your answer') }}:</b> {{ item.student_answer }}</p><p>{{ item.feedback }}</p></section>{% endfor %}</div>{% else %}<div class="empty-state compact"><span class="empty-state-icon" aria-hidden="true">✓</span><h3>{{ _('No recent mistakes') }}</h3><p>{{ _('Keep reviewing this concept to retain it.') }}</p></div>{% endif %}
+    </article>
+  </section>
+</main>
+{% endblock %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/_speech_controls.html" import microphone_control, listen_control with context %}
 {% block title %}{{ _('Learnova — Your personal study tutor') }}{% endblock %}
 {% block content %}
   <div class="ambient ambient-one"></div>
@@ -74,6 +75,7 @@
             <div><span class="card-kicker" data-i18n="understand">UNDERSTAND</span>
               <h2 data-i18n="makeClear">Let's make this clear</h2>
               <div id="explanation" class="prose"></div>
+              {{ listen_control('#explanation', 'explanationListenControl') }}
             </div>
           </article>
           <article class="content-card example-card">
@@ -103,11 +105,13 @@
             <div class="wide">
               <div class="question-meta"><span class="card-kicker" data-i18n="yourTurn">YOUR TURN</span><span
                   id="difficulty"></span></div>
-              <h2 id="questionPrompt"></h2><button id="hintButton" class="hint-button" data-i18n="showHint">💡 Show a
+              <h2 id="questionPrompt"></h2>{{ listen_control('#questionPrompt', 'questionListenControl') }}<button id="hintButton" class="hint-button" data-i18n="showHint">💡 Show a
                 hint</button>
               <p id="hint" class="hint hidden"></p>
-              <form id="answerForm"><div id="answerControl" class="answer-control"></div><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
+              {{ listen_control('#hint', 'hintListenControl', true) }}
+              <form id="answerForm"><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
               <div id="feedback" class="feedback hidden"></div>
+              {{ listen_control('#feedbackSpeechText', 'feedbackListenControl', true) }}
             </div>
           </article>
           <section id="testSummary" class="test-summary hidden">
@@ -130,13 +134,13 @@
           </div><button id="chatClose" aria-label="Close chat">×</button>
         </div>
         <div id="chatMessages" class="chat-messages">
-          <div class="message tutor-message" data-i18n="chatWelcome">I’m here while you practice. Ask me to explain a
+          <div class="message tutor-message" data-speech-listen-auto data-i18n="chatWelcome">I’m here while you practice. Ask me to explain a
             step, give a hint, or help you understand a mistake.</div>
         </div>
         <div class="chat-suggestions"><button data-i18n="giveHint">Give me a hint</button><button
             data-i18n="whatPractice">What should I practice?</button></div>
         <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" placeholder="Ask about this lesson…"
-            data-i18n-placeholder="chatPlaceholder" required></textarea><button type="submit"
+            data-i18n-placeholder="chatPlaceholder" required></textarea>{{ microphone_control('#chatInput', 'chatMicrophoneControl') }}<button type="submit"
             aria-label="Send">➤</button></form>
       </aside>
     </section>
@@ -145,5 +149,5 @@
 {% endblock %}
 {% block scripts %}
   <script id="lessonBootstrap" type="application/json">{{ bootstrap|tojson }}</script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

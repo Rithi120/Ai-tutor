@@ -1,0 +1,5 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}<div class="global-alerts" role="status" aria-live="polite">
+    {% for category, message in messages %}<div class="form-alert {{ category }}" data-alert-category="{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}"><span>{{ _(message) }}</span><button class="alert-dismiss" type="button" aria-label="{{ _('Dismiss') }}">×</button></div>{% endfor %}
+  </div>{% endif %}
+{% endwith %}

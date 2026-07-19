@@ -1,3 +1,7 @@
+import {escapeHtml} from "./js/dom.js";
+import {selectedLanguage, t} from "./js/i18n.js";
+import {answerSymbols} from "./js/symbols.js";
+
 const uploadView = document.querySelector("#uploadView");
 const lessonView = document.querySelector("#lessonView");
 const uploadForm = document.querySelector("#uploadForm");
@@ -11,20 +15,7 @@ let currentQuestion = null;
 let questionResults = [];
 let testTotal = 5;
 let hintUsed = false;
-const answerSymbols = [
-  ["√", "√()", "Square root"], ["x²", "²", "Squared"], ["x³", "³", "Cubed"],
-  ["π", "π", "Pi"], ["±", "±", "Plus or minus"], ["×", "×", "Multiply"],
-  ["÷", "÷", "Divide"], ["≤", "≤", "Less than or equal"], ["≥", "≥", "Greater than or equal"],
-  ["≠", "≠", "Not equal"], ["≈", "≈", "Approximately"], ["Δ", "Δ", "Delta"],
-  ["θ", "θ", "Theta"], ["α", "α", "Alpha"], ["β", "β", "Beta"],
-  ["→", "→", "Arrow"], ["°", "°", "Degrees"], ["½", "½", "One half"]
-];
-const selectedLanguage = window.LEARNOVA_LANGUAGE === "de" ? "German" : "English";
-
-function t(key) {
-  return window.LEARNOVA_I18N?.[key] || key;
-}
-
+let answerRetryCount = 0;
 function applyTranslations() {
   document.documentElement.lang = selectedLanguage === "German" ? "de" : "en";
   document.querySelectorAll("[data-i18n]").forEach(node => { node.textContent = t(node.dataset.i18n); });
@@ -138,13 +129,18 @@ function enableSymbolKeyboard() {
 function renderQuestion(question) {
   currentQuestion = question;
   hintUsed = false;
+  answerRetryCount = 0;
+  const neutralConfidence = answerForm.querySelector('input[name="responseConfidence"][value="50"]');
+  if (neutralConfidence) neutralConfidence.checked = true;
   const questionNumber = questionResults.length + 1;
   document.querySelector("#questionNumber").textContent = String(questionNumber).padStart(2, "0");
   document.querySelector("#questionPrompt").textContent = question.prompt;
   document.querySelector("#difficulty").textContent = `${t("level")} ${question.difficulty}`;
   document.querySelector("#hint").textContent = question.hint;
   document.querySelector("#hint").classList.add("hidden");
+  document.querySelector("#hintListenControl")?.classList.add("hidden");
   document.querySelector("#feedback").className = "feedback hidden";
+  document.querySelector("#feedbackListenControl")?.classList.add("hidden");
   document.querySelector("#questionCard").className = "content-card question-card";
   const control = document.querySelector("#answerControl");
   const options = question.options || [];
@@ -161,6 +157,7 @@ function renderQuestion(question) {
     control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${symbolKeyboardMarkup()}`;
     enableSymbolKeyboard();
   }
+  document.querySelector("#answerMicrophoneControl")?.classList.toggle("hidden", !document.querySelector("#writtenAnswer"));
   answerForm.classList.remove("hidden");
   answerForm.querySelector(".primary-button").classList.remove("hidden");
   updateProgress(questionNumber);
@@ -201,12 +198,6 @@ function renderLesson(data) {
   document.querySelector("#testSummary").classList.add("hidden");
 }
 
-function escapeHtml(value) {
-  const node = document.createElement("div");
-  node.textContent = value;
-  return node.innerHTML;
-}
-
 uploadForm.addEventListener("submit", async event => {
   event.preventDefault();
   if (imageInput.files.length > 4) return showError(t("photoLimit"));
@@ -238,7 +229,9 @@ uploadForm.addEventListener("submit", async event => {
 
 document.querySelector("#hintButton").addEventListener("click", () => {
   hintUsed = true;
-  document.querySelector("#hint").classList.toggle("hidden");
+  const hint = document.querySelector("#hint");
+  hint.classList.toggle("hidden");
+  document.querySelector("#hintListenControl")?.classList.toggle("hidden", hint.classList.contains("hidden"));
 });
 document.querySelector("#newLesson").addEventListener("click", () => location.reload());
 document.querySelector("#restartTest").addEventListener("click", () => location.reload());
@@ -288,7 +281,13 @@ answerForm.addEventListener("submit", async event => {
     const response = await fetch("/api/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, answer: submittedAnswer, hints_used: hintUsed })
+      body: JSON.stringify({
+        session_id: sessionId,
+        answer: submittedAnswer,
+        hints_used: hintUsed,
+        retry_count: answerRetryCount,
+        response_confidence: Number(answerForm.querySelector('input[name="responseConfidence"]:checked')?.value || 50)
+      })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -301,7 +300,8 @@ answerForm.addEventListener("submit", async event => {
     document.querySelectorAll("#answerControl input, #answerControl select, #answerControl textarea, #answerControl button").forEach(control => { control.disabled = true; });
     feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
     const continueLabel = data.complete ? t("viewResults") : t("nextQuestion");
-    feedback.innerHTML = `<strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}<button class="next-button" type="button">${continueLabel}</button>`;
+    feedback.innerHTML = `<div id="feedbackSpeechText"><strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}</div><button class="next-button" type="button">${continueLabel}</button>`;
+    document.querySelector("#feedbackListenControl")?.classList.remove("hidden");
     button.classList.add("hidden");
     document.querySelector("#score").textContent = data.progress.average_score;
     document.querySelector("#answered").textContent = `${data.progress.answered} ${data.progress.answered === 1 ? t("question") : t("questions")} ${t("answered")}`;
@@ -315,6 +315,7 @@ answerForm.addEventListener("submit", async event => {
       }
     });
   } catch (error) {
+    answerRetryCount += 1;
     showError(error.message || t("answerFailed"));
   } finally {
     button.disabled = false;
@@ -340,6 +341,7 @@ function addChatMessage(text, role, extraClass = "") {
   const message = document.createElement("div");
   message.className = `message ${role === "student" ? "student-message" : "tutor-message"} ${extraClass}`;
   message.textContent = text;
+  if (role === "tutor" && !extraClass.includes("typing-message")) message.dataset.speechListenAuto = "";
   chatMessages.appendChild(message);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   return message;

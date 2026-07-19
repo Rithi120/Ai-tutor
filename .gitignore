@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .venv/
 instance/*.db
+instance/ai_cache/
+instance/ai_usage.jsonl

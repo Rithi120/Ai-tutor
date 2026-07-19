@@ -172,7 +172,7 @@ class LanguageSystemTests(unittest.TestCase):
         for path in ("/", "/dashboard", "/projects", "/practice/today", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
-            self.assertIn(b'class="settings-link"', response.data)
+            self.assertIn(b'class="settings-link', response.data)
             self.assertIn(b'class="mobile-nav-toggle"', response.data)
             self.assertIn("Einstellungen".encode(), response.data)
 

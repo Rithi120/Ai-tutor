@@ -1,0 +1,1 @@
+{"quiz_generation":{"output_text":{"questions":[{"id":"q1","concept":"Brüche","difficulty":1,"type":"text","prompt":"Erste eigene Frage","hint":"Denke","options":[],"expected_answer":"A"},{"id":"q1","concept":"Brüche","difficulty":1,"type":"text","prompt":"Zweite eigene Frage","hint":"Denke","options":[],"expected_answer":"B"}]}}}
