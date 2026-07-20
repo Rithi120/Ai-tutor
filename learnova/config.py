@@ -121,8 +121,8 @@ def configure_app(app, environment: str | None = None) -> str:
     integer_settings = {
         "AI_MAX_REQUESTS_PER_USER_HOUR": 60,
         "AI_MAX_REQUESTS_PER_USER_DAY": 250,
-        "AI_MAX_LIVE_REQUESTS_DEVELOPMENT": 20,
-        "AI_MAX_TOKENS_PER_SESSION": 20000,
+        "AI_MAX_LIVE_REQUESTS_DEVELOPMENT": 1000,
+        "AI_MAX_TOKENS_PER_SESSION": 60000,
         "AI_MAX_OUTPUT_CHARACTERS": 200000,
     }
     for name, default in integer_settings.items():
@@ -131,10 +131,10 @@ def configure_app(app, environment: str | None = None) -> str:
         except ValueError as error:
             raise RuntimeError(f"{name} must be a positive integer") from error
     output_budgets = {
-        "TUTOR_CHAT": 200, "ANSWER_EVALUATION": 250, "TRANSLATION": 400,
-        "LESSON_GENERATION": 700, "QUIZ_GENERATION": 600,
+        "TUTOR_CHAT": 350, "ANSWER_EVALUATION": 2200, "TRANSLATION": 400,
+        "LESSON_GENERATION": 2200, "QUIZ_GENERATION": 600,
         "PROJECT_SECTION_GENERATION": 1200, "FINAL_EXAM_GENERATION": 1200,
-        "OCR_DOCUMENT_RECOGNITION": 1400, "ADAPTIVE_PRACTICE": 600,
+        "OCR_DOCUMENT_RECOGNITION": 1400, "ADAPTIVE_PRACTICE": 2200,
         "FINAL_EXAM_EVALUATION": 600,
     }
     input_budgets = {
@@ -163,8 +163,8 @@ def configure_app(app, environment: str | None = None) -> str:
         if item.strip()
     }
     for name, default in {
-        "LESSON_TOKEN_LIMIT": 1800,
-        "ANSWER_TOKEN_LIMIT": 1100,
+        "LESSON_TOKEN_LIMIT": 2200,
+        "ANSWER_TOKEN_LIMIT": 2200,
         "CHAT_TOKEN_LIMIT": 350,
         "TRANSLATE_TOKEN_LIMIT": 2500,
         "PROJECT_TOKEN_LIMIT": 5000,

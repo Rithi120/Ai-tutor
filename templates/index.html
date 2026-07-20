@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% from "components/_speech_controls.html" import microphone_control, listen_control with context %}
 {% block title %}{{ _('Learnova — Your personal study tutor') }}{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+{% endblock %}
 {% block content %}
   <div class="ambient ambient-one"></div>
   <div class="ambient ambient-two"></div>
@@ -148,6 +151,8 @@
   <div id="toast" class="toast hidden"></div>
 {% endblock %}
 {% block scripts %}
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <script id="lessonBootstrap" type="application/json">{{ bootstrap|tojson }}</script>
   <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

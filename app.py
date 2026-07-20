@@ -856,8 +856,47 @@ def language_instruction() -> str:
     )
 
 
-def tutor_instructions() -> str:
-    return f"{TUTOR_RULES}\n\n{language_instruction()}"
+# Subjects whose formulas should be typeset with LaTeX in the tutor UI.
+LATEX_SUBJECTS = {"mathematics", "physics"}
+# Subjects that are themselves a language, mapped to the language their content stays in.
+LANGUAGE_SUBJECTS = {"english": "English", "german": "German", "deutsch": "German"}
+
+
+def subject_teaching_instruction(subject: str | None) -> str:
+    """Extra, subject-specific tutoring rules layered on top of the shared rules."""
+
+    key = str(subject or "").strip().casefold()
+    parts: list[str] = []
+    target_language = LANGUAGE_SUBJECTS.get(key)
+    learner_language = learning_content_language()
+    if target_language and target_language != learner_language:
+        parts.append(
+            f"This is a language lesson teaching {target_language} to a {learner_language}-speaking student. "
+            f"This overrides any instruction to write everything in {learner_language}: write only the "
+            f"explanations, grammar notes, instructions, question prompts, and hints in {learner_language}. "
+            f"Keep every {target_language} word, example sentence, phrase, and quotation in {target_language}, "
+            f"and add its {learner_language} meaning in parentheses right after it. Never translate the "
+            f"{target_language} material the student is meant to practise."
+        )
+    if key in LATEX_SUBJECTS:
+        parts.append(
+            "MATH FORMATTING IS MANDATORY. You MUST write every formula, equation, fraction, root, and numeric "
+            "step in LaTeX, never as plain text. Put each standalone formula or solution step on its own line as "
+            r"display math wrapped in $$...$$, and use \(...\) only for a single symbol inside a sentence. "
+            r"Use \frac{...}{...} for fractions, \sqrt{...} for roots, ^{} for powers and _{} for subscripts. "
+            "Give each transformation its own $$...$$ line; never chain several = steps on one line.\n"
+            r"CORRECT: $$x_1 = \frac{-b + \sqrt{D}}{2a}$$ then $$x_1 = \frac{4 + 8}{4}$$ then $$x_1 = \frac{12}{4} = 3$$" + "\n"
+            r"WRONG, never do this: x_1=(-b+√D)/(2a)=(4+8)/(4)=12/4=3" + "\n"
+            "Never use Unicode math symbols (such as √, ², ×, ÷, subscript digits) or a slash "
+            "for a fraction. Write backslash LaTeX commands normally (\\frac, \\sqrt); the system handles JSON escaping."
+        )
+    return "\n".join(parts)
+
+
+def tutor_instructions(subject: str | None = None) -> str:
+    base = f"{TUTOR_RULES}\n\n{language_instruction()}"
+    extra = subject_teaching_instruction(subject)
+    return f"{base}\n\n{extra}" if extra else base
 
 
 def tr(message: str, **values) -> str:
@@ -1554,7 +1593,7 @@ Match the requested easy/medium/hard difficulty. Do not duplicate a recent quest
             "question_number": question_number,
         },
         validation_context={"recent_questions": recent_questions},
-        model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
+        model=TUTOR_MODEL, instructions=tutor_instructions(target["subject"]), input=prompt,
         max_output_tokens=ANSWER_TOKEN_LIMIT, temperature=0.15,
         **quality_options(),
     )
@@ -1704,6 +1743,7 @@ def index():
         bootstrap = {
             "session_id": session_id,
             "test_total": session["test_total"],
+            "subject": session.get("subject", "Other"),
             "lesson": {key: value for key, value in session["lesson"].items() if key != "question"},
             "question": {key: value for key, value in session["current_question"].items() if key != "expected_answer"},
         }
@@ -3401,7 +3441,7 @@ def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=No
             if adaptive_plan else {"subject": subject}
         ),
         model=TUTOR_MODEL,
-        instructions=tutor_instructions(),
+        instructions=tutor_instructions(adaptive_plan[0]["subject"] if adaptive_plan else subject),
         input=prompt,
         max_output_tokens=LESSON_TOKEN_LIMIT,
         temperature=0.2,
@@ -3727,7 +3767,7 @@ The first question must be easy, check understanding of the explanation, and not
             task_type="lesson_generation",
             language=language,
             model=VISION_MODEL if uploads else TUTOR_MODEL,
-            instructions=tutor_instructions(),
+            instructions=tutor_instructions(subject),
             input=[{"role": "user", "content": content}],
             max_output_tokens=LESSON_TOKEN_LIMIT,
             temperature=0.2,
@@ -3755,7 +3795,7 @@ The first question must be easy, check understanding of the explanation, and not
                          value in lesson.items() if key != "question"}
         question = {key: value for key, value in lesson["question"].items(
         ) if key != "expected_answer"}
-        return jsonify(ok=True, session_id=session_id, test_total=5, lesson=public_lesson, question=question)
+        return jsonify(ok=True, session_id=session_id, test_total=5, subject=subject, lesson=public_lesson, question=question)
     except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
         message, status, code = ai_failure_message(error)
@@ -3838,7 +3878,7 @@ def check_answer():
     next_question_example = None if is_final else {
         "id": f"q{next_question_number}",
         "concept": "weakest relevant concept",
-        "difficulty": next_question_number,
+        "difficulty": question_difficulty,
         "type": next_question_type,
         "prompt": "question",
         "hint": "small hint",
@@ -3871,7 +3911,7 @@ Return this exact JSON shape:
 Score is an integer from 0 to 100. If the answer is wrong, keep or lower difficulty and target the misconception.
 Write all student-facing JSON values in response_language.
 The teacher_tip must be concrete and immediately usable. Only provide exception_note when it is relevant to the current concept.
-For mathematics or physics, format feedback and correction with real newline characters: one named step, equation transformation, or unit conversion per line. Never compress a multi-step calculation into one paragraph.
+For mathematics or physics, write every equation, transformation, and unit conversion as its own $$...$$ LaTeX line in feedback and correction; never write formulas as plain text and never compress a multi-step calculation into one paragraph.
 For multiple_choice and dropdown use exactly one correct option and 4 options. For checkboxes use 4 or 5 options with 2 or 3 correct answers. For ordering provide 4 items in a shuffled order. For text, options must be an empty list.
 When next_target is present, target exactly that subject, concept, and difficulty. Otherwise target the weakest relevant concept. When uploaded_source is present, it is the only factual source for evaluation and new questions; never introduce facts outside it.
 Follow the exact null/object structure shown above. Do not replace a required object with null."""
@@ -3883,7 +3923,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             language=session["language"],
             validation_context={"is_final": bool(is_final or adaptive_plan)},
             model=TUTOR_MODEL,
-            instructions=tutor_instructions(),
+            instructions=tutor_instructions(question_subject),
             input=prompt,
             max_output_tokens=ANSWER_TOKEN_LIMIT,
             temperature=0.1,

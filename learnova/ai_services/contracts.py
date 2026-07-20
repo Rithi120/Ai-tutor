@@ -57,6 +57,36 @@ class AIValidationError(ValueError):
         super().__init__(self.safe_summary)
 
 
+def repair_latex_json(text: str) -> str:
+    """Double any lone backslash that is not a valid JSON escape so single-backslash LaTeX
+    (\\frac, \\sqrt, \\pm, ...) survives json.loads. Already-escaped backslashes, real newline
+    escapes (\\n), and \\uXXXX sequences are left untouched."""
+
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c != "\\":
+            out.append(c)
+            i += 1
+            continue
+        nxt = text[i + 1] if i + 1 < n else ""
+        after = text[i + 2] if i + 2 < n else ""
+        if nxt in "\\\"/":
+            out.append(c + nxt); i += 2                 # already-escaped  \  "  /
+        elif nxt == "n":
+            out.append(c + nxt); i += 2                 # newline - always preserve
+        elif nxt == "u" and len(text[i + 2:i + 6]) == 4 and all(ch in "0123456789abcdefABCDEF" for ch in text[i + 2:i + 6]):
+            out.append(c + nxt); i += 2                 # \uXXXX unicode escape
+        elif nxt in "bfrt" and after.isalpha():
+            out.append("\\\\"); i += 1                  # LaTeX word (\frac \times \beta \right) -> double
+        elif nxt in "bfrtu":
+            out.append(c + nxt); i += 2                 # genuine control escape (\b \f \r \t)
+        else:
+            out.append("\\\\"); i += 1                  # lone LaTeX backslash (\sqrt \pm \cdot) -> double
+    return "".join(out)
+
+
 def _fail(summary: str, category: str = "schema_validation") -> None:
     raise AIValidationError(category, summary)
 
@@ -362,7 +392,7 @@ def _validate_output(task_type: str, output_text: str, prompt_version: str, cont
         raise AIValidationError("token_limit_exceeded", "response exceeded the configured size limit")
     if task_type == "tutor_chat":
         return ValidationReport(task_type, prompt_version, True)
-    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", output_text.strip())
+    cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", output_text.strip()))
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as error:

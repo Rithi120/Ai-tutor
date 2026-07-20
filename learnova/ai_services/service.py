@@ -22,7 +22,7 @@ from typing import Any
 from flask import current_app
 from openai import OpenAI
 
-from .contracts import AIValidationError, validate_output
+from .contracts import AIValidationError, repair_latex_json, validate_output
 from .prompts import PROMPT_VERSIONS, corrective_instruction, output_contract
 
 
@@ -138,7 +138,7 @@ def quality_options(model: str | None = None) -> dict[str, Any]:
 
 
 def parse_json(payload: str) -> Any:
-    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", payload.strip())
+    cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", payload.strip()))
     return json.loads(cleaned)
 
 
