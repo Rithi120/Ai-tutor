@@ -16,6 +16,26 @@ let questionResults = [];
 let testTotal = 5;
 let hintUsed = false;
 let answerRetryCount = 0;
+let currentSubject = "Mathematics";
+const MATH_SUBJECTS = new Set(["Mathematics", "Physics", "Chemistry"]);
+const MATH_DELIMITERS = [
+  { left: "$$", right: "$$", display: true },
+  { left: "\\[", right: "\\]", display: true },
+  { left: "\\(", right: "\\)", display: false },
+];
+
+// Typeset any LaTeX inside an element after its text/HTML has been set.
+// Harmless for non-math subjects: without delimiters, KaTeX leaves the text untouched.
+function renderMath(root) {
+  if (!root || typeof window.renderMathInElement !== "function") return;
+  try {
+    window.renderMathInElement(root, {
+      delimiters: MATH_DELIMITERS,
+      throwOnError: false,
+      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
+    });
+  } catch (_) { /* never let a formatting glitch break the lesson */ }
+}
 function applyTranslations() {
   document.documentElement.lang = selectedLanguage === "German" ? "de" : "en";
   document.querySelectorAll("[data-i18n]").forEach(node => { node.textContent = t(node.dataset.i18n); });
@@ -154,12 +174,14 @@ function renderQuestion(question) {
     control.innerHTML = `<p>${t("arrangeOrder")}</p><div id="orderingList" class="ordering-list">${options.map(option => `<div class="ordering-item" draggable="true" data-id="${escapeHtml(option.id)}"><span class="drag-handle">⋮⋮</span><b>${escapeHtml(option.label)}</b><span class="order-buttons"><button type="button" data-move="up" aria-label="${t("moveUp")}">↑</button><button type="button" data-move="down" aria-label="${t("moveDown")}">↓</button></span></div>`).join("")}</div>`;
     enableOrdering();
   } else {
-    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${symbolKeyboardMarkup()}`;
-    enableSymbolKeyboard();
+    const showSymbols = MATH_SUBJECTS.has(currentSubject);
+    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${showSymbols ? symbolKeyboardMarkup() : ""}`;
+    if (showSymbols) enableSymbolKeyboard();
   }
   document.querySelector("#answerMicrophoneControl")?.classList.toggle("hidden", !document.querySelector("#writtenAnswer"));
   answerForm.classList.remove("hidden");
   answerForm.querySelector(".primary-button").classList.remove("hidden");
+  renderMath(document.querySelector("#questionCard"));
   updateProgress(questionNumber);
 }
 
@@ -173,6 +195,7 @@ function collectAnswer() {
 
 function renderLesson(data) {
   const { lesson, question } = data;
+  if (data.subject) currentSubject = data.subject;
   testTotal = Number(data.test_total || 5);
   document.querySelector("#lessonTitle").textContent = lesson.lesson_title;
   document.querySelector("#sideTitle").textContent = lesson.lesson_title;
@@ -196,6 +219,7 @@ function renderLesson(data) {
   document.querySelector("#questionCard").classList.add("hidden");
   document.querySelector("#testProgress").classList.add("hidden");
   document.querySelector("#testSummary").classList.add("hidden");
+  renderMath(lessonView);
 }
 
 uploadForm.addEventListener("submit", async event => {
@@ -211,6 +235,7 @@ uploadForm.addEventListener("submit", async event => {
   document.querySelector("#loading").classList.remove("hidden");
   try {
     const formData = new FormData(uploadForm);
+    currentSubject = uploadForm.querySelector('input[name="subject"]:checked')?.value || currentSubject;
     const response = await fetch("/api/analyze", { method: "POST", body: formData });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -265,6 +290,7 @@ function renderSummary(data) {
     practice.next_recommended_review_date ? `Next review: ${practice.next_recommended_review_date}` : ""
   ].filter(Boolean) : (summary.next_steps || []);
   document.querySelector("#summaryNextSteps").innerHTML = nextSteps.map(item => `<li>${escapeHtml(item)}</li>`).join("");
+  renderMath(document.querySelector("#testSummary"));
   document.querySelector("#testSummary").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -301,6 +327,7 @@ answerForm.addEventListener("submit", async event => {
     feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
     const continueLabel = data.complete ? t("viewResults") : t("nextQuestion");
     feedback.innerHTML = `<div id="feedbackSpeechText"><strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}</div><button class="next-button" type="button">${continueLabel}</button>`;
+    renderMath(feedback);
     document.querySelector("#feedbackListenControl")?.classList.remove("hidden");
     button.classList.add("hidden");
     document.querySelector("#score").textContent = data.progress.average_score;
