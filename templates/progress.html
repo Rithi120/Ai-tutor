@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Progress') }} — Learnova{% endblock %}
+{% block content %}
+<main class="dashboard-shell progress-page">
+  <header class="dashboard-heading"><div><span class="eyebrow">{{ _('LEARNING PROGRESS') }}</span><h1>{{ _('Your progress') }}</h1><p>{{ _('Real activity from completed learning work.') }}</p></div></header>
+  <section class="progress-hero">
+    <div><span>{{ _('Level') }}</span><strong>{{ gamification.level }}</strong></div>
+    <div class="xp-progress"><span>{{ gamification.total_xp }} {{ _('XP') }}</span><progress value="{{ gamification.current_level_xp }}" max="{{ gamification.next_level_xp }}">{{ gamification.current_level_xp }}/{{ gamification.next_level_xp }}</progress><small>{{ gamification.xp_to_next_level }} {{ _('XP to next level') }}</small></div>
+    <div><span>{{ _('Current streak') }}</span><strong>{{ gamification.current_streak }} 🔥</strong><small>{{ _('Longest streak') }}: {{ gamification.longest_streak }}</small></div>
+  </section>
+  <section class="progress-grid">
+    <article><h2>{{ _("Today's goal") }}</h2>{% if gamification.goal %}<p>{{ _(gamification.goal.goal_type|capitalize) }}: {{ gamification.goal.progress }}/{{ gamification.goal.target }}</p><progress value="{{ gamification.goal.progress }}" max="{{ gamification.goal.target }}"></progress>{% else %}<p>{{ _('Set a daily goal to track meaningful progress.') }}</p>{% endif %}
+      <form id="dailyGoalForm" class="daily-goal-form">
+        <label>{{ _('Goal type') }}<select id="dailyGoalType"><option value="questions">{{ _('Questions') }}</option><option value="cards">{{ _('Cards') }}</option><option value="minutes">{{ _('Minutes') }}</option><option value="xp">{{ _('XP') }}</option></select></label>
+        <label>{{ _('Target') }}<input id="dailyGoalTarget" type="number" min="1" max="500" value="{{ gamification.goal.target if gamification.goal else 10 }}"></label>
+        <button class="primary-button" type="submit">{{ _('Save goal') }}</button>
+        <p id="dailyGoalStatus" role="status"></p>
+      </form>
+    </article>
+    <article><h2>{{ _('Learning totals') }}</h2><p>{{ cards_mastered }} {{ _('mastered cards') }}</p><p>{{ sessions|length }} {{ _('completed flashcard sessions') }}</p><p>{{ events|length }} {{ _('learning events this week') }}</p></article>
+    <article><h2>{{ _('Missions') }}</h2>{% for mission in gamification.missions %}<p>{{ _(mission.mission_key|replace('_',' ')|title) }} — {{ mission.progress }}/{{ mission.target }}</p><progress value="{{ mission.progress }}" max="{{ mission.target }}"></progress>{% endfor %}</article>
+  </section>
+  <section class="card-panel"><h2>{{ _('Badges') }}</h2>{% if badges %}<div class="badge-grid">{% for award in badges %}<article><span aria-hidden="true">🏅</span><b>{{ _(award.badge.name) }}</b><p>{{ _(award.badge.description) }}</p><small>{{ _(award.badge.tier|capitalize) }}</small></article>{% endfor %}</div>{% else %}<p>{{ _('Complete meaningful learning activities to unlock badges.') }}</p>{% endif %}</section>
+  <section class="card-panel"><h2>{{ _('Recent learning activity') }}</h2>{% if gamification.recent_events %}<ol class="activity-list">{% for event in gamification.recent_events %}<li><b>{{ _(event.event_type|replace('_',' ')|title) }}</b><span>{{ event.subject }}</span><time>{{ event.created_at.strftime('%d.%m.%Y %H:%M') }}</time></li>{% endfor %}</ol>{% else %}<p>{{ _('Your completed learning activity will appear here.') }}</p>{% endif %}</section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script type="module">
+  import { api } from "{{ url_for('static', filename='js/flashcards/common.js') }}";
+  const form = document.querySelector("#dailyGoalForm");
+  form?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const status = document.querySelector("#dailyGoalStatus");
+    try {
+      await api("/api/gamification/goals/today", {method: "PUT", body: {
+        type: document.querySelector("#dailyGoalType").value,
+        target: Number(document.querySelector("#dailyGoalTarget").value),
+      }});
+      status.textContent = {{ _('Goal saved.')|tojson }};
+      window.setTimeout(() => location.reload(), 350);
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  });
+</script>
+{% endblock %}

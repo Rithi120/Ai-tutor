@@ -21,13 +21,15 @@ const MATH_SUBJECTS = new Set(["Mathematics", "Physics", "Chemistry"]);
 const MATH_DELIMITERS = [
   { left: "$$", right: "$$", display: true },
   { left: "\\[", right: "\\]", display: true },
+  { left: "$", right: "$", display: false },
   { left: "\\(", right: "\\)", display: false },
 ];
 
 // Typeset any LaTeX inside an element after its text/HTML has been set.
-// Harmless for non-math subjects: without delimiters, KaTeX leaves the text untouched.
+// Only runs for formula subjects so a plain "$5" in e.g. a history lesson is never
+// mistaken for math; without delimiters KaTeX leaves the text untouched anyway.
 function renderMath(root) {
-  if (!root || typeof window.renderMathInElement !== "function") return;
+  if (!root || !MATH_SUBJECTS.has(currentSubject) || typeof window.renderMathInElement !== "function") return;
   try {
     window.renderMathInElement(root, {
       delimiters: MATH_DELIMITERS,
@@ -193,6 +195,26 @@ function collectAnswer() {
   return document.querySelector("#writtenAnswer").value.trim();
 }
 
+function renderMedia(lesson) {
+  const card = document.querySelector("#mediaCard");
+  if (!card) return;
+  const videos = Array.isArray(lesson.video_links) ? lesson.video_links : [];
+  const images = Array.isArray(lesson.image_media) ? lesson.image_media : [];
+  const isDe = selectedLanguage === "German";
+  document.querySelector("#lessonVideos").innerHTML = videos.map(video =>
+    `<div class="media-video"><div class="media-video-text"><b>${escapeHtml(video.title)}</b>${video.why ? `<small>${escapeHtml(video.why)}</small>` : ""}</div><span class="media-links"><a href="${escapeHtml(video.youtube)}" target="_blank" rel="noopener noreferrer">▶ YouTube</a><a href="${escapeHtml(video.studyflix)}" target="_blank" rel="noopener noreferrer">Studyflix</a></span></div>`
+  ).join("");
+  document.querySelector("#lessonImages").innerHTML = images.map(image =>
+    `<figure class="media-image"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.title)}" loading="lazy"><figcaption>${escapeHtml(image.title)}${image.page_url ? ` — <a href="${escapeHtml(image.page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(image.source || "Source")}</a>` : ""}</figcaption></figure>`
+  ).join("");
+  const hasMedia = videos.length > 0 || images.length > 0;
+  card.classList.toggle("hidden", !hasMedia);
+  if (hasMedia) {
+    document.querySelector("#mediaKicker").textContent = isDe ? "MEHR ENTDECKEN" : "EXPLORE MORE";
+    document.querySelector("#mediaHeading").textContent = isDe ? "Videos und Bilder" : "Watch and see";
+  }
+}
+
 function renderLesson(data) {
   const { lesson, question } = data;
   if (data.subject) currentSubject = data.subject;
@@ -219,6 +241,7 @@ function renderLesson(data) {
   document.querySelector("#questionCard").classList.add("hidden");
   document.querySelector("#testProgress").classList.add("hidden");
   document.querySelector("#testSummary").classList.add("hidden");
+  renderMedia(lesson);
   renderMath(lessonView);
 }
 

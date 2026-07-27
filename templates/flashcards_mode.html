@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ _(mode|capitalize) }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page mode-page mode-{{ mode }}" id="modePage">
+  <header class="cards-header">
+    <div><h1 id="modeTitle">{{ _(mode|capitalize) }}</h1><p id="modeStatus" class="cards-subtitle" role="status"></p></div>
+    <div class="header-actions">
+      <button id="soundToggle" type="button" class="ghost-button" aria-pressed="false">{{ _('Sound off') }}</button>
+      <button id="pauseMode" type="button" class="ghost-button">{{ _('Pause') }}</button>
+      <a class="ghost-button" href="{{ url_for('flashcards_overview_page', set_id=set_id) }}">✕</a>
+    </div>
+  </header>
+
+  <section id="modeConfig" class="card-panel mode-config">
+    <h2>{{ _('Session settings') }}</h2>
+    <div class="field-row">
+      <label class="field">{{ _('Study objective') }}
+        <select id="modeObjective">
+          <option value="all">{{ _('Study all cards') }}</option>
+          <option value="new">{{ _('Master new cards') }}</option>
+          <option value="due">{{ _('Review due cards') }}</option>
+          <option value="weak">{{ _('Practice weak cards') }}</option>
+          <option value="starred">{{ _('Practice starred cards') }}</option>
+          <option value="quick">{{ _('Quick session') }}</option>
+        </select>
+      </label>
+      <label class="field">{{ _('Number of questions') }}<input id="modeCount" type="number" min="1" max="30" value="10"></label>
+      {% if mode == 'test' %}
+      <label class="field">{{ _('Time limit (minutes)') }}<input id="modeTime" type="number" min="0" max="60" value="0"></label>
+      <label class="field">{{ _('Card direction') }}
+        <select id="modeDirection"><option value="mixed">{{ _('Mixed') }}</option><option value="front_to_back">{{ _('Front to back') }}</option><option value="back_to_front">{{ _('Back to front') }}</option></select>
+      </label>
+      {% endif %}
+    </div>
+    <label><input id="reducedMotion" type="checkbox"> {{ _('Reduced motion') }}</label>
+    <button id="startMode" type="button" class="primary-button">{{ _('Start session') }}</button>
+    <button id="continueMode" type="button" class="ghost-button hidden">{{ _('Continue previous session') }}</button>
+  </section>
+
+  <section id="modePlay" class="hidden">
+    <div class="study-progress"><div id="modeBar" class="study-progress-bar"></div></div>
+    <div class="study-counters">
+      <span>✓ <b id="modeCorrect">0</b></span><span>✕ <b id="modeIncorrect">0</b></span>
+      <span id="modePosition"></span><span id="modeTimer"></span>
+      {% if mode in ['blast','blocks'] %}<span>{{ _('Level') }} <b id="modeLevel">1</b></span><span>{{ _('Combo') }} <b id="modeCombo">0</b></span><span>{{ _('Lives') }} <b id="modeLives">3</b></span>{% endif %}
+    </div>
+
+    <div id="standardQuestion" class="mode-question-card">
+      <button id="modeStar" type="button" class="star-toggle" aria-label="{{ _('Star this card') }}">☆</button>
+      <div id="modePrompt" class="mode-prompt"></div>
+      <div id="modeAnswer" class="mode-answer hidden" aria-live="polite"></div>
+      <button id="showModeHint" type="button" class="ghost-button">{{ _('Hint') }}</button>
+      <p id="modeHint" class="study-hint hidden"></p>
+      <div id="modeOptions" class="mode-options"></div>
+      <label id="writtenWrap" class="field hidden">{{ _('Your answer') }}<input id="writtenAnswer" autocomplete="off"></label>
+      <div id="selfGrades" class="study-grades hidden">
+        {% for grade in ['again','hard','good','easy'] %}<button type="button" data-answer="{{ grade }}" class="grade grade-{{ grade }}">{{ _(grade|capitalize) }}</button>{% endfor %}
+      </div>
+      <nav id="flashcardControls" class="flashcard-controls hidden" aria-label="{{ _('Flashcard controls') }}">
+        <button id="previousCard" type="button" class="ghost-button">{{ _('Previous') }}</button>
+        <button id="flipCard" type="button" class="primary-button" data-show-label="{{ _('Show answer') }}">{{ _('Show answer') }}</button>
+        <button id="shuffleCards" type="button" class="ghost-button">{{ _('Shuffle') }}</button>
+        <button id="nextCard" type="button" class="ghost-button">{{ _('Next') }}</button>
+        <button id="fullscreenMode" type="button" class="ghost-button">{{ _('Full screen') }}</button>
+      </nav>
+      <button id="submitModeAnswer" type="button" class="primary-button hidden">{{ _('Check answer') }}</button>
+    </div>
+    <div id="matchBoard" class="match-board hidden" role="grid" aria-label="{{ _('Matching tiles') }}"></div>
+    <div id="modeFeedback" class="mode-feedback hidden" aria-live="polite"></div>
+  </section>
+
+  <section id="modeSummary" class="study-summary hidden" aria-live="polite">
+    <h2>{{ _('Session complete') }}</h2>
+    <div id="summaryStats" class="summary-stats"></div>
+    <div id="resultReview"></div>
+    <div class="study-summary-actions">
+      <button id="retryMode" type="button" class="primary-button">{{ _('Retry') }}</button>
+      <a id="reviewWeak" class="ghost-button" href="{{ url_for('flashcards_learn_page', set_id=set_id) }}?objective=weak">{{ _('Review mistakes') }}</a>
+      <a class="ghost-button" href="{{ url_for('flashcards_overview_page', set_id=set_id) }}">{{ _('Back to set') }}</a>
+    </div>
+  </section>
+  <p id="modeError" class="form-error hidden" role="alert"></p>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <script>window.LEARNOVA_SET_ID={{ set_id|tojson }};window.LEARNOVA_MODE={{ mode|tojson }};window.LEARNOVA_RESULT_SESSION={{ (result_session_id|default(None))|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/mode-engine.js') }}"></script>
+{% endblock %}

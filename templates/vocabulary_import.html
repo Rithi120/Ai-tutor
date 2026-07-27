@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Import vocabulary') }} — Learnova{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
+{% block content %}
+<main class="vocabulary-page">
+  <header class="vocabulary-hero"><div><h1>{{ _('Import vocabulary') }}</h1><p>{{ _('Your uploaded schoolbook pages remain private and expire automatically.') }}</p></div><a class="ghost-button" href="{{ url_for('vocabulary_page') }}">{{ _('My vocabulary lists') }}</a></header>
+  <form id="vocabularyImportForm" class="vocabulary-panel">
+    <div class="field-row">
+      <label class="field">{{ _('Source language') }}<select name="source_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}">{{ _(name) }}</option>{% endfor %}</select></label>
+      <label class="field">{{ _('Target language') }}<select name="target_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}" {{ 'selected' if code == 'de' }}>{{ _(name) }}</option>{% endfor %}</select></label>
+      <label class="field">{{ _('List title') }}<input name="title" maxlength="200"></label>
+    </div>
+    <fieldset><legend>{{ _('Input method') }}</legend>
+      <label><input type="radio" name="source_kind" value="file" checked> {{ _('Photo or PDF') }}</label>
+      <label><input type="radio" name="source_kind" value="text"> {{ _('Paste vocabulary text') }}</label>
+      <label><input type="radio" name="source_kind" value="manual"> {{ _('Manual entry') }}</label>
+    </fieldset>
+    <label id="vocabularyFileField" class="upload-drop">{{ _('Choose photo or PDF') }}<input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" capture="environment"></label>
+    <label id="vocabularyTextField" class="field hidden">{{ _('Vocabulary text') }}<textarea name="text" rows="10" placeholder="environment | die Umwelt | We must protect the environment."></textarea></label>
+    <button class="primary-button" type="submit">{{ _('Upload and extract') }}</button>
+    <p id="vocabularyImportStatus" role="status"></p><p id="vocabularyImportError" class="form-error hidden" role="alert"></p>
+  </form>
+</main>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/vocabulary.js') }}"></script>{% endblock %}

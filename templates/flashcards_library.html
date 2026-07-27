@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Flashcards') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page">
+  <header class="cards-header">
+    <div>
+      <h1>{{ _('Your flashcards') }}</h1>
+      <p class="cards-subtitle">{{ _('Generate, study, and manage your flashcard sets.') }}</p>
+    </div>
+    <div class="header-actions">
+      {% if feature_flags.community_library %}<a class="ghost-button" href="{{ url_for('community_page') }}">{{ _('Browse community') }}</a>{% endif %}
+      {% if feature_flags.flashcard_pdf_import or feature_flags.flashcard_image_import %}<a class="ghost-button" href="{{ url_for('flashcards_import_page') }}">{{ _('Import material') }}</a>{% endif %}
+      {% if feature_flags.vocabulary_trainer %}<a class="ghost-button" href="{{ url_for('vocabulary_import_page') }}">{{ _('Import vocabulary') }}</a>{% endif %}
+      <a class="primary-button" href="{{ url_for('flashcards_create_page') }}"><span aria-hidden="true">+</span> {{ _('New set') }}</a>
+    </div>
+  </header>
+
+  <div class="cards-toolbar" role="search">
+    <label class="visually-hidden" for="setSearch">{{ _('Search sets…') }}</label>
+    <input type="search" id="setSearch" placeholder="{{ _('Search sets…') }}" autocomplete="off">
+    <label class="visually-hidden" for="setSubjectFilter">{{ _('Subject') }}</label>
+    <select id="setSubjectFilter"><option value="">{{ _('All subjects') }}</option></select>
+    <label class="visually-hidden" for="setDifficultyFilter">{{ _('Difficulty') }}</label>
+    <select id="setDifficultyFilter">
+      <option value="">{{ _('Any difficulty') }}</option>
+      <option value="easy">{{ _('Easy') }}</option>
+      <option value="medium">{{ _('Medium') }}</option>
+      <option value="hard">{{ _('Hard') }}</option>
+    </select>
+    <label class="visually-hidden" for="setSort">{{ _('Newest') }}</label>
+    <select id="setSort">
+      <option value="newest">{{ _('Newest') }}</option>
+      <option value="oldest">{{ _('Oldest') }}</option>
+      <option value="title">{{ _('Title A–Z') }}</option>
+    </select>
+  </div>
+
+  <div id="setsLoading" class="cards-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div id="setsGrid" class="cards-grid" aria-live="polite" hidden></div>
+  <div id="setsEmpty" class="cards-empty hidden">
+    <p>{{ _('You have no flashcard sets yet.') }}</p>
+    <a class="primary-button" href="{{ url_for('flashcards_create_page') }}">{{ _('Create your first set') }}</a>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/library.js') }}"></script>
+{% endblock %}

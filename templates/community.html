@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Community') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="community-page" data-publishing-enabled="{{ 'true' if feature_flags.community_publishing else 'false' }}">
+  <div id="commToast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <section id="commLibrary" class="cards-view" aria-labelledby="commTitle">
+    <header class="cards-header">
+      <div>
+        <h1 id="commTitle">{{ _('Community flashcards') }}</h1>
+        <p class="cards-subtitle">{{ _('Discover flashcard sets reviewed by AI for quality.') }}</p>
+      </div>
+      {% if not feature_flags.community_publishing %}
+      <p class="dev-flag-note" role="note">{{ _('Publishing is disabled until moderation and reporting are ready.') }}</p>
+      {% endif %}
+    </header>
+
+    <form id="commFilters" class="cards-toolbar" role="search">
+      <label class="visually-hidden" for="commSearch">{{ _('Search') }}</label>
+      <input type="search" id="commSearch" name="q" placeholder="{{ _('Search title, topic, keyword…') }}" autocomplete="off">
+      <label class="visually-hidden" for="commSubject">{{ _('Subject') }}</label>
+      <select id="commSubject" name="subject"><option value="">{{ _('All subjects') }}</option></select>
+      <label class="visually-hidden" for="commGrade">{{ _('Grade') }}</label>
+      <input type="text" id="commGrade" name="grade" placeholder="{{ _('Grade') }}" size="6">
+      <label class="visually-hidden" for="commDifficulty">{{ _('Difficulty') }}</label>
+      <select id="commDifficulty" name="difficulty"><option value="">{{ _('Any difficulty') }}</option><option value="easy">{{ _('Easy') }}</option><option value="medium">{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select>
+      <label class="visually-hidden" for="commLanguage">{{ _('Language') }}</label>
+      <select id="commLanguage" name="language"><option value="">{{ _('Any language') }}</option><option value="en">English</option><option value="de">Deutsch</option></select>
+      <label class="visually-hidden" for="commMinAi">{{ _('Minimum AI rating') }}</label>
+      <select id="commMinAi" name="min_ai"><option value="">{{ _('Any AI rating') }}</option><option value="4">🤖 ≥ 4</option><option value="3">🤖 ≥ 3</option></select>
+      <label class="visually-hidden" for="commMinStudent">{{ _('Minimum student rating') }}</label>
+      <select id="commMinStudent" name="min_student"><option value="">{{ _('Any student rating') }}</option><option value="4">⭐ ≥ 4</option><option value="3">⭐ ≥ 3</option></select>
+      <label class="visually-hidden" for="commSort">{{ _('Sort') }}</label>
+      <select id="commSort" name="sort">
+        <option value="ranking">{{ _('Best overall') }}</option>
+        <option value="ai">{{ _('Highest AI rating') }}</option>
+        <option value="student">{{ _('Highest student rating') }}</option>
+        <option value="studied">{{ _('Most studied') }}</option>
+        <option value="saved">{{ _('Most saved') }}</option>
+        <option value="newest">{{ _('Newest') }}</option>
+        <option value="trending">{{ _('Trending') }}</option>
+      </select>
+    </form>
+
+    <div id="commLoading" class="cards-skeleton hidden" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div id="commGrid" class="cards-grid" aria-live="polite"></div>
+    <div id="commEmpty" class="cards-empty hidden"><p>{{ _('No community sets match your search yet.') }}</p></div>
+  </section>
+
+  <section id="commDetail" class="cards-view hidden" aria-labelledby="detailTitle">
+    <header class="cards-header">
+      <h1 id="detailTitle"></h1>
+      <button type="button" class="ghost-button" data-action="back-to-community">← {{ _('Back to library') }}</button>
+    </header>
+    <div id="detailContent"></div>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <script>window.LEARNOVA_COMMUNITY_SET_ID={{ (initial_public_set_id|default(None))|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/community.js') }}"></script>
+{% endblock %}

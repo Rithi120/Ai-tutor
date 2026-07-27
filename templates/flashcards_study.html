@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Study') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page study-page" id="studyPage">
+  <header class="cards-header study-topbar">
+    <div>
+      <h1 id="studyTitle">…</h1>
+      <p class="cards-subtitle" id="studyMeta"></p>
+    </div>
+    <div class="header-actions">
+      <button type="button" id="studyFull" class="ghost-button">⛶ {{ _('Full screen') }}</button>
+      <a class="ghost-button" href="{{ url_for('flashcards_page') }}">✕</a>
+    </div>
+  </header>
+
+  <div class="study-progress"><div id="studyBar" class="study-progress-bar"></div></div>
+  <div class="study-counters">
+    <span class="counter correct">✓ <b id="studyCorrect">0</b></span>
+    <span class="counter incorrect">✗ <b id="studyIncorrect">0</b></span>
+    <span id="studyPos" class="counter-position"></span>
+  </div>
+
+  <div id="studyArea">
+    <div id="studyCard" class="study-card study-card-large" role="button" tabindex="0" aria-label="{{ _('Show answer') }}">
+      <div class="study-card-inner">
+        <div class="study-card-face study-card-front">
+          <button type="button" id="starButton" class="star-toggle" aria-pressed="false" aria-label="{{ _('Star this card') }}">☆</button>
+          <div id="studyFront" class="study-card-text"></div>
+        </div>
+        <div class="study-card-face study-card-back"><div id="studyBack" class="study-card-text"></div></div>
+      </div>
+    </div>
+    <div class="study-controls">
+      <button type="button" id="studyPrev" class="ghost-button" aria-label="Previous">←</button>
+      <button type="button" id="studyHint" class="ghost-button">💡 {{ _('Hint') }}</button>
+      <button type="button" id="studyFlip" class="primary-button">{{ _('Show answer') }}</button>
+      <button type="button" id="studyShuffle" class="ghost-button">🔀 {{ _('Shuffle') }}</button>
+      <button type="button" id="studyNext" class="ghost-button" aria-label="Next">→</button>
+    </div>
+    <p id="studyHintText" class="study-hint hidden"></p>
+    <div id="studyGrades" class="study-grades hidden" role="group" aria-label="Rate recall">
+      <button type="button" class="grade grade-again" data-grade="again">{{ _('Again') }}</button>
+      <button type="button" class="grade grade-hard" data-grade="hard">{{ _('Hard') }}</button>
+      <button type="button" class="grade grade-good" data-grade="good">{{ _('Good') }}</button>
+      <button type="button" class="grade grade-easy" data-grade="easy">{{ _('Easy') }}</button>
+    </div>
+  </div>
+
+  <div id="studySummary" class="study-summary hidden" aria-live="polite">
+    <h2>{{ _('Session complete') }}</h2>
+    <p id="studySummaryText"></p>
+    <div class="study-summary-actions">
+      <button type="button" id="restart" class="primary-button">{{ _('Restart session') }}</button>
+      <button type="button" id="practiceIncorrect" class="ghost-button hidden">{{ _('Practice incorrect') }}</button>
+      <button type="button" id="practiceDifficult" class="ghost-button">{{ _('Practice difficult') }}</button>
+      <a class="ghost-button" href="{{ url_for('flashcards_page') }}">{{ _('Back to library') }}</a>
+    </div>
+    <p class="study-persist-note">{{ _('Recall grades update spaced-repetition scheduling on the server. Per-session counters are not stored.') }}</p>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/study.js') }}"></script>
+{% endblock %}

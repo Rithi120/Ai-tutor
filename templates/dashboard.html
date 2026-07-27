@@ -14,6 +14,16 @@
     <a class="primary-button" href="{{ url_for('todays_practice') }}">{{ _('Continue learning') }} →</a>
   </section>
 
+  {% if gamification %}
+  <section class="gamification-dashboard reveal-card">
+    <a href="{{ url_for('progress_page') }}" class="level-summary"><span>{{ _('Level') }}</span><strong>{{ gamification.level }}</strong><small>{{ gamification.total_xp }} {{ _('XP') }}</small></a>
+    <div class="xp-progress"><span>{{ gamification.current_level_xp }}/{{ gamification.next_level_xp }} {{ _('XP') }}</span><progress value="{{ gamification.current_level_xp }}" max="{{ gamification.next_level_xp }}"></progress></div>
+    <a href="{{ url_for('progress_page') }}"><span>{{ _('Current streak') }}</span><strong>{{ gamification.current_streak }} 🔥</strong><small>{{ _('Longest streak') }}: {{ gamification.longest_streak }}</small></a>
+    {% if gamification.goal %}<a href="{{ url_for('progress_page') }}"><span>{{ _("Today's goal") }}</span><strong>{{ gamification.goal.progress }}/{{ gamification.goal.target }}</strong><progress value="{{ gamification.goal.progress }}" max="{{ gamification.goal.target }}"></progress></a>{% else %}<a href="{{ url_for('progress_page') }}"><span>{{ _("Today's goal") }}</span><small>{{ _('Set your first daily goal') }}</small></a>{% endif %}
+    {% if gamification.missions %}{% set mission=gamification.missions[0] %}<a href="{{ url_for('progress_page') }}"><span>{{ _(mission.period|capitalize) }} {{ _('mission') }}</span><strong>{{ mission.progress }}/{{ mission.target }}</strong><small>+{{ mission.reward_xp }} {{ _('XP') }}</small></a>{% endif %}
+  </section>
+  {% endif %}
+
   <section class="dashboard-planner-widget reveal-card">
     {% if study_planner %}{% set coach = study_planner %}
     <div class="planner-widget-heading"><div><span class="eyebrow">{{ _('AI STUDY COACH') }}</span><h2>{{ _('Today’s Study') }}</h2><p>{{ coach.plan.project.subject }} · {{ coach.plan.project.title }}</p></div><div class="mini-progress-ring" style="--progress:{{ coach.planner_metrics.readiness }}"><strong>{{ coach.planner_metrics.readiness }}%</strong><span>{{ _('ready') }}</span></div></div>
@@ -30,6 +40,46 @@
     <div class="trend-overview"><span>{{ _('Mastery trend') }}</span>{% if mastery_trend %}<div class="trend-bars" aria-label="{{ _('Mastery trend') }}">{% for item in mastery_trend %}<i style="height:{{ [item.mastery_after|int, 8]|max }}%" title="{{ item.concept }}: {{ item.mastery_after|round|int }}%"></i>{% endfor %}</div>{% else %}<strong>—</strong>{% endif %}</div>
     <a class="continue-button" href="{{ url_for('todays_practice') }}">{{ _("Start today's practice") }} →</a>
   </section>
+
+  {% if flashcards_widget %}
+  <section class="dashboard-flashcards reveal-card">
+    <div class="notebook-heading">
+      <div><div class="eyebrow">{{ _('My flashcards') }}</div>
+        <h2>{{ flashcards_widget.due_today }} {{ _('due') }} · {{ flashcards_widget.mastered }} {{ _('mastered') }}</h2></div>
+      <div class="fc-dash-head-actions">
+        {% if feature_flags.community_library %}<a class="continue-button ghost" href="{{ url_for('community_page') }}">{{ _('Browse community') }}</a>{% endif %}
+        <a class="continue-button" href="{{ url_for('flashcards_create_page') }}">{{ _('Create new set') }} →</a>
+      </div>
+    </div>
+    {% if flashcards_widget.recent %}
+    <div class="fc-dash-stats">
+      <div><span>{{ _('Cards due today') }}</span><strong>{{ flashcards_widget.due_today }}</strong></div>
+      <div><span>{{ _('Mastered cards') }}</span><strong>{{ flashcards_widget.mastered }}</strong></div>
+      <div><span>{{ _('Still learning') }}</span><strong>{{ flashcards_widget.learning }}</strong></div>
+    </div>
+    <div class="fc-dash-grid">
+      {% for set in flashcards_widget.recent %}
+      <a class="fc-dash-card" href="{{ url_for('flashcards_overview_page', set_id=set.id) }}">
+        <b>{{ set.title }}</b>
+        <span class="set-meta">{{ set.subject }} · {{ set.total }} {{ _('cards') }}{% if set.due %} · {{ set.due }} {{ _('due') }}{% endif %}</span>
+        <span class="fc-dash-progress"><i style="width: {{ set.mastery_percent }}%"></i></span>
+        <span class="set-stats">{{ set.mastery_percent }}% {{ _('mastered') }}{% if set.last_studied %} · {{ set.last_studied }}{% endif %}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="cards-empty">{{ _('You have no flashcards yet. Create your first set to start studying.') }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if vocabulary_widget %}
+  <section class="dashboard-flashcards reveal-card">
+    <div class="notebook-heading"><div><div class="eyebrow">{{ _('Vocabulary Trainer') }}</div><h2>{{ vocabulary_widget.due }} {{ _('words due today') }}</h2></div><div class="fc-dash-head-actions"><a class="continue-button ghost" href="{{ url_for('vocabulary_page') }}">{{ _('My vocabulary lists') }}</a><a class="continue-button" href="{{ url_for('vocabulary_import_page') }}">{{ _('Import vocabulary') }} →</a></div></div>
+    <div class="fc-dash-stats"><div><span>{{ _('New words') }}</span><strong>{{ vocabulary_widget.new }}</strong></div><div><span>{{ _('Learning words') }}</span><strong>{{ vocabulary_widget.learning }}</strong></div><div><span>{{ _('Mastered words') }}</span><strong>{{ vocabulary_widget.mastered }}</strong></div><div><span>{{ _('Weak words') }}</span><strong>{{ vocabulary_widget.weak }}</strong></div><div><span>{{ _('Vocabulary streak') }}</span><strong>{{ vocabulary_widget.streak }}</strong></div></div>
+    {% if vocabulary_widget.lists %}<div class="fc-dash-grid">{% for item in vocabulary_widget.lists %}<a class="fc-dash-card" href="{{ url_for('vocabulary_study_page', list_id=item.id) }}"><b>{{ item.title }}</b><span>{{ item.source_language|upper }} → {{ item.target_language|upper }} · {{ item.entries|length }} {{ _('words') }}</span></a>{% endfor %}</div>{% else %}<p>{{ _('Create a list manually or import a vocabulary page.') }}</p>{% endif %}
+  </section>
+  {% endif %}
 
   <section class="dashboard-projects reveal-card"><div class="notebook-heading"><div><div class="eyebrow">{{ _('EXAM PREPARATION') }}</div><h2>{{ _('Your study projects') }}</h2></div><a class="continue-button" href="{{ url_for('projects') }}">{{ _('Upload material') }} →</a></div>
     {% if projects %}<div class="dashboard-project-list">{% for project in projects %}{% set active = project.sections|rejectattr('excluded')|list %}{% set mastery = (active|sum(attribute='mastery_score') / active|length) if active else 0 %}<a class="dashboard-project-card" href="{{ url_for('project_dashboard', project_id=project.id) }}"><span>{{ project.subject }}</span><b>{{ project.title }}</b><small>{{ project.pages|length }} {{ _('pages') }} · {{ active|length }} {{ _('sections') }}{% if project.exam_date %} · {{ project.exam_date.strftime('%d.%m.%Y') }}{% endif %}</small><div class="project-progress" aria-label="{{ _('Mastery') }} {{ mastery|round|int }}%"><i style="width:{{ mastery|round|int }}%"></i></div><em>{{ mastery|round|int }}% {{ _('mastery') }}</em></a>{% endfor %}</div>
