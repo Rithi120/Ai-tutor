@@ -135,14 +135,16 @@ def configure_app(app, environment: str | None = None) -> str:
         "LESSON_GENERATION": 2200, "QUIZ_GENERATION": 600,
         "PROJECT_SECTION_GENERATION": 1200, "FINAL_EXAM_GENERATION": 1200,
         "OCR_DOCUMENT_RECOGNITION": 1400, "ADAPTIVE_PRACTICE": 2200,
-        "FINAL_EXAM_EVALUATION": 600,
+        "FINAL_EXAM_EVALUATION": 600, "FLASHCARD_GENERATION": 4000,
+        "FLASHCARD_REVIEW": 900,
     }
     input_budgets = {
         "TUTOR_CHAT": 1800, "ANSWER_EVALUATION": 5000, "TRANSLATION": 9000,
         "LESSON_GENERATION": 9000, "QUIZ_GENERATION": 6000,
         "PROJECT_SECTION_GENERATION": 16000, "FINAL_EXAM_GENERATION": 20000,
         "OCR_DOCUMENT_RECOGNITION": 8000, "ADAPTIVE_PRACTICE": 6000,
-        "FINAL_EXAM_EVALUATION": 8000,
+        "FINAL_EXAM_EVALUATION": 8000, "FLASHCARD_GENERATION": 10000,
+        "FLASHCARD_REVIEW": 12000,
     }
     for task, default in output_budgets.items():
         name = f"AI_{task}_MAX_OUTPUT_TOKENS"
@@ -157,6 +159,62 @@ def configure_app(app, environment: str | None = None) -> str:
         except ValueError as error:
             raise RuntimeError(f"{name} must be a positive integer") from error
     app.config["AI_ENFORCE_LIMITS"] = selected != "testing"
+
+    import_limits = {
+        "MAX_FLASHCARD_PDF_SIZE": 10 * 1024 * 1024,
+        "MAX_FLASHCARD_IMAGE_SIZE": 8 * 1024 * 1024,
+        "MAX_FLASHCARD_PDF_PAGES": 30,
+        "MAX_FLASHCARD_IMAGE_PIXELS": 24_000_000,
+        "MAX_FLASHCARD_EXTRACTED_TEXT_LENGTH": 30_000,
+        "FLASHCARD_IMPORT_RETENTION_HOURS": 24,
+        "FLASHCARD_EXTRACTION_TIMEOUT_SECONDS": 45,
+        "MAX_FLASHCARD_IMPORTS_PER_HOUR": 10,
+    }
+    for name, default in import_limits.items():
+        try:
+            app.config[name] = max(1, int(os.getenv(name, str(default))))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a positive integer") from error
+    app.config["FLASHCARD_IMPORT_STORAGE_DIR"] = os.getenv(
+        "FLASHCARD_IMPORT_STORAGE_DIR",
+        str(Path(app.instance_path) / "flashcard_imports"),
+    )
+
+    def _feature_flag(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    # Feature flags. Community publishing stays disabled until reporting, auto-hide,
+    # moderation, and content checks exist; it is never enabled in production yet.
+    is_production = selected == "production"
+    app.config["FEATURE_PRIVATE_FLASHCARDS"] = _feature_flag("FEATURE_PRIVATE_FLASHCARDS", True)
+    app.config["FEATURE_COMMUNITY_LIBRARY"] = _feature_flag(
+        "FEATURE_COMMUNITY_LIBRARY", not is_production)
+    app.config["FEATURE_COMMUNITY_PUBLISHING"] = _feature_flag(
+        "FEATURE_COMMUNITY_PUBLISHING", selected == "testing")
+    app.config["FEATURE_COMMUNITY_MODERATION"] = (
+        False if is_production else _feature_flag("FEATURE_COMMUNITY_MODERATION", False))
+    app.config["FEATURE_FLASHCARD_PDF_IMPORT"] = (
+        _feature_flag("FEATURE_FLASHCARD_PDF_IMPORT", not is_production))
+    app.config["FEATURE_FLASHCARD_IMAGE_IMPORT"] = (
+        _feature_flag("FEATURE_FLASHCARD_IMAGE_IMPORT", not is_production))
+    completed_feature_defaults = not is_production
+    for config_name in (
+        "FEATURE_FLASHCARD_LEARN_MODE", "FEATURE_FLASHCARD_TEST_MODE",
+        "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
+        "FEATURE_FLASHCARD_BLOCKS_GAME", "FEATURE_GAMIFICATION",
+        "FEATURE_MISSIONS", "FEATURE_BADGES", "FEATURE_DAILY_GOALS",
+        "FEATURE_VOCABULARY_TRAINER",
+    ):
+        app.config[config_name] = _feature_flag(config_name, completed_feature_defaults)
+    app.config["FEATURE_FLASHCARD_GAMES"] = all(app.config[name] for name in (
+        "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
+        "FEATURE_FLASHCARD_BLOCKS_GAME",
+    ))
+    app.config["GAMIFICATION_MIN_DAILY_EVENTS"] = max(
+        1, int(os.getenv("GAMIFICATION_MIN_DAILY_EVENTS", "3")))
     app.config["AI_DIAGNOSTICS_ADMINS"] = {
         item.strip().casefold()
         for item in os.getenv("AI_DIAGNOSTICS_ADMINS", "").split(",")
@@ -168,6 +226,8 @@ def configure_app(app, environment: str | None = None) -> str:
         "CHAT_TOKEN_LIMIT": 350,
         "TRANSLATE_TOKEN_LIMIT": 2500,
         "PROJECT_TOKEN_LIMIT": 5000,
+        "FLASHCARD_TOKEN_LIMIT": 4000,
+        "REVIEW_TOKEN_LIMIT": 900,
     }.items():
         try:
             app.config[name] = max(1, int(os.getenv(name, str(default))))

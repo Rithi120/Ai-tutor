@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Vocabulary Practice') }} — Learnova{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
+{% block content %}
+<main class="vocabulary-page" data-vocabulary-study data-list-id="{{ vocabulary_list.id }}">
+  <header class="vocabulary-hero"><div><h1>{{ _('Vocabulary Practice') }}</h1><p>{{ vocabulary_list.title }}</p></div><a class="ghost-button" href="{{ url_for('vocabulary_list_page', list_id=vocabulary_list.id) }}">{{ _('Back to list') }}</a></header>
+  <section id="vocabularyPracticeConfig" class="vocabulary-panel">
+    <label class="field">{{ _('Exercise') }}<select id="vocabularyDirection"><option value="source_to_target">{{ _('See source word and type translation') }}</option><option value="target_to_source">{{ _('See translation and type source word') }}</option><option value="example">{{ _('Fill in example sentence') }}</option><option value="article">{{ _('Article practice') }}</option><option value="spelling">{{ _('Spelling practice') }}</option></select></label>
+    <label class="field">{{ _('Strictness') }}<select id="vocabularyStrictness"><option value="exact">{{ _('Exact') }}</option><option value="normal" selected>{{ _('Normal') }}</option><option value="flexible">{{ _('Flexible') }}</option></select></label>
+    <label class="field">{{ _('Objective') }}<select id="vocabularyObjective"><option value="all">{{ _('All words') }}</option><option value="due">{{ _('Due words') }}</option><option value="difficult">{{ _('Difficult words') }}</option></select></label>
+    <button id="startVocabularyPractice" class="primary-button" type="button">{{ _('Start practice') }}</button>
+  </section>
+  <section id="vocabularyPracticeCard" class="vocabulary-practice-card hidden">
+    <div id="vocabularyPracticeProgress"></div><button id="speakVocabulary" type="button" class="ghost-button hidden" aria-label="{{ _('Pronounce word') }}">🔊</button><h2 id="vocabularyPrompt"></h2>
+    <label class="field">{{ _('Your answer') }}<input id="vocabularyAnswer" autocomplete="off"></label>
+    <button id="checkVocabularyAnswer" class="primary-button" type="button">{{ _('Check answer') }}</button>
+    <div id="vocabularyFeedback" aria-live="polite"></div>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/vocabulary.js') }}"></script>{% endblock %}

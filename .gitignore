@@ -5,3 +5,4 @@ __pycache__/
 instance/*.db
 instance/ai_cache/
 instance/ai_usage.jsonl
+instance/flashcard_imports/

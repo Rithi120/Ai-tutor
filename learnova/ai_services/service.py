@@ -39,6 +39,8 @@ SUPPORTED_TASK_TYPES = {
     "adaptive_practice",
     "final_exam_generation",
     "final_exam_evaluation",
+    "flashcard_generation",
+    "flashcard_review",
 }
 _ACCOUNTING_LOCK = threading.Lock()
 
@@ -103,6 +105,8 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     "ocr_document_recognition": 1400,
     "adaptive_practice": 600,
     "final_exam_evaluation": 600,
+    "flashcard_generation": 4000,
+    "flashcard_review": 900,
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
@@ -116,6 +120,8 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "ocr_document_recognition": 8000,
     "adaptive_practice": 6000,
     "final_exam_evaluation": 8000,
+    "flashcard_generation": 10000,
+    "flashcard_review": 12000,
 }
 
 

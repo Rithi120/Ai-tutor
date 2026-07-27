@@ -364,6 +364,35 @@ def _exam_evaluation(data: Any, context: dict[str, Any]) -> None:
         _fail("exam evaluation question IDs do not match", "source_reference_validation")
 
 
+def _flashcards(data: Any, context: dict[str, Any]) -> None:
+    # Lenient by design: individual weak cards are dropped during normalization, so the
+    # response only needs at least one usable card rather than every card being perfect.
+    root = _dict(data, "flashcard set")
+    cards = _list(root.get("cards"), "cards", nonempty=True)
+    usable = sum(
+        1 for card in cards
+        if isinstance(card, dict)
+        and isinstance(card.get("front"), str) and card["front"].strip()
+        and isinstance(card.get("back"), str) and card["back"].strip()
+    )
+    if usable == 0:
+        _fail("no flashcard has both a front and a back")
+
+
+def _flashcard_review(data: Any, context: dict[str, Any]) -> None:
+    root = _dict(data, "AI review")
+    fields = ("overallScore", "accuracyScore", "clarityScore", "usefulnessScore",
+              "coverageScore", "difficultyScore", "originalityScore")
+    numeric = [
+        root.get(field) for field in fields
+        if isinstance(root.get(field), (int, float)) and not isinstance(root.get(field), bool)
+        and 0 <= float(root.get(field)) <= 5
+    ]
+    if not numeric:
+        _fail("AI review must include at least one 0-5 score")
+    _text(root.get("summary"), "summary")
+
+
 def _translation(data: Any, context: dict[str, Any]) -> None:
     values = _list(_dict(data, "translation").get("translations"), "translations")
     if context.get("texts") is not None and len(values) != len(context["texts"]):
@@ -377,7 +406,8 @@ VALIDATORS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
     "answer_evaluation": _answer, "translation": _translation,
     "ocr_document_recognition": _ocr, "project_section_generation": _project,
     "adaptive_practice": _adaptive, "final_exam_generation": _exam,
-    "final_exam_evaluation": _exam_evaluation,
+    "final_exam_evaluation": _exam_evaluation, "flashcard_generation": _flashcards,
+    "flashcard_review": _flashcard_review,
 }
 TASK_SCHEMAS = {
     task_type: TaskSchema(name=f"{task_type}_schema", validator=validator)

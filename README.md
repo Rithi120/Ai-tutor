@@ -114,6 +114,15 @@ The current schema includes users, lessons, attempts, mastery, persisted study s
 
 For PostgreSQL, set `DATABASE_URL` to a valid SQLAlchemy `postgresql://` URL. Render supplies this automatically through `render.yaml`.
 
+Community publishing stores approved content in PostgreSQL-backed
+`public_flashcard_set` and immutable `flashcard_publication_version` rows. AI reviews,
+ratings, study records, and independently saved private copies are database-backed.
+`FEATURE_COMMUNITY_LIBRARY` controls public browsing and
+`FEATURE_COMMUNITY_PUBLISHING` independently controls owner submissions. The Render
+blueprint enables both and connects the web service to the managed `learnova-db`
+PostgreSQL database. Startup applies idempotent schema migrations, including
+`015_immutable_publication_versions`, before serving requests.
+
 ## AI and cost configuration
 
 Every lesson, quiz, answer evaluation, tutor chat, translation, OCR/recognition, project section, adaptive-practice, and final-exam request passes through `learnova.ai_services.service`. No route or other domain service creates a Groq client.
@@ -228,6 +237,44 @@ The suite verifies:
 5. Restart Flask, sign back into account A, and confirm recognition corrections, source blocks, project, mastery, exam result, and mistakes remain.
 6. Register account B and confirm direct URLs for account A's review, original/processed images, source regions, project, section, exam, lesson, and mistake actions return 404.
 7. On a phone-sized viewport, confirm camera/review controls remain usable and symbol buttons insert values such as `√()`, `²`, `π`, `×`, `≤`, and `Δ` at the cursor.
+
+## Flashcard document import
+
+In development and testing, private flashcard imports support PDF, JPG/JPEG, PNG, and WebP. The staged workflow at
+`/flashcards/import` validates the real file signature and document structure, stores the original below the private
+instance directory, extracts PDF text page by page or recognizes images through the existing Learnova OCR/vision
+gateway, and requires editable source review and page selection before generation. Generated cards are transferred
+to the existing creator as an unsaved server-side draft; no private or public set is created automatically.
+
+Temporary metadata is stored in `flashcard_import` (schema migration `012_add_flashcard_imports`). Raw files default
+to `instance/flashcard_imports/` and are never served from `static`. Imports expire after 24 hours by default. Run
+`python -m flask --app app cleanup-flashcard-imports` from a scheduler to remove expired rows and files; opening or
+creating an import also performs opportunistic cleanup.
+
+Production keeps `FEATURE_FLASHCARD_PDF_IMPORT` and `FEATURE_FLASHCARD_IMAGE_IMPORT` off unless explicitly enabled.
+
+### Flashcard learning modes and gamification
+
+The private flashcard workspace includes persistent Flashcards, Learn, Test, Match, Blast, and Blocks sessions.
+Answers update spaced-repetition and mastery data on the server; completed work feeds the shared XP, levels,
+streaks, daily goals, missions, badges, personal bests, dashboard summary, and `/progress` history. Production
+keeps the individual `FEATURE_FLASHCARD_*_MODE` / `FEATURE_FLASHCARD_*_GAME` flags and `FEATURE_GAMIFICATION`,
+`FEATURE_MISSIONS`, `FEATURE_BADGES`, and `FEATURE_DAILY_GOALS` off unless explicitly enabled. See `.env.example`
+for the complete flag list. `GAMIFICATION_MIN_DAILY_EVENTS` controls how many meaningful events qualify a day
+for streak credit.
+
+### Vocabulary Trainer
+
+`/vocabulary` provides private photo/PDF/text/manual vocabulary imports using the same validated upload,
+OCR, retention, cleanup, and ownership system as flashcard imports. Students select source and target
+languages independently of the interface language, review structured word pairs and example sentences,
+accept or reject visible corrections, then open selected card variants in the existing compact flashcard
+editor. Dedicated practice persists mastery separately for each translation direction and contributes
+idempotent XP, streak, mission, badge, dashboard, and progress activity. Initially supported vocabulary
+languages are English, German, French, and Spanish. Production requires
+`FEATURE_VOCABULARY_TRAINER=true`; the flag defaults on outside production.
+Limits and retention are configurable through the `MAX_FLASHCARD_*`, `FLASHCARD_IMPORT_*`, and
+`MAX_FLASHCARD_IMPORTS_PER_HOUR` environment variables documented in `.env.example`.
 
 ## Current boundaries
 

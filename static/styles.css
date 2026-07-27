@@ -2835,3 +2835,15 @@ button.document-input-option { font: inherit; }
   background: #f8f6ff;
   font: 700 12px/1 "DM Sans", sans-serif;
 }
+
+/* Lesson media: video search links and Wikimedia images */
+.media-card .lesson-videos { display: flex; flex-direction: column; gap: .6rem; margin: .5rem 0 1rem; }
+.media-video { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .6rem .8rem; background: #f8f6ff; border-radius: 12px; }
+.media-video-text { display: flex; flex-direction: column; gap: .15rem; }
+.media-video-text small { opacity: .7; font-size: .8rem; line-height: 1.35; }
+.media-links a { margin-left: .9rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.lesson-images { display: flex; flex-wrap: wrap; gap: 1rem; }
+.media-image { margin: 0; max-width: 320px; }
+.media-image img { max-width: 100%; height: auto; border-radius: 12px; display: block; }
+.media-image figcaption { font-size: .8rem; opacity: .75; margin-top: .4rem; line-height: 1.35; }
+.media-image figcaption a { font-weight: 600; text-decoration: none; }

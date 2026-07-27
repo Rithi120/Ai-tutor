@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Publish flashcard set') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page publish-page">
+  <header class="cards-header">
+    <h1>{{ _('Publish flashcard set') }}</h1>
+    <a class="ghost-button" href="/flashcards/{{ set_id }}">← {{ _('Back to library') }}</a>
+  </header>
+
+  <div id="publishLoading" class="cards-skeleton" aria-hidden="true"><i></i></div>
+
+  <!-- Publish form (shown when not yet published) -->
+  <form id="publishForm" class="card-panel hidden" novalidate>
+    <div class="field"><label for="pubTitle">{{ _('Set title') }}</label><input type="text" id="pubTitle" maxlength="200" required></div>
+    <div class="field"><label for="pubDescription">{{ _('Description') }}</label><textarea id="pubDescription" rows="3" maxlength="2000"></textarea></div>
+    <div class="field-row">
+      <div class="field"><label for="pubSubject">{{ _('Subject') }}</label><select id="pubSubject"></select></div>
+      <div class="field"><label for="pubTopic">{{ _('Topic') }}</label><input type="text" id="pubTopic" maxlength="120"></div>
+      <div class="field"><label for="pubGrade">{{ _('School grade') }}</label><input type="text" id="pubGrade" maxlength="40"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label for="pubDifficulty">{{ _('Difficulty') }}</label>
+        <select id="pubDifficulty"><option value="easy">{{ _('Easy') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select></div>
+      <div class="field"><label for="pubLanguage">{{ _('Content language') }}</label>
+        <select id="pubLanguage"><option value="en">English</option><option value="de">Deutsch</option></select></div>
+      <div class="field"><label for="pubDisplay">{{ _('Creator display') }}</label>
+        <select id="pubDisplay"><option value="username">{{ _('Display name') }}</option><option value="anonymous">{{ _('Anonymous') }}</option></select></div>
+    </div>
+    <div class="field"><label for="pubTags">{{ _('Tags') }}</label><input type="text" id="pubTags" placeholder="cells, biology"></div>
+    <label class="checkbox-field"><input type="checkbox" id="pubConfirm"> {{ _('I confirm that I created this flashcard set or have permission to share its content.') }}</label>
+    <div class="form-actions"><button type="submit" class="primary-button">{{ _('Submit for AI review') }}</button></div>
+    <p id="publishError" class="form-error hidden" role="alert"></p>
+  </form>
+
+  <!-- Status view (shown when already published) -->
+  <section id="publishStatus" class="card-panel hidden" aria-live="polite">
+    <div class="status-line">
+      <span>{{ _('Publication status') }}:</span>
+      <span id="statusBadge" class="review-status"></span>
+    </div>
+    <p id="changedNote" class="form-error hidden"></p>
+    <div id="statusReview"></div>
+    <div class="form-actions" id="statusActions"></div>
+    <p class="field-hint">{{ _('AI suggestions are never applied automatically — edit your set yourself, then resubmit.') if false else '' }}</p>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/publish.js') }}"></script>
+{% endblock %}

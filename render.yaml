@@ -20,6 +20,10 @@ services:
         fromDatabase:
           name: learnova-db
           property: connectionString
+      - key: FEATURE_COMMUNITY_LIBRARY
+        value: "true"
+      - key: FEATURE_COMMUNITY_PUBLISHING
+        value: "true"
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_VISION_MODEL

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Create flashcards') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page creator-page">
+  <header class="cards-header">
+    <h1 id="creatorHeading">{{ _('Create flashcards') if set_id is none else _('Edit flashcards') }}</h1>
+    <a class="ghost-button" href="{{ url_for('flashcards_page') }}">← {{ _('Back to library') }}</a>
+  </header>
+
+  <!-- Set metadata -->
+  <section class="card-panel meta-panel" aria-label="{{ _('Set overview') }}">
+    <div class="field">
+      <label for="setTitle">{{ _('Set title') }}</label>
+      <input type="text" id="setTitle" maxlength="200" placeholder="{{ _('Untitled set') }}">
+    </div>
+    <div class="field">
+      <label for="setDescription">{{ _('Description') }}</label>
+      <textarea id="setDescription" rows="2" maxlength="2000"></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field"><label for="metaSubject">{{ _('Subject') }}</label><select id="metaSubject"></select></div>
+      <div class="field"><label for="metaTopic">{{ _('Topic') }}</label><input type="text" id="metaTopic" maxlength="120"></div>
+      <div class="field"><label for="metaGrade">{{ _('School grade') }}</label><input type="text" id="metaGrade" maxlength="40"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label for="metaDifficulty">{{ _('Difficulty') }}</label>
+        <select id="metaDifficulty">
+          <option value="easy">{{ _('Easy') }}</option>
+          <option value="medium" selected>{{ _('Medium') }}</option>
+          <option value="hard">{{ _('Hard') }}</option>
+        </select></div>
+      <div class="field"><span class="field-label">{{ _('Language') }}</span>
+        <p class="field-static">{{ _('German') if current_language == 'de' else _('English') }}</p></div>
+      <div class="field"><label for="metaVisibility">{{ _('Visibility') }}</label>
+        <select id="metaVisibility"><option value="private">{{ _('Private (only me)') }}</option></select></div>
+    </div>
+    <div class="field"><label for="metaTags">{{ _('Tags') }}</label><input type="text" id="metaTags" placeholder="cells, biology"></div>
+  </section>
+
+  <!-- AI generation (collapsible) -->
+  <details class="card-panel gen-panel">
+    <summary>{{ _('Generate with AI') }}</summary>
+    <div class="gen-body">
+      <div class="field">
+        <label for="genSourceKind">{{ _('Source') }}</label>
+        <select id="genSourceKind">
+          <option value="text">{{ _('Paste text or notes') }}</option>
+          <option value="topic">{{ _('Enter a topic') }}</option>
+        </select>
+        <p class="field-hint">{{ _('Image and PDF sources are coming soon.') }}</p>
+      </div>
+      <div class="field" data-gen-source="text"><label for="genText">{{ _('Your text or notes') }}</label><textarea id="genText" rows="5"></textarea></div>
+      <div class="field hidden" data-gen-source="topic"><label for="genTopic">{{ _('Topic') }}</label><input type="text" id="genTopic"></div>
+      <div class="field-row">
+        <div class="field"><label for="genCount">{{ _('Number of cards') }}</label><input type="number" id="genCount" min="1" max="30" value="10"></div>
+        <div class="field"><label for="genType">{{ _('Card type') }}</label>
+          <select id="genType"><option value="mixed">{{ _('Mixed') }}</option><option value="question_answer">Q &amp; A</option><option value="term_definition">Term / definition</option><option value="formula_explanation">Formula</option></select></div>
+        <div class="field"><label for="genDifficulty">{{ _('Difficulty') }}</label>
+          <select id="genDifficulty"><option value="adaptive">{{ _('Adaptive') }}</option><option value="easy">{{ _('Easy') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select></div>
+        <div class="field"><label for="genContentLang">{{ _('Content language') }}</label>
+          <select id="genContentLang">
+            <option value="en"{{ '' if current_language == 'de' else ' selected' }}>English</option>
+            <option value="de"{{ ' selected' if current_language == 'de' else '' }}>Deutsch</option>
+          </select></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="genButton" class="primary-button">{{ _('Generate with AI') }}</button>
+        <span id="genStatus" class="gen-status" role="status" aria-live="polite"></span>
+      </div>
+      <p id="genError" class="form-error hidden" role="alert"></p>
+    </div>
+  </details>
+
+  <!-- Cards -->
+  <div class="creator-cards-head">
+    <span id="cardCount" class="editor-hint"></span>
+  </div>
+  <ol id="cardRows" class="card-rows"></ol>
+  <div class="creator-add-row">
+    <button type="button" id="addCard" class="ghost-button">+ {{ _('Add card') }}</button>
+    <button type="button" id="addFive" class="ghost-button">+ {{ _('Add 5 cards') }}</button>
+  </div>
+
+  <!-- Sticky save bar -->
+  <div id="saveBar" class="save-bar hidden" role="region" aria-label="{{ _('You have unsaved changes') }}">
+    <span>{{ _('You have unsaved changes') }}</span>
+    <div class="save-bar-actions">
+      <button type="button" id="discardButton" class="ghost-button">{{ _('Discard') }}</button>
+      <button type="button" id="saveButton" class="primary-button">{{ _('Save set') }}</button>
+    </div>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script>window.LEARNOVA_IMPORT_ID = {{ (import_id|default(None))|tojson }};</script>
+  <script>window.LEARNOVA_VOCABULARY_IMPORT_ID = {{ (vocabulary_import_id|default(None))|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/create.js') }}"></script>
+{% endblock %}

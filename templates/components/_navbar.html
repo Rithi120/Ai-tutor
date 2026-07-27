@@ -5,6 +5,9 @@
 {% set practice_active = endpoint in ['todays_practice', 'start_todays_practice', 'practice_weak', 'practice_similar_mistake', 'concept_detail', 'practice_concept'] %}
 {% set exam_active = endpoint in ['new_final_exam', 'take_final_exam', 'autosave_exam', 'submit_final_exam', 'final_exam_results'] %}
 {% set planner_active = endpoint in ['study_plans', 'new_study_plan', 'study_plan_detail', 'study_plan_calendar', 'study_plan_session_detail', 'complete_study_plan_session', 'skip_study_plan_session'] %}
+{% set flashcards_active = endpoint == 'flashcards_page' %}
+{% set vocabulary_active = endpoint.startswith('vocabulary_') %}
+{% set community_active = endpoint == 'community_page' %}
 {% set profile_active = endpoint in ['settings', 'update_language'] %}
 <header class="app-nav global-nav" data-app-navigation>
   <div class="app-nav-inner">
@@ -17,6 +20,10 @@
       <div class="app-menu">
         <button class="app-menu-trigger {{ 'is-active' if practice_active or exam_active }}" type="button" aria-expanded="false" aria-controls="moreMenu">{{ _('More') }} <span aria-hidden="true">⌄</span></button>
         <div id="moreMenu" class="app-dropdown" role="menu" aria-hidden="true">
+          {% if feature_flags.private_flashcards %}<a role="menuitem" class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %}>{{ _('Flashcards') }}</a>{% endif %}
+          {% if feature_flags.vocabulary_trainer %}<a role="menuitem" class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
+          {% if feature_flags.community_library %}<a role="menuitem" class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %}>{{ _('Community') }}</a>{% endif %}
+          {% if feature_flags.gamification_enabled %}<a role="menuitem" href="{{ url_for('progress_page') }}">{{ _('Progress') }}</a>{% endif %}
           <a role="menuitem" href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
           <a role="menuitem" class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
           <a role="menuitem" class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>
@@ -42,6 +49,10 @@
     <a class="{{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %}>{{ _('Overview') }}</a>
     <a class="nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
     <a class="{{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>
+    {% if feature_flags.private_flashcards %}<a class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %}>{{ _('Flashcards') }}</a>{% endif %}
+    {% if feature_flags.vocabulary_trainer %}<a class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
+    {% if feature_flags.community_library %}<a class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %}>{{ _('Community') }}</a>{% endif %}
+    {% if feature_flags.gamification_enabled %}<a href="{{ url_for('progress_page') }}">{{ _('Progress') }}</a>{% endif %}
     <a href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
     <a class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
     <a class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>

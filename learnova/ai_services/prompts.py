@@ -16,6 +16,8 @@ PROMPT_VERSIONS = {
     "adaptive_practice": "adaptive_practice:v3",
     "final_exam_generation": "final_exam_generation:v3",
     "final_exam_evaluation": "final_exam_evaluation:v2",
+    "flashcard_generation": "flashcard_generation:v1",
+    "flashcard_review": "flashcard_review:v1",
 }
 
 STRUCTURED_TASKS = set(PROMPT_VERSIONS) - {"tutor_chat"}
@@ -30,6 +32,8 @@ SCHEMA_SUMMARIES = {
     "adaptive_practice": '{"question":question}',
     "final_exam_generation": '{"questions":list[{"id":str,"section_id":int,"source_page_ids":list[int],"difficulty":"easy|medium|hard","question_type":enum,"prompt":str,"expected_answer":value}]}',
     "final_exam_evaluation": '{"results":list[{"question_id":int,"score":0..100,"evaluation":str}]}',
+    "flashcard_generation": '{"title":str,"cards":list[{"type":enum,"front":str,"back":str,"explanation":str,"hint":str,"tags":list[str],"difficulty":"easy|medium|hard"}]}',
+    "flashcard_review": '{"overallScore":0..5,"accuracyScore":0..5,"clarityScore":0..5,"usefulnessScore":0..5,"coverageScore":0..5,"difficultyScore":0..5,"originalityScore":0..5,"confidence":"Low|Medium|High","summary":str,"strengths":list[str],"improvements":list[str],"flaggedCards":list,"safetyFlags":list[str]}',
 }
 
 
@@ -88,7 +92,7 @@ Use the student's apparent level and explain in respectful baby steps without ch
 Define unfamiliar terms, show how each step connects, identify common mistakes, give practical teacher tips, and mention relevant exceptions or disputed interpretations.
 Adapt your teaching method to the subject: use worked calculations for mathematics and science, examples and corrections for languages, chronology and cause/effect for history, and evidence-based explanations for other subjects.
 For mathematics and physics, never skip transformations or combine multiple operations into one unexplained jump.
-Follow the notation rule given for the selected subject. When the instructions ask for LaTeX, write every formula and calculation in LaTeX using $$...$$ on its own line (or \(...\) inline) and never as plain text; otherwise use plain Unicode notation (×, ÷, √, ², ³, π, Δ, ≤, ≥), parentheses, and readable units. Do not mix the two in one answer.
+Follow the notation rule given for the selected subject. When the instructions ask for LaTeX, write every formula and calculation in LaTeX using $$...$$ on its own line (or $...$ inline) and never as plain text; otherwise use plain Unicode notation (×, ÷, √, ², ³, π, Δ, ≤, ≥), parentheses, and readable units. Do not mix the two in one answer.
 Put each calculation transformation on its own line. Name the rule or operation first, show the changed expression next, and explain why it is valid.
 Follow the order of operations explicitly. When LaTeX is requested, explain 5 + 4 − 6 × 3 as:
 Step 1, multiply first: $$6 \times 3 = 18$$ $$5 + 4 - 18$$

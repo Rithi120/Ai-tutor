@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Set overview') }} — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+<main class="cards-page overview-page">
+  <header class="cards-header">
+    <h1 id="ovTitle">…</h1>
+    <a class="ghost-button" href="{{ url_for('flashcards_page') }}">← {{ _('Back to library') }}</a>
+  </header>
+
+  <p id="ovMeta" class="set-meta"></p>
+  <p><span id="ovStatus" class="review-status hidden"></span></p>
+  <p id="ovDescription" class="detail-description"></p>
+
+  <div class="overview-actions">
+    <a id="ovStudy" class="primary-button" href="#">{{ _('Start learning') }}</a>
+    <a id="ovEdit" class="ghost-button" href="#">{{ _('Edit') }}</a>
+    {% if feature_flags.community_publishing %}<a id="ovPublish" class="ghost-button" href="/flashcards/{{ set_id }}/publish">{{ _('Publish') }}</a>{% endif %}
+    <button type="button" id="ovShare" class="ghost-button">{{ _('Share') }}</button>
+    <button type="button" id="ovDelete" class="ghost-button danger">{{ _('Delete') }}</button>
+  </div>
+
+  <h2 class="overview-subhead">{{ _('Study modes') }}</h2>
+  <div class="mode-grid">
+    <a id="modeFlashcards" class="mode-card mode-available" href="#">
+      <span class="mode-icon" aria-hidden="true">🃏</span><span class="mode-name">{{ _('Flashcards') }}</span>
+    </a>
+    {% set modes = [
+      ('learn','Learn','📚',feature_flags.flashcard_learn_mode),
+      ('test','Test','📝',feature_flags.flashcard_test_mode),
+      ('match','Match','🔗',feature_flags.flashcard_match_game),
+      ('blast','Blast','⚡',feature_flags.flashcard_blast_game),
+      ('blocks','Blocks','🧱',feature_flags.flashcard_blocks_game)
+    ] %}
+    {% for slug, label, icon, enabled in modes if enabled %}
+    <a class="mode-card mode-available" href="/flashcards/{{ set_id }}/{{ slug }}">
+      <span class="mode-icon" aria-hidden="true">{{ icon }}</span><span class="mode-name">{{ _(label) }}</span>
+      <small>{{ _(label ~ ' mode description') }}</small>
+    </a>
+    {% endfor %}
+  </div>
+
+  <h2 class="overview-subhead">{{ _('Terms in this set') }} (<span id="ovCount">0</span>)</h2>
+  <ol id="ovPreview" class="preview-list"></ol>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script type="module" src="{{ url_for('static', filename='js/flashcards/overview.js') }}"></script>
+{% endblock %}

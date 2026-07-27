@@ -3,14 +3,19 @@ import hashlib
 import io
 import json
 import os
+import re
+import time
 import uuid
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from functools import wraps
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
-from flask import Flask, flash, has_request_context, jsonify, redirect, render_template, request, send_file, session as flask_session, url_for
+from flask import Flask, abort, flash, has_request_context, jsonify, redirect, render_template, request, send_file, session as flask_session, url_for
 from flask_login import UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import Index, UniqueConstraint, func, inspect, or_, text
@@ -45,6 +50,15 @@ from learnova.config import configure_app
 from learnova.extensions import csrf, db, limiter, login_manager
 from learnova.ai_services import service as ai_service
 from learnova.ai_services.prompts import TUTOR_RULES
+from learnova import media_enrichment as media
+from learnova.flashcards import service as flashcards
+from learnova.flashcards import imports as flashcard_imports
+from learnova.flashcards.image_extraction import data_url as flashcard_image_data_url
+from learnova.flashcards.image_extraction import extract_image_text
+from learnova.flashcards import modes as flashcard_modes
+from learnova.gamification import service as gamification
+from learnova.vocabulary import service as vocabulary
+from learnova.community import service as community
 from learnova.authentication.service import (
     AccountConflict,
     authenticate,
@@ -94,6 +108,8 @@ ANSWER_TOKEN_LIMIT = app.config["ANSWER_TOKEN_LIMIT"]
 CHAT_TOKEN_LIMIT = app.config["CHAT_TOKEN_LIMIT"]
 TRANSLATE_TOKEN_LIMIT = app.config["TRANSLATE_TOKEN_LIMIT"]
 PROJECT_TOKEN_LIMIT = app.config["PROJECT_TOKEN_LIMIT"]
+FLASHCARD_TOKEN_LIMIT = app.config["FLASHCARD_TOKEN_LIMIT"]
+REVIEW_TOKEN_LIMIT = app.config["REVIEW_TOKEN_LIMIT"]
 GROQ_BASE_URL = app.config["GROQ_BASE_URL"]
 ALLOWED_IMAGE_TYPES = ai_service.ALLOWED_IMAGE_TYPES
 SESSIONS = {}
@@ -531,6 +547,564 @@ class ExamAnswer(db.Model):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
 
 
+class FlashcardSet(db.Model):
+    __table_args__ = (Index("ix_flashcard_set_user", "user_id", "updated_at"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    subject = db.Column(db.String(80), nullable=False, default="Other")
+    grade = db.Column(db.String(40), nullable=False, default="")
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")
+    language = db.Column(db.String(10), nullable=False, default="en")
+    card_type = db.Column(db.String(30), nullable=False, default="mixed")
+    source_kind = db.Column(db.String(20), nullable=False, default="text")
+    source_reference = db.Column(db.String(255), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    cards = db.relationship(
+        "Flashcard", back_populates="set", cascade="all, delete-orphan",
+        order_by="Flashcard.position",
+    )
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class Flashcard(db.Model):
+    __table_args__ = (Index("ix_flashcard_due", "set_id", "next_review_at"),)
+    id = db.Column(db.Integer, primary_key=True)
+    set_id = db.Column(db.Integer, db.ForeignKey("flashcard_set.id"), nullable=False, index=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    type = db.Column(db.String(30), nullable=False, default="question_answer")
+    front = db.Column(db.Text, nullable=False)
+    back = db.Column(db.Text, nullable=False)
+    explanation = db.Column(db.Text, nullable=False, default="")
+    hint = db.Column(db.Text, nullable=False, default="")
+    tags_json = db.Column(db.Text, nullable=False, default="[]")
+    options_json = db.Column(db.Text, nullable=False, default="[]")
+    source_reference = db.Column(db.String(255), nullable=False, default="")
+    image_url = db.Column(db.Text, nullable=False, default="")
+    image_alt = db.Column(db.String(255), nullable=False, default="")
+    image_source = db.Column(db.String(255), nullable=False, default="")
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")
+    interval = db.Column(db.Integer, nullable=False, default=0)
+    repetition_count = db.Column(db.Integer, nullable=False, default=0)
+    ease_factor = db.Column(db.Float, nullable=False, default=2.5)
+    next_review_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    last_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    correct_count = db.Column(db.Integer, nullable=False, default=0)
+    incorrect_count = db.Column(db.Integer, nullable=False, default=0)
+    mastery_level = db.Column(db.String(20), nullable=False, default="new")
+    consecutive_correct = db.Column(db.Integer, nullable=False, default=0)
+    consecutive_incorrect = db.Column(db.Integer, nullable=False, default=0)
+    average_response_ms = db.Column(db.Float, nullable=False, default=0.0)
+    last_answer_quality = db.Column(db.String(20), nullable=False, default="")
+    starred = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    learned = db.Column(db.Boolean, nullable=False, default=False)
+    weakness_score = db.Column(db.Float, nullable=False, default=50.0, index=True)
+    set = db.relationship("FlashcardSet", back_populates="cards")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class FlashcardImport(db.Model):
+    __tablename__ = "flashcard_import"
+    __table_args__ = (
+        Index("ix_flashcard_import_owner_created", "owner_user_id", "created_at"),
+        Index("ix_flashcard_import_expiry", "expires_at", "status"),
+        Index("ix_flashcard_import_owner_hash", "owner_user_id", "sha256"),
+    )
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    source_type = db.Column(db.String(10), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    sanitized_filename = db.Column(db.String(255), nullable=False)
+    detected_mime_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    storage_key = db.Column(db.String(500), nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False, index=True)
+    idempotency_key = db.Column(db.String(100), nullable=False, default="")
+    status = db.Column(db.String(30), nullable=False, default="uploaded", index=True)
+    page_count = db.Column(db.Integer, nullable=False, default=1)
+    extracted_text = db.Column(db.Text, nullable=False, default="")
+    extraction_metadata = db.Column(db.Text, nullable=False, default="[]")
+    extraction_warnings = db.Column(db.Text, nullable=False, default="[]")
+    extraction_confidence = db.Column(db.Float, nullable=True)
+    reviewed_content = db.Column(db.Text, nullable=False, default="[]")
+    generation_settings = db.Column(db.Text, nullable=False, default="{}")
+    draft_json = db.Column(db.Text, nullable=False, default="{}")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    generation_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    generation_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyList(db.Model):
+    __tablename__ = "vocabulary_list"
+    __table_args__ = (Index("ix_vocabulary_list_owner_updated", "owner_user_id", "updated_at"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    source_language = db.Column(db.String(5), nullable=False)
+    target_language = db.Column(db.String(5), nullable=False)
+    subject = db.Column(db.String(80), nullable=False, default="Languages")
+    grade = db.Column(db.String(40), nullable=False, default="")
+    unit = db.Column(db.String(100), nullable=False, default="")
+    source_filename = db.Column(db.String(255), nullable=False, default="")
+    visibility = db.Column(db.String(20), nullable=False, default="private")
+    flashcard_set_id = db.Column(db.Integer, db.ForeignKey("flashcard_set.id"), nullable=True, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    entries = db.relationship(
+        "VocabularyEntry", back_populates="vocabulary_list",
+        cascade="all, delete-orphan", order_by="VocabularyEntry.position")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyEntry(db.Model):
+    __tablename__ = "vocabulary_entry"
+    __table_args__ = (Index("ix_vocabulary_entry_list_position", "list_id", "position"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    list_id = db.Column(db.String(36), db.ForeignKey("vocabulary_list.id"), nullable=False, index=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    source_language = db.Column(db.String(5), nullable=False)
+    target_language = db.Column(db.String(5), nullable=False)
+    source_term = db.Column(db.String(300), nullable=False)
+    target_translation = db.Column(db.String(500), nullable=False, default="")
+    alternatives_json = db.Column(db.Text, nullable=False, default="[]")
+    source_example_sentence = db.Column(db.Text, nullable=False, default="")
+    target_example_translation = db.Column(db.Text, nullable=False, default="")
+    example_ai_generated = db.Column(db.Boolean, nullable=False, default=False)
+    part_of_speech = db.Column(db.String(50), nullable=False, default="")
+    gender_article = db.Column(db.String(30), nullable=False, default="")
+    plural_form = db.Column(db.String(200), nullable=False, default="")
+    verb_forms_json = db.Column(db.Text, nullable=False, default="[]")
+    notes = db.Column(db.Text, nullable=False, default="")
+    source_page = db.Column(db.Integer, nullable=True)
+    source_line = db.Column(db.Integer, nullable=True)
+    ocr_confidence = db.Column(db.Float, nullable=False, default=0.0)
+    validation_status = db.Column(db.String(40), nullable=False, default="needs_review", index=True)
+    validation_explanation = db.Column(db.Text, nullable=False, default="")
+    suggested_translation = db.Column(db.String(500), nullable=False, default="")
+    user_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+    included = db.Column(db.Boolean, nullable=False, default=True)
+    linked_flashcard_ids_json = db.Column(db.Text, nullable=False, default="[]")
+    vocabulary_list = db.relationship("VocabularyList", back_populates="entries")
+    states = db.relationship("VocabularyStudyState", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyImport(db.Model):
+    __tablename__ = "vocabulary_import"
+    __table_args__ = (
+        Index("ix_vocabulary_import_owner_created", "owner_user_id", "created_at"),
+        UniqueConstraint("owner_user_id", "idempotency_key", name="uq_vocabulary_import_request"),
+    )
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    flashcard_import_id = db.Column(db.String(36), db.ForeignKey("flashcard_import.id"), nullable=True, index=True)
+    source_kind = db.Column(db.String(20), nullable=False)
+    source_language = db.Column(db.String(5), nullable=False)
+    target_language = db.Column(db.String(5), nullable=False)
+    title = db.Column(db.String(200), nullable=False, default="")
+    pasted_text = db.Column(db.Text, nullable=False, default="")
+    status = db.Column(db.String(30), nullable=False, default="uploaded", index=True)
+    entries_json = db.Column(db.Text, nullable=False, default="[]")
+    unrecognized_json = db.Column(db.Text, nullable=False, default="[]")
+    warnings_json = db.Column(db.Text, nullable=False, default="[]")
+    draft_json = db.Column(db.Text, nullable=False, default="{}")
+    generation_settings = db.Column(db.Text, nullable=False, default="{}")
+    idempotency_key = db.Column(db.String(100), nullable=False)
+    vocabulary_list_id = db.Column(db.String(36), db.ForeignKey("vocabulary_list.id"), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyStudyState(db.Model):
+    __tablename__ = "vocabulary_study_state"
+    __table_args__ = (
+        UniqueConstraint("entry_id", "direction", name="uq_vocabulary_entry_direction"),
+        Index("ix_vocabulary_state_due", "next_review_at", "mastery_level"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    entry_id = db.Column(db.String(36), db.ForeignKey("vocabulary_entry.id"), nullable=False, index=True)
+    direction = db.Column(db.String(30), nullable=False)
+    interval = db.Column(db.Integer, nullable=False, default=0)
+    repetition_count = db.Column(db.Integer, nullable=False, default=0)
+    ease_factor = db.Column(db.Float, nullable=False, default=2.5)
+    correct_count = db.Column(db.Integer, nullable=False, default=0)
+    incorrect_count = db.Column(db.Integer, nullable=False, default=0)
+    mastery_level = db.Column(db.String(20), nullable=False, default="new")
+    next_review_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    last_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyPracticeSession(db.Model):
+    __tablename__ = "vocabulary_practice_session"
+    __table_args__ = (Index(
+        "ix_vocabulary_session_user_status", "user_id", "status", "updated_at"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    vocabulary_list_id = db.Column(
+        db.String(36), db.ForeignKey("vocabulary_list.id"), nullable=False, index=True)
+    direction = db.Column(db.String(30), nullable=False)
+    objective = db.Column(db.String(30), nullable=False, default="all")
+    strictness = db.Column(db.String(20), nullable=False, default="normal")
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
+    item_ids_json = db.Column(db.Text, nullable=False, default="[]")
+    current_position = db.Column(db.Integer, nullable=False, default=0)
+    correct_count = db.Column(db.Integer, nullable=False, default=0)
+    incorrect_count = db.Column(db.Integer, nullable=False, default=0)
+    xp_earned = db.Column(db.Integer, nullable=False, default=0)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class FlashcardStudySession(db.Model):
+    __tablename__ = "flashcard_study_session"
+    __table_args__ = (
+        Index("ix_fc_session_user_status", "user_id", "status", "last_activity_at"),
+        Index("ix_fc_session_set_mode", "flashcard_set_id", "mode", "status"),
+    )
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    flashcard_set_id = db.Column(db.Integer, db.ForeignKey("flashcard_set.id"), nullable=False, index=True)
+    mode = db.Column(db.String(20), nullable=False, index=True)
+    objective = db.Column(db.String(30), nullable=False, default="all")
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_activity_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    active_seconds = db.Column(db.Integer, nullable=False, default=0)
+    total_items = db.Column(db.Integer, nullable=False, default=0)
+    answered_items = db.Column(db.Integer, nullable=False, default=0)
+    correct_count = db.Column(db.Integer, nullable=False, default=0)
+    incorrect_count = db.Column(db.Integer, nullable=False, default=0)
+    skipped_count = db.Column(db.Integer, nullable=False, default=0)
+    score = db.Column(db.Integer, nullable=False, default=0)
+    accuracy = db.Column(db.Float, nullable=False, default=0.0)
+    xp_earned = db.Column(db.Integer, nullable=False, default=0)
+    current_position = db.Column(db.Integer, nullable=False, default=0)
+    settings_json = db.Column(db.Text, nullable=False, default="{}")
+    random_seed = db.Column(db.Integer, nullable=False)
+    idempotency_key = db.Column(db.String(100), nullable=False, default="")
+    summary_json = db.Column(db.Text, nullable=False, default="{}")
+    items = db.relationship(
+        "FlashcardSessionItem", back_populates="session", cascade="all, delete-orphan",
+        order_by="FlashcardSessionItem.position",
+    )
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class FlashcardSessionItem(db.Model):
+    __tablename__ = "flashcard_session_item"
+    __table_args__ = (Index("ix_fc_item_session_position", "session_id", "position"),)
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(36), db.ForeignKey("flashcard_study_session.id"), nullable=False, index=True)
+    card_id = db.Column(db.Integer, db.ForeignKey("flashcard.id"), nullable=False, index=True)
+    position = db.Column(db.Integer, nullable=False)
+    direction = db.Column(db.String(20), nullable=False, default="front_to_back")
+    question_type = db.Column(db.String(30), nullable=False)
+    prompt = db.Column(db.Text, nullable=False)
+    options_json = db.Column(db.Text, nullable=False, default="[]")
+    correct_answer = db.Column(db.Text, nullable=False)
+    student_answer = db.Column(db.Text, nullable=False, default="")
+    correct = db.Column(db.Boolean, nullable=True)
+    response_ms = db.Column(db.Integer, nullable=False, default=0)
+    hint_used = db.Column(db.Boolean, nullable=False, default=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    srs_grade = db.Column(db.String(20), nullable=False, default="")
+    mastery_before = db.Column(db.String(20), nullable=False, default="new")
+    mastery_after = db.Column(db.String(20), nullable=False, default="new")
+    xp_earned = db.Column(db.Integer, nullable=False, default=0)
+    answer_key = db.Column(db.String(100), nullable=False, default="", unique=True)
+    answered_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    session = db.relationship("FlashcardStudySession", back_populates="items")
+    card = db.relationship("Flashcard")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class LearningEvent(db.Model):
+    __table_args__ = (
+        Index("ix_learning_event_user_date", "user_id", "created_at"),
+        Index("ix_learning_event_user_type", "user_id", "event_type"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    event_type = db.Column(db.String(50), nullable=False, index=True)
+    source_type = db.Column(db.String(40), nullable=False, default="")
+    source_id = db.Column(db.String(100), nullable=False, default="")
+    session_id = db.Column(db.String(100), nullable=False, default="")
+    subject = db.Column(db.String(80), nullable=False, default="")
+    active_seconds = db.Column(db.Integer, nullable=False, default=0)
+    metadata_json = db.Column(db.Text, nullable=False, default="{}")
+    idempotency_key = db.Column(db.String(160), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class XPTransaction(db.Model):
+    __table_args__ = (Index("ix_xp_user_created", "user_id", "created_at"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    event_type = db.Column(db.String(50), nullable=False, index=True)
+    source_type = db.Column(db.String(40), nullable=False, default="")
+    source_id = db.Column(db.String(100), nullable=False, default="")
+    session_id = db.Column(db.String(100), nullable=False, default="")
+    amount = db.Column(db.Integer, nullable=False)
+    reason = db.Column(db.String(255), nullable=False)
+    idempotency_key = db.Column(db.String(160), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class UserGamificationProfile(db.Model):
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    total_xp = db.Column(db.Integer, nullable=False, default=0)
+    current_streak = db.Column(db.Integer, nullable=False, default=0)
+    longest_streak = db.Column(db.Integer, nullable=False, default=0)
+    last_qualifying_date = db.Column(db.Date, nullable=True)
+    timezone = db.Column(db.String(50), nullable=False, default="Europe/Berlin")
+    daily_activity_count = db.Column(db.Integer, nullable=False, default=0)
+    daily_activity_date = db.Column(db.Date, nullable=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class DailyGoal(db.Model):
+    __table_args__ = (UniqueConstraint("user_id", "goal_date", name="uq_daily_goal_user_date"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    goal_date = db.Column(db.Date, nullable=False, index=True)
+    goal_type = db.Column(db.String(30), nullable=False, default="questions")
+    target = db.Column(db.Integer, nullable=False, default=10)
+    progress = db.Column(db.Integer, nullable=False, default=0)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    reward_xp = db.Column(db.Integer, nullable=False, default=20)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class BadgeDefinition(db.Model):
+    id = db.Column(db.String(50), primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(255), nullable=False)
+    icon = db.Column(db.String(40), nullable=False)
+    category = db.Column(db.String(40), nullable=False)
+    requirement = db.Column(db.Integer, nullable=False, default=1)
+    tier = db.Column(db.String(20), nullable=False, default="bronze")
+    xp_reward = db.Column(db.Integer, nullable=False, default=0)
+    hidden = db.Column(db.Boolean, nullable=False, default=False)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class UserBadge(db.Model):
+    __table_args__ = (UniqueConstraint("user_id", "badge_id", name="uq_user_badge"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    badge_id = db.Column(db.String(50), db.ForeignKey("badge_definition.id"), nullable=False)
+    awarded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    badge = db.relationship("BadgeDefinition")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class UserMission(db.Model):
+    __table_args__ = (Index("ix_mission_user_period", "user_id", "starts_at", "expires_at"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    mission_key = db.Column(db.String(50), nullable=False)
+    period = db.Column(db.String(10), nullable=False)
+    target = db.Column(db.Integer, nullable=False)
+    progress = db.Column(db.Integer, nullable=False, default=0)
+    reward_xp = db.Column(db.Integer, nullable=False, default=20)
+    starts_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class GamePersonalBest(db.Model):
+    __table_args__ = (UniqueConstraint("user_id", "flashcard_set_id", "mode", "configuration", name="uq_game_best"),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    flashcard_set_id = db.Column(db.Integer, db.ForeignKey("flashcard_set.id"), nullable=False, index=True)
+    mode = db.Column(db.String(20), nullable=False)
+    configuration = db.Column(db.String(100), nullable=False, default="default")
+    best_score = db.Column(db.Integer, nullable=False, default=0)
+    best_time_seconds = db.Column(db.Integer, nullable=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class PublicFlashcardSet(db.Model):
+    __table_args__ = (Index("ix_public_set_status_rank", "status", "ranking_score"),)
+    id = db.Column(db.Integer, primary_key=True)
+    creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    source_set_id = db.Column(db.Integer, db.ForeignKey("flashcard_set.id"), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    subject = db.Column(db.String(80), nullable=False, default="Other")
+    topic = db.Column(db.String(120), nullable=False, default="")
+    grade = db.Column(db.String(40), nullable=False, default="")
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")
+    language = db.Column(db.String(10), nullable=False, default="en")
+    tags_json = db.Column(db.Text, nullable=False, default="[]")
+    author_display = db.Column(db.String(20), nullable=False, default="username")
+    nickname = db.Column(db.String(80), nullable=False, default="")
+    status = db.Column(db.String(30), nullable=False, default="pending_ai_review", index=True)
+    cards_json = db.Column(db.Text, nullable=False, default="[]")
+    card_count = db.Column(db.Integer, nullable=False, default=0)
+    ai_overall = db.Column(db.Float, nullable=False, default=0.0)
+    ai_stars = db.Column(db.Integer, nullable=False, default=0)
+    ai_confidence = db.Column(db.String(10), nullable=False, default="")
+    student_rating_sum = db.Column(db.Integer, nullable=False, default=0)
+    student_rating_count = db.Column(db.Integer, nullable=False, default=0)
+    save_count = db.Column(db.Integer, nullable=False, default=0)
+    study_count = db.Column(db.Integer, nullable=False, default=0)
+    helpful_votes = db.Column(db.Integer, nullable=False, default=0)
+    report_count = db.Column(db.Integer, nullable=False, default=0)
+    teacher_verified = db.Column(db.Boolean, nullable=False, default=False)
+    ranking_score = db.Column(db.Float, nullable=False, default=0.0, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    published_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Kept as an indexed application-validated reference to avoid a circular DDL
+    # dependency: publication versions already have the authoritative FK back here.
+    active_version_id = db.Column(db.Integer, nullable=True, index=True)
+    reviews = db.relationship("AIReview", back_populates="public_set", cascade="all, delete-orphan")
+    ratings = db.relationship("FlashcardRating", back_populates="public_set", cascade="all, delete-orphan")
+    study_records = db.relationship("CommunityStudyRecord", back_populates="public_set", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class AIReview(db.Model):
+    __table_args__ = (Index("ix_ai_review_set_version", "public_set_id", "version"),)
+    id = db.Column(db.Integer, primary_key=True)
+    public_set_id = db.Column(db.Integer, db.ForeignKey("public_flashcard_set.id"), nullable=False, index=True)
+    publication_version_id = db.Column(
+        db.Integer, db.ForeignKey("flashcard_publication_version.id"), nullable=True, index=True)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    overall_score = db.Column(db.Float, nullable=False, default=0.0)
+    accuracy_score = db.Column(db.Float, nullable=False, default=0.0)
+    clarity_score = db.Column(db.Float, nullable=False, default=0.0)
+    usefulness_score = db.Column(db.Float, nullable=False, default=0.0)
+    coverage_score = db.Column(db.Float, nullable=False, default=0.0)
+    difficulty_score = db.Column(db.Float, nullable=False, default=0.0)
+    originality_score = db.Column(db.Float, nullable=False, default=0.0)
+    confidence = db.Column(db.String(10), nullable=False, default="medium")
+    summary = db.Column(db.Text, nullable=False, default="")
+    strengths_json = db.Column(db.Text, nullable=False, default="[]")
+    improvements_json = db.Column(db.Text, nullable=False, default="[]")
+    flagged_json = db.Column(db.Text, nullable=False, default="[]")
+    safety_flags_json = db.Column(db.Text, nullable=False, default="[]")
+    stars = db.Column(db.Integer, nullable=False, default=0)
+    decision_status = db.Column(db.String(30), nullable=False, default="")
+    decision_reason = db.Column(db.String(40), nullable=False, default="")
+    model = db.Column(db.String(80), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    public_set = db.relationship("PublicFlashcardSet", back_populates="reviews")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class FlashcardPublicationVersion(db.Model):
+    __tablename__ = "flashcard_publication_version"
+    __table_args__ = (
+        UniqueConstraint("public_set_id", "version", name="uq_publication_set_version"),
+        Index("ix_publication_version_set_created", "public_set_id", "created_at"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    public_set_id = db.Column(
+        db.Integer, db.ForeignKey("public_flashcard_set.id"), nullable=False, index=True)
+    version = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    subject = db.Column(db.String(80), nullable=False, default="Other")
+    topic = db.Column(db.String(120), nullable=False, default="")
+    grade = db.Column(db.String(40), nullable=False, default="")
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")
+    language = db.Column(db.String(10), nullable=False, default="en")
+    tags_json = db.Column(db.Text, nullable=False, default="[]")
+    cards_json = db.Column(db.Text, nullable=False)
+    card_count = db.Column(db.Integer, nullable=False)
+    submission_status = db.Column(
+        db.String(30), nullable=False, default="pending_ai_review", index=True)
+    submitted_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class FlashcardRating(db.Model):
+    __table_args__ = (UniqueConstraint("public_set_id", "user_id", name="uq_public_rating"),)
+    id = db.Column(db.Integer, primary_key=True)
+    public_set_id = db.Column(db.Integer, db.ForeignKey("public_flashcard_set.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    stars = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    public_set = db.relationship("PublicFlashcardSet", back_populates="ratings")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class CommunityStudyRecord(db.Model):
+    __table_args__ = (UniqueConstraint("public_set_id", "user_id", name="uq_community_study"),)
+    id = db.Column(db.Integer, primary_key=True)
+    public_set_id = db.Column(db.Integer, db.ForeignKey("public_flashcard_set.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    public_set = db.relationship("PublicFlashcardSet", back_populates="study_records")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
 class SchemaMigration(db.Model):
     version = db.Column(db.String(100), primary_key=True)
     applied_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
@@ -824,6 +1398,106 @@ def ensure_database():
                     connection.execute(text(statement))
 
         apply_schema_migration("011_add_intelligent_study_planner", add_study_planner_indexes)
+        apply_schema_migration("012_add_flashcard_imports", lambda: None)
+        flashcard_columns_existing = {
+            column["name"] for column in inspect(db.engine).get_columns("flashcard")
+        }
+        flashcard_learning_fields = {
+            "consecutive_correct": "INTEGER NOT NULL DEFAULT 0",
+            "consecutive_incorrect": "INTEGER NOT NULL DEFAULT 0",
+            "average_response_ms": "FLOAT NOT NULL DEFAULT 0",
+            "last_answer_quality": "VARCHAR(20) NOT NULL DEFAULT ''",
+            "starred": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "learned": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "weakness_score": "FLOAT NOT NULL DEFAULT 50",
+        }
+        missing_flashcard_learning = {
+            name: definition for name, definition in flashcard_learning_fields.items()
+            if name not in flashcard_columns_existing
+        }
+        if missing_flashcard_learning:
+            def add_flashcard_learning_fields():
+                with db.engine.begin() as connection:
+                    for name, definition in missing_flashcard_learning.items():
+                        connection.execute(text(
+                            f"ALTER TABLE flashcard ADD COLUMN {name} {definition}"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_flashcard_starred ON flashcard (starred)"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_flashcard_weakness_score "
+                        "ON flashcard (weakness_score)"))
+            apply_schema_migration("013_flashcard_sessions_gamification", add_flashcard_learning_fields)
+        else:
+            apply_schema_migration("013_flashcard_sessions_gamification", lambda: None)
+        apply_schema_migration("014_vocabulary_trainer", lambda: None)
+        public_columns = {
+            column["name"] for column in inspect(db.engine).get_columns("public_flashcard_set")
+        }
+        review_columns = {
+            column["name"] for column in inspect(db.engine).get_columns("ai_review")
+        }
+        if "active_version_id" not in public_columns or "publication_version_id" not in review_columns:
+            def add_publication_versions():
+                with db.engine.begin() as connection:
+                    if "active_version_id" not in public_columns:
+                        connection.execute(text(
+                            "ALTER TABLE public_flashcard_set ADD COLUMN active_version_id INTEGER"))
+                        connection.execute(text(
+                            "CREATE INDEX IF NOT EXISTS ix_public_flashcard_set_active_version_id "
+                            "ON public_flashcard_set (active_version_id)"))
+                    if "publication_version_id" not in review_columns:
+                        connection.execute(text(
+                            "ALTER TABLE ai_review ADD COLUMN publication_version_id INTEGER"))
+                        connection.execute(text(
+                            "CREATE INDEX IF NOT EXISTS ix_ai_review_publication_version_id "
+                            "ON ai_review (publication_version_id)"))
+            apply_schema_migration("015_immutable_publication_versions", add_publication_versions)
+        else:
+            apply_schema_migration("015_immutable_publication_versions", lambda: None)
+        existing_public_sets = db.session.scalars(db.select(PublicFlashcardSet)).all()
+        for existing_public in existing_public_sets:
+            if db.session.scalar(db.select(FlashcardPublicationVersion.id).where(
+                    FlashcardPublicationVersion.public_set_id == existing_public.id)):
+                continue
+            snapshot_version = FlashcardPublicationVersion(
+                public_set_id=existing_public.id, version=1,
+                title=existing_public.title, description=existing_public.description,
+                subject=existing_public.subject, topic=existing_public.topic,
+                grade=existing_public.grade, difficulty=existing_public.difficulty,
+                language=existing_public.language, tags_json=existing_public.tags_json,
+                cards_json=existing_public.cards_json, card_count=existing_public.card_count,
+                submission_status=existing_public.status,
+                approved_at=(existing_public.published_at
+                             if existing_public.status == "approved" else None),
+                created_at=existing_public.created_at)
+            db.session.add(snapshot_version)
+            db.session.flush()
+            latest_review = db.session.scalar(db.select(AIReview).where(
+                AIReview.public_set_id == existing_public.id).order_by(
+                AIReview.version.desc()))
+            if latest_review:
+                latest_review.publication_version_id = snapshot_version.id
+            if existing_public.status == "approved":
+                existing_public.active_version_id = snapshot_version.id
+        badge_rows = (
+            ("first_steps", "First Steps", "Complete your first meaningful learning activity.", "spark", "general", 1, "bronze", 10),
+            ("flashcard_beginner", "Flashcard Beginner", "Review 10 flashcards.", "cards", "flashcards", 10, "bronze", 15),
+            ("flashcard_master", "Flashcard Master", "Master 20 flashcards.", "crown", "flashcards", 20, "gold", 40),
+            ("perfect_test", "Perfect Test", "Finish a flashcard test with 100% accuracy.", "check", "tests", 1, "gold", 25),
+            ("study_streak", "Study Streak", "Reach a 7-day meaningful study streak.", "flame", "consistency", 7, "silver", 30),
+            ("mistake_fixer", "Mistake Fixer", "Correct five previous mistakes.", "repair", "practice", 5, "bronze", 15),
+            ("fast_matcher", "Fast Matcher", "Complete Match accurately in under two minutes.", "timer", "games", 1, "silver", 20),
+            ("first_vocabulary_list", "First Vocabulary List", "Create your first reviewed vocabulary list.", "book", "vocabulary", 1, "bronze", 15),
+            ("vocabulary_50", "50 Words Learned", "Learn 50 vocabulary words.", "language", "vocabulary", 50, "silver", 30),
+            ("vocabulary_master", "Translation Master", "Master 100 vocabulary directions.", "crown", "vocabulary", 100, "gold", 60),
+            ("perfect_vocabulary_test", "Perfect Vocabulary Test", "Complete vocabulary practice with 100% accuracy.", "check", "vocabulary", 1, "gold", 25),
+        )
+        for values in badge_rows:
+            if not db.session.get(BadgeDefinition, values[0]):
+                db.session.add(BadgeDefinition(
+                    id=values[0], name=values[1], description=values[2], icon=values[3],
+                    category=values[4], requirement=values[5], tier=values[6], xp_reward=values[7]))
+        db.session.commit()
 
 
 ensure_database()
@@ -881,8 +1555,10 @@ def subject_teaching_instruction(subject: str | None) -> str:
     if key in LATEX_SUBJECTS:
         parts.append(
             "MATH FORMATTING IS MANDATORY. You MUST write every formula, equation, fraction, root, and numeric "
-            "step in LaTeX, never as plain text. Put each standalone formula or solution step on its own line as "
-            r"display math wrapped in $$...$$, and use \(...\) only for a single symbol inside a sentence. "
+            "step in LaTeX, never as plain text. EVERY formula and EVERY backslash command must be wrapped in "
+            "math delimiters: put each standalone formula or solution step on its own line inside $$...$$, and "
+            "wrap a single symbol inside a sentence in $...$. Never write a bare \\frac, \\sqrt, or any backslash "
+            "command outside $...$ or $$...$$, and never leave an unpaired $ . "
             r"Use \frac{...}{...} for fractions, \sqrt{...} for roots, ^{} for powers and _{} for subscripts. "
             "Give each transformation its own $$...$$ line; never chain several = steps on one line.\n"
             r"CORRECT: $$x_1 = \frac{-b + \sqrt{D}}{2a}$$ then $$x_1 = \frac{4 + 8}{4}$$ then $$x_1 = \frac{12}{4} = 3$$" + "\n"
@@ -897,6 +1573,15 @@ def tutor_instructions(subject: str | None = None) -> str:
     base = f"{TUTOR_RULES}\n\n{language_instruction()}"
     extra = subject_teaching_instruction(subject)
     return f"{base}\n\n{extra}" if extra else base
+
+
+def media_score(value: Any) -> int:
+    """Clamp a model-supplied 0-10 usefulness rating; unknown values suppress media."""
+
+    try:
+        return max(0, min(10, int(float(value))))
+    except (TypeError, ValueError):
+        return 0
 
 
 def tr(message: str, **values) -> str:
@@ -952,7 +1637,232 @@ def inject_i18n():
         "ai_mode": ai_mode,
         "planner_task_title": planner_task_title,
         "planner_date": planner_date,
+        "feature_flags": {
+            "private_flashcards": app.config.get("FEATURE_PRIVATE_FLASHCARDS", False),
+            "community_library": app.config.get("FEATURE_COMMUNITY_LIBRARY", False),
+            "community_publishing": app.config.get("FEATURE_COMMUNITY_PUBLISHING", False),
+            "community_moderation": app.config.get("FEATURE_COMMUNITY_MODERATION", False),
+            "flashcard_pdf_import": app.config.get("FEATURE_FLASHCARD_PDF_IMPORT", False),
+            "flashcard_image_import": app.config.get("FEATURE_FLASHCARD_IMAGE_IMPORT", False),
+            "flashcard_games": app.config.get("FEATURE_FLASHCARD_GAMES", False),
+            "flashcard_learn_mode": app.config.get("FEATURE_FLASHCARD_LEARN_MODE", False),
+            "flashcard_test_mode": app.config.get("FEATURE_FLASHCARD_TEST_MODE", False),
+            "flashcard_match_game": app.config.get("FEATURE_FLASHCARD_MATCH_GAME", False),
+            "flashcard_blast_game": app.config.get("FEATURE_FLASHCARD_BLAST_GAME", False),
+            "flashcard_blocks_game": app.config.get("FEATURE_FLASHCARD_BLOCKS_GAME", False),
+            "gamification_enabled": app.config.get("FEATURE_GAMIFICATION", False),
+            "missions_enabled": app.config.get("FEATURE_MISSIONS", False),
+            "badges_enabled": app.config.get("FEATURE_BADGES", False),
+            "daily_goals_enabled": app.config.get("FEATURE_DAILY_GOALS", False),
+            "vocabulary_trainer": app.config.get("FEATURE_VOCABULARY_TRAINER", False),
+        },
     }
+
+
+def require_feature(config_key: str):
+    """Guard an API view behind a feature flag; returns 404 when the feature is off."""
+
+    def decorator(view):
+        @wraps(view)
+        def guarded(*args, **kwargs):
+            if not app.config.get(config_key):
+                return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+            return view(*args, **kwargs)
+        return guarded
+    return decorator
+
+
+@app.get("/flashcards")
+@login_required
+def flashcards_page():
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS"):
+        abort(404)
+    return render_template("flashcards_library.html")
+
+
+@app.get("/flashcards/create")
+@login_required
+def flashcards_create_page():
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS"):
+        abort(404)
+    import_id = str(request.args.get("import_id") or "")
+    draft_import = owned_flashcard_import(import_id, allow_generated=True) if import_id else None
+    vocabulary_import_id = str(request.args.get("vocabulary_import_id") or "")
+    vocabulary_draft = (
+        owned_vocabulary_import(vocabulary_import_id) if vocabulary_import_id else None)
+    return render_template(
+        "flashcards_create.html", set_id=None,
+        import_id=draft_import.id if draft_import and draft_import.status == "generated" else None,
+        vocabulary_import_id=(
+            vocabulary_draft.id
+            if vocabulary_draft and vocabulary_draft.status == "generated" else None),
+    )
+
+
+@app.get("/flashcards/import")
+@login_required
+def flashcards_import_page():
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS") or not (
+        app.config.get("FEATURE_FLASHCARD_PDF_IMPORT")
+        or app.config.get("FEATURE_FLASHCARD_IMAGE_IMPORT")
+    ):
+        abort(404)
+    cleanup_expired_flashcard_imports()
+    return render_template("flashcards_import.html")
+
+
+@app.get("/vocabulary")
+@login_required
+def vocabulary_page():
+    if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
+        abort(404)
+    lists = db.session.scalars(db.select(VocabularyList).where(
+        VocabularyList.owner_user_id == current_user.id).order_by(
+            VocabularyList.updated_at.desc())).all()
+    return render_template("vocabulary_library.html", vocabulary_lists=lists)
+
+
+@app.get("/vocabulary/import")
+@login_required
+def vocabulary_import_page():
+    if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
+        abort(404)
+    cleanup_expired_flashcard_imports()
+    return render_template(
+        "vocabulary_import.html", supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+
+
+@app.get("/vocabulary/<list_id>")
+@login_required
+def vocabulary_list_page(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        abort(404)
+    return render_template("vocabulary_list.html", vocabulary_list=item)
+
+
+@app.get("/vocabulary/<list_id>/edit")
+@login_required
+def vocabulary_list_edit_page(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        abort(404)
+    return render_template(
+        "vocabulary_review.html", vocabulary_list=item, vocabulary_import=None,
+        supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+
+
+@app.get("/vocabulary/<list_id>/study")
+@login_required
+def vocabulary_study_page(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        abort(404)
+    return render_template("vocabulary_study.html", vocabulary_list=item)
+
+
+@app.get("/vocabulary/imports/<import_id>/review")
+@login_required
+def vocabulary_import_review_page(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        abort(404)
+    return render_template(
+        "vocabulary_review.html", vocabulary_import=item, vocabulary_list=None,
+        supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+
+
+@app.get("/flashcards/<int:set_id>")
+@login_required
+def flashcards_overview_page(set_id):
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS") or not owned_flashcard_set(set_id):
+        abort(404)
+    return render_template("flashcards_overview.html", set_id=set_id)
+
+
+@app.get("/flashcards/<int:set_id>/edit")
+@login_required
+def flashcards_edit_page(set_id):
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS") or not owned_flashcard_set(set_id):
+        abort(404)
+    return render_template("flashcards_create.html", set_id=set_id)
+
+
+@app.get("/flashcards/<int:set_id>/study")
+@login_required
+def flashcards_study_page(set_id):
+    if not app.config.get("FEATURE_PRIVATE_FLASHCARDS") or not owned_flashcard_set(set_id):
+        abort(404)
+    return render_template("flashcards_mode.html", set_id=set_id, mode="flashcards")
+
+
+def flashcard_mode_page(set_id: int, mode: str, config_key: str):
+    if not app.config.get(config_key) or not owned_flashcard_set(set_id):
+        abort(404)
+    return render_template("flashcards_mode.html", set_id=set_id, mode=mode)
+
+
+@app.get("/flashcards/<int:set_id>/learn")
+@login_required
+def flashcards_learn_page(set_id):
+    return flashcard_mode_page(set_id, "learn", "FEATURE_FLASHCARD_LEARN_MODE")
+
+
+@app.get("/flashcards/<int:set_id>/test")
+@login_required
+def flashcards_test_page(set_id):
+    return flashcard_mode_page(set_id, "test", "FEATURE_FLASHCARD_TEST_MODE")
+
+
+@app.get("/flashcards/<int:set_id>/match")
+@login_required
+def flashcards_match_page(set_id):
+    return flashcard_mode_page(set_id, "match", "FEATURE_FLASHCARD_MATCH_GAME")
+
+
+@app.get("/flashcards/<int:set_id>/blast")
+@login_required
+def flashcards_blast_page(set_id):
+    return flashcard_mode_page(set_id, "blast", "FEATURE_FLASHCARD_BLAST_GAME")
+
+
+@app.get("/flashcards/<int:set_id>/blocks")
+@login_required
+def flashcards_blocks_page(set_id):
+    return flashcard_mode_page(set_id, "blocks", "FEATURE_FLASHCARD_BLOCKS_GAME")
+
+
+@app.get("/flashcards/<int:set_id>/test/results/<session_id>")
+@login_required
+def flashcards_test_results_page(set_id, session_id):
+    session = owned_flashcard_session(session_id)
+    if not session or session.flashcard_set_id != set_id or session.mode != "test" or session.status != "completed":
+        abort(404)
+    return render_template("flashcards_mode.html", set_id=set_id, mode="test", result_session_id=session.id)
+
+
+@app.get("/flashcards/<int:set_id>/publish")
+@login_required
+def flashcards_publish_page(set_id):
+    if not app.config.get("FEATURE_COMMUNITY_PUBLISHING") or not owned_flashcard_set(set_id):
+        abort(404)
+    return render_template("flashcards_publish.html", set_id=set_id)
+
+
+@app.get("/community")
+def community_page():
+    if not app.config.get("FEATURE_COMMUNITY_LIBRARY"):
+        abort(404)
+    return render_template("community.html", initial_public_set_id=None)
+
+
+@app.get("/community/sets/<int:set_id>")
+def community_set_detail_page(set_id):
+    if not app.config.get("FEATURE_COMMUNITY_LIBRARY"):
+        abort(404)
+    if not approved_public_set(set_id):
+        abort(404)
+    return render_template("community.html", initial_public_set_id=set_id)
 
 
 @login_manager.unauthorized_handler
@@ -2490,6 +3400,12 @@ def answer_recall_card(project_id, section_id, card_id):
         section.project.user_id, activity_kind="review", score=score,
         subject=section.project.subject, concepts=concepts, section_id=section.id,
     )
+    record_learning_event(
+        current_user.id, "mistake_corrected" if correct and retry_count else "practice_question_completed",
+        f"recall:{card.id}:{card.attempts}", source_type="recall_card", source_id=card.id,
+        subject=section.project.subject, metadata={"correct": correct, "score": score},
+        xp=(gamification.XP_VALUES["mistake_corrected"] if correct and retry_count
+            else gamification.XP_VALUES["practice_answer"] if correct else 0))
     db.session.commit()
     return jsonify(
         ok=True,
@@ -2706,6 +3622,12 @@ Return JSON as {{"results":[{{"question_id":1,"score":0,"evaluation":"brief sour
         )],
         exam_id=exam.id,
     )
+    record_learning_event(
+        exam.project.user_id, "test_completed", f"final-exam:{exam.id}",
+        source_type="final_exam", source_id=exam.id, subject=exam.project.subject,
+        active_seconds=result["time_used_seconds"],
+        metadata={"accuracy": exam.score, "correct": correct},
+        xp=gamification.XP_VALUES["test_completed"])
     db.session.commit()
 
 
@@ -3280,6 +4202,13 @@ def complete_study_plan_session(plan_id, session_id):
         task["completed"] = True
     _save_planner_tasks(session_record, tasks)
     session_record.study_plan.updated_at = utcnow()
+    record_learning_event(
+        current_user.id, "study_plan_task_completed",
+        f"study-plan-session:{session_record.id}", source_type="study_plan_session",
+        source_id=session_record.id, subject=session_record.study_plan.project.subject,
+        active_seconds=session_record.completed_minutes * 60,
+        metadata={"completed": True},
+        xp=gamification.XP_VALUES["study_plan_task_completed"])
     db.session.commit()
     flash(tr("Study session completed."), "success")
     return redirect(url_for("study_plan_detail", plan_id=plan_id))
@@ -3307,6 +4236,140 @@ def skip_study_plan_session(plan_id, session_id):
     return redirect(url_for("study_plan_detail", plan_id=plan_id))
 
 
+def flashcards_dashboard_widget(user_id, now):
+    """Real flashcard metrics from stored SRS and persistent session state."""
+
+    sets = db.session.scalars(
+        db.select(FlashcardSet).where(FlashcardSet.user_id == user_id)
+        .order_by(FlashcardSet.updated_at.desc())
+    ).all()
+    recent, due_today, mastered, learning = [], 0, 0, 0
+    for flashcard_set in sets:
+        cards = flashcard_set.cards
+        set_due = sum(1 for card in cards if as_utc(card.next_review_at) <= now)
+        set_mastered = sum(1 for card in cards if card.mastery_level == "mastered")
+        due_today += set_due
+        mastered += set_mastered
+        learning += sum(1 for card in cards if card.mastery_level in ("new", "learning"))
+        if len(recent) < 4:
+            reviewed = [as_utc(card.last_reviewed_at) for card in cards if card.last_reviewed_at]
+            total = len(cards)
+            recent.append({
+                "id": flashcard_set.id, "title": flashcard_set.title, "subject": flashcard_set.subject,
+                "total": total, "due": set_due,
+                "mastery_percent": round(100 * set_mastered / total) if total else 0,
+                "last_studied": max(reviewed).date().isoformat() if reviewed else None,
+            })
+    return {
+        "sets_count": len(sets), "recent": recent,
+        "due_today": due_today, "mastered": mastered, "learning": learning,
+    }
+
+
+def gamification_snapshot(user_id: int) -> dict[str, Any]:
+    profile = gamification_profile(user_id)
+    progress = gamification.level_progress(profile.total_xp)
+    try:
+        today = datetime.now(ZoneInfo(profile.timezone or "Europe/Berlin")).date()
+    except ZoneInfoNotFoundError:
+        today = utcnow().date()
+    goal = db.session.scalar(db.select(DailyGoal).where(
+        DailyGoal.user_id == user_id, DailyGoal.goal_date == today))
+    missions = ensure_user_missions(user_id, utcnow())
+    recent_badges = db.session.scalars(db.select(UserBadge).where(
+        UserBadge.user_id == user_id).order_by(UserBadge.awarded_at.desc()).limit(4)).all()
+    recent_events = db.session.scalars(db.select(LearningEvent).where(
+        LearningEvent.user_id == user_id).order_by(LearningEvent.created_at.desc()).limit(8)).all()
+    return {
+        **progress, "current_streak": profile.current_streak,
+        "longest_streak": profile.longest_streak,
+        "goal": goal, "missions": missions, "recent_badges": recent_badges,
+        "recent_events": recent_events,
+    }
+
+
+@app.get("/progress")
+@login_required
+def progress_page():
+    if not app.config.get("FEATURE_GAMIFICATION"):
+        abort(404)
+    snapshot = gamification_snapshot(current_user.id)
+    since = utcnow() - timedelta(days=7)
+    events = db.session.scalars(db.select(LearningEvent).where(
+        LearningEvent.user_id == current_user.id,
+        LearningEvent.created_at >= since).order_by(LearningEvent.created_at)).all()
+    sessions = db.session.scalars(db.select(FlashcardStudySession).where(
+        FlashcardStudySession.user_id == current_user.id,
+        FlashcardStudySession.status == "completed").order_by(
+            FlashcardStudySession.completed_at.desc()).limit(30)).all()
+    badges = db.session.scalars(db.select(UserBadge).where(
+        UserBadge.user_id == current_user.id).order_by(UserBadge.awarded_at.desc())).all()
+    cards_mastered = db.session.scalar(db.select(func.count(Flashcard.id)).join(
+        FlashcardSet).where(FlashcardSet.user_id == current_user.id,
+                            Flashcard.mastery_level == "mastered")) or 0
+    return render_template(
+        "progress.html", gamification=snapshot, events=events, sessions=sessions,
+        badges=badges, cards_mastered=cards_mastered)
+
+
+@app.get("/api/gamification/profile")
+@login_required
+def gamification_profile_api():
+    if not app.config.get("FEATURE_GAMIFICATION"):
+        return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+    snapshot = gamification_snapshot(current_user.id)
+    return jsonify(ok=True, profile={
+        key: value for key, value in snapshot.items()
+        if key not in {"goal", "missions", "recent_badges", "recent_events"}
+    }, goal=({
+        "type": snapshot["goal"].goal_type, "target": snapshot["goal"].target,
+        "progress": snapshot["goal"].progress,
+        "completed": bool(snapshot["goal"].completed_at),
+    } if snapshot["goal"] else None),
+    missions=[{
+        "id": item.id, "key": item.mission_key, "period": item.period,
+        "target": item.target, "progress": item.progress,
+        "completed": bool(item.completed_at), "reward_xp": item.reward_xp,
+    } for item in snapshot["missions"]],
+    badges=[{
+        "id": item.badge.id, "name": tr(item.badge.name),
+        "description": tr(item.badge.description), "icon": item.badge.icon,
+        "tier": item.badge.tier, "awarded_at": as_utc(item.awarded_at).isoformat(),
+    } for item in snapshot["recent_badges"]])
+
+
+@app.put("/api/gamification/goals/today")
+@login_required
+def set_daily_goal():
+    if not app.config.get("FEATURE_DAILY_GOALS"):
+        return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+    payload = request.get_json(silent=True) or {}
+    goal_type = str(payload.get("type") or "questions")
+    if goal_type not in {"minutes", "questions", "cards", "xp"}:
+        return api_error(tr("Choose a valid daily goal."), 400, "invalid_goal")
+    try:
+        target = max(1, min(500, int(payload.get("target") or 10)))
+    except (TypeError, ValueError):
+        return api_error(tr("Choose a valid daily goal."), 400, "invalid_goal")
+    profile = gamification_profile(current_user.id)
+    try:
+        today = datetime.now(ZoneInfo(profile.timezone or "Europe/Berlin")).date()
+    except ZoneInfoNotFoundError:
+        today = utcnow().date()
+    goal = db.session.scalar(db.select(DailyGoal).where(
+        DailyGoal.user_id == current_user.id, DailyGoal.goal_date == today))
+    if not goal:
+        goal = DailyGoal(user_id=current_user.id, goal_date=today)
+        db.session.add(goal)
+    if goal.completed_at:
+        return api_error(tr("Today's completed goal cannot be changed."), 409, "goal_completed")
+    goal.goal_type, goal.target = goal_type, target
+    goal.progress = min(int(goal.progress or 0), target)
+    db.session.commit()
+    return jsonify(ok=True, goal={"type": goal.goal_type, "target": goal.target,
+                                  "progress": goal.progress})
+
+
 @app.get("/dashboard")
 @login_required
 def dashboard():
@@ -3327,6 +4390,47 @@ def dashboard():
         now=now,
     )
     context["study_planner"] = study_planner
+    context["flashcards_widget"] = (
+        flashcards_dashboard_widget(current_user.id, now)
+        if app.config.get("FEATURE_PRIVATE_FLASHCARDS") else None)
+    context["gamification"] = (
+        gamification_snapshot(current_user.id)
+        if app.config.get("FEATURE_GAMIFICATION") else None)
+    if app.config.get("FEATURE_VOCABULARY_TRAINER"):
+        lists = db.session.scalars(db.select(VocabularyList).where(
+            VocabularyList.owner_user_id == current_user.id).order_by(
+                VocabularyList.updated_at.desc()).limit(4)).all()
+        entries = db.session.scalars(db.select(VocabularyEntry).join(VocabularyList).where(
+            VocabularyList.owner_user_id == current_user.id)).all()
+        states = db.session.scalars(db.select(VocabularyStudyState).join(
+            VocabularyEntry).join(VocabularyList).where(
+                VocabularyList.owner_user_id == current_user.id)).all()
+        vocabulary_dates = sorted({
+            as_utc(event.created_at).date() for event in db.session.scalars(
+                db.select(LearningEvent).where(
+                    LearningEvent.user_id == current_user.id,
+                    LearningEvent.event_type.in_((
+                        "vocabulary_reviewed", "vocabulary_session_completed")))).all()
+        }, reverse=True)
+        vocabulary_streak = 0
+        cursor_date = now.date()
+        if vocabulary_dates and vocabulary_dates[0] == cursor_date - timedelta(days=1):
+            cursor_date -= timedelta(days=1)
+        for activity_date in vocabulary_dates:
+            if activity_date != cursor_date:
+                break
+            vocabulary_streak += 1
+            cursor_date -= timedelta(days=1)
+        context["vocabulary_widget"] = {
+            "lists": lists, "new": sum(1 for state in states if state.mastery_level == "new"),
+            "learning": sum(1 for state in states if state.mastery_level in {"learning", "familiar"}),
+            "mastered": sum(1 for state in states if state.mastery_level == "mastered"),
+            "weak": sum(1 for state in states if state.incorrect_count > state.correct_count),
+            "due": sum(1 for state in states if state.next_review_at <= now),
+            "words": len(entries), "streak": vocabulary_streak,
+        }
+    else:
+        context["vocabulary_widget"] = None
     return render_template("dashboard.html", **context, language=language)
 
 
@@ -3752,8 +4856,17 @@ def analyze_material():
   "worked_example": {"problem": "specific demonstration, example, text analysis, timeline task, or calculation matching the subject", "steps": ["small teaching step"], "answer": "clear conclusion or answer"},
   "teacher_tips": ["specific useful technique, mental check, shortcut, or memory aid for this exact material"],
   "exceptions": ["important case where a visible rule does not apply, needs a condition, or changes; use an empty list only if genuinely none exist"],
+  "video_usefulness": 0,
+  "videos": [{"query": "search phrase to find the video, naming a trusted educational channel or educator when possible", "why": "one short sentence on why watching this helps understand the topic"}],
+  "image_usefulness": 0,
+  "image_search_terms": ["exact title of a real Wikipedia article whose picture teaches something (a diagram, map, structure, artifact, or the artwork being discussed)"],
   "question": {"id": "q1", "concept": "one detected concept", "difficulty": 1, "type": "multiple_choice", "prompt": "one easy answerable question", "hint": "small hint", "options": [{"id": "a", "label": "answer choice"}, {"id": "b", "label": "answer choice"}, {"id": "c", "label": "answer choice"}, {"id": "d", "label": "answer choice"}], "expected_answer": "the correct option id"}
 }
+Educational media rules: your primary goal is understanding; include media only when it clearly improves it, never for decoration.
+Videos: put 1 to 3 entries in "videos" ONLY when ALL of these hold - a visual explanation would significantly improve learning, the topic is hard to explain with text alone, a high-quality educational video likely exists, and it is directly related to the topic (for example physics experiments, chemistry demonstrations, historical documentaries, visual mathematical proofs, biology animations, programming tutorials). Use an EMPTY "videos" list for simple facts, vocabulary or definitions, easy calculations, or anything already fully answerable in text. Prefer official educational channels or trusted educators; never suggest unrelated or entertainment videos.
+Images: every image must teach something. Give "image_search_terms" ONLY for pictures that directly help explain the lesson - maps, timelines, historical artifacts, scientific diagrams, graphs, charts, human anatomy, cell structures, molecules, geometry diagrams, mathematical graphs, circuit diagrams, flowcharts, climate maps, population graphs, architecture, battle maps, or the specific painting being discussed. Each must be the title of a real Wikipedia article. Use an EMPTY list for anything decorative or generic - stock photos, decorative backgrounds, random smiling people, abstract artwork, unrelated landscapes, AI-generated decorative images, or any image added only to make the page look nicer - and for purely abstract topics such as most arithmetic. If an image does not improve understanding, do not include one.
+Media decision: rate how much media would improve understanding of this lesson from 0 to 10. Put the video rating in "video_usefulness" and the image rating in "image_usefulness" (integers). Base the ratings on the rules above. List your best candidates ordered strongest first in "videos" and "image_search_terms"; the app decides how many to show from your ratings (videos: 0-4 shows none, 5-7 shows one, 8-10 shows up to three; images: 0-3 shows none, 4-6 shows one only when highly relevant, 7-10 shows up to two). Still only propose items that pass the rules above.
+Never invent URLs or link text; only provide search phrases and Wikipedia article titles.
 The demonstration must use many small steps rather than combining ideas. Never write 'obviously', 'simply', or 'just'.
 Give 2 to 4 teacher_tips that an excellent classroom teacher would actually use. Mention common traps and quick ways to check an answer.
 For exceptions, state the exact condition and give a tiny example. Do not invent exceptions unrelated to the uploaded material.
@@ -3774,6 +4887,18 @@ The first question must be easy, check understanding of the explanation, and not
             **(quality_options() if not uploads else {}),
         )
         lesson = parse_json(response.output_text)
+        try:
+            video_score = media_score(lesson.get("video_usefulness"))
+            image_score = media_score(lesson.get("image_usefulness"))
+            video_limit = 0 if video_score <= 4 else 1 if video_score <= 7 else 3
+            image_limit = 0 if image_score <= 3 else 1 if image_score <= 6 else 2
+            lesson["video_links"] = media.video_links(
+                lesson.get("videos") or lesson.get("video_search_terms"), limit=video_limit)
+            lesson["image_media"] = media.lesson_images(
+                lesson.get("image_search_terms"), get_current_language(), limit=image_limit)
+        except Exception:
+            app.logger.exception("Media enrichment failed")
+            lesson["video_links"], lesson["image_media"] = [], []
         session_id = uuid.uuid4().hex
         SESSIONS[session_id] = {
             "user_id": current_user.id,
@@ -4067,6 +5192,14 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             public_question = {
                 key: value for key, value in next_question.items() if key != "expected_answer"}
         save_session_state(payload.get("session_id"), commit=False)
+        record_learning_event(
+            current_user.id,
+            "quiz_completed" if is_final else "practice_question_completed",
+            f"attempt:{attempt.id}", source_type="attempt", source_id=attempt.id,
+            session_id=payload.get("session_id"), subject=question_subject,
+            metadata={"correct": score >= 80, "score": score},
+            xp=(gamification.XP_VALUES["quiz_completed"] if is_final
+                else gamification.XP_VALUES["practice_answer"] if score >= 80 else 0))
         db.session.commit()
         average = round(
             sum(item["score"] for item in session["history"]) / len(session["history"]))
@@ -4193,6 +5326,2662 @@ Treat a short reply as an answer to the latest chat question. End with one short
         db.session.rollback()
         app.logger.exception("Tutor chat failed")
         return api_error(tr("AI is temporarily unavailable. You can retry. Your saved work remains safe."), 503, "ai_unavailable")
+
+
+def flashcard_content_columns(card: dict[str, Any]) -> dict[str, Any]:
+    """The editable content columns of a card (no spaced-repetition state)."""
+
+    return {
+        "type": card["type"], "front": card["front"], "back": card["back"],
+        "explanation": card["explanation"], "hint": card["hint"],
+        "tags_json": json.dumps(card["tags"], ensure_ascii=False),
+        "options_json": json.dumps(card["options"], ensure_ascii=False),
+        "source_reference": card["source_reference"], "difficulty": card["difficulty"],
+    }
+
+
+def schedule_columns(schedule: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "interval": schedule["interval"], "repetition_count": schedule["repetition_count"],
+        "ease_factor": schedule["ease_factor"], "next_review_at": schedule["next_review_at"],
+        "last_reviewed_at": schedule["last_reviewed_at"], "correct_count": schedule["correct_count"],
+        "incorrect_count": schedule["incorrect_count"], "mastery_level": schedule["mastery_level"],
+    }
+
+
+def flashcard_columns(card: dict[str, Any], schedule: dict[str, Any]) -> dict[str, Any]:
+    """Map a normalized card plus its spaced-repetition schedule to Flashcard columns."""
+
+    return {**flashcard_content_columns(card), **schedule_columns(schedule)}
+
+
+def serialize_flashcard(card: "Flashcard") -> dict[str, Any]:
+    return {
+        "id": card.id, "type": card.type, "front": card.front, "back": card.back,
+        "explanation": card.explanation, "hint": card.hint,
+        "tags": json_value(card.tags_json, []), "options": json_value(card.options_json, []),
+        "source_reference": card.source_reference, "image_url": card.image_url,
+        "image_alt": card.image_alt, "image_source": card.image_source,
+        "difficulty": card.difficulty, "mastery_level": card.mastery_level,
+        "interval": card.interval, "repetition_count": card.repetition_count,
+        "ease_factor": card.ease_factor, "correct_count": card.correct_count,
+        "incorrect_count": card.incorrect_count,
+        "next_review_at": as_utc(card.next_review_at).isoformat(),
+        "last_reviewed_at": as_utc(card.last_reviewed_at).isoformat() if card.last_reviewed_at else None,
+    }
+
+
+def owned_flashcard_set(set_id):
+    try:
+        identifier = int(set_id)
+    except (TypeError, ValueError):
+        return None
+    return db.session.scalar(db.select(FlashcardSet).where(
+        FlashcardSet.id == identifier, FlashcardSet.user_id == current_user.id))
+
+
+def gamification_profile(user_id: int) -> UserGamificationProfile:
+    profile = db.session.get(UserGamificationProfile, user_id)
+    if not profile:
+        profile = UserGamificationProfile(user_id=user_id)
+        db.session.add(profile)
+        db.session.flush()
+    return profile
+
+
+def award_xp(
+    user_id: int, event_type: str, amount: int, idempotency_key: str, *,
+    source_type: str = "", source_id: str = "", session_id: str = "", reason: str = "",
+) -> int:
+    if amount <= 0 or db.session.scalar(db.select(XPTransaction.id).where(
+            XPTransaction.idempotency_key == idempotency_key)):
+        return 0
+    profile = gamification_profile(user_id)
+    transaction = XPTransaction(
+        user_id=user_id, event_type=event_type, source_type=source_type,
+        source_id=str(source_id), session_id=str(session_id), amount=min(100, int(amount)),
+        reason=(reason or event_type)[:255], idempotency_key=idempotency_key[:160],
+    )
+    db.session.add(transaction)
+    profile.total_xp += transaction.amount
+    return transaction.amount
+
+
+def ensure_user_missions(user_id: int, now: datetime) -> list[UserMission]:
+    start_day = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    start_week = start_day - timedelta(days=start_day.weekday())
+    definitions = (
+        ("daily_answers", "daily", 5, 10, start_day, start_day + timedelta(days=1)),
+        ("weekly_sessions", "weekly", 3, 30, start_week, start_week + timedelta(days=7)),
+    )
+    for key, period, target, reward, starts, expires in definitions:
+        exists = db.session.scalar(db.select(UserMission).where(
+            UserMission.user_id == user_id, UserMission.mission_key == key,
+            UserMission.starts_at == starts))
+        if not exists:
+            db.session.add(UserMission(
+                user_id=user_id, mission_key=key, period=period, target=target,
+                reward_xp=reward, starts_at=starts, expires_at=expires))
+    db.session.flush()
+    return list(db.session.scalars(db.select(UserMission).where(
+        UserMission.user_id == user_id, UserMission.starts_at <= now,
+        UserMission.expires_at > now).order_by(UserMission.period)).all())
+
+
+def maybe_award_badges(user_id: int, event_type: str, metadata: dict[str, Any]) -> list[str]:
+    wanted = {"first_steps"}
+    if event_type == "vocabulary_list_created":
+        wanted.add("first_vocabulary_list")
+    review_count = db.session.scalar(db.select(func.count(LearningEvent.id)).where(
+        LearningEvent.user_id == user_id,
+        LearningEvent.event_type == "flashcard_reviewed")) or 0
+    if review_count >= 10:
+        wanted.add("flashcard_beginner")
+    mastered = db.session.scalar(db.select(func.count(Flashcard.id)).join(FlashcardSet).where(
+        FlashcardSet.user_id == user_id, Flashcard.mastery_level == "mastered")) or 0
+    if mastered >= 20:
+        wanted.add("flashcard_master")
+    if event_type == "test_completed" and float(metadata.get("accuracy", 0)) >= 100:
+        wanted.add("perfect_test")
+    profile = gamification_profile(user_id)
+    if profile.current_streak >= 7:
+        wanted.add("study_streak")
+    if event_type == "match_completed" and metadata.get("active_seconds", 999) < 120 and metadata.get("accuracy", 0) >= 90:
+        wanted.add("fast_matcher")
+    vocabulary_reviews = db.session.scalar(db.select(func.count(LearningEvent.id)).where(
+        LearningEvent.user_id == user_id,
+        LearningEvent.event_type == "vocabulary_reviewed",
+        LearningEvent.metadata_json.like('%"correct": true%'))) or 0
+    if vocabulary_reviews >= 50:
+        wanted.add("vocabulary_50")
+    vocabulary_mastered = db.session.scalar(db.select(func.count(VocabularyStudyState.id)).join(
+        VocabularyEntry).join(VocabularyList).where(
+            VocabularyList.owner_user_id == user_id,
+            VocabularyStudyState.mastery_level == "mastered")) or 0
+    if vocabulary_mastered >= 100:
+        wanted.add("vocabulary_master")
+    if event_type == "vocabulary_session_completed" and float(metadata.get("accuracy", 0)) >= 100:
+        wanted.add("perfect_vocabulary_test")
+    awarded = []
+    for badge_id in wanted:
+        if not db.session.scalar(db.select(UserBadge.id).where(
+                UserBadge.user_id == user_id, UserBadge.badge_id == badge_id)):
+            definition = db.session.get(BadgeDefinition, badge_id)
+            if definition:
+                db.session.add(UserBadge(user_id=user_id, badge_id=badge_id))
+                award_xp(
+                    user_id, "badge_awarded", definition.xp_reward,
+                    f"badge:{user_id}:{badge_id}", source_type="badge",
+                    source_id=badge_id, reason=definition.name)
+                awarded.append(badge_id)
+    return awarded
+
+
+def record_learning_event(
+    user_id: int, event_type: str, idempotency_key: str, *,
+    source_type: str = "", source_id: Any = "", session_id: Any = "",
+    subject: str = "", active_seconds: int = 0, metadata: dict[str, Any] | None = None,
+    xp: int = 0,
+) -> tuple[LearningEvent, int]:
+    existing = db.session.scalar(db.select(LearningEvent).where(
+        LearningEvent.idempotency_key == idempotency_key[:160]))
+    if existing:
+        return existing, 0
+    metadata = metadata or {}
+    event = LearningEvent(
+        user_id=user_id, event_type=event_type, source_type=source_type,
+        source_id=str(source_id), session_id=str(session_id), subject=subject[:80],
+        active_seconds=max(0, min(7200, int(active_seconds))),
+        metadata_json=json.dumps(metadata, ensure_ascii=False),
+        idempotency_key=idempotency_key[:160],
+    )
+    db.session.add(event)
+    db.session.flush()
+    if event_type in {"match_completed", "blast_completed", "blocks_completed"}:
+        try:
+            local_zone = ZoneInfo(gamification_profile(user_id).timezone or "Europe/Berlin")
+        except ZoneInfoNotFoundError:
+            local_zone = timezone.utc
+        local_today = datetime.now(local_zone).date()
+        game_xp_today = db.session.scalar(db.select(func.coalesce(func.sum(XPTransaction.amount), 0)).where(
+            XPTransaction.user_id == user_id,
+            XPTransaction.event_type.in_(("match_completed", "blast_completed", "blocks_completed")),
+            func.date(XPTransaction.created_at) == local_today.isoformat(),
+        )) or 0
+        xp = min(max(0, 60 - int(game_xp_today)), xp)
+    earned = award_xp(
+        user_id, event_type, xp, f"xp:{idempotency_key}", source_type=source_type,
+        source_id=str(source_id), session_id=str(session_id), reason=event_type)
+    profile = gamification_profile(user_id)
+    try:
+        local_zone = ZoneInfo(profile.timezone or "Europe/Berlin")
+    except ZoneInfoNotFoundError:
+        local_zone = timezone.utc
+    today = datetime.now(local_zone).date()
+    if profile.daily_activity_date != today:
+        profile.daily_activity_date, profile.daily_activity_count = today, 0
+    profile.daily_activity_count += 1
+    if profile.daily_activity_count >= app.config["GAMIFICATION_MIN_DAILY_EVENTS"]:
+        current, longest, changed = gamification.update_streak(
+            profile.current_streak, profile.longest_streak,
+            profile.last_qualifying_date, today)
+        profile.current_streak, profile.longest_streak = current, longest
+        if changed:
+            profile.last_qualifying_date = today
+    goal = db.session.scalar(db.select(DailyGoal).where(
+        DailyGoal.user_id == user_id, DailyGoal.goal_date == today))
+    if goal and not goal.completed_at:
+        increments = {
+            "questions": 1, "cards": 1 if event_type == "flashcard_reviewed" else 0,
+            "minutes": max(0, active_seconds // 60), "xp": earned,
+        }
+        goal.progress = min(goal.target, goal.progress + increments.get(goal.goal_type, 0))
+        if goal.progress >= goal.target:
+            goal.completed_at = utcnow()
+            award_xp(
+                user_id, "daily_goal_completed", goal.reward_xp,
+                f"goal:{goal.id}", source_type="daily_goal", source_id=goal.id,
+                reason="Daily goal completed")
+    for mission in ensure_user_missions(user_id, utcnow()):
+        if mission.completed_at:
+            continue
+        progress = gamification.mission_progress(event_type, {
+            **metadata, "active_seconds": active_seconds})
+        increment = (
+            progress["correct_answers"] if mission.mission_key == "daily_answers"
+            else progress["sessions"])
+        mission.progress = min(mission.target, mission.progress + increment)
+        if mission.progress >= mission.target:
+            mission.completed_at = utcnow()
+            award_xp(
+                user_id, "mission_completed", mission.reward_xp,
+                f"mission:{mission.id}", source_type="mission", source_id=mission.id,
+                reason=mission.mission_key)
+    maybe_award_badges(user_id, event_type, metadata)
+    return event, earned
+
+
+def owned_flashcard_session(session_id: Any) -> FlashcardStudySession | None:
+    try:
+        normalized = str(uuid.UUID(str(session_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return db.session.scalar(db.select(FlashcardStudySession).where(
+        FlashcardStudySession.id == normalized,
+        FlashcardStudySession.user_id == current_user.id))
+
+
+def touch_flashcard_session(session: FlashcardStudySession) -> None:
+    now = utcnow()
+    delta = max(0, int((now - as_utc(session.last_activity_at)).total_seconds()))
+    if session.status == "active":
+        session.active_seconds += min(120, delta)
+    session.last_activity_at = now
+
+
+def serialize_flashcard_session(session: FlashcardStudySession) -> dict[str, Any]:
+    completed = session.status == "completed"
+    items = []
+    session_items = db.session.scalars(db.select(FlashcardSessionItem).where(
+        FlashcardSessionItem.session_id == session.id).order_by(
+            FlashcardSessionItem.position)).all()
+    for item in session_items:
+        row = {
+            "id": item.id, "card_id": item.card_id, "position": item.position,
+            "direction": item.direction, "question_type": item.question_type,
+            "prompt": item.prompt, "options": json_value(item.options_json, []),
+            "student_answer": item.student_answer, "answered": item.answered_at is not None,
+            "correct": item.correct if completed or session.mode != "test" else None,
+            "hint": item.card.hint, "explanation": item.card.explanation,
+            "starred": item.card.starred,
+        }
+        if completed or session.mode in {"flashcards", "match"}:
+            row["correct_answer"] = item.correct_answer
+        items.append(row)
+    return {
+        "id": session.id, "set_id": session.flashcard_set_id, "mode": session.mode,
+        "objective": session.objective, "status": session.status,
+        "started_at": as_utc(session.started_at).isoformat(),
+        "last_activity_at": as_utc(session.last_activity_at).isoformat(),
+        "active_seconds": session.active_seconds, "total_items": session.total_items,
+        "answered_items": session.answered_items, "correct_count": session.correct_count,
+        "incorrect_count": session.incorrect_count, "skipped_count": session.skipped_count,
+        "score": session.score, "accuracy": session.accuracy, "xp_earned": session.xp_earned,
+        "current_position": session.current_position,
+        "settings": json_object(session.settings_json), "summary": json_object(session.summary_json),
+        "items": items,
+    }
+
+
+def update_flashcard_performance(
+    card: Flashcard, correct: bool, response_ms: int, grade: str,
+) -> tuple[str, str]:
+    before = card.mastery_level
+    state = {
+        "interval": card.interval, "repetition_count": card.repetition_count,
+        "ease_factor": card.ease_factor, "correct_count": card.correct_count,
+        "incorrect_count": card.incorrect_count,
+    }
+    updated = flashcards.review(state, grade)
+    for name in ("interval", "repetition_count", "ease_factor", "next_review_at",
+                 "last_reviewed_at", "correct_count", "incorrect_count"):
+        setattr(card, name, updated[name])
+    if correct:
+        card.consecutive_correct += 1
+        card.consecutive_incorrect = 0
+    else:
+        card.consecutive_incorrect += 1
+        card.consecutive_correct = 0
+    attempts = card.correct_count + card.incorrect_count
+    card.average_response_ms = (
+        ((card.average_response_ms * max(0, attempts - 1)) + response_ms) / max(1, attempts))
+    card.last_answer_quality = grade
+    card.weakness_score = flashcard_modes.weakness_score(
+        card.correct_count, card.incorrect_count, card.consecutive_incorrect, card.ease_factor)
+    card.mastery_level = flashcard_modes.mastery_state(
+        card.repetition_count, card.interval, card.consecutive_correct)
+    card.learned = card.mastery_level in {"familiar", "strong", "mastered"}
+    return before, card.mastery_level
+
+
+@app.post("/api/flashcards/sets/<int:set_id>/sessions")
+@limiter.limit("20 per minute")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def start_flashcard_session(set_id):
+    flashcard_set = owned_flashcard_set(set_id)
+    if not flashcard_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    payload = request.get_json(silent=True) or {}
+    mode = str(payload.get("mode") or "flashcards")
+    mode_flags = {
+        "learn": "FEATURE_FLASHCARD_LEARN_MODE", "test": "FEATURE_FLASHCARD_TEST_MODE",
+        "match": "FEATURE_FLASHCARD_MATCH_GAME", "blast": "FEATURE_FLASHCARD_BLAST_GAME",
+        "blocks": "FEATURE_FLASHCARD_BLOCKS_GAME",
+    }
+    if mode not in flashcard_modes.MODES or (
+            mode in mode_flags and not app.config.get(mode_flags[mode])):
+        return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+    idempotency_key = str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "")[:100]
+    if idempotency_key:
+        existing = db.session.scalar(db.select(FlashcardStudySession).where(
+            FlashcardStudySession.user_id == current_user.id,
+            FlashcardStudySession.idempotency_key == idempotency_key))
+        if existing:
+            return jsonify(ok=True, session=serialize_flashcard_session(existing), resumed=True)
+    resume = db.session.scalar(db.select(FlashcardStudySession).where(
+        FlashcardStudySession.user_id == current_user.id,
+        FlashcardStudySession.flashcard_set_id == set_id,
+        FlashcardStudySession.mode == mode,
+        FlashcardStudySession.status.in_(("active", "paused")),
+    ).order_by(FlashcardStudySession.last_activity_at.desc()))
+    if resume and payload.get("resume", True):
+        resume.status = "active"
+        touch_flashcard_session(resume)
+        db.session.commit()
+        return jsonify(ok=True, session=serialize_flashcard_session(resume), resumed=True)
+    objective = str(payload.get("objective") or "all")
+    if objective not in {"all", "due", "weak", "starred", "new", "quick"}:
+        objective = "all"
+    count = max(1, min(30, int(payload.get("count") or (5 if objective == "quick" else 20))))
+    if mode == "match":
+        count = min(6, count)
+    cards = flashcard_modes.select_cards(
+        list(flashcard_set.cards), objective, utcnow(), count)
+    if not cards:
+        return api_error(tr("No cards match this study objective."), 400, "no_matching_cards")
+    seed = int.from_bytes(os.urandom(4), "big")
+    requested_direction = str(payload.get("direction") or "mixed")
+    if requested_direction not in {"mixed", "front_to_back", "back_to_front"}:
+        requested_direction = "mixed"
+    requested_types = [
+        value for value in (payload.get("question_types") or [])
+        if value in {"multiple_choice", "written", "true_false"}
+    ][:3]
+    built = flashcard_modes.build_items(
+        cards, mode, seed, count, direction=requested_direction,
+        question_types=requested_types)
+    session = FlashcardStudySession(
+        user_id=current_user.id, flashcard_set_id=set_id, mode=mode,
+        objective=objective, random_seed=seed, total_items=len(built),
+        settings_json=json.dumps({
+            "time_limit": max(0, min(3600, int(payload.get("time_limit") or 0))),
+            "immediate_feedback": bool(payload.get("immediate_feedback", True)),
+            "direction": requested_direction,
+            "question_types": requested_types,
+            "sound": bool(payload.get("sound", False)),
+            "reduced_motion": bool(payload.get("reduced_motion", False)),
+        }), idempotency_key=idempotency_key,
+    )
+    db.session.add(session)
+    db.session.flush()
+    for item in built:
+        card = db.session.get(Flashcard, item["card_id"])
+        if not card:
+            continue
+        db.session.add(FlashcardSessionItem(
+            session_id=session.id, mastery_before=card.mastery_level,
+            answer_key=f"pending:{session.id}:{item['position']}",
+            options_json=json.dumps(item.pop("options"), ensure_ascii=False), **item))
+    db.session.commit()
+    return jsonify(ok=True, session=serialize_flashcard_session(session), resumed=False), 201
+
+
+@app.get("/api/flashcards/sessions/<session_id>")
+@login_required
+def get_flashcard_session(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session:
+        return api_error(tr("This study session could not be found."), 404, "session_not_found")
+    touch_flashcard_session(session)
+    db.session.commit()
+    return jsonify(ok=True, session=serialize_flashcard_session(session))
+
+
+@app.post("/api/flashcards/sessions/<session_id>/items/<int:item_id>/answer")
+@limiter.limit("60 per minute")
+@login_required
+def answer_flashcard_session_item(session_id, item_id):
+    session = owned_flashcard_session(session_id)
+    item = db.session.get(FlashcardSessionItem, item_id)
+    if not session or not item or item.session_id != session.id:
+        return api_error(tr("This study item could not be found."), 404, "item_not_found")
+    if session.status != "active":
+        return api_error(tr("This study session is not active."), 409, "session_not_active")
+    payload = request.get_json(silent=True) or {}
+    answer_key = str(payload.get("request_id") or request.headers.get("Idempotency-Key") or "")[:100]
+    if item.answered_at and session.mode != "test":
+        return jsonify(ok=True, duplicate=True, correct=item.correct,
+                       correct_answer=item.correct_answer, xp_earned=item.xp_earned)
+    response_ms = max(0, min(600_000, int(payload.get("response_ms") or 0)))
+    if session.mode in {"blast", "blocks"} and item.attempts and response_ms < 150:
+        return api_error(tr("Please wait before answering again."), 429, "answer_cooldown")
+    student = str(payload.get("answer") or "")[:2000]
+    if session.mode == "test":
+        item.student_answer, item.response_ms = student, response_ms
+        item.attempts += 1
+        item.answer_key = answer_key or f"test:{session.id}:{item.id}"
+        touch_flashcard_session(session)
+        db.session.commit()
+        return jsonify(ok=True, saved=True)
+    grade = student if item.question_type == "self_grade" and student in flashcards.REVIEW_GRADES else ""
+    correct = grade != "again" if grade else flashcard_modes.answer_is_correct(
+        student, item.correct_answer, item.question_type)
+    grade = grade or ("good" if correct else "again")
+    card = db.session.get(Flashcard, item.card_id)
+    if not card:
+        return api_error(tr("This flashcard could not be found."), 404, "card_not_found")
+    before, after = update_flashcard_performance(card, correct, response_ms, grade)
+    written = item.question_type in flashcard_modes.WRITTEN_TYPES
+    xp = gamification.bounded_answer_xp(
+        correct=correct, written=written, difficult=card.difficulty == "hard")
+    item.student_answer, item.correct, item.response_ms = student, correct, response_ms
+    item.attempts += 1
+    item.srs_grade, item.mastery_after = grade, after
+    item.answered_at = utcnow()
+    item.answer_key = answer_key or f"answer:{session.id}:{item.id}"
+    event, earned = record_learning_event(
+        current_user.id, "flashcard_reviewed", f"fc-answer:{session.id}:{item.id}",
+        source_type="flashcard", source_id=item.card_id, session_id=session.id,
+        subject=card.set.subject, active_seconds=min(120, response_ms // 1000),
+        metadata={"correct": correct, "mode": session.mode}, xp=xp)
+    item.xp_earned = earned
+    session.answered_items += 1
+    session.correct_count += int(correct)
+    session.incorrect_count += int(not correct)
+    session.current_position = min(session.total_items, item.position + 1)
+    session.xp_earned += earned
+    touch_flashcard_session(session)
+    if before != "mastered" and after == "mastered":
+        _, mastery_xp = record_learning_event(
+            current_user.id, "flashcard_mastered", f"fc-mastered:{item.card_id}",
+            source_type="flashcard", source_id=item.card_id, session_id=session.id,
+            subject=item.card.set.subject, metadata={"correct": True},
+            xp=gamification.XP_VALUES["flashcard_mastered"])
+        session.xp_earned += mastery_xp
+    db.session.commit()
+    return jsonify(
+        ok=True, correct=correct, correct_answer=item.correct_answer,
+        student_answer=student, explanation=item.card.explanation,
+        mastery_before=before, mastery_after=after, xp_earned=earned)
+
+
+@app.post("/api/flashcards/sessions/<session_id>/complete")
+@limiter.limit("20 per minute")
+@login_required
+def complete_flashcard_session(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session:
+        return api_error(tr("This study session could not be found."), 404, "session_not_found")
+    if session.status == "completed":
+        return jsonify(ok=True, duplicate=True, session=serialize_flashcard_session(session))
+    if session.status not in {"active", "paused"}:
+        return api_error(tr("This study session cannot be completed."), 409, "invalid_session_state")
+    if session.mode == "test":
+        session_items = db.session.scalars(db.select(FlashcardSessionItem).where(
+            FlashcardSessionItem.session_id == session.id).order_by(
+                FlashcardSessionItem.position)).all()
+        for item in session_items:
+            if not item.student_answer:
+                session.skipped_count += 1
+                item.correct = False
+                continue
+            correct = flashcard_modes.answer_is_correct(
+                item.student_answer, item.correct_answer, item.question_type)
+            item.correct = correct
+            item.answered_at = utcnow()
+            item.srs_grade = "good" if correct else "again"
+            card = db.session.get(Flashcard, item.card_id)
+            if not card:
+                continue
+            before, after = update_flashcard_performance(
+                card, correct, item.response_ms, item.srs_grade)
+            item.mastery_before, item.mastery_after = before, after
+            session.answered_items += 1
+            session.correct_count += int(correct)
+            session.incorrect_count += int(not correct)
+    if session.answered_items < 1:
+        return api_error(tr("Answer at least one item before completing."), 400, "insufficient_activity")
+    touch_flashcard_session(session)
+    session.status, session.completed_at = "completed", utcnow()
+    session.accuracy = round(100 * session.correct_count / max(1, session.total_items), 2)
+    max_combo = int((request.get_json(silent=True) or {}).get("max_combo") or 0)
+    if session.mode in {"match", "blast", "blocks"}:
+        session.score = flashcard_modes.game_score(
+            session.mode, session.correct_count, session.incorrect_count,
+            session.active_seconds, max_combo)
+    else:
+        session.score = round(session.accuracy)
+    completion_event = {
+        "flashcards": "flashcard_session_completed", "learn": "learn_session_completed",
+        "test": "test_completed", "match": "match_completed",
+        "blast": "blast_completed", "blocks": "blocks_completed",
+    }[session.mode]
+    completion_xp = gamification.XP_VALUES[completion_event]
+    metadata = {
+        "accuracy": session.accuracy, "score": session.score,
+        "correct": session.correct_count, "active_seconds": session.active_seconds,
+    }
+    _, earned = record_learning_event(
+        current_user.id, completion_event, f"fc-complete:{session.id}",
+        source_type="flashcard_set", source_id=session.flashcard_set_id,
+        session_id=session.id, active_seconds=session.active_seconds,
+        metadata=metadata, xp=completion_xp)
+    session.xp_earned += earned
+    if session.mode == "test" and session.accuracy == 100:
+        _, bonus = record_learning_event(
+            current_user.id, "test_perfect_score", f"fc-perfect:{session.id}",
+            source_type="flashcard_set", source_id=session.flashcard_set_id,
+            session_id=session.id, metadata=metadata,
+            xp=gamification.XP_VALUES["test_perfect_score"])
+        session.xp_earned += bonus
+    personal_best = None
+    if session.mode in {"match", "blast", "blocks"}:
+        best = db.session.scalar(db.select(GamePersonalBest).where(
+            GamePersonalBest.user_id == current_user.id,
+            GamePersonalBest.flashcard_set_id == session.flashcard_set_id,
+            GamePersonalBest.mode == session.mode,
+            GamePersonalBest.configuration == session.objective))
+        if not best:
+            best = GamePersonalBest(
+                user_id=current_user.id, flashcard_set_id=session.flashcard_set_id,
+                mode=session.mode, configuration=session.objective)
+            db.session.add(best)
+        previous = int(best.best_score or 0)
+        if session.score > int(best.best_score or 0):
+            best.best_score = session.score
+        if session.mode == "match" and (
+                best.best_time_seconds is None or session.active_seconds < best.best_time_seconds):
+            best.best_time_seconds = session.active_seconds
+        personal_best = {"score": best.best_score, "previous": previous,
+                         "time_seconds": best.best_time_seconds}
+    result_items = db.session.scalars(db.select(FlashcardSessionItem).where(
+        FlashcardSessionItem.session_id == session.id)).all()
+    weak_cards = [item.card_id for item in result_items if item.correct is False]
+    session.summary_json = json.dumps({
+        **metadata, "xp_earned": session.xp_earned, "weak_cards": weak_cards,
+        "personal_best": personal_best,
+        "recommended": "learn" if weak_cards else "test",
+    })
+    db.session.commit()
+    return jsonify(ok=True, session=serialize_flashcard_session(session))
+
+
+@app.post("/api/flashcards/sessions/<session_id>/miss")
+@limiter.limit("60 per minute")
+@login_required
+def record_flashcard_game_miss(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session or session.mode not in {"match", "blast", "blocks"}:
+        return api_error(tr("This game session could not be found."), 404, "session_not_found")
+    if session.status != "active":
+        return api_error(tr("This study session is not active."), 409, "session_not_active")
+    if session.incorrect_count >= max(20, session.total_items * 10):
+        return api_error(tr("Too many attempts were recorded."), 429, "attempt_limit")
+    session.incorrect_count += 1
+    touch_flashcard_session(session)
+    db.session.commit()
+    return jsonify(ok=True, incorrect_count=session.incorrect_count)
+
+
+@app.post("/api/flashcards/sessions/<session_id>/pause")
+@login_required
+def pause_flashcard_session(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session or session.status != "active":
+        return api_error(tr("This study session is not active."), 409, "session_not_active")
+    touch_flashcard_session(session)
+    session.status = "paused"
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.post("/api/flashcards/sessions/<session_id>/resume")
+@login_required
+def resume_flashcard_session(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session or session.status != "paused":
+        return api_error(tr("This study session cannot be resumed."), 409, "session_not_paused")
+    session.status = "active"
+    session.last_activity_at = utcnow()
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.delete("/api/flashcards/sessions/<session_id>")
+@login_required
+def abandon_flashcard_session(session_id):
+    session = owned_flashcard_session(session_id)
+    if not session:
+        return api_error(tr("This study session could not be found."), 404, "session_not_found")
+    if session.status != "completed":
+        touch_flashcard_session(session)
+        session.status = "abandoned"
+        db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.put("/api/flashcards/cards/<int:card_id>/star")
+@login_required
+def star_flashcard(card_id):
+    card = db.session.scalar(db.select(Flashcard).join(FlashcardSet).where(
+        Flashcard.id == card_id, FlashcardSet.user_id == current_user.id))
+    if not card:
+        return api_error(tr("This flashcard could not be found."), 404, "card_not_found")
+    card.starred = bool((request.get_json(silent=True) or {}).get("starred"))
+    db.session.commit()
+    return jsonify(ok=True, starred=card.starred)
+
+
+def owned_vocabulary_import(import_id: Any) -> VocabularyImport | None:
+    try:
+        normalized = str(uuid.UUID(str(import_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return db.session.scalar(db.select(VocabularyImport).where(
+        VocabularyImport.id == normalized,
+        VocabularyImport.owner_user_id == current_user.id))
+
+
+def owned_vocabulary_list(list_id: Any) -> VocabularyList | None:
+    try:
+        normalized = str(uuid.UUID(str(list_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return db.session.scalar(db.select(VocabularyList).where(
+        VocabularyList.id == normalized,
+        VocabularyList.owner_user_id == current_user.id))
+
+
+def vocabulary_entry_payload(entry: VocabularyEntry) -> dict[str, Any]:
+    states = db.session.scalars(db.select(VocabularyStudyState).where(
+        VocabularyStudyState.entry_id == entry.id)).all()
+    return {
+        "id": entry.id, "position": entry.position,
+        "source_language": entry.source_language, "target_language": entry.target_language,
+        "source_term": entry.source_term, "target_translation": entry.target_translation,
+        "alternatives": json_value(entry.alternatives_json, []),
+        "source_example_sentence": entry.source_example_sentence,
+        "target_example_translation": entry.target_example_translation,
+        "example_ai_generated": entry.example_ai_generated,
+        "part_of_speech": entry.part_of_speech, "gender_article": entry.gender_article,
+        "plural_form": entry.plural_form, "verb_forms": json_value(entry.verb_forms_json, []),
+        "notes": entry.notes, "source_page": entry.source_page,
+        "source_line": entry.source_line, "confidence": entry.ocr_confidence,
+        "status": entry.validation_status,
+        "validation_explanation": entry.validation_explanation,
+        "suggested_translation": entry.suggested_translation,
+        "user_confirmed": entry.user_confirmed, "included": entry.included,
+        "linked_flashcard_ids": json_value(entry.linked_flashcard_ids_json, []),
+        "mastery": {state.direction: {
+            "level": state.mastery_level, "due_at": as_utc(state.next_review_at).isoformat(),
+            "correct": state.correct_count, "incorrect": state.incorrect_count,
+        } for state in states},
+    }
+
+
+def vocabulary_list_payload(item: VocabularyList, include_entries: bool = True) -> dict[str, Any]:
+    result = {
+        "id": item.id, "title": item.title, "description": item.description,
+        "source_language": item.source_language, "target_language": item.target_language,
+        "subject": item.subject, "grade": item.grade, "unit": item.unit,
+        "source_filename": item.source_filename, "visibility": item.visibility,
+        "flashcard_set_id": item.flashcard_set_id,
+        "created_at": as_utc(item.created_at).isoformat(),
+        "updated_at": as_utc(item.updated_at).isoformat(),
+    }
+    entries = db.session.scalars(db.select(VocabularyEntry).where(
+        VocabularyEntry.list_id == item.id).order_by(VocabularyEntry.position)).all()
+    result["entry_count"] = len(entries)
+    result["due_count"] = sum(
+        1 for entry in entries for state in db.session.scalars(
+            db.select(VocabularyStudyState).where(
+                VocabularyStudyState.entry_id == entry.id,
+                VocabularyStudyState.next_review_at <= utcnow())).all())
+    if include_entries:
+        result["entries"] = [vocabulary_entry_payload(entry) for entry in entries]
+    return result
+
+
+def vocabulary_import_payload(item: VocabularyImport) -> dict[str, Any]:
+    document = db.session.get(FlashcardImport, item.flashcard_import_id) if item.flashcard_import_id else None
+    return {
+        "id": item.id, "source_kind": item.source_kind,
+        "source_language": item.source_language, "target_language": item.target_language,
+        "title": item.title, "status": item.status,
+        "entries": json_value(item.entries_json, []),
+        "unrecognized_lines": json_value(item.unrecognized_json, []),
+        "warnings": json_value(item.warnings_json, []),
+        "filename": document.original_filename if document else "",
+        "preview_url": (
+            url_for("flashcard_import_preview", document_id=document.id)
+            if document and document.source_type == "image" else None),
+        "list_id": item.vocabulary_list_id,
+    }
+
+
+def validate_vocabulary_languages(source: Any, target: Any) -> tuple[str, str] | None:
+    source_code, target_code = str(source or "").lower(), str(target or "").lower()
+    if (source_code not in vocabulary.SUPPORTED_LANGUAGES
+            or target_code not in vocabulary.SUPPORTED_LANGUAGES
+            or source_code == target_code):
+        return None
+    return source_code, target_code
+
+
+@app.post("/api/vocabulary/imports")
+@limiter.limit(lambda: f"{app.config['MAX_FLASHCARD_IMPORTS_PER_HOUR']} per hour")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def create_vocabulary_import():
+    source_kind = str(request.form.get("source_kind") or "file")
+    languages = validate_vocabulary_languages(
+        request.form.get("source_language"), request.form.get("target_language"))
+    if not languages:
+        return api_error(tr("Choose two supported, different languages."), 400, "invalid_languages")
+    idempotency_key = str(request.headers.get("Idempotency-Key") or uuid.uuid4())[:100]
+    existing = db.session.scalar(db.select(VocabularyImport).where(
+        VocabularyImport.owner_user_id == current_user.id,
+        VocabularyImport.idempotency_key == idempotency_key))
+    if existing:
+        return jsonify(ok=True, vocabulary_import=vocabulary_import_payload(existing), duplicate=True)
+    source_language, target_language = languages
+    vocabulary_import = VocabularyImport(
+        owner_user_id=current_user.id, source_kind=source_kind,
+        source_language=source_language, target_language=target_language,
+        title=str(request.form.get("title") or "").strip()[:200],
+        idempotency_key=idempotency_key)
+    if source_kind in {"text", "manual"}:
+        text_value = str(request.form.get("text") or "").strip()[:app.config["MAX_FLASHCARD_EXTRACTED_TEXT_LENGTH"]]
+        if source_kind == "text" and not text_value:
+            return api_error(tr("Paste vocabulary text to continue."), 400, "missing_text")
+        vocabulary_import.pasted_text = text_value
+        vocabulary_import.status = "ready_to_extract"
+    else:
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return api_error(tr("Choose a file to upload."), 400, "missing_file")
+        storage_key = ""
+        try:
+            data = upload.read(app.config["MAX_CONTENT_LENGTH"] + 1)
+            validated = flashcard_imports.validate_upload(
+                data, upload.filename, upload.mimetype,
+                max_pdf_size=app.config["MAX_FLASHCARD_PDF_SIZE"],
+                max_image_size=app.config["MAX_FLASHCARD_IMAGE_SIZE"],
+                max_pdf_pages=app.config["MAX_FLASHCARD_PDF_PAGES"],
+                max_image_pixels=app.config["MAX_FLASHCARD_IMAGE_PIXELS"])
+            document_id = str(uuid.uuid4())
+            storage_key = flashcard_imports.private_storage_key(
+                current_user.id, document_id, Path(validated.sanitized_filename).suffix.lower())
+            flashcard_imports.store_private(
+                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key, validated.data)
+            document = FlashcardImport(
+                id=document_id, owner_user_id=current_user.id,
+                source_type=validated.source_type,
+                original_filename=validated.original_filename,
+                sanitized_filename=validated.sanitized_filename,
+                detected_mime_type=validated.mime_type, file_size=len(validated.data),
+                storage_key=storage_key, sha256=validated.sha256,
+                idempotency_key=f"vocabulary:{idempotency_key}", status="uploaded",
+                page_count=validated.page_count,
+                expires_at=utcnow() + timedelta(
+                    hours=app.config["FLASHCARD_IMPORT_RETENTION_HOURS"]))
+            db.session.add(document)
+            db.session.flush()
+            vocabulary_import.flashcard_import_id = document.id
+        except flashcard_imports.ImportProblem as problem:
+            return import_api_problem(problem)
+        except Exception:
+            if storage_key:
+                flashcard_imports.delete_private(
+                    app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key)
+            raise
+    db.session.add(vocabulary_import)
+    db.session.commit()
+    return jsonify(
+        ok=True, vocabulary_import=vocabulary_import_payload(vocabulary_import),
+        review_url=url_for("vocabulary_import_review_page", import_id=vocabulary_import.id)), 201
+
+
+@app.get("/api/vocabulary/imports/<import_id>")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def get_vocabulary_import(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    return jsonify(ok=True, vocabulary_import=vocabulary_import_payload(item))
+
+
+@app.post("/api/vocabulary/imports/<import_id>/extract")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def extract_vocabulary_import(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    all_entries, unrecognized, warnings = [], [], []
+    try:
+        if item.source_kind in {"text", "manual"}:
+            parsed = vocabulary.parse_vocabulary_text(item.pasted_text)
+            all_entries.extend(parsed["entries"])
+            unrecognized.extend(parsed["unrecognized_lines"])
+        else:
+            document = db.session.get(FlashcardImport, item.flashcard_import_id)
+            if not document or document.owner_user_id != current_user.id or document.expires_at <= utcnow():
+                return api_error(tr("This vocabulary import has expired."), 404, "import_expired")
+            data = flashcard_imports.read_private(
+                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+            if document.source_type == "image":
+                recognition = recognize_flashcard_import_image(data, "Languages", 1)
+                pages = [{"page_number": 1, "text": recognition["text"],
+                          "confidence": recognition["confidence"],
+                          "warnings": recognition["warnings"]}]
+            else:
+                pages = flashcard_imports.extract_pdf_pages(data)
+                for page in pages:
+                    if not page.get("text"):
+                        rendered = render_pdf_page(data, int(page["page_number"]) - 1)
+                        recognition = recognize_flashcard_import_image(
+                            rendered, "Languages", int(page["page_number"]))
+                        page["text"], page["confidence"] = recognition["text"], recognition["confidence"]
+                        page["warnings"] = recognition["warnings"]
+            for page in pages:
+                parsed = vocabulary.parse_vocabulary_text(
+                    str(page.get("text") or ""), int(page["page_number"]))
+                for entry in parsed["entries"]:
+                    entry["confidence"] = min(
+                        float(entry["confidence"]), float(page.get("confidence", 0.8)))
+                all_entries.extend(parsed["entries"])
+                unrecognized.extend(parsed["unrecognized_lines"])
+                warnings.extend(page.get("warnings", []))
+        item.entries_json = json.dumps(all_entries, ensure_ascii=False)
+        item.unrecognized_json = json.dumps(unrecognized, ensure_ascii=False)
+        item.warnings_json = json.dumps(list(dict.fromkeys(warnings)), ensure_ascii=False)
+        item.status = "ready_for_validation"
+        db.session.commit()
+        return jsonify(ok=True, vocabulary_import=vocabulary_import_payload(item))
+    except (ValueError, OSError, ai_service.AIGatewayError, ai_service.AIValidationError):
+        db.session.rollback()
+        return api_error(tr("Vocabulary extraction failed safely. You can retry."), 422, "extraction_failed")
+
+
+@app.put("/api/vocabulary/imports/<import_id>/entries")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def update_vocabulary_import_entries(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    payload = request.get_json(silent=True) or {}
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or len(entries) > 500:
+        return api_error(tr("Review the vocabulary entries before saving."), 400, "invalid_entries")
+    cleaned = []
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        source = vocabulary.clean_text(raw.get("source_term"), 300)
+        target = vocabulary.clean_text(raw.get("target_translation"), 500)
+        if not source and not target:
+            continue
+        cleaned.append({
+            **raw, "source_term": source, "target_translation": target,
+            "source_example_sentence": vocabulary.clean_text(
+                raw.get("source_example_sentence"), 1200),
+            "included": bool(raw.get("included", True)),
+            "user_confirmed": bool(raw.get("user_confirmed", False)),
+        })
+    item.entries_json = json.dumps(cleaned, ensure_ascii=False)
+    item.status = "ready_for_validation"
+    db.session.commit()
+    return jsonify(ok=True, entries=cleaned)
+
+
+@app.post("/api/vocabulary/imports/<import_id>/validate")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def validate_vocabulary_import(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    seen: set[tuple[str, str]] = set()
+    validated = [
+        vocabulary.validate_entry(entry, item.source_language, item.target_language, seen)
+        for entry in json_value(item.entries_json, [])
+    ]
+    payload = request.get_json(silent=True) or {}
+    uncertain = [
+        entry for entry in validated
+        if entry["status"] in {"likely_valid", "needs_review", "translation_mismatch"}
+        and entry["source_term"]
+    ]
+    if uncertain and bool(payload.get("ai_validation", app.config.get("AI_MODE") == "live")):
+        try:
+            texts = [entry["source_term"] for entry in uncertain]
+            response = create_response(
+                task_type="translation",
+                language=vocabulary.SUPPORTED_LANGUAGES[item.target_language],
+                validation_context={"texts": texts}, model=TUTOR_MODEL,
+                instructions=(
+                    "Translate each vocabulary term conservatively into "
+                    f"{vocabulary.SUPPORTED_LANGUAGES[item.target_language]}. "
+                    "Return the same number and order of strings."),
+                input={"texts": texts}, max_output_tokens=min(800, len(texts) * 50),
+                temperature=0)
+            suggestions = parse_json(response.output_text).get("translations") or []
+            for entry, suggestion in zip(uncertain, suggestions):
+                suggested = vocabulary.clean_text(suggestion, 500)
+                if suggested and vocabulary.normalize_answer(suggested) != vocabulary.normalize_answer(
+                        entry["target_translation"]):
+                    entry["suggested_translation"] = suggested
+                    if entry["status"] == "likely_valid":
+                        entry["status"] = "needs_review"
+                    entry["validation_explanation"] = (
+                        "The translation provider suggested a different answer; confirm the schoolbook context.")
+        except (ai_service.AIGatewayError, ai_service.AIValidationError, ValueError):
+            warnings = json_value(item.warnings_json, [])
+            warnings.append("AI validation was unavailable; deterministic checks were preserved.")
+            item.warnings_json = json.dumps(list(dict.fromkeys(warnings)), ensure_ascii=False)
+    item.entries_json = json.dumps(validated, ensure_ascii=False)
+    item.status = "ready_for_review"
+    db.session.commit()
+    return jsonify(ok=True, vocabulary_import=vocabulary_import_payload(item))
+
+
+@app.post("/api/vocabulary/imports/<import_id>/example")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def generate_vocabulary_example(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    payload = request.get_json(silent=True) or {}
+    term = vocabulary.clean_text(payload.get("source_term"), 300)
+    if not term:
+        return api_error(tr("Add a source word first."), 400, "missing_term")
+    prompt = (
+        f"Create one concise, student-appropriate example sentence in "
+        f"{vocabulary.SUPPORTED_LANGUAGES[item.source_language]} using {term!r} correctly. "
+        'Return JSON exactly as {"sentence":"..."}.' )
+    try:
+        response = create_response(
+            task_type="translation", language=vocabulary.SUPPORTED_LANGUAGES[item.source_language],
+            validation_context={"texts": [term]}, model=TUTOR_MODEL,
+            instructions="Return one safe example sentence as JSON.", input=prompt,
+            max_output_tokens=200, temperature=0.2)
+        result = parse_json(response.output_text)
+        sentence = vocabulary.clean_text(
+            result.get("sentence") or (result.get("translations") or [""])[0], 1200)
+        return jsonify(ok=True, sentence=sentence, ai_generated=True)
+    except (ai_service.AIGatewayError, ai_service.AIValidationError, ValueError):
+        return api_error(tr("The example sentence could not be generated. Try again."), 503, "example_unavailable")
+
+
+@app.post("/api/vocabulary/imports/<import_id>/generate")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def generate_vocabulary_cards(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    request_key = str(request.headers.get("Idempotency-Key") or "")[:100]
+    if item.status == "generated" and item.draft_json != "{}":
+        return jsonify(ok=True, duplicate=True, creator_url=url_for(
+            "flashcards_create_page", vocabulary_import_id=item.id))
+    payload = request.get_json(silent=True) or {}
+    directions = [
+        direction for direction in payload.get("directions", ["source_to_target"])
+        if direction in {"source_to_target", "target_to_source", "source_to_blank", "example_to_word"}
+    ]
+    if not directions:
+        return api_error(tr("Choose at least one card direction."), 400, "missing_direction")
+    raw_entries = [
+        entry for entry in json_value(item.entries_json, [])
+        if entry.get("included", True) and entry.get("source_term") and entry.get("target_translation")
+    ]
+    if not raw_entries:
+        return api_error(tr("Confirm at least one complete vocabulary entry."), 400, "no_entries")
+    if any(not entry.get("user_confirmed") for entry in raw_entries):
+        return api_error(
+            tr("Confirm every included vocabulary entry before creating cards."),
+            400, "confirmation_required")
+    source_document = (
+        db.session.get(FlashcardImport, item.flashcard_import_id)
+        if item.flashcard_import_id else None)
+    vocabulary_list = VocabularyList(
+        owner_user_id=current_user.id,
+        title=vocabulary.clean_text(payload.get("title") or item.title or "Vocabulary", 200),
+        source_language=item.source_language, target_language=item.target_language,
+        description=vocabulary.clean_text(payload.get("description"), 2000),
+        subject=vocabulary.clean_text(payload.get("subject") or "Languages", 80),
+        grade=vocabulary.clean_text(payload.get("grade"), 40),
+        unit=vocabulary.clean_text(payload.get("unit"), 100),
+        source_filename=source_document.original_filename if source_document else "",
+    )
+    db.session.add(vocabulary_list)
+    db.session.flush()
+    cards, entry_rows = [], []
+    settings = {
+        "include_examples": bool(payload.get("include_examples", True)),
+        "include_hints": bool(payload.get("include_hints", True)),
+        "difficulty": str(payload.get("difficulty") or "medium"),
+    }
+    for position, raw in enumerate(raw_entries):
+        row = VocabularyEntry(
+            list_id=vocabulary_list.id, position=position,
+            source_language=item.source_language, target_language=item.target_language,
+            source_term=vocabulary.clean_text(raw.get("source_term"), 300),
+            target_translation=vocabulary.clean_text(raw.get("target_translation"), 500),
+            alternatives_json=json.dumps(raw.get("alternatives") or [], ensure_ascii=False),
+            source_example_sentence=vocabulary.clean_text(raw.get("source_example_sentence"), 1200),
+            target_example_translation=vocabulary.clean_text(raw.get("target_example_translation"), 1200),
+            example_ai_generated=bool(raw.get("example_ai_generated", False)),
+            part_of_speech=vocabulary.clean_text(raw.get("part_of_speech"), 50),
+            gender_article=vocabulary.clean_text(raw.get("gender_article"), 30),
+            plural_form=vocabulary.clean_text(raw.get("plural_form"), 200),
+            notes=vocabulary.clean_text(raw.get("notes"), 2000),
+            source_page=raw.get("page_number"), source_line=raw.get("line_number"),
+            ocr_confidence=float(raw.get("confidence") or 0),
+            validation_status=str(raw.get("status") or "needs_review"),
+            validation_explanation=vocabulary.clean_text(raw.get("validation_explanation"), 1000),
+            suggested_translation=vocabulary.clean_text(raw.get("suggested_translation"), 500),
+            user_confirmed=bool(raw.get("user_confirmed", False)))
+        db.session.add(row)
+        db.session.flush()
+        entry_rows.append(row)
+        enriched = {**raw, "source_language": item.source_language, "source_page": row.source_page}
+        for card in vocabulary.card_variants(enriched, directions, settings):
+            card["vocabulary_entry_id"] = row.id
+            cards.append(card)
+    if not cards:
+        db.session.rollback()
+        return api_error(tr("The selected directions produced no flashcards."), 400, "no_cards")
+    draft = {
+        "title": vocabulary_list.title, "subject": vocabulary_list.subject,
+        "grade": vocabulary_list.grade, "difficulty": settings["difficulty"],
+        "card_type": "mixed", "language": item.target_language,
+        "source_kind": "vocabulary", "vocabulary_list_id": vocabulary_list.id,
+        "cards": cards[:flashcards.MAX_CARDS],
+    }
+    item.vocabulary_list_id = vocabulary_list.id
+    item.draft_json = json.dumps(draft, ensure_ascii=False)
+    item.generation_settings = json.dumps(
+        {**settings, "directions": directions, "request_key": request_key})
+    item.status = "generated"
+    record_learning_event(
+        current_user.id, "vocabulary_list_created", f"vocabulary-list:{vocabulary_list.id}",
+        source_type="vocabulary_list", source_id=vocabulary_list.id,
+        subject=vocabulary_list.subject, metadata={"entries": len(entry_rows)}, xp=15)
+    db.session.commit()
+    return jsonify(ok=True, list_id=vocabulary_list.id, creator_url=url_for(
+        "flashcards_create_page", vocabulary_import_id=item.id))
+
+
+@app.get("/api/vocabulary/imports/<import_id>/draft")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def vocabulary_import_draft(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item or item.status != "generated":
+        return api_error(tr("This vocabulary draft could not be found."), 404, "draft_not_found")
+    return jsonify(ok=True, draft=json_object(item.draft_json))
+
+
+@app.delete("/api/vocabulary/imports/<import_id>")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def delete_vocabulary_import(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    document = db.session.get(FlashcardImport, item.flashcard_import_id) if item.flashcard_import_id else None
+    if document:
+        flashcard_imports.delete_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+        db.session.delete(document)
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.get("/api/vocabulary/lists")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def list_vocabulary_lists():
+    items = db.session.scalars(db.select(VocabularyList).where(
+        VocabularyList.owner_user_id == current_user.id).order_by(
+            VocabularyList.updated_at.desc())).all()
+    return jsonify(ok=True, lists=[vocabulary_list_payload(item, False) for item in items])
+
+
+@app.get("/api/vocabulary/lists/<list_id>")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def get_vocabulary_list(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        return api_error(tr("This vocabulary list could not be found."), 404, "list_not_found")
+    return jsonify(ok=True, vocabulary_list=vocabulary_list_payload(item))
+
+
+@app.put("/api/vocabulary/lists/<list_id>")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def update_vocabulary_list(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        return api_error(tr("This vocabulary list could not be found."), 404, "list_not_found")
+    payload = request.get_json(silent=True) or {}
+    for field, limit in (("title", 200), ("description", 2000), ("subject", 80),
+                         ("grade", 40), ("unit", 100)):
+        if field in payload:
+            setattr(item, field, vocabulary.clean_text(payload[field], limit))
+    rows = payload.get("entries")
+    if isinstance(rows, list):
+        existing = {entry.id: entry for entry in db.session.scalars(
+            db.select(VocabularyEntry).where(VocabularyEntry.list_id == item.id)).all()}
+        kept, seen = set(), set()
+        for position, raw in enumerate(rows[:500]):
+            checked = vocabulary.validate_entry(
+                raw, item.source_language, item.target_language, seen)
+            entry = existing.get(str(raw.get("id") or "")) or VocabularyEntry(
+                list_id=item.id, source_language=item.source_language,
+                target_language=item.target_language)
+            entry.position = position
+            entry.source_term = checked["source_term"]
+            entry.target_translation = checked["target_translation"]
+            entry.alternatives_json = json.dumps(raw.get("alternatives") or [], ensure_ascii=False)
+            entry.source_example_sentence = vocabulary.clean_text(
+                raw.get("source_example_sentence"), 1200)
+            entry.part_of_speech = vocabulary.clean_text(raw.get("part_of_speech"), 50)
+            entry.gender_article = vocabulary.clean_text(raw.get("gender_article"), 30)
+            entry.plural_form = vocabulary.clean_text(raw.get("plural_form"), 200)
+            entry.notes = vocabulary.clean_text(raw.get("notes"), 2000)
+            entry.validation_status = checked["status"]
+            entry.validation_explanation = checked["validation_explanation"]
+            entry.suggested_translation = checked["suggested_translation"]
+            entry.user_confirmed = bool(raw.get("user_confirmed", False))
+            entry.included = bool(raw.get("included", True))
+            db.session.add(entry)
+            db.session.flush()
+            kept.add(entry.id)
+        for entry_id, entry in existing.items():
+            if entry_id not in kept:
+                db.session.delete(entry)
+    db.session.commit()
+    return jsonify(ok=True, vocabulary_list=vocabulary_list_payload(item))
+
+
+@app.delete("/api/vocabulary/lists/<list_id>")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def delete_vocabulary_list(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        return api_error(tr("This vocabulary list could not be found."), 404, "list_not_found")
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+def get_vocabulary_state(entry: VocabularyEntry, direction: str) -> VocabularyStudyState:
+    state = db.session.scalar(db.select(VocabularyStudyState).where(
+        VocabularyStudyState.entry_id == entry.id,
+        VocabularyStudyState.direction == direction))
+    if not state:
+        state = VocabularyStudyState(entry_id=entry.id, direction=direction)
+        db.session.add(state)
+        db.session.flush()
+    return state
+
+
+@app.get("/api/vocabulary/lists/<list_id>/practice")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def vocabulary_practice_items(list_id):
+    item = owned_vocabulary_list(list_id)
+    if not item:
+        return api_error(tr("This vocabulary list could not be found."), 404, "list_not_found")
+    direction = str(request.args.get("direction") or "source_to_target")
+    allowed = {"source_to_target", "target_to_source", "article", "spelling", "example"}
+    direction = direction if direction in allowed else "source_to_target"
+    objective = str(request.args.get("objective") or "all")
+    strictness = str(request.args.get("strictness") or "normal")
+    entries = db.session.scalars(db.select(VocabularyEntry).where(
+        VocabularyEntry.list_id == item.id, VocabularyEntry.included.is_(True)).order_by(
+            VocabularyEntry.position)).all()
+    result = []
+    for entry in entries:
+        state = get_vocabulary_state(entry, direction)
+        if objective == "due" and state.next_review_at > utcnow():
+            continue
+        if objective == "difficult" and state.incorrect_count <= state.correct_count:
+            continue
+        prompt, expected_language = (
+            (entry.target_translation, item.source_language)
+            if direction == "target_to_source" else (entry.source_term, item.target_language))
+        if direction == "article":
+            prompt, expected_language = entry.source_term, item.target_language
+        elif direction == "spelling":
+            prompt, expected_language = entry.target_translation, item.source_language
+        elif direction == "example":
+            prompt = re.sub(
+                re.escape(entry.source_term), "________",
+                entry.source_example_sentence, flags=re.I)
+            expected_language = item.source_language
+        result.append({
+            "entry_id": entry.id, "prompt": prompt, "direction": direction,
+            "language": expected_language,
+            "has_audio": expected_language in vocabulary.SUPPORTED_LANGUAGES,
+            "mastery": state.mastery_level})
+    session = db.session.scalar(db.select(VocabularyPracticeSession).where(
+        VocabularyPracticeSession.user_id == current_user.id,
+        VocabularyPracticeSession.vocabulary_list_id == item.id,
+        VocabularyPracticeSession.direction == direction,
+        VocabularyPracticeSession.objective == objective,
+        VocabularyPracticeSession.status == "active").order_by(
+            VocabularyPracticeSession.updated_at.desc()))
+    if not session:
+        session = VocabularyPracticeSession(
+            user_id=current_user.id, vocabulary_list_id=item.id,
+            direction=direction, objective=objective,
+            strictness=strictness if strictness in {"exact", "normal", "flexible"} else "normal",
+            item_ids_json=json.dumps([entry["entry_id"] for entry in result]))
+        db.session.add(session)
+        db.session.flush()
+    db.session.commit()
+    return jsonify(
+        ok=True, items=result, session_id=session.id,
+        current_position=session.current_position, resumed=session.current_position > 0)
+
+
+@app.post("/api/vocabulary/lists/<list_id>/practice/<entry_id>/answer")
+@limiter.limit("60 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def answer_vocabulary_practice(list_id, entry_id):
+    item = owned_vocabulary_list(list_id)
+    entry = db.session.get(VocabularyEntry, entry_id)
+    if not item or not entry or entry.list_id != item.id:
+        return api_error(tr("This vocabulary entry could not be found."), 404, "entry_not_found")
+    payload = request.get_json(silent=True) or {}
+    direction = str(payload.get("direction") or "source_to_target")
+    if direction not in {"source_to_target", "target_to_source", "article", "spelling", "example"}:
+        return api_error(tr("Choose a valid practice direction."), 400, "invalid_direction")
+    request_key = str(
+        payload.get("request_id") or request.headers.get("Idempotency-Key") or uuid.uuid4())[:100]
+    event_key = f"vocabulary-answer:{item.id}:{entry.id}:{direction}:{request_key}"
+    if db.session.scalar(db.select(LearningEvent.id).where(
+            LearningEvent.idempotency_key == event_key)):
+        return jsonify(ok=True, duplicate=True)
+    expected, language = (
+        (entry.source_term, item.source_language)
+        if direction in {"target_to_source", "spelling", "example"}
+        else (entry.target_translation, item.target_language))
+    if direction == "article":
+        expected = entry.gender_article
+    checked = vocabulary.check_answer(
+        payload.get("answer"), expected, json_value(entry.alternatives_json, []),
+        strictness=str(payload.get("strictness") or "normal"), language=language)
+    state = get_vocabulary_state(entry, direction)
+    schedule = flashcards.review({
+        "interval": state.interval, "repetition_count": state.repetition_count,
+        "ease_factor": state.ease_factor, "correct_count": state.correct_count,
+        "incorrect_count": state.incorrect_count,
+    }, "good" if checked["correct"] else "again")
+    for field in ("interval", "repetition_count", "ease_factor", "correct_count",
+                  "incorrect_count", "next_review_at", "last_reviewed_at", "mastery_level"):
+        setattr(state, field, schedule[field])
+    _, earned = record_learning_event(
+        current_user.id, "vocabulary_reviewed", event_key,
+        source_type="vocabulary_entry", source_id=entry.id, subject=item.subject,
+        active_seconds=min(120, max(0, int(payload.get("response_ms") or 0)) // 1000),
+        metadata={"correct": checked["correct"], "direction": direction},
+        xp=gamification.bounded_answer_xp(
+            correct=checked["correct"], written=True, difficult=False))
+    session_id = str(payload.get("session_id") or "")
+    practice_session = db.session.scalar(db.select(VocabularyPracticeSession).where(
+        VocabularyPracticeSession.id == session_id,
+        VocabularyPracticeSession.user_id == current_user.id,
+        VocabularyPracticeSession.vocabulary_list_id == item.id,
+        VocabularyPracticeSession.status == "active"))
+    session_complete = False
+    if practice_session:
+        practice_session.current_position += 1
+        practice_session.correct_count += int(checked["correct"])
+        practice_session.incorrect_count += int(not checked["correct"])
+        practice_session.xp_earned += earned
+        total = len(json_value(practice_session.item_ids_json, []))
+        if practice_session.current_position >= total:
+            practice_session.status = "completed"
+            practice_session.completed_at = utcnow()
+            session_complete = True
+            accuracy = round(100 * practice_session.correct_count / max(1, total), 2)
+            _, completion_xp = record_learning_event(
+                current_user.id, "vocabulary_session_completed",
+                f"vocabulary-session:{practice_session.id}",
+                source_type="vocabulary_list", source_id=item.id,
+                session_id=practice_session.id, subject=item.subject,
+                metadata={"accuracy": accuracy, "direction": direction},
+                xp=10)
+            practice_session.xp_earned += completion_xp
+    db.session.commit()
+    return jsonify(
+        ok=True, **checked, expected=expected, xp_earned=earned,
+        mastery=state.mastery_level,
+        next_review_at=as_utc(state.next_review_at).isoformat(),
+        session_complete=session_complete)
+
+
+def import_feature_enabled(source_type: str) -> bool:
+    key = (
+        "FEATURE_FLASHCARD_PDF_IMPORT"
+        if source_type == "pdf" else "FEATURE_FLASHCARD_IMAGE_IMPORT"
+    )
+    return bool(app.config.get("FEATURE_PRIVATE_FLASHCARDS") and app.config.get(key))
+
+
+def owned_flashcard_import(
+    document_id: Any, *, allow_generated: bool = False,
+) -> "FlashcardImport | None":
+    try:
+        normalized = str(uuid.UUID(str(document_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    document = db.session.scalar(db.select(FlashcardImport).where(
+        FlashcardImport.id == normalized,
+        FlashcardImport.owner_user_id == current_user.id,
+    ))
+    if not document:
+        return None
+    if as_utc(document.expires_at) <= utcnow() or document.status in {"expired", "deleted"}:
+        return None
+    if document.status == "generated" and not allow_generated:
+        return document
+    return document
+
+
+def cleanup_expired_flashcard_imports(now: datetime | None = None) -> int:
+    now = now or utcnow()
+    expired = db.session.scalars(db.select(FlashcardImport).where(
+        FlashcardImport.expires_at <= now,
+    )).all()
+    for document in expired:
+        vocabulary_imports = db.session.scalars(db.select(VocabularyImport).where(
+            VocabularyImport.flashcard_import_id == document.id)).all()
+        for vocabulary_import in vocabulary_imports:
+            db.session.delete(vocabulary_import)
+        flashcard_imports.delete_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+        db.session.delete(document)
+    if expired:
+        db.session.commit()
+    return len(expired)
+
+
+@app.cli.command("cleanup-flashcard-imports")
+def cleanup_flashcard_imports_command():
+    """Delete expired temporary flashcard imports and their private files."""
+    print(f"Removed {cleanup_expired_flashcard_imports()} expired flashcard import(s).")
+
+
+def serialize_flashcard_import(document: "FlashcardImport") -> dict[str, Any]:
+    pages = []
+    for stored_page in flashcard_imports.json_list(
+            document.reviewed_content or document.extraction_metadata):
+        page = dict(stored_page)
+        page["warnings"] = [tr(str(item)) for item in page.get("warnings", [])]
+        pages.append(page)
+    return {
+        "id": document.id, "source_type": document.source_type,
+        "filename": document.original_filename, "mime_type": document.detected_mime_type,
+        "file_size": document.file_size, "status": document.status,
+        "page_count": document.page_count, "pages": pages,
+        "warnings": [tr(str(item)) for item in json_value(document.extraction_warnings, [])],
+        "confidence": document.extraction_confidence,
+        "expires_at": as_utc(document.expires_at).isoformat(),
+        "preview_url": (
+            url_for("flashcard_import_preview", document_id=document.id)
+            if document.source_type == "image" else None
+        ),
+        "draft_ready": document.status == "generated",
+    }
+
+
+def import_api_problem(problem: flashcard_imports.ImportProblem):
+    messages = {
+        "empty_file": "Empty files cannot be uploaded.",
+        "unsupported_extension": "Choose a PDF, JPG, JPEG, PNG, or WebP file.",
+        "unsupported_file": "The file content is not a supported PDF or image.",
+        "type_mismatch": "The filename or browser file type does not match the file content.",
+        "file_too_large": "The selected file exceeds the configured size limit.",
+        "pdf_password_protected": "Password-protected PDFs are not supported.",
+        "too_many_pages": "The PDF has too many pages.",
+        "pdf_corrupt": "The PDF is damaged or cannot be read.",
+        "image_corrupt": "The image is damaged or cannot be read.",
+        "image_too_large": "The image dimensions exceed the safety limit.",
+    }
+    return api_error(tr(messages.get(problem.code, problem.message)), 400, problem.code)
+
+
+@app.post("/api/flashcards/imports")
+@limiter.limit(lambda: f"{app.config['MAX_FLASHCARD_IMPORTS_PER_HOUR']} per hour")
+@login_required
+def create_flashcard_import():
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return api_error(tr("Choose a file to upload."), 400, "missing_file")
+    try:
+        data = upload.read(app.config["MAX_CONTENT_LENGTH"] + 1)
+        validated = flashcard_imports.validate_upload(
+            data, upload.filename, upload.mimetype,
+            max_pdf_size=app.config["MAX_FLASHCARD_PDF_SIZE"],
+            max_image_size=app.config["MAX_FLASHCARD_IMAGE_SIZE"],
+            max_pdf_pages=app.config["MAX_FLASHCARD_PDF_PAGES"],
+            max_image_pixels=app.config["MAX_FLASHCARD_IMAGE_PIXELS"],
+        )
+        if not import_feature_enabled(validated.source_type):
+            return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+        cleanup_expired_flashcard_imports()
+        idempotency_key = str(request.headers.get("Idempotency-Key") or "")[:100]
+        duplicate_filters = [
+            FlashcardImport.owner_user_id == current_user.id,
+            FlashcardImport.status.in_(flashcard_imports.ACTIVE_STATUSES),
+            FlashcardImport.expires_at > utcnow(),
+        ]
+        if idempotency_key:
+            duplicate_filters.append(FlashcardImport.idempotency_key == idempotency_key)
+        else:
+            duplicate_filters.append(FlashcardImport.sha256 == validated.sha256)
+        duplicate = db.session.scalar(db.select(FlashcardImport).where(*duplicate_filters))
+        if duplicate:
+            return api_error(
+                tr("This file is already active in another import."),
+                409, "duplicate_import", document_id=duplicate.id,
+            )
+        document_id = str(uuid.uuid4())
+        storage_key = flashcard_imports.private_storage_key(
+            current_user.id, document_id, Path(validated.sanitized_filename).suffix.lower())
+        flashcard_imports.store_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key, validated.data)
+        document = FlashcardImport(
+            id=document_id, owner_user_id=current_user.id,
+            source_type=validated.source_type,
+            original_filename=validated.original_filename,
+            sanitized_filename=validated.sanitized_filename,
+            detected_mime_type=validated.mime_type, file_size=len(validated.data),
+            storage_key=storage_key, sha256=validated.sha256,
+            idempotency_key=idempotency_key, status="uploaded",
+            page_count=validated.page_count,
+            expires_at=utcnow() + timedelta(
+                hours=app.config["FLASHCARD_IMPORT_RETENTION_HOURS"]),
+        )
+        db.session.add(document)
+        db.session.commit()
+        return jsonify(ok=True, document=serialize_flashcard_import(document)), 201
+    except flashcard_imports.ImportProblem as problem:
+        return import_api_problem(problem)
+    except Exception:
+        db.session.rollback()
+        if "storage_key" in locals():
+            flashcard_imports.delete_private(
+                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key)
+        app.logger.exception("Flashcard import upload failed")
+        return api_error(tr("The upload could not be stored safely."), 503, "upload_failed")
+
+
+@app.get("/api/flashcards/imports/<document_id>")
+@login_required
+def get_flashcard_import(document_id):
+    document = owned_flashcard_import(document_id, allow_generated=True)
+    if not document or not import_feature_enabled(document.source_type):
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    return jsonify(ok=True, document=serialize_flashcard_import(document))
+
+
+@app.get("/api/flashcards/imports/<document_id>/preview")
+@login_required
+def flashcard_import_preview(document_id):
+    document = owned_flashcard_import(document_id, allow_generated=True)
+    if not document or document.source_type != "image" or not import_feature_enabled("image"):
+        abort(404)
+    try:
+        data = flashcard_imports.read_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+    except OSError:
+        abort(404)
+    return private_binary_response(data, document.detected_mime_type)
+
+
+def recognize_flashcard_import_image(
+    data: bytes, subject: str, page_number: int,
+) -> dict[str, Any]:
+    def recognize(*, image_data: bytes, image_mime: str, instructions: str):
+        response = create_response(
+            task_type="ocr_document_recognition",
+            language=learning_content_language(), model=VISION_MODEL,
+            instructions=(
+                "You are a conservative school-document recognition system. "
+                "Never guess missing text or formulas. Return structured JSON only."
+            ),
+            input=[{"role": "user", "content": [
+                {"type": "input_text", "text": instructions},
+                {"type": "input_image", "image_url": flashcard_image_data_url(
+                    image_data, image_mime), "detail": "high"},
+            ]}],
+            max_output_tokens=PROJECT_TOKEN_LIMIT, temperature=0,
+        )
+        return parse_json(response.output_text)
+    return extract_image_text(
+        data, subject=subject, page_number=page_number, recognize=recognize)
+
+
+@app.post("/api/flashcards/imports/<document_id>/extract")
+@limiter.limit("10 per minute")
+@login_required
+def extract_flashcard_import(document_id):
+    document = owned_flashcard_import(document_id)
+    if not document or not import_feature_enabled(document.source_type):
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    if document.status in {"extracting", "generating"}:
+        return api_error(tr("This import is already being processed."), 409, "import_busy")
+    started = time.monotonic()
+    document.status = "extracting"
+    db.session.commit()
+    try:
+        data = flashcard_imports.read_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+        if document.source_type == "pdf":
+            pages = flashcard_imports.extract_pdf_pages(data)
+        else:
+            result = recognize_flashcard_import_image(data, "Other", 1)
+            if not result["readable"]:
+                raise ValueError("empty_ocr")
+            pages = [{
+                "page_number": 1, "text": result["text"], "native_text": "",
+                "ocr_text": result["text"], "character_count": len(result["text"]),
+                "status": "success", "confidence": result["confidence"],
+                "warnings": result["warnings"], "source": "ocr", "selected": True,
+            }]
+        if time.monotonic() - started > app.config["FLASHCARD_EXTRACTION_TIMEOUT_SECONDS"]:
+            raise TimeoutError
+        text, _ = flashcard_imports.reviewed_text(pages)
+        document.extraction_metadata = json.dumps(pages, ensure_ascii=False)
+        document.reviewed_content = json.dumps(pages, ensure_ascii=False)
+        document.extracted_text = text
+        warnings = [warning for page in pages for warning in page.get("warnings", [])]
+        document.extraction_warnings = json.dumps(warnings, ensure_ascii=False)
+        confidences = [float(page.get("confidence", 0)) for page in pages]
+        document.extraction_confidence = (
+            sum(confidences) / len(confidences) if confidences else 0.0)
+        document.status = "ready_for_review"
+        db.session.commit()
+        return jsonify(ok=True, document=serialize_flashcard_import(document))
+    except TimeoutError:
+        db.session.rollback()
+        failed_document = db.session.get(FlashcardImport, document_id)
+        if failed_document:
+            failed_document.status = "extraction_failed"
+            failed_document.extraction_warnings = json.dumps(["Extraction timed out."])
+        db.session.commit()
+        return api_error(tr("Extraction timed out. Retry the import."), 504, "extraction_timeout")
+    except (ValueError, OSError, ai_service.AIGatewayError, ai_service.AIValidationError):
+        db.session.rollback()
+        failed_document = db.session.get(FlashcardImport, document_id)
+        if failed_document:
+            failed_document.status = "extraction_failed"
+            failed_document.extraction_warnings = json.dumps(["Extraction failed safely."])
+        db.session.commit()
+        return api_error(
+            tr("The document could not be extracted reliably. You can retry."),
+            422, "extraction_failed",
+        )
+
+
+@app.put("/api/flashcards/imports/<document_id>/content")
+@login_required
+def update_flashcard_import_content(document_id):
+    document = owned_flashcard_import(document_id)
+    if not document or not import_feature_enabled(document.source_type):
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    payload = request.get_json(silent=True) or {}
+    raw_pages = payload.get("pages")
+    existing = {
+        int(page["page_number"]): page
+        for page in flashcard_imports.json_list(document.extraction_metadata)
+    }
+    if not isinstance(raw_pages, list) or not existing:
+        return api_error(tr("Review at least one extracted page."), 400, "invalid_review")
+    reviewed = []
+    for item in raw_pages:
+        if not isinstance(item, dict):
+            continue
+        try:
+            raw_number = item.get("page_number")
+            if raw_number is None:
+                raise ValueError
+            number = int(raw_number)
+        except (TypeError, ValueError):
+            continue
+        if number not in existing:
+            continue
+        page = dict(existing[number])
+        page["selected"] = bool(item.get("selected"))
+        page["text"] = str(item.get("text") or "").strip()
+        page["character_count"] = len(page["text"])
+        reviewed.append(page)
+    text, selected_pages = flashcard_imports.reviewed_text(reviewed)
+    if not text or not selected_pages:
+        return api_error(tr("Select at least one page with reviewed text."), 400, "missing_reviewed_text")
+    if len(text) > app.config["MAX_FLASHCARD_EXTRACTED_TEXT_LENGTH"]:
+        return api_error(
+            tr("The reviewed source is too long. Select fewer pages or sections."),
+            413, "reviewed_text_too_long",
+        )
+    document.reviewed_content = json.dumps(reviewed, ensure_ascii=False)
+    document.extracted_text = text
+    document.status = "ready_for_review"
+    db.session.commit()
+    return jsonify(ok=True, selected_pages=selected_pages, character_count=len(text))
+
+
+@app.post("/api/flashcards/imports/<document_id>/ocr-page")
+@limiter.limit("10 per minute")
+@login_required
+def ocr_flashcard_import_page(document_id):
+    document = owned_flashcard_import(document_id)
+    if not document or document.source_type != "pdf" or not import_feature_enabled("pdf"):
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    payload = request.get_json(silent=True) or {}
+    try:
+        raw_page_number = payload.get("page_number")
+        if raw_page_number is None:
+            raise ValueError
+        page_number = int(raw_page_number)
+        if page_number < 1 or page_number > document.page_count:
+            raise ValueError
+    except (TypeError, ValueError):
+        return api_error(tr("Choose a valid PDF page."), 400, "invalid_page")
+    try:
+        data = flashcard_imports.read_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+        rendered = render_pdf_page(data, page_number - 1)
+        result = recognize_flashcard_import_image(rendered, "Other", page_number)
+        if not result["readable"]:
+            return api_error(tr("No usable text was recognized on this page."), 422, "empty_ocr")
+        pages = flashcard_imports.json_list(
+            document.reviewed_content or document.extraction_metadata)
+        for page in pages:
+            if int(page["page_number"]) == page_number:
+                page.update({
+                    "text": result["text"], "ocr_text": result["text"],
+                    "character_count": len(result["text"]), "status": "success",
+                    "confidence": result["confidence"], "warnings": result["warnings"],
+                    "source": "ocr", "selected": True,
+                })
+                break
+        document.reviewed_content = json.dumps(pages, ensure_ascii=False)
+        document.extraction_metadata = json.dumps(pages, ensure_ascii=False)
+        document.extracted_text = flashcard_imports.reviewed_text(pages)[0]
+        db.session.commit()
+        return jsonify(ok=True, document=serialize_flashcard_import(document))
+    except (ValueError, OSError, ai_service.AIGatewayError, ai_service.AIValidationError):
+        return api_error(tr("OCR failed safely. You can retry this page."), 422, "ocr_failed")
+
+
+@app.delete("/api/flashcards/imports/<document_id>")
+@login_required
+def delete_flashcard_import(document_id):
+    document = owned_flashcard_import(document_id, allow_generated=True)
+    if not document:
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    flashcard_imports.delete_private(
+        app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
+    db.session.delete(document)
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.post("/api/flashcards/imports/<document_id>/generate")
+@limiter.limit("10 per minute")
+@login_required
+def generate_flashcards_from_import(document_id):
+    document = owned_flashcard_import(document_id, allow_generated=True)
+    if not document or not import_feature_enabled(document.source_type):
+        return api_error(tr("This import could not be found or has expired."), 404, "import_not_found")
+    if document.status == "generating":
+        return api_error(tr("Flashcards are already being generated."), 409, "generation_busy")
+    if document.status == "generated" and document.draft_json != "{}":
+        return jsonify(ok=True, creator_url=url_for(
+            "flashcards_create_page", import_id=document.id), duplicate=True)
+    pages = flashcard_imports.json_list(document.reviewed_content)
+    source_text, selected_pages = flashcard_imports.reviewed_text(pages)
+    if not source_text:
+        return api_error(tr("Review and select source text before generating."), 400, "review_required")
+    if len(source_text) > app.config["MAX_FLASHCARD_EXTRACTED_TEXT_LENGTH"]:
+        return api_error(
+            tr("The reviewed source is too long. Select fewer pages or sections."),
+            413, "reviewed_text_too_long",
+        )
+    payload = request.get_json(silent=True) or {}
+    subject = str(payload.get("subject") or "Other").strip()[:80] or "Other"
+    grade = str(payload.get("grade") or "").strip()[:40]
+    difficulty = str(payload.get("difficulty") or "medium").strip()
+    if difficulty not in flashcards.GENERATION_DIFFICULTIES:
+        difficulty = "medium"
+    card_type = str(payload.get("card_type") or "mixed").strip()[:30]
+    count = flashcards.clamp_count(payload.get("count"))
+    requested_language = str(payload.get("content_language") or "").lower()
+    language = "German" if requested_language in {"de", "german", "deutsch"} else "English"
+    document.status = "generating"
+    document.generation_started_at = utcnow()
+    document.generation_settings = json.dumps({
+        "subject": subject, "grade": grade, "difficulty": difficulty,
+        "card_type": card_type, "count": count,
+        "content_language": "de" if language == "German" else "en",
+        "selected_pages": selected_pages,
+    })
+    db.session.commit()
+    prompt = f"""Create {count} source-grounded flashcards from ONLY the reviewed material below.
+Subject: {subject}. Grade: {grade or 'general'}. Difficulty: {difficulty}. Card type: {card_type}.
+Selected source pages: {selected_pages}. Write all student-facing text in {language}.
+Do not invent unsupported information. Avoid duplicates. Preserve names, dates, formulas, terminology and units.
+If extraction uncertainty is visible, phrase the card conservatively. Include a page reference in sourceReference.
+Reviewed material:
+{source_text}
+
+Return JSON exactly as {{"title":"short title","cards":[{{"type":"question_answer|term_definition|formula_explanation|fill_blank|true_false|multiple_choice","front":"prompt","back":"answer","explanation":"","hint":"","options":[],"tags":[],"sourceReference":"Page N","difficulty":"easy|medium|hard"}}]}}."""
+    try:
+        response = create_response(
+            task_type="flashcard_generation", language=language,
+            validation_context={"card_count": count}, model=TUTOR_MODEL,
+            instructions=tutor_instructions(subject), input=prompt,
+            max_output_tokens=FLASHCARD_TOKEN_LIMIT, temperature=0.2,
+            **quality_options(),
+        )
+        result = parse_json(response.output_text)
+        cards = flashcards.normalize_cards(result.get("cards"), count)
+        if not cards:
+            raise ValueError("invalid cards")
+        fallback_reference = ", ".join(f"Page {number}" for number in selected_pages)
+        for card in cards:
+            if not card["source_reference"]:
+                card["source_reference"] = fallback_reference[:200]
+        draft = {
+            "title": str(result.get("title") or document.sanitized_filename)[:200],
+            "subject": subject, "grade": grade, "difficulty": difficulty,
+            "card_type": card_type, "language": "de" if language == "German" else "en",
+            "source_kind": document.source_type, "source_reference": fallback_reference,
+            "cards": cards,
+        }
+        document.draft_json = json.dumps(draft, ensure_ascii=False)
+        document.status = "generated"
+        document.generation_completed_at = utcnow()
+        db.session.commit()
+        return jsonify(ok=True, creator_url=url_for(
+            "flashcards_create_page", import_id=document.id))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        failed_document = db.session.get(FlashcardImport, document_id)
+        if failed_document:
+            failed_document.status = "ready_for_review"
+        db.session.commit()
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (ValueError, json.JSONDecodeError, TypeError, KeyError):
+        db.session.rollback()
+        failed_document = db.session.get(FlashcardImport, document_id)
+        if failed_document:
+            failed_document.status = "ready_for_review"
+        db.session.commit()
+        return api_error(tr("The AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
+
+
+@app.get("/api/flashcards/imports/<document_id>/draft")
+@login_required
+def get_flashcard_import_draft(document_id):
+    document = owned_flashcard_import(document_id, allow_generated=True)
+    if not document or document.status != "generated":
+        return api_error(tr("This generated draft could not be found or has expired."), 404, "draft_not_found")
+    draft = json_object(document.draft_json)
+    return jsonify(ok=True, draft=draft)
+
+
+def flashcard_source(payload: dict[str, Any], subject: str) -> tuple[str, str, str, bool]:
+    """Resolve the requested input source into (subject, source_text, source_reference, grounded)."""
+
+    source_kind = str(payload.get("source_kind", "text")).strip()
+    if source_kind == "topic":
+        return subject, str(payload.get("topic") or "").strip()[:2000], "", False
+    if source_kind == "lesson":
+        session = owned_session(payload.get("session_id"))
+        if not session:
+            raise LookupError("lesson_expired")
+        lesson = session["lesson"]
+        parts = [lesson.get("lesson_title", ""), lesson.get("explanation", "")]
+        parts += [item.get("name", "") for item in lesson.get("concepts", [])]
+        worked = lesson.get("worked_example") or {}
+        parts += [worked.get("problem", ""), worked.get("answer", "")]
+        text = "\n".join(part for part in parts if part)[:6000]
+        return session.get("subject", subject), text, str(lesson.get("lesson_title", ""))[:200], True
+    return subject, str(payload.get("text") or "").strip()[:12000], "", True
+
+
+@app.post("/api/flashcards/generate")
+@limiter.limit("15 per minute")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def generate_flashcards():
+    payload = request.get_json(silent=True) or {}
+    subject = str(payload.get("subject") or "Other").strip()[:80] or "Other"
+    grade = str(payload.get("grade") or "").strip()[:40]
+    source_kind = str(payload.get("source_kind", "text")).strip()
+    if source_kind not in flashcards.SOURCE_KINDS:
+        source_kind = "text"
+    difficulty = str(payload.get("difficulty") or "medium").strip()
+    if difficulty not in flashcards.GENERATION_DIFFICULTIES:
+        difficulty = "medium"
+    card_type = str(payload.get("card_type") or "mixed").strip()[:30] or "mixed"
+    count = flashcards.clamp_count(payload.get("count", flashcards.DEFAULT_CARDS))
+    # Content language is independent of the interface language (Phase 2 Step 2).
+    requested_language = str(payload.get("content_language") or "").strip().lower()
+    if requested_language in ("de", "german", "deutsch"):
+        language = "German"
+    elif requested_language in ("en", "english"):
+        language = "English"
+    else:
+        language = learning_content_language()
+
+    try:
+        subject, source_text, source_reference, grounded = flashcard_source(payload, subject)
+    except LookupError:
+        return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
+    if not source_text:
+        return api_error(tr("Add some text or a topic to build flashcards from."), 400, "missing_source")
+
+    grounding = (
+        "Use ONLY the facts in the source material below; never invent facts, dates, names, or formulas not present in it."
+        if grounded else
+        "Generate accurate, widely accepted facts about this topic; every statement must be factually correct."
+    )
+    difficulty_note = (
+        "Vary the difficulty from easy to hard across the set." if difficulty == "adaptive"
+        else f"Target {difficulty} difficulty."
+    )
+    prompt = f"""Create {count} high-quality study flashcards for a {grade or 'general'}-level student on the subject '{subject}'.
+{difficulty_note} Preferred card type: {card_type} (use a mix of suitable types when 'mixed').
+{grounding}
+Source material:
+{source_text}
+
+Return JSON exactly as:
+{{"title": "short specific set title", "cards": [{{"type": "question_answer|term_definition|formula_explanation|fill_blank|true_false|multiple_choice", "front": "the prompt side", "back": "a concise but complete answer", "explanation": "only when a common misconception is likely, otherwise empty", "hint": "optional short hint, otherwise empty", "options": ["only for multiple_choice: 3 or 4 plausible options including the correct answer"], "tags": ["1 to 3 lowercase topic tags"], "sourceReference": "page or section when known, otherwise empty", "difficulty": "easy|medium|hard"}}]}}
+Rules: exactly one clear learning point per card; keep answers concise but complete; no duplicate cards; no vague questions; no questions with several possible answers unless the answer is stated; preserve formulas, dates, names, and scientific terms exactly; write formulas in LaTeX using $...$ or $$...$$ for mathematical or scientific subjects; only include "options" for multiple_choice cards; write every student-facing value in {language}."""
+
+    try:
+        response = create_response(
+            task_type="flashcard_generation",
+            language=language,
+            validation_context={"card_count": count},
+            model=TUTOR_MODEL,
+            instructions=tutor_instructions(subject),
+            input=prompt,
+            max_output_tokens=FLASHCARD_TOKEN_LIMIT,
+            temperature=0.2,
+            **quality_options(),
+        )
+        result = parse_json(response.output_text)
+        cards = flashcards.normalize_cards(result.get("cards"), count)
+        if not cards:
+            return api_error(tr("The AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
+        return jsonify(
+            ok=True, title=str(result.get("title") or subject)[:200], subject=subject, grade=grade,
+            difficulty=difficulty, card_type=card_type,
+            language="de" if language == "German" else "en",
+            source_kind=source_kind, source_reference=source_reference,
+            low_quality=(source_kind in {"text", "lesson"} and len(source_text) < 120),
+            cards=cards,
+        )
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (ValueError, json.JSONDecodeError, KeyError, TypeError):
+        return api_error(tr("The AI response could not be validated. You can retry. Your saved work remains safe."), 422, "invalid_ai_output")
+    except Exception:
+        app.logger.exception("Flashcard generation failed")
+        return api_error(tr("AI is temporarily unavailable. You can retry. Your saved work remains safe."), 503, "ai_unavailable")
+
+
+@app.post("/api/flashcards/sets")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def save_flashcard_set():
+    payload = request.get_json(silent=True) or {}
+    cards = flashcards.normalize_cards(payload.get("cards"), flashcards.MAX_CARDS)
+    if not cards:
+        return api_error(tr("Add at least one complete flashcard before saving."), 400, "no_cards")
+    difficulty = str(payload.get("difficulty") or "medium").strip()[:20] or "medium"
+    flashcard_set = FlashcardSet(
+        user_id=current_user.id,
+        title=str(payload.get("title") or "Flashcards").strip()[:200] or "Flashcards",
+        subject=str(payload.get("subject") or "Other").strip()[:80] or "Other",
+        grade=str(payload.get("grade") or "").strip()[:40],
+        difficulty=difficulty,
+        language=str(payload.get("language") or get_current_language()).strip()[:10] or "en",
+        card_type=str(payload.get("card_type") or "mixed").strip()[:30] or "mixed",
+        source_kind=str(payload.get("source_kind") or "text").strip()[:20] or "text",
+        source_reference=str(payload.get("source_reference") or "").strip()[:255],
+    )
+    db.session.add(flashcard_set)
+    db.session.flush()
+    vocabulary_card_links: dict[str, list[int]] = {}
+    raw_payload_cards: list[dict[str, Any]] = [
+        raw for raw in (payload.get("cards") or []) if isinstance(raw, dict)
+    ]
+    for position, card in enumerate(cards):
+        flashcard = Flashcard(
+            set_id=flashcard_set.id, position=position,
+            **flashcard_columns(card, flashcards.new_schedule()),
+        )
+        db.session.add(flashcard)
+        db.session.flush()
+        if position < len(raw_payload_cards):
+            entry_id = str(raw_payload_cards[position].get("vocabulary_entry_id") or "")
+            if entry_id:
+                vocabulary_card_links.setdefault(entry_id, []).append(flashcard.id)
+    vocabulary_list_id = str(payload.get("vocabulary_list_id") or "")
+    vocabulary_list = owned_vocabulary_list(vocabulary_list_id) if vocabulary_list_id else None
+    if vocabulary_list:
+        vocabulary_list.flashcard_set_id = flashcard_set.id
+        for entry_id, card_ids in vocabulary_card_links.items():
+            entry = db.session.get(VocabularyEntry, entry_id)
+            if entry and entry.list_id == vocabulary_list.id:
+                entry.linked_flashcard_ids_json = json.dumps(card_ids)
+    db.session.commit()
+    return jsonify(ok=True, id=flashcard_set.id, card_count=len(cards)), 201
+
+
+@app.get("/api/flashcards/sets")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def list_flashcard_sets():
+    now = utcnow()
+    sets = db.session.scalars(
+        db.select(FlashcardSet).where(FlashcardSet.user_id == current_user.id)
+        .order_by(FlashcardSet.updated_at.desc())
+    ).all()
+    data = []
+    for flashcard_set in sets:
+        cards = flashcard_set.cards
+        data.append({
+            "id": flashcard_set.id, "title": flashcard_set.title, "subject": flashcard_set.subject,
+            "difficulty": flashcard_set.difficulty, "card_type": flashcard_set.card_type,
+            "language": flashcard_set.language, "total": len(cards),
+            "due": sum(1 for card in cards if as_utc(card.next_review_at) <= now),
+            "mastered": sum(1 for card in cards if card.mastery_level == "mastered"),
+            "updated_at": as_utc(flashcard_set.updated_at).isoformat(),
+        })
+    return jsonify(ok=True, sets=data)
+
+
+@app.get("/api/flashcards/sets/<int:set_id>")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def get_flashcard_set(set_id):
+    flashcard_set = owned_flashcard_set(set_id)
+    if not flashcard_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    return jsonify(ok=True, set={
+        "id": flashcard_set.id, "title": flashcard_set.title, "subject": flashcard_set.subject,
+        "grade": flashcard_set.grade, "difficulty": flashcard_set.difficulty,
+        "card_type": flashcard_set.card_type, "language": flashcard_set.language,
+        "cards": [serialize_flashcard(card) for card in flashcard_set.cards],
+    })
+
+
+@app.delete("/api/flashcards/sets/<int:set_id>")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def delete_flashcard_set(set_id):
+    flashcard_set = owned_flashcard_set(set_id)
+    if not flashcard_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    db.session.delete(flashcard_set)
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@app.put("/api/flashcards/sets/<int:set_id>")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def update_flashcard_set(set_id):
+    flashcard_set = owned_flashcard_set(set_id)
+    if not flashcard_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    payload = request.get_json(silent=True) or {}
+    if "title" in payload:
+        flashcard_set.title = str(payload.get("title") or flashcard_set.title).strip()[:200] or flashcard_set.title
+    if "subject" in payload:
+        flashcard_set.subject = str(payload.get("subject") or "Other").strip()[:80] or "Other"
+    if "difficulty" in payload:
+        flashcard_set.difficulty = str(payload.get("difficulty") or "medium").strip()[:20] or "medium"
+    if "card_type" in payload:
+        flashcard_set.card_type = str(payload.get("card_type") or "mixed").strip()[:30] or "mixed"
+    if isinstance(payload.get("cards"), list):
+        existing = {card.id: card for card in flashcard_set.cards}
+        kept_ids: set[int] = set()
+        seen_fronts: set[str] = set()
+        position = 0
+        for raw in payload["cards"]:
+            try:
+                card = flashcards.normalize_card(raw)
+            except (ValueError, TypeError):
+                continue
+            front_key = card["front"].strip().casefold()
+            if front_key in seen_fronts:
+                continue
+            seen_fronts.add(front_key)
+            raw_id = raw.get("id") if isinstance(raw, dict) else None
+            target = existing.get(raw_id) if isinstance(raw_id, int) else None
+            if target is not None:
+                for column, value in flashcard_content_columns(card).items():
+                    setattr(target, column, value)
+                target.position = position
+                kept_ids.add(target.id)
+            else:
+                db.session.add(Flashcard(
+                    set_id=flashcard_set.id, position=position,
+                    **flashcard_columns(card, flashcards.new_schedule())))
+            position += 1
+        if position == 0:
+            return api_error(tr("Add at least one complete flashcard before saving."), 400, "no_cards")
+        for card_id, card in existing.items():
+            if card_id not in kept_ids:
+                db.session.delete(card)
+    db.session.commit()
+    return get_flashcard_set(set_id)
+
+
+@app.post("/api/flashcards/sets/<int:set_id>/duplicate")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def duplicate_flashcard_set(set_id):
+    source = owned_flashcard_set(set_id)
+    if not source:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    copy = FlashcardSet(
+        user_id=current_user.id, title=f"{source.title} (copy)"[:200], subject=source.subject,
+        grade=source.grade, difficulty=source.difficulty, language=source.language,
+        card_type=source.card_type, source_kind=source.source_kind,
+        source_reference=source.source_reference,
+    )
+    db.session.add(copy)
+    db.session.flush()
+    for position, card in enumerate(source.cards):
+        db.session.add(Flashcard(
+            set_id=copy.id, position=position, type=card.type, front=card.front, back=card.back,
+            explanation=card.explanation, hint=card.hint, tags_json=card.tags_json,
+            options_json=card.options_json, source_reference=card.source_reference,
+            image_url=card.image_url, image_alt=card.image_alt, image_source=card.image_source,
+            difficulty=card.difficulty, **schedule_columns(flashcards.new_schedule())))
+    db.session.commit()
+    return jsonify(ok=True, id=copy.id, card_count=len(source.cards)), 201
+
+
+@app.get("/api/flashcards/sets/<int:set_id>/publication")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def flashcard_publication_state(set_id):
+    private = owned_flashcard_set(set_id)
+    if not private:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    public = db.session.scalar(
+        db.select(PublicFlashcardSet).where(
+            PublicFlashcardSet.source_set_id == set_id,
+            PublicFlashcardSet.creator_id == current_user.id,
+        ).order_by(PublicFlashcardSet.id.desc()))
+    publishing_enabled = bool(app.config.get("FEATURE_COMMUNITY_PUBLISHING"))
+    if not public:
+        return jsonify(ok=True, published=False, publishing_enabled=publishing_enabled)
+    latest = db.session.scalar(db.select(AIReview).where(
+        AIReview.public_set_id == public.id).order_by(AIReview.version.desc()))
+    return jsonify(
+        ok=True, published=True, public_id=public.id, status=public.status,
+        changed_since_publish=as_utc(private.updated_at) > as_utc(public.updated_at),
+        review=serialize_review(latest) if latest else None,
+        publishing_enabled=publishing_enabled,
+    )
+
+
+@app.post("/api/flashcards/cards/<int:card_id>/review")
+@login_required
+@require_feature("FEATURE_PRIVATE_FLASHCARDS")
+def review_flashcard(card_id):
+    payload = request.get_json(silent=True) or {}
+    grade = str(payload.get("grade") or "").strip().lower()
+    if grade not in flashcards.REVIEW_GRADES:
+        return api_error(tr("Choose Again, Hard, Good, or Easy."), 400, "invalid_grade")
+    card = db.session.scalar(
+        db.select(Flashcard).join(FlashcardSet).where(
+            Flashcard.id == card_id, FlashcardSet.user_id == current_user.id)
+    )
+    if not card:
+        return api_error(tr("This flashcard could not be found."), 404, "card_not_found")
+    correct = grade != "again"
+    response_ms = max(0, min(600_000, int(payload.get("response_ms") or 0)))
+    before, after = update_flashcard_performance(card, correct, response_ms, grade)
+    request_key = str(
+        payload.get("request_id") or request.headers.get("Idempotency-Key")
+        or f"{card.id}:{card.correct_count + card.incorrect_count}"
+    )[:100]
+    _, earned = record_learning_event(
+        current_user.id, "flashcard_reviewed", f"legacy-fc-review:{current_user.id}:{request_key}",
+        source_type="flashcard", source_id=card.id, subject=card.set.subject,
+        active_seconds=min(120, response_ms // 1000),
+        metadata={"correct": correct, "mode": "flashcards"},
+        xp=gamification.bounded_answer_xp(
+            correct=correct, written=False, difficult=card.difficulty == "hard"),
+    )
+    db.session.commit()
+    return jsonify(
+        ok=True, card=serialize_flashcard(card), mastery_before=before,
+        mastery_after=after, xp_earned=earned)
+
+
+def owned_public_set(set_id: Any) -> "PublicFlashcardSet | None":
+    try:
+        identifier = int(set_id)
+    except (TypeError, ValueError):
+        return None
+    return db.session.scalar(db.select(PublicFlashcardSet).where(
+        PublicFlashcardSet.id == identifier, PublicFlashcardSet.creator_id == current_user.id))
+
+
+def approved_public_set(set_id: int) -> "PublicFlashcardSet | None":
+    return db.session.scalar(db.select(PublicFlashcardSet).where(
+        PublicFlashcardSet.id == set_id, PublicFlashcardSet.status == "approved"))
+
+
+def update_public_ranking(public_set: "PublicFlashcardSet") -> None:
+    bayesian = community.bayesian_average(public_set.student_rating_sum, public_set.student_rating_count)
+    recency = 0.0
+    if public_set.published_at:
+        age_days = (utcnow() - as_utc(public_set.published_at)).total_seconds() / 86400
+        recency = max(0.0, 1.0 - age_days / 30.0)
+    penalty = min(0.5, public_set.report_count * 0.05)
+    public_set.ranking_score = community.ranking_score(
+        ai_overall=public_set.ai_overall, student_bayesian=bayesian, completion_rate=0.0,
+        helpful_votes=public_set.helpful_votes, save_count=public_set.save_count,
+        recency=recency, penalty=penalty)
+
+
+def active_publication_version(
+    public_set: "PublicFlashcardSet",
+) -> FlashcardPublicationVersion | None:
+    if public_set.active_version_id:
+        version = db.session.get(
+            FlashcardPublicationVersion, public_set.active_version_id)
+        if version and version.public_set_id == public_set.id:
+            return version
+    return db.session.scalar(db.select(FlashcardPublicationVersion).where(
+        FlashcardPublicationVersion.public_set_id == public_set.id,
+        FlashcardPublicationVersion.submission_status == "approved").order_by(
+        FlashcardPublicationVersion.version.desc()))
+
+
+def create_publication_version(
+    public_set: "PublicFlashcardSet", source: FlashcardSet,
+    metadata: dict[str, Any],
+) -> FlashcardPublicationVersion:
+    source_cards = db.session.scalars(db.select(Flashcard).where(
+        Flashcard.set_id == source.id).order_by(Flashcard.position)).all()
+    cards = [serialize_flashcard(card) for card in source_cards]
+    version_number = 1 + int(db.session.scalar(db.select(func.max(
+        FlashcardPublicationVersion.version)).where(
+        FlashcardPublicationVersion.public_set_id == public_set.id)) or 0)
+    version = FlashcardPublicationVersion(
+        public_set_id=public_set.id, version=version_number,
+        title=str(metadata.get("title") or source.title).strip()[:200] or source.title,
+        description=str(metadata.get("description") or "").strip()[:2000],
+        subject=str(metadata.get("subject") or source.subject).strip()[:80] or "Other",
+        topic=str(metadata.get("topic") or "").strip()[:120],
+        grade=str(metadata.get("grade") or source.grade).strip()[:40],
+        difficulty=str(metadata.get("difficulty") or source.difficulty).strip()[:20] or "medium",
+        language=str(metadata.get("language") or source.language).strip()[:10] or "en",
+        tags_json=json.dumps(metadata.get("tags") or [], ensure_ascii=False),
+        cards_json=public_snapshot(cards), card_count=len(cards),
+        submission_status="pending_ai_review")
+    db.session.add(version)
+    db.session.flush()
+    return version
+
+
+def run_ai_review(
+    public_set: "PublicFlashcardSet", publication_version: FlashcardPublicationVersion,
+) -> tuple["AIReview", dict[str, Any]]:
+    """Run one AI quality review, store it as a new version, and apply the publication decision."""
+
+    cards = json_value(publication_version.cards_json, [])
+    review_input = {
+        "title": publication_version.title, "subject": publication_version.subject,
+        "topic": publication_version.topic, "grade": publication_version.grade,
+        "difficulty": publication_version.difficulty, "language": publication_version.language,
+        "cards": [{
+            "type": card.get("type"), "front": card.get("front"), "back": card.get("back"),
+            "explanation": card.get("explanation", ""), "options": card.get("options", []),
+        } for card in cards],
+    }
+    prompt = f"""Review this student-submitted flashcard set that is being published to a public library. Judge factual accuracy, educational usefulness, question and answer quality, clarity, grammar, difficulty and grade suitability, topic coverage, duplicate or repetitive cards, missing or misleading information, and originality. Also detect safety problems: copyright, spam, offensive language, personal information, unsafe content, or AI-generated nonsense. Never rewrite the student's content; only score it and explain what should be improved.
+Flashcard set: {json.dumps(review_input, ensure_ascii=False)}
+
+Return JSON exactly as:
+{{"overallScore": 0-5, "accuracyScore": 0-5, "clarityScore": 0-5, "usefulnessScore": 0-5, "coverageScore": 0-5, "difficultyScore": 0-5, "originalityScore": 0-5, "confidence": "Low|Medium|High", "summary": "one or two sentences", "strengths": ["..."], "improvements": ["..."], "flaggedCards": [{{"reference": "card front or number", "issue": "what is wrong"}}], "safetyFlags": ["any of: unsafe, offensive, copyright, personal_information, spam"]}}
+All scores are 0 to 5 where 5 is best. List safetyFlags only for genuine violations. Write summary, strengths, and improvements in {publication_version.language or 'the set language'}."""
+
+    response = create_response(
+        task_type="flashcard_review",
+        language=learning_content_language(),
+        model=TUTOR_MODEL,
+        instructions="You are a strict but fair educational quality reviewer. Never rewrite the student's flashcards; only evaluate them and explain improvements.",
+        input=prompt,
+        max_output_tokens=REVIEW_TOKEN_LIMIT,
+        temperature=0.1,
+        **quality_options(),
+    )
+    normalized = community.normalize_ai_review(parse_json(response.output_text))
+    scores = normalized["scores"]
+    stars, _label = community.ai_stars(scores["overallScore"])
+    decision = community.publication_decision(scores["overallScore"], normalized["safety_flags"])
+    review = AIReview(
+        public_set_id=public_set.id, publication_version_id=publication_version.id,
+        version=publication_version.version,
+        overall_score=scores["overallScore"], accuracy_score=scores["accuracyScore"],
+        clarity_score=scores["clarityScore"], usefulness_score=scores["usefulnessScore"],
+        coverage_score=scores["coverageScore"], difficulty_score=scores["difficultyScore"],
+        originality_score=scores["originalityScore"], confidence=normalized["confidence"],
+        summary=normalized["summary"],
+        strengths_json=json.dumps(normalized["strengths"], ensure_ascii=False),
+        improvements_json=json.dumps(normalized["improvements"], ensure_ascii=False),
+        flagged_json=json.dumps(normalized["flagged"], ensure_ascii=False),
+        safety_flags_json=json.dumps(normalized["safety_flags"], ensure_ascii=False),
+        stars=stars, decision_status=decision["status"], decision_reason=decision["reason"],
+        model=response.model,
+    )
+    db.session.add(review)
+    public_set.ai_overall = scores["overallScore"]
+    public_set.ai_stars = stars
+    public_set.ai_confidence = normalized["confidence"]
+    public_set.status = decision["status"]
+    publication_version.submission_status = decision["status"]
+    if decision["status"] == "approved":
+        approved_at = utcnow()
+        publication_version.approved_at = approved_at
+        public_set.active_version_id = publication_version.id
+        public_set.title = publication_version.title
+        public_set.description = publication_version.description
+        public_set.subject = publication_version.subject
+        public_set.topic = publication_version.topic
+        public_set.grade = publication_version.grade
+        public_set.difficulty = publication_version.difficulty
+        public_set.language = publication_version.language
+        public_set.tags_json = publication_version.tags_json
+        public_set.cards_json = publication_version.cards_json
+        public_set.card_count = publication_version.card_count
+        public_set.published_at = approved_at
+    update_public_ranking(public_set)
+    return review, decision
+
+
+def serialize_review(review: "AIReview") -> dict[str, Any]:
+    return {
+        "version": review.version,
+        "scores": {
+            "overall": review.overall_score, "accuracy": review.accuracy_score,
+            "clarity": review.clarity_score, "usefulness": review.usefulness_score,
+            "coverage": review.coverage_score, "difficulty": review.difficulty_score,
+            "originality": review.originality_score,
+        },
+        "stars": review.stars, "confidence": review.confidence, "summary": review.summary,
+        "strengths": json_value(review.strengths_json, []),
+        "improvements": json_value(review.improvements_json, []),
+        "flagged": json_value(review.flagged_json, []),
+        "safety_flags": json_value(review.safety_flags_json, []),
+        "decision": {"status": review.decision_status, "reason": review.decision_reason},
+        "created_at": as_utc(review.created_at).isoformat(),
+    }
+
+
+def public_set_author(public_set: "PublicFlashcardSet") -> str:
+    if public_set.author_display == "nickname" and public_set.nickname:
+        return public_set.nickname
+    if public_set.author_display == "username":
+        creator = db.session.get(User, public_set.creator_id)
+        return creator.username if creator else "Unknown"
+    return "Anonymous"
+
+
+def serialize_public_set(public_set: "PublicFlashcardSet", include_cards: bool = False) -> dict[str, Any]:
+    count = public_set.student_rating_count
+    version = active_publication_version(public_set)
+    data = {
+        "id": public_set.id, "title": public_set.title, "description": public_set.description,
+        "subject": public_set.subject, "topic": public_set.topic, "grade": public_set.grade,
+        "difficulty": public_set.difficulty, "language": public_set.language,
+        "tags": json_value(public_set.tags_json, []), "author": public_set_author(public_set),
+        "status": public_set.status, "card_count": public_set.card_count,
+        "study_count": public_set.study_count, "save_count": public_set.save_count,
+        "teacher_verified": public_set.teacher_verified, "ranking_score": public_set.ranking_score,
+        # The two ratings are intentionally kept separate; they measure different things.
+        "student_rating": {
+            "average": round(public_set.student_rating_sum / count, 2) if count else None,
+            "bayesian": community.bayesian_average(public_set.student_rating_sum, count),
+            "count": count,
+        },
+        "ai_review": {
+            "overall": round(public_set.ai_overall, 2), "stars": public_set.ai_stars,
+            "confidence": public_set.ai_confidence, "label": community.ai_stars(public_set.ai_overall)[1],
+        },
+        "created_at": as_utc(public_set.created_at).isoformat(),
+        "public_url": url_for("community_set_detail_page", set_id=public_set.id),
+        "publication_version": version.version if version else None,
+    }
+    if include_cards:
+        data["cards"] = json_value(version.cards_json if version else "[]", [])
+    return data
+
+
+def public_snapshot(cards: list[dict[str, Any]]) -> str:
+    keys = ("type", "front", "back", "explanation", "hint", "options", "tags", "difficulty")
+    return json.dumps([{key: card.get(key) for key in keys} for card in cards], ensure_ascii=False)
+
+
+@app.post("/api/community/publish")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_COMMUNITY_PUBLISHING")
+def publish_flashcard_set():
+    payload = request.get_json(silent=True) or {}
+    if not payload.get("confirm"):
+        return api_error(tr("Please confirm you created this set or have permission to share it."), 400, "confirmation_required")
+    source = owned_flashcard_set(payload.get("source_set_id"))
+    if not source:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    cards = [serialize_flashcard(card) for card in source.cards]
+    if not cards:
+        return api_error(tr("Add at least one flashcard before publishing."), 400, "no_cards")
+    author_display = str(payload.get("author_display") or "username").strip()
+    if author_display not in community.AUTHOR_DISPLAY:
+        author_display = "username"
+    tags = ([str(tag).strip()[:40] for tag in payload.get("tags", []) if str(tag).strip()][:12]
+            if isinstance(payload.get("tags"), list) else [])
+    public_set = PublicFlashcardSet(
+        creator_id=current_user.id, source_set_id=source.id,
+        title=str(payload.get("title") or source.title).strip()[:200] or source.title,
+        description=str(payload.get("description") or "").strip()[:2000],
+        subject=str(payload.get("subject") or source.subject).strip()[:80] or "Other",
+        topic=str(payload.get("topic") or "").strip()[:120],
+        grade=str(payload.get("grade") or source.grade).strip()[:40],
+        difficulty=str(payload.get("difficulty") or source.difficulty).strip()[:20] or "medium",
+        language=str(payload.get("language") or source.language).strip()[:10] or "en",
+        tags_json=json.dumps(tags, ensure_ascii=False), author_display=author_display,
+        nickname=str(payload.get("nickname") or "").strip()[:80], status="pending_ai_review",
+        cards_json=public_snapshot(cards), card_count=len(cards),
+    )
+    db.session.add(public_set)
+    db.session.flush()
+    publication_version = create_publication_version(
+        public_set, source, {
+            **payload, "tags": tags,
+            "title": public_set.title, "description": public_set.description,
+            "subject": public_set.subject, "topic": public_set.topic,
+            "grade": public_set.grade, "difficulty": public_set.difficulty,
+            "language": public_set.language,
+        })
+    try:
+        review, _decision = run_ai_review(public_set, publication_version)
+        db.session.commit()
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (ValueError, json.JSONDecodeError, KeyError, TypeError):
+        db.session.rollback()
+        return api_error(tr("The AI response could not be validated. You can retry."), 422, "invalid_ai_output")
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Flashcard review failed")
+        return api_error(tr("AI is temporarily unavailable. You can retry."), 503, "ai_unavailable")
+    return jsonify(
+        ok=True, id=public_set.id, status=public_set.status,
+        version=publication_version.version,
+        public_url=url_for("community_set_detail_page", set_id=public_set.id),
+        review=serialize_review(review)), 201
+
+
+@app.get("/api/community/sets/<int:set_id>/review")
+@login_required
+@require_feature("FEATURE_COMMUNITY_PUBLISHING")
+def get_public_review(set_id):
+    public_set = owned_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    latest = db.session.scalar(
+        db.select(AIReview).where(AIReview.public_set_id == public_set.id)
+        .order_by(AIReview.version.desc()))
+    return jsonify(ok=True, status=public_set.status,
+                   review=serialize_review(latest) if latest else None)
+
+
+@app.post("/api/community/sets/<int:set_id>/resubmit")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_COMMUNITY_PUBLISHING")
+def resubmit_public_set(set_id):
+    public_set = owned_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    source = db.session.scalar(db.select(FlashcardSet).where(
+        FlashcardSet.id == public_set.source_set_id,
+        FlashcardSet.user_id == current_user.id))
+    if not source or not source.cards:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    active = active_publication_version(public_set)
+    publication_version = create_publication_version(public_set, source, {
+        "title": source.title, "description": active.description if active else public_set.description,
+        "subject": source.subject, "topic": active.topic if active else public_set.topic,
+        "grade": source.grade, "difficulty": source.difficulty,
+        "language": source.language,
+        "tags": json_value(active.tags_json if active else public_set.tags_json, []),
+    })
+    public_set.status = "pending_ai_review"
+    try:
+        review, _decision = run_ai_review(public_set, publication_version)
+        db.session.commit()
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        message, status, code = ai_failure_message(error)
+        return api_error(message, status, code)
+    except (ValueError, json.JSONDecodeError, KeyError, TypeError):
+        db.session.rollback()
+        return api_error(tr("The AI response could not be validated. You can retry."), 422, "invalid_ai_output")
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Flashcard re-review failed")
+        return api_error(tr("AI is temporarily unavailable. You can retry."), 503, "ai_unavailable")
+    return jsonify(
+        ok=True, status=public_set.status, version=publication_version.version,
+        review=serialize_review(review))
+
+
+@app.post("/api/community/sets/<int:set_id>/unpublish")
+@login_required
+@require_feature("FEATURE_COMMUNITY_PUBLISHING")
+def unpublish_public_set(set_id):
+    public_set = owned_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    # Remove public visibility only. The private set, publication history, AI reviews, and
+    # other users' saved copies are all preserved for audit and safety.
+    public_set.status = "unpublished"
+    db.session.commit()
+    return jsonify(ok=True, status="unpublished")
+
+
+@app.get("/api/community/library")
+@require_feature("FEATURE_COMMUNITY_LIBRARY")
+def community_library():
+    args = request.args
+    query = db.select(PublicFlashcardSet).where(PublicFlashcardSet.status == "approved")
+    for field, column in (
+        ("subject", PublicFlashcardSet.subject), ("grade", PublicFlashcardSet.grade),
+        ("difficulty", PublicFlashcardSet.difficulty), ("language", PublicFlashcardSet.language),
+    ):
+        if args.get(field):
+            query = query.where(column == args.get(field))
+    if args.get("teacher_verified") in {"1", "true", "yes"}:
+        query = query.where(PublicFlashcardSet.teacher_verified.is_(True))
+    if args.get("min_ai"):
+        try:
+            query = query.where(PublicFlashcardSet.ai_overall >= float(args["min_ai"]))
+        except ValueError:
+            pass
+    sets = list(db.session.scalars(query).all())
+
+    search = (args.get("q") or "").strip().casefold()
+    if search:
+        sets = [s for s in sets if search in " ".join(
+            [s.title, s.topic, s.subject] + json_value(s.tags_json, [])).casefold()]
+
+    def bayes(s: "PublicFlashcardSet") -> float:
+        return community.bayesian_average(s.student_rating_sum, s.student_rating_count)
+
+    if args.get("min_student"):
+        try:
+            threshold = float(args["min_student"])
+            sets = [s for s in sets if bayes(s) >= threshold]
+        except ValueError:
+            pass
+
+    sorters = {
+        "ai": lambda s: (-s.ai_overall, -s.ranking_score),
+        "student": lambda s: (-bayes(s), -s.student_rating_count),
+        "studied": lambda s: (-s.study_count,),
+        "saved": lambda s: (-s.save_count,),
+        "newest": lambda s: (-as_utc(s.published_at or s.created_at).timestamp(),),
+        "trending": lambda s: (-s.ranking_score,),
+        "ranking": lambda s: (-s.ranking_score,),
+    }
+    sets.sort(key=sorters.get((args.get("sort") or "ranking").strip(), sorters["ranking"]))
+    limit_raw = args.get("limit", "30")
+    limit = min(50, max(1, int(limit_raw))) if limit_raw.isdigit() else 30
+    return jsonify(ok=True, sets=[serialize_public_set(s) for s in sets[:limit]])
+
+
+@app.get("/api/community/sets/<int:set_id>")
+@require_feature("FEATURE_COMMUNITY_LIBRARY")
+def get_public_set(set_id):
+    public_set = approved_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    data = serialize_public_set(public_set, include_cards=True)
+    rating = (
+        db.session.scalar(db.select(FlashcardRating).where(
+            FlashcardRating.public_set_id == set_id,
+            FlashcardRating.user_id == current_user.id))
+        if current_user.is_authenticated else None)
+    data["your_rating"] = rating.stars if rating else None
+    latest = db.session.scalar(db.select(AIReview).where(
+        AIReview.public_set_id == set_id).order_by(AIReview.version.desc()))
+    data["ai_review_detail"] = serialize_review(latest) if latest else None
+    return jsonify(ok=True, set=data)
+
+
+@app.post("/api/community/sets/<int:set_id>/study")
+@login_required
+@require_feature("FEATURE_COMMUNITY_LIBRARY")
+def study_public_set(set_id):
+    public_set = approved_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    existing = db.session.scalar(db.select(CommunityStudyRecord).where(
+        CommunityStudyRecord.public_set_id == set_id, CommunityStudyRecord.user_id == current_user.id))
+    if not existing:
+        db.session.add(CommunityStudyRecord(public_set_id=set_id, user_id=current_user.id))
+        public_set.study_count += 1
+        update_public_ranking(public_set)
+        db.session.commit()
+    return jsonify(ok=True, set=serialize_public_set(public_set, include_cards=True))
+
+
+@app.post("/api/community/sets/<int:set_id>/save")
+@login_required
+@require_feature("FEATURE_COMMUNITY_LIBRARY")
+def save_community_copy(set_id):
+    public_set = approved_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    version = active_publication_version(public_set)
+    cards = flashcards.normalize_cards(
+        json_value(version.cards_json if version else "[]", []), flashcards.MAX_CARDS)
+    if not cards:
+        return api_error(tr("This set has no cards to save."), 400, "no_cards")
+    reference = f"community:{public_set.id}"
+    already_saved = int(db.session.scalar(db.select(db.func.count(FlashcardSet.id)).where(
+        FlashcardSet.user_id == current_user.id, FlashcardSet.source_reference == reference)) or 0)
+    copy = FlashcardSet(
+        user_id=current_user.id, title=f"{public_set.title} (saved)"[:200], subject=public_set.subject,
+        grade=public_set.grade, difficulty=public_set.difficulty, language=public_set.language,
+        card_type="mixed", source_kind="community", source_reference=reference,
+    )
+    db.session.add(copy)
+    db.session.flush()
+    for position, card in enumerate(cards):
+        db.session.add(Flashcard(
+            set_id=copy.id, position=position, **flashcard_columns(card, flashcards.new_schedule())))
+    if not already_saved:  # count each distinct saver once
+        public_set.save_count += 1
+        update_public_ranking(public_set)
+    db.session.commit()
+    return jsonify(ok=True, id=copy.id, card_count=len(cards)), 201
+
+
+@app.post("/api/community/sets/<int:set_id>/rate")
+@login_required
+@require_feature("FEATURE_COMMUNITY_LIBRARY")
+def rate_public_set(set_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        stars = int(payload.get("stars") or 0)
+    except (TypeError, ValueError):
+        stars = 0
+    if not 1 <= stars <= 5:
+        return api_error(tr("Choose a rating from 1 to 5 stars."), 400, "invalid_rating")
+    public_set = approved_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    if public_set.creator_id == current_user.id:
+        return api_error(tr("You cannot rate your own flashcard set."), 403, "self_rating")
+    studied = db.session.scalar(db.select(CommunityStudyRecord).where(
+        CommunityStudyRecord.public_set_id == set_id, CommunityStudyRecord.user_id == current_user.id))
+    if not studied:
+        return api_error(tr("Study this set before rating it."), 403, "not_studied")
+    rating = db.session.scalar(db.select(FlashcardRating).where(
+        FlashcardRating.public_set_id == set_id, FlashcardRating.user_id == current_user.id))
+    if rating:
+        public_set.student_rating_sum += stars - rating.stars
+        rating.stars = stars
+    else:
+        db.session.add(FlashcardRating(public_set_id=set_id, user_id=current_user.id, stars=stars))
+        public_set.student_rating_sum += stars
+        public_set.student_rating_count += 1
+    update_public_ranking(public_set)
+    db.session.commit()
+    return jsonify(ok=True, student_rating=serialize_public_set(public_set)["student_rating"])
 
 
 @app.post("/api/translate")

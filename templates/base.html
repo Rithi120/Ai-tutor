@@ -27,6 +27,7 @@
     window.LEARNOVA_LANGUAGE = {{ current_language|tojson }};
     window.LEARNOVA_CONTENT_LANGUAGE = {{ learning_content_language_code|tojson }};
     window.LEARNOVA_I18N = {{ frontend_translations|tojson }};
+    window.LEARNOVA_FLAGS = {{ feature_flags|tojson }};
   </script>
   <script type="module" src="{{ url_for('static', filename='js/core.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/navigation.js') }}"></script>
