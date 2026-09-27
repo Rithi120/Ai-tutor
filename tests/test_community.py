@@ -100,6 +100,38 @@ class CommunityServiceTests(unittest.TestCase):
         unpenalized = community.ranking_score(ai_overall=5, student_bayesian=5)
         self.assertAlmostEqual(unpenalized - penalized, 0.3, places=3)
 
+    def test_ranking_normalizes_over_the_terms_actually_supplied(self):
+        """An unmeasured term is excluded, not scored as zero.
+
+        Completion and helpful votes are a quarter of the weights and neither is tracked
+        yet. Passing 0.0 for them would cap every set at 0.75 of the formula while the
+        interface presents the number as if it were out of 1.
+        """
+
+        # A set that is perfect on everything measured reaches the top of the scale.
+        perfect = community.ranking_score(
+            ai_overall=5, student_bayesian=5, save_count=1000, recency=1.0)
+        self.assertGreater(perfect, 0.95)
+
+        # Omitting a term is not the same as measuring it as zero.
+        omitted = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5)
+        measured_zero = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5, helpful_votes=0)
+        self.assertGreater(omitted, measured_zero)
+
+        # When a term does ship, supplying it restores its weight with no formula change.
+        with_votes = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5, helpful_votes=100)
+        self.assertGreater(with_votes, omitted)
+
+    def test_ranking_order_survives_the_normalization(self):
+        better = community.ranking_score(ai_overall=5, student_bayesian=4.5, save_count=40)
+        worse = community.ranking_score(ai_overall=3, student_bayesian=2.0, save_count=2)
+        self.assertGreater(better, worse)
+        self.assertLessEqual(better, 1.0)
+        self.assertGreaterEqual(worse, 0.0)
+
     def test_normalize_review_derives_overall_and_flags(self):
         derived = community.normalize_ai_review({"accuracyScore": 4, "clarityScore": 4, "summary": "ok"})
         self.assertGreater(derived["scores"]["overallScore"], 0)

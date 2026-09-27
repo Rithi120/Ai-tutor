@@ -153,7 +153,11 @@ class DocumentWorkflowTests(unittest.TestCase):
             recognized = self.client.post(f"/projects/{project_id}/recognize")
         self.assertEqual(recognized.status_code, 302)
         review = self.client.get(f"/projects/{project_id}/review")
-        self.assertIn(b"Verify uncertain regions", review.data)
+        # The redesigned review page replaced the old "Verify uncertain regions" list
+        # with a region editor. The guarantee under test is unchanged: low-confidence
+        # regions are surfaced for the student to confirm, never silently corrected.
+        self.assertIn(b"Fix the words Learnova was unsure about", review.data)
+        self.assertIn(b"data-region-editor", review.data)
         self.assertIn("2H₂ + O₂ → 2H₂O", review.get_data(as_text=True))
         self.assertIn(b"Detected diagrams", review.data)
         with application.app.app_context():

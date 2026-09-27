@@ -210,12 +210,6 @@ def next_action_label(action: str) -> str:
     return NEXT_ACTION_LABELS_EN.get(action, NEXT_ACTION_LABELS_EN["maintain_difficulty"])
 
 
-def intervention_label(intervention: str) -> str:
-    """English source label for an intervention; wrap in translate() to localise."""
-
-    return INTERVENTION_LABELS_EN.get(intervention, INTERVENTION_LABELS_EN["explain_correction"])
-
-
 # Every translatable string this module can emit, so a catalogue test can assert coverage.
 TRANSLATABLE_LABELS = frozenset(
     tuple(DIAGNOSIS_LABELS_EN.values())

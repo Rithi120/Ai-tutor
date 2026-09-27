@@ -12,7 +12,7 @@ The earlier quick lesson, adaptive quiz, translation, tutor chat, dashboard, spa
 
 ## Languages and translation workflow
 
-Learnova supports English (`en`) and German (`de`). **Settings → Language** is the only language control. For a signed-in student, `User.preferred_language` is authoritative and survives navigation, refreshes, logout/login, server restarts, lessons, quizzes, practice, and exams. For a visitor, the Flask session is used; on the first visit only, the browser language is considered. English is the final fallback.
+Learnova ships four complete interface languages: English (`en`), German (`de`), French (`fr`) and Spanish (`es`). **Settings → Language** is the only language control. For a signed-in student, `User.preferred_language` is authoritative and survives navigation, refreshes, logout/login, server restarts, lessons, quizzes, practice, and exams. For a visitor, the Flask session is used; on the first visit only, the browser language is considered. English is the final fallback.
 
 The resolver order is:
 
@@ -21,24 +21,34 @@ The resolver order is:
 3. supported browser language on the first visit;
 4. English.
 
-Interface messages and the browser-side dictionary live in the single source catalogue [i18n.py](i18n.py). Templates use `_()` and JavaScript reads `window.LEARNOVA_I18N`, which the shared base template creates for the active request. Learning-content language is separate from interface rendering: every tutor, lesson, adaptive-practice, answer-feedback, chat, section, and exam generation request receives an explicit English or German instruction.
+Interface messages and the browser-side dictionary live in [learnova/translations/catalog.py](learnova/translations/catalog.py). English source strings are the message identifiers, so there is no separate `.pot`. German is inlined in that module and defines `REQUIRED_KEYS`; every other language is a JSON file under [learnova/translations/data/](learnova/translations/data/). The root `i18n.py` is a compatibility shim that re-exports from there.
+
+Templates use `_()` and JavaScript reads `window.LEARNOVA_I18N`, which the shared base template creates for the active request. Learning-content language is separate from interface rendering: every tutor, lesson, adaptive-practice, answer-feedback, chat, section, and exam generation request receives an explicit instruction naming one of the eight content languages in `CONTENT_LANGUAGE_NAMES`.
 
 This project uses a checked-in Python catalogue rather than gettext `.po`/`.mo` binaries, so extraction and compilation are intentionally no-op steps:
 
 ```powershell
-# Extraction: not required; English message IDs and German translations are in i18n.py.
+# Extraction: not required; English source strings are the message identifiers.
 # Compilation: not required; the catalogue is imported directly at application startup.
-python -m py_compile i18n.py
-python -m unittest tests.test_i18n -v
+python -m py_compile learnova/translations/catalog.py
+python -m pytest tests/test_i18n.py -q
 ```
 
-To add another language later:
+`SUPPORTED_LANGUAGES` is **computed, not edited**. A language in the `LANGUAGES` registry
+becomes selectable only once its catalogue covers every one of the ~1250 `REQUIRED_KEYS`,
+so an unfinished translation never shows a half-English interface. Nineteen further
+languages are registered and not yet selectable; Arabic is the closest, and is also the
+only right-to-left language.
 
-1. add its code to `SUPPORTED_LANGUAGES` in `i18n.py`;
-2. add a complete translation mapping and make `translate()` select it;
-3. add the option to `templates/settings.html` and onboarding;
-4. extend `language_instruction()` with an explicit AI response instruction;
-5. copy the persistence, page, JavaScript-catalogue, validation, and user-isolation tests in `tests/test_i18n.py`.
+To finish a language:
+
+1. add or complete `learnova/translations/data/<code>.json` — `python scripts/translate_catalog.py <code>` generates a starting point;
+2. confirm it is selectable: `python -c "from learnova.translations.catalog import SUPPORTED_LANGUAGES; print(SUPPORTED_LANGUAGES)"`;
+3. if the language should also be an AI content language, add it to `CONTENT_LANGUAGE_NAMES` in `app.py`;
+4. run `python -m pytest tests/test_i18n.py -q`, which checks catalogue coverage, persistence, the JavaScript catalogue, validation and user isolation.
+
+The settings selector and onboarding read `language_options()`, so a newly complete
+language appears in both with no template change.
 
 ## Optional voice accessibility
 

@@ -97,12 +97,6 @@ def preset_label(value: str | None) -> str:
     return PRESETS[normalize_preset(value)]["label"]
 
 
-def preset_description(value: str | None) -> str:
-    """English source description for a preset. Wrap in translate() to localise."""
-
-    return PRESETS[normalize_preset(value)]["description"]
-
-
 def system_prompt(preset: str | None, *, language: str = "English",
                   learner_context: str = "") -> str:
     """Build the full system prompt for one conversation.

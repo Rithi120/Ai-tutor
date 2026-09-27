@@ -5,8 +5,11 @@ Python validation, and frontend dictionaries all share one small catalogue.
 """
 
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # Interface-language registry. `native` is the endonym shown in the selector; `rtl`
 # drives the page direction. A language becomes SELECTABLE only when it has a complete
@@ -155,7 +158,6 @@ GERMAN = {
     "Create new set": "Neues Set erstellen",
     "You have no flashcards yet. Create your first set to start studying.": "Du hast noch keine Karteikarten. Erstelle dein erstes Set, um mit dem Lernen zu beginnen.",
     "Study modes": "Lernmodi",
-    "Coming soon": "Demnächst verfügbar",
     "Learn": "Lernen",
     "Test": "Test",
     "Match": "Zuordnen",
@@ -175,7 +177,6 @@ GERMAN = {
     "This flashcard set could not be found.": "Dieses Karteikarten-Set wurde nicht gefunden.",
     "Recall grades update spaced-repetition scheduling on the server. Per-session counters are not stored.":
         "Bewertungen aktualisieren die Wiederholungsplanung auf dem Server. Sitzungszähler werden nicht gespeichert.",
-    "Image and PDF sources are coming soon.": "Bild- und PDF-Quellen sind bald verfügbar.",
     "Have images or a PDF?": "Hast du Bilder oder ein PDF?",
     "Import from images or PDF": "Aus Bildern oder PDF importieren",
     # Study-mode config, controls and results (were leaking English under a German UI)
@@ -1576,14 +1577,30 @@ REQUIRED_KEYS = frozenset(GERMAN.keys())
 
 
 def _load_catalog(code: str) -> dict[str, str] | None:
+    """Load one locale file, or None when it is absent or unusable.
+
+    A missing file is ordinary: most registered languages have no translation yet. A file
+    that exists but cannot be read is not ordinary - it silently removes a language that
+    someone believed was shipping - so it is logged. Loading still returns None rather
+    than raising, because one broken locale must not stop the application from starting.
+    """
+
     path = _DATA_DIR / f"{code}.json"
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as error:
+        _log.warning(
+            "Translation catalogue for %r could not be read (%s); the language will not "
+            "be selectable.", code, error)
         return None
-    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        _log.warning(
+            "Translation catalogue for %r is not a JSON object; the language will not be "
+            "selectable.", code)
+        return None
+    return {str(key): str(value) for key, value in data.items()}
 
 
 # Build the catalogue map. German is inlined; every other non-English locale is loaded

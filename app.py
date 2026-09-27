@@ -8810,10 +8810,15 @@ def update_public_ranking(public_set: "PublicFlashcardSet") -> None:
         age_days = (utcnow() - as_utc(public_set.published_at)).total_seconds() / 86400
         recency = max(0.0, 1.0 - age_days / 30.0)
     penalty = min(0.5, public_set.report_count * 0.05)
+    # completion_rate and helpful_votes are omitted, not zeroed. Nothing tracks how much
+    # of a set a learner finished, and no route increments helpful_votes, so passing 0.0
+    # would score every set as "measured, and nobody finished it" and quietly cap the
+    # ranking at three quarters of the formula. Omitting them normalises the weights over
+    # what is actually measured; the day either ships, pass it here and its weight
+    # returns with no change to the formula.
     public_set.ranking_score = community.ranking_score(
-        ai_overall=public_set.ai_overall, student_bayesian=bayesian, completion_rate=0.0,
-        helpful_votes=public_set.helpful_votes, save_count=public_set.save_count,
-        recency=recency, penalty=penalty)
+        ai_overall=public_set.ai_overall, student_bayesian=bayesian,
+        save_count=public_set.save_count, recency=recency, penalty=penalty)
 
 
 def active_publication_version(
@@ -9764,8 +9769,11 @@ def community_library():
     ):
         if args.get(field):
             query = query.where(column == args.get(field))
-    if args.get("teacher_verified") in {"1", "true", "yes"}:
-        query = query.where(PublicFlashcardSet.teacher_verified.is_(True))
+    # No `teacher_verified` filter. The column exists and is serialized, but nothing
+    # sets it yet - there is no teacher-verification route or review step - so filtering
+    # on it could only ever return an empty library. Offering a filter that is guaranteed
+    # to find nothing is worse than not offering it. Restore this block on the day
+    # something writes the column.
     if args.get("min_ai"):
         try:
             query = query.where(PublicFlashcardSet.ai_overall >= float(args["min_ai"]))

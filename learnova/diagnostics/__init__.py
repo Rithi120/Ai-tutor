@@ -53,7 +53,6 @@ from .taxonomy import (
     INTERVENTIONS,
     NEXT_ACTIONS,
     diagnosis_label,
-    intervention_label,
     next_action_label,
 )
 from .verification import apply_second_opinion, check_answer, verify_diagnosis
@@ -84,7 +83,6 @@ __all__ = [
     "due_for_retrieval",
     "evidence_summary",
     "insufficient_evidence_diagnosis",
-    "intervention_label",
     "is_unassessed",
     "mastery_reason",
     "merge_prerequisite",

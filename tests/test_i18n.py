@@ -200,5 +200,48 @@ class LanguageSystemTests(unittest.TestCase):
         self.assertEqual(application.SESSIONS[session_id]["language"], "German")
 
 
+class CatalogueLoadingTests(unittest.TestCase):
+    """How the catalogue behaves when a locale file is missing or broken."""
+
+    def test_a_missing_locale_file_is_silent(self):
+        """Most registered languages have no file yet; that is not a fault."""
+
+        from learnova.translations import catalog
+        with self.assertNoLogs(catalog._log, level="WARNING"):
+            self.assertIsNone(catalog._load_catalog("zz"))
+
+    def test_a_broken_locale_file_is_logged_rather_than_swallowed(self):
+        """A file that exists but cannot be read silently removes a language that
+        somebody believed was shipping, so it has to say so."""
+
+        from learnova.translations import catalog
+        broken = catalog._DATA_DIR / "zz.json"
+        broken.write_text("{ this is not json", encoding="utf-8")
+        try:
+            with self.assertLogs(catalog._log, level="WARNING") as captured:
+                self.assertIsNone(catalog._load_catalog("zz"))
+            self.assertIn("zz", captured.output[0])
+            self.assertIn("not be selectable", captured.output[0])
+        finally:
+            broken.unlink()
+
+    def test_a_locale_file_that_is_not_an_object_is_logged(self):
+        from learnova.translations import catalog
+        broken = catalog._DATA_DIR / "zz.json"
+        broken.write_text('["not", "an", "object"]', encoding="utf-8")
+        try:
+            with self.assertLogs(catalog._log, level="WARNING"):
+                self.assertIsNone(catalog._load_catalog("zz"))
+        finally:
+            broken.unlink()
+
+    def test_a_complete_locale_loads(self):
+        from learnova.translations import catalog
+        loaded = catalog._load_catalog("fr")
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertTrue(catalog.REQUIRED_KEYS.issubset(loaded))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,6 @@ from .presets import (
     SHARED_RULES,
     normalize_preset,
     options_for_ui,
-    preset_description,
     preset_label,
     system_prompt,
 )
@@ -49,7 +48,6 @@ __all__ = [
     "estimate_tokens",
     "normalize_preset",
     "options_for_ui",
-    "preset_description",
     "preset_label",
     "render_transcript",
     "system_prompt",

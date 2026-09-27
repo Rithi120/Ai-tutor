@@ -16,11 +16,11 @@ Task-specific prompt construction belongs to the domain service. Add a stable ta
 
 ## Add a language
 
-Extend `SUPPORTED_LANGUAGES`, the catalogue, the language-selector component, the explicit AI language instruction, and the language isolation/persistence tests. Interface language and generated learning-content language must continue to resolve from the signed-in account.
+Add a complete `learnova/translations/data/<code>.json` (`SUPPORTED_LANGUAGES` is computed from coverage, not edited), the language-selector component, the explicit AI language instruction, and the language isolation/persistence tests. Interface language and generated learning-content language must continue to resolve from the signed-in account.
 
 ## Definition of done
 
-Run the complete unit suite, byte compilation, Ruff and Pyright commands from the README. Manually smoke test desktop and mobile layouts, CSRF-protected forms, upload recovery, restart persistence, and cross-account direct URLs.
+Run the complete unit suite, byte compilation, Ruff, Pyright and `npm run test:js` commands from the README. Manually smoke test desktop and mobile layouts, CSRF-protected forms, upload recovery, restart persistence, and cross-account direct URLs.
 
 ## Extending the diagnostics engine
 
