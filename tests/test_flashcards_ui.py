@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -98,6 +99,31 @@ class FlashcardsUiTests(unittest.TestCase):
         self.assertNotIn(b"Coming soon", html)
         for mode in (b"/learn", b"/test", b"/match", b"/blast", b"/blocks"):
             self.assertIn(mode, html)
+
+    def test_every_study_mode_link_goes_somewhere_without_javascript(self):
+        """Start learning, Edit and the Flashcards card used to ship as href="#".
+
+        A fetch in overview.js pointed them at a URL the server already knew, so until
+        it finished - and permanently if it threw - clicking them did nothing at all,
+        with no error. A link must work before, during and without JavaScript.
+        """
+
+        client = self._client()
+        set_id = self._make_set(client)
+        html = client.get(f"/flashcards/{set_id}").get_data(as_text=True)
+
+        cards = re.findall(r'<a[^>]*class="[^"]*mode-card[^"]*"[^>]*href="([^"]+)"', html)
+        actions = dict(re.findall(
+            r'<a[^>]*id="(ovStudy|ovEdit)"[^>]*href="([^"]+)"', html))
+
+        # Six cards: the plain flashcards mode plus the five game modes.
+        self.assertEqual(len(cards), 6, cards)
+        self.assertEqual(set(actions), {"ovStudy", "ovEdit"}, actions)
+
+        for href in [*cards, *actions.values()]:
+            self.assertNotEqual(href, "#", "a study link is still a dead placeholder")
+            self.assertTrue(href.startswith(f"/flashcards/{set_id}/"), href)
+            self.assertEqual(client.get(href).status_code, 200, href)
 
     def test_create_page_links_to_importer_when_enabled(self):
         # Import is enabled in the testing profile, so the creator must point to the
