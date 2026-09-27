@@ -2,7 +2,7 @@
 {% block title %}{{ _('Review vocabulary') }} — Learnova{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
 {% block content %}
-<main class="vocabulary-page" data-vocabulary-review data-import-id="{{ vocabulary_import.id if vocabulary_import else '' }}" data-list-id="{{ vocabulary_list.id if vocabulary_list else '' }}">
+<main class="vocabulary-page" id="main-content" data-vocabulary-review data-import-id="{{ vocabulary_import.id if vocabulary_import else '' }}" data-list-id="{{ vocabulary_list.id if vocabulary_list else '' }}">
   <header class="vocabulary-hero"><div><h1>{{ _('Review vocabulary') }}</h1><p>{{ _('Confirm uncertain entries before creating flashcards.') }}</p></div><button id="bulkAcceptVocabulary" class="ghost-button" type="button">{{ _('Accept high-confidence entries') }}</button></header>
   <section class="vocabulary-panel">
     <div class="review-actions"><button id="selectAllVocabulary" type="button">{{ _('Select all') }}</button><button id="deselectAllVocabulary" type="button">{{ _('Deselect all') }}</button><button id="addVocabularyEntry" type="button">{{ _('Add entry') }}</button></div>

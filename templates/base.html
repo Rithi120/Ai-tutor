@@ -1,9 +1,16 @@
 <!doctype html>
-<html lang="{{ current_language }}">
+<html lang="{{ current_language }}" dir="{{ interface_direction }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#6e5cff">
+  <script>
+    try {
+      const savedTheme = localStorage.getItem("learnova:theme");
+      document.documentElement.dataset.theme = savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } catch (_) { document.documentElement.dataset.theme = "light"; }
+  </script>
   <title>{% block title %}{{ _('Learnova — Your personal study tutor') }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,8 +20,17 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study-planner.css') }}">
   {% block head %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-layouts.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-study.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-pages.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css') }}">
+  {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css') }}">{% endif %}
 </head>
 <body class="{{ 'authenticated-app' if current_user.is_authenticated else '' }} {% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main-content">{{ _('Skip to main content') }}</a>
   {% if ai_mode_badge %}<div class="ai-mode-badge ai-mode-{{ ai_mode }}" role="status" aria-label="Development AI mode">{{ ai_mode_badge }}</div>{% endif %}
   {% if current_user.is_authenticated %}<div class="app-background" aria-hidden="true"><i></i><i></i></div>{% endif %}
   {% block navbar %}{% include 'components/_navbar.html' %}{% endblock %}
@@ -32,6 +48,7 @@
   <script type="module" src="{{ url_for('static', filename='js/core.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/navigation.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/motion.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/study-planner.js') }}"></script>
   {% block scripts %}{% endblock %}
   <script type="module" src="{{ url_for('static', filename='js/speech-to-text.js') }}"></script>

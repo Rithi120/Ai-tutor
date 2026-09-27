@@ -12,6 +12,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .prompts import STRUCTURED_TASKS
+
 
 FAILURE_CATEGORIES = {
     "provider_timeout", "provider_rate_limit", "invalid_json", "schema_validation",
@@ -393,6 +395,71 @@ def _flashcard_review(data: Any, context: dict[str, Any]) -> None:
     _text(root.get("summary"), "summary")
 
 
+def _mistake_analysis(data: Any, context: dict[str, Any]) -> None:
+    from learnova.analysis.service import AnalysisSchemaError, validate_analysis
+    try:
+        validate_analysis(data)
+    except AnalysisSchemaError as error:
+        _fail(f"analysis schema: {error}")
+
+
+def _answer_diagnosis(data: Any, context: dict[str, Any]) -> None:
+    """The evidence-linked diagnosis:v2 contract (learnova.diagnostics.schema).
+
+    Only unusable output raises here, because each rejection costs one corrective retry.
+    Claims that are merely unsupported are dropped by the normalizer and reported through
+    the result's own `validation_status`.
+    """
+
+    from learnova.diagnostics.schema import DiagnosisSchemaError, validate_diagnosis
+    try:
+        validate_diagnosis(data)
+    except DiagnosisSchemaError as error:
+        _fail(f"diagnosis schema: {error}")
+
+
+def _diagnosis_verification(data: Any, context: dict[str, Any]) -> None:
+    root = _dict(data, "verification")
+    if not isinstance(root.get("agrees"), bool):
+        _fail("verification.agrees must be a boolean")
+    if not root["agrees"]:
+        _text(root.get("reason"), "verification.reason")
+
+
+def _question_generation(data: Any, context: dict[str, Any]) -> None:
+    """Structural validation only; alignment, answerability and duplicates are checked
+    deterministically by learnova.diagnostics.question_spec once the object is parsed."""
+
+    root = _dict(data, "question generation")
+    question = _question(root.get("question", root.get("next_question")), require_subject=False)
+    for field in ("solution_steps", "rubric"):
+        if field in question:
+            _list(question.get(field), f"question.{field}")
+    recent = {
+        re.sub(r"\W+", " ", str(item)).casefold().strip()
+        for item in (context.get("avoid_prompts") or [])
+    }
+    prompt = re.sub(r"\W+", " ", question["prompt"]).casefold().strip()
+    if prompt and prompt in recent:
+        _fail("question duplicates a recently answered question")
+
+
+def _content_moderation(data: Any, context: dict[str, Any]) -> None:
+    """The context-aware moderation:v1 contract (learnova.moderation.schema).
+
+    Structural validation only. Evidence grounding - checking that a flagged safety
+    dimension quotes text that actually occurs in the submission - needs the submitted
+    content, which the gateway does not have, so it runs in `normalize_classification`
+    at the call site.
+    """
+
+    from learnova.moderation.schema import ModerationSchemaError, validate_classification
+    try:
+        validate_classification(data)
+    except ModerationSchemaError as error:
+        _fail(str(error))
+
+
 def _translation(data: Any, context: dict[str, Any]) -> None:
     values = _list(_dict(data, "translation").get("translations"), "translations")
     if context.get("texts") is not None and len(values) != len(context["texts"]):
@@ -404,10 +471,15 @@ def _translation(data: Any, context: dict[str, Any]) -> None:
 VALIDATORS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
     "lesson_generation": _lesson, "quiz_generation": _quiz,
     "answer_evaluation": _answer, "translation": _translation,
+    "mistake_analysis": _mistake_analysis,
+    "answer_diagnosis": _answer_diagnosis,
+    "diagnosis_verification": _diagnosis_verification,
+    "question_generation": _question_generation,
     "ocr_document_recognition": _ocr, "project_section_generation": _project,
     "adaptive_practice": _adaptive, "final_exam_generation": _exam,
     "final_exam_evaluation": _exam_evaluation, "flashcard_generation": _flashcards,
     "flashcard_review": _flashcard_review,
+    "content_moderation": _content_moderation,
 }
 TASK_SCHEMAS = {
     task_type: TaskSchema(name=f"{task_type}_schema", validator=validator)
@@ -420,7 +492,11 @@ def _validate_output(task_type: str, output_text: str, prompt_version: str, cont
         raise AIValidationError("schema_validation", "response was empty")
     if len(output_text) > max_characters:
         raise AIValidationError("token_limit_exceeded", "response exceeded the configured size limit")
-    if task_type == "tutor_chat":
+    if task_type not in STRUCTURED_TASKS:
+        # Conversational tasks return prose. There is no JSON contract to parse, and
+        # attempting to parse one would reject every valid answer. `STRUCTURED_TASKS` is
+        # the single source of truth for which tasks have a contract - naming the tasks
+        # here as well is how a new conversational task gets validated as if it were JSON.
         return ValidationReport(task_type, prompt_version, True)
     cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", output_text.strip()))
     try:

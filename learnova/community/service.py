@@ -15,9 +15,13 @@ from __future__ import annotations
 from typing import Any
 
 
+# "pending_moderation" and "changes_requested" were added with the safety gate: a
+# submission now waits for moderation before the quality review runs, and a fixable
+# moderation outcome is a distinct state from a rejection so the UI can offer an edit
+# instead of a dead end.
 PUBLICATION_STATES = {
-    "draft", "pending_ai_review", "pending_manual_review", "approved", "rejected",
-    "hidden", "unpublished",
+    "draft", "pending_moderation", "pending_ai_review", "pending_manual_review",
+    "approved", "changes_requested", "rejected", "hidden", "unpublished",
 }
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 AUTHOR_DISPLAY = {"username", "nickname", "anonymous"}

@@ -4,9 +4,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
-<main class="cards-page creator-page">
+<main class="cards-page creator-page" id="main-content">
   <header class="cards-header">
-    <h1 id="creatorHeading">{{ _('Create flashcards') if set_id is none else _('Edit flashcards') }}</h1>
+    <div><span class="eyebrow">{{ _('FAST CREATOR') }}</span><h1 id="creatorHeading">{{ _('Create flashcards') if set_id is none else _('Edit flashcards') }}</h1><p class="cards-subtitle">{{ _('Write the essentials first. Everything else can wait.') }}</p></div>
     <a class="ghost-button" href="{{ url_for('flashcards_page') }}">← {{ _('Back to library') }}</a>
   </header>
 
@@ -16,6 +16,9 @@
       <label for="setTitle">{{ _('Set title') }}</label>
       <input type="text" id="setTitle" maxlength="200" placeholder="{{ _('Untitled set') }}">
     </div>
+    <details class="set-more">
+      <summary>{{ _('More') }} <span>{{ _('Description, subject and tags') }}</span></summary>
+      <div class="set-more-body">
     <div class="field">
       <label for="setDescription">{{ _('Description') }}</label>
       <textarea id="setDescription" rows="2" maxlength="2000"></textarea>
@@ -38,6 +41,8 @@
         <select id="metaVisibility"><option value="private">{{ _('Private (only me)') }}</option></select></div>
     </div>
     <div class="field"><label for="metaTags">{{ _('Tags') }}</label><input type="text" id="metaTags" placeholder="cells, biology"></div>
+      </div>
+    </details>
   </section>
 
   <!-- AI generation (collapsible) -->
@@ -50,14 +55,16 @@
           <option value="text">{{ _('Paste text or notes') }}</option>
           <option value="topic">{{ _('Enter a topic') }}</option>
         </select>
-        <p class="field-hint">{{ _('Image and PDF sources are coming soon.') }}</p>
+        {% if feature_flags.flashcard_image_import or feature_flags.flashcard_pdf_import %}
+        <p class="field-hint">{{ _('Have images or a PDF?') }} <a href="{{ url_for('flashcards_import_page') }}">{{ _('Import from images or PDF') }}</a></p>
+        {% endif %}
       </div>
       <div class="field" data-gen-source="text"><label for="genText">{{ _('Your text or notes') }}</label><textarea id="genText" rows="5"></textarea></div>
       <div class="field hidden" data-gen-source="topic"><label for="genTopic">{{ _('Topic') }}</label><input type="text" id="genTopic"></div>
       <div class="field-row">
         <div class="field"><label for="genCount">{{ _('Number of cards') }}</label><input type="number" id="genCount" min="1" max="30" value="10"></div>
         <div class="field"><label for="genType">{{ _('Card type') }}</label>
-          <select id="genType"><option value="mixed">{{ _('Mixed') }}</option><option value="question_answer">Q &amp; A</option><option value="term_definition">Term / definition</option><option value="formula_explanation">Formula</option></select></div>
+          <select id="genType"><option value="mixed">{{ _('Mixed') }}</option><option value="question_answer">Q &amp; A</option><option value="term_definition">{{ _('Term / definition') }}</option><option value="formula_explanation">{{ _('Formula') }}</option></select></div>
         <div class="field"><label for="genDifficulty">{{ _('Difficulty') }}</label>
           <select id="genDifficulty"><option value="adaptive">{{ _('Adaptive') }}</option><option value="easy">{{ _('Easy') }}</option><option value="medium" selected>{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select></div>
         <div class="field"><label for="genContentLang">{{ _('Content language') }}</label>
@@ -77,6 +84,7 @@
   <!-- Cards -->
   <div class="creator-cards-head">
     <span id="cardCount" class="editor-hint"></span>
+    <span id="autosaveState" class="ln-status" role="status" aria-live="polite">{{ _('Draft ready') }}</span>
   </div>
   <ol id="cardRows" class="card-rows"></ol>
   <div class="creator-add-row">
@@ -86,7 +94,7 @@
 
   <!-- Sticky save bar -->
   <div id="saveBar" class="save-bar hidden" role="region" aria-label="{{ _('You have unsaved changes') }}">
-    <span>{{ _('You have unsaved changes') }}</span>
+    <span><strong>{{ _('Unsaved changes') }}</strong><small>{{ _('Ctrl/⌘ + S to save') }}</small></span>
     <div class="save-bar-actions">
       <button type="button" id="discardButton" class="ghost-button">{{ _('Discard') }}</button>
       <button type="button" id="saveButton" class="primary-button">{{ _('Save set') }}</button>

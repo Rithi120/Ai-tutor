@@ -1,0 +1,1385 @@
+{
+  "_meta": {
+    "purpose": "Labeled cases for the adaptive diagnostics evaluation harness.",
+    "replay": "model_output is replayed, so the suite is deterministic and free.",
+    "contract": "diagnosis:v2"
+  },
+  "cases": [
+    {
+      "id": "correct-valid-reasoning",
+      "note": "Right answer with sound working. Correct, but one answer is not a promotion.",
+      "student_answer": "4",
+      "expected_answer": "4",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 70.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 1,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.3,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0,
+          "rubric_evidence": [
+            {
+              "criterion": "Isolated x correctly",
+              "met": true,
+              "evidence_ids": [
+                "e1"
+              ]
+            }
+          ]
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "Both steps are valid.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "2x = 8, so x = 4"
+          }
+        ],
+        "confidence": {
+          "value": 0.95,
+          "basis": "The working is shown in full."
+        },
+        "student_facing_explanation": "Both steps are right and x = 4 is correct."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "primary_diagnosis": "correct",
+        "next_action": "maintain_difficulty",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "correct-streak-promotes",
+      "note": "Two correct in a row, no hints, mastery and evidence above the gates.",
+      "student_answer": "4",
+      "expected_answer": "4",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 78.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 2,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 3.0,
+        "uncertainty": 0.25,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "Correct and justified.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "x = 4 because 8 divided by 2 is 4"
+          }
+        ],
+        "confidence": {
+          "value": 0.92,
+          "basis": "Verified against the expected answer."
+        },
+        "student_facing_explanation": "Correct, and your justification holds."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "primary_diagnosis": "correct",
+        "next_action": "increase_difficulty",
+        "difficulty_delta": 1
+      }
+    },
+    {
+      "id": "correct-with-hint-does-not-promote",
+      "note": "A hinted streak is not independent evidence, so no promotion.",
+      "student_answer": "4",
+      "expected_answer": "4",
+      "question_type": "short_answer",
+      "hints_used": true,
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 80.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 3,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.2,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "Correct after the hint.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "x = 4"
+          }
+        ],
+        "confidence": {
+          "value": 0.8,
+          "basis": "Matches the expected answer."
+        },
+        "student_facing_explanation": "Correct. Try the next one without the hint."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "next_action": "maintain_difficulty",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "slip-after-correct-reasoning",
+      "note": "Method right, arithmetic slip. Must NOT reduce difficulty.",
+      "student_answer": "7",
+      "expected_answer": "4",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 1,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "partially_correct",
+        "score": {
+          "points": 0.5,
+          "max_points": 1.0,
+          "rubric_evidence": [
+            {
+              "criterion": "Chose the correct operation",
+              "met": true,
+              "evidence_ids": [
+                "e1"
+              ]
+            },
+            {
+              "criterion": "Arithmetic carried out correctly",
+              "met": false,
+              "evidence_ids": [
+                "e2"
+              ]
+            }
+          ]
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "arithmetic_or_transcription_error",
+          "statement": "8 divided by 2 was written as 7.",
+          "evidence_ids": [
+            "e2"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "2x = 8"
+          },
+          {
+            "id": "e2",
+            "source": "student_answer",
+            "quote": "x = 7"
+          }
+        ],
+        "confidence": {
+          "value": 0.9,
+          "basis": "The division step is written out."
+        },
+        "student_facing_explanation": "Your method was right. 8 divided by 2 is 4, not 7."
+      },
+      "expected": {
+        "correctness_status": "partially_correct",
+        "primary_diagnosis": "arithmetic_or_transcription_error",
+        "next_action": "targeted_practice",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "misconception-first-time",
+      "note": "A specific wrong idea, quoted. First occurrence gets a worked example.",
+      "student_answer": "The area is 2 times pi times r",
+      "expected_answer": "pi r squared",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Circles",
+        "subject": "Mathematics",
+        "mastery_score": 40.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Circles"
+        ],
+        "primary_diagnosis": {
+          "tag": "conceptual_misconception",
+          "statement": "The circumference formula was used for the area.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "2 times pi times r"
+          },
+          {
+            "id": "e2",
+            "source": "question",
+            "quote": "Find the area of a circle of radius r"
+          }
+        ],
+        "misconception_description": "Area and circumference are treated as the same formula.",
+        "confidence": {
+          "value": 0.9,
+          "basis": "The written formula is the circumference."
+        },
+        "student_facing_explanation": "That is the circumference. The area is pi times r squared."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "conceptual_misconception",
+        "next_action": "worked_example_then_practice",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "misconception-repeated-contrasts",
+      "note": "Same misconception twice before: contrast the two ideas instead of re-explaining.",
+      "student_answer": "2 pi r",
+      "expected_answer": "pi r squared",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Circles",
+        "subject": "Mathematics",
+        "mastery_score": 35.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 1,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "history": [
+        {
+          "primary_diagnosis": "conceptual_misconception",
+          "concept": "Circles",
+          "next_action": "worked_example_then_practice"
+        },
+        {
+          "primary_diagnosis": "conceptual_misconception",
+          "concept": "Circles",
+          "next_action": "targeted_practice"
+        }
+      ],
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Circles"
+        ],
+        "primary_diagnosis": {
+          "tag": "conceptual_misconception",
+          "statement": "Circumference used where area was asked for, again.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "2 pi r"
+          }
+        ],
+        "misconception_description": "Area and circumference remain interchangeable.",
+        "confidence": {
+          "value": 0.88,
+          "basis": "The same formula appears a third time."
+        },
+        "student_facing_explanation": "This is the circumference again; area uses r squared."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "conceptual_misconception",
+        "next_action": "misconception_contrast",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "procedural-order-of-operations",
+      "student_answer": "27",
+      "expected_answer": "-9",
+      "question_type": "calculation",
+      "state": {
+        "concept": "Order of operations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Order of operations"
+        ],
+        "primary_diagnosis": {
+          "tag": "procedural_error",
+          "statement": "Addition was carried out before multiplication.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "5 + 4 = 9, then 9 times 3 = 27"
+          }
+        ],
+        "confidence": {
+          "value": 0.9,
+          "basis": "The step order is written out."
+        },
+        "student_facing_explanation": "Multiplication comes before addition here."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "procedural_error",
+        "next_action": "worked_example_then_practice",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "prerequisite-gap-reduces-difficulty",
+      "student_answer": "x = -2",
+      "expected_answer": "x = 2",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 30.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 1,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 3
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "prerequisite_gap",
+          "statement": "Signed-integer subtraction is the step that failed.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "prerequisite_gaps": [
+          {
+            "concept": "Adding and subtracting signed integers",
+            "evidence_ids": [
+              "e1"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "6 - 8 = 2"
+          }
+        ],
+        "confidence": {
+          "value": 0.85,
+          "basis": "The signed subtraction is written out."
+        },
+        "student_facing_explanation": "6 - 8 is -2. Signed subtraction is the piece to revisit."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "prerequisite_gap",
+        "next_action": "prerequisite_reteach",
+        "difficulty_delta": -1
+      }
+    },
+    {
+      "id": "interpretation-answered-other-quantity",
+      "student_answer": "24",
+      "expected_answer": "20",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Rectangles",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Rectangles"
+        ],
+        "primary_diagnosis": {
+          "tag": "interpretation_error",
+          "statement": "The area was calculated where the perimeter was asked for.",
+          "evidence_ids": [
+            "e1",
+            "e2"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "question",
+            "quote": "Find the perimeter of a 4 by 6 rectangle"
+          },
+          {
+            "id": "e2",
+            "source": "student_answer",
+            "quote": "4 times 6 = 24"
+          }
+        ],
+        "confidence": {
+          "value": 0.92,
+          "basis": "The multiplication shows which quantity was found."
+        },
+        "student_facing_explanation": "You found the area. The perimeter adds all four sides."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "interpretation_error",
+        "next_action": "clarify_instruction",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "one-word-answer-no-working",
+      "note": "Nothing to diagnose. Must return insufficient_evidence, not invent a cause.",
+      "student_answer": "no",
+      "expected_answer": "Photosynthesis converts light to glucose",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Photosynthesis",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "insufficient_evidence",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Photosynthesis"
+        ],
+        "primary_diagnosis": {
+          "tag": "insufficient_evidence",
+          "statement": "The response is a single word with no reasoning."
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "no"
+          }
+        ],
+        "missing_evidence": true,
+        "missing_evidence_reason": "No reasoning or terminology was given.",
+        "confidence": {
+          "value": 0.3,
+          "basis": "Nothing in the response indicates a cause."
+        },
+        "student_facing_explanation": "There is not enough here to see what you were thinking."
+      },
+      "expected": {
+        "correctness_status": "insufficient_evidence",
+        "primary_diagnosis": "insufficient_evidence",
+        "next_action": "diagnostic_check",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "repeated-insufficient-escalates",
+      "note": "Two undiagnosable responses already recorded; a human should look at it.",
+      "student_answer": "?",
+      "expected_answer": "Photosynthesis converts light to glucose",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Photosynthesis",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "history": [
+        {
+          "primary_diagnosis": "insufficient_evidence",
+          "concept": "Photosynthesis"
+        },
+        {
+          "primary_diagnosis": "insufficient_evidence",
+          "concept": "Photosynthesis"
+        }
+      ],
+      "model_output": {
+        "correctness_status": "insufficient_evidence",
+        "concepts_assessed": [
+          "Photosynthesis"
+        ],
+        "primary_diagnosis": {
+          "tag": "insufficient_evidence",
+          "statement": "No content."
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "?"
+          }
+        ],
+        "missing_evidence": true,
+        "missing_evidence_reason": "The response contains no answer.",
+        "confidence": {
+          "value": 0.2,
+          "basis": "Empty response."
+        },
+        "student_facing_explanation": "Nothing was submitted to work with."
+      },
+      "expected": {
+        "correctness_status": "insufficient_evidence",
+        "next_action": "human_review_or_insufficient_evidence",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "invented-misconception-is-dropped",
+      "note": "Anti-hallucination: a misconception with no resolvable evidence id must not survive.",
+      "student_answer": "12",
+      "expected_answer": "15",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "conceptual_misconception",
+          "statement": "The student believes multiplication is repeated addition of the wrong term.",
+          "evidence_ids": [
+            "e9"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "12"
+          }
+        ],
+        "misconception_description": "Invented without support.",
+        "confidence": {
+          "value": 0.9,
+          "basis": "Asserted."
+        },
+        "student_facing_explanation": "That is not correct."
+      },
+      "expected": {
+        "correctness_status": "insufficient_evidence",
+        "primary_diagnosis": "insufficient_evidence",
+        "next_action": "diagnostic_check",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "unsupported-prerequisite-is-dropped",
+      "note": "A prerequisite gap with no quote must not reach the knowledge model.",
+      "student_answer": "9",
+      "expected_answer": "12",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "procedural_error",
+          "statement": "The second step was skipped.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "prerequisite_gaps": [
+          {
+            "concept": "Times tables",
+            "evidence_ids": []
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "3x = 9 so x = 9"
+          }
+        ],
+        "confidence": {
+          "value": 0.8,
+          "basis": "The skipped step is visible."
+        },
+        "student_facing_explanation": "You stopped one step early: divide both sides by 3."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "procedural_error",
+        "next_action": "worked_example_then_practice"
+      }
+    },
+    {
+      "id": "ocr-low-confidence-marks-uncertainty",
+      "note": "An unreadable scan is evidence uncertainty, never a student mistake.",
+      "student_answer": "x = l4",
+      "expected_answer": "x = 14",
+      "question_type": "short_answer",
+      "ocr_confidence": 0.45,
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "The value is right.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "ocr",
+            "quote": "x = l4"
+          }
+        ],
+        "confidence": {
+          "value": 0.6,
+          "basis": "The scan is hard to read."
+        },
+        "student_facing_explanation": "This looks correct, though the scan was hard to read."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "primary_diagnosis": "correct"
+      }
+    },
+    {
+      "id": "wrong-answer-key-blames-the-item",
+      "note": "The key says 54 for 7x8. The student is right and must not be penalised.",
+      "student_answer": "56",
+      "expected_answer": "54",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Multiplication",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Multiplication"
+        ],
+        "primary_diagnosis": {
+          "tag": "question_or_key_flawed",
+          "statement": "The supplied answer key is wrong: 7 times 8 is 56.",
+          "evidence_ids": [
+            "e1",
+            "e2"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "expected_answer",
+            "quote": "54"
+          },
+          {
+            "id": "e2",
+            "source": "student_answer",
+            "quote": "56"
+          }
+        ],
+        "confidence": {
+          "value": 0.99,
+          "basis": "Independently recomputed."
+        },
+        "student_facing_explanation": "Your answer is right; the stored answer was wrong."
+      },
+      "expected": {
+        "primary_diagnosis": "question_or_key_flawed",
+        "next_action": "human_review_or_insufficient_evidence",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "german-incomplete-reasoning",
+      "student_answer": "Weil es so ist.",
+      "expected_answer": "Weil der Druck mit der Tiefe zunimmt.",
+      "question_type": "explanation",
+      "state": {
+        "concept": "Druck",
+        "subject": "Physics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "partially_correct",
+        "score": {
+          "points": 0.3,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Druck"
+        ],
+        "primary_diagnosis": {
+          "tag": "incomplete_reasoning",
+          "statement": "Die Begründung nennt keinen physikalischen Grund.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "Weil es so ist."
+          }
+        ],
+        "confidence": {
+          "value": 0.85,
+          "basis": "Die Antwort enthält keine Begründung."
+        },
+        "student_facing_explanation": "Nenne den Grund: Der Druck steigt mit der Wassertiefe."
+      },
+      "expected": {
+        "correctness_status": "partially_correct",
+        "primary_diagnosis": "incomplete_reasoning",
+        "next_action": "targeted_practice",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "german-correct-alternative-wording",
+      "student_answer": "Die Hälfte",
+      "expected_answer": "0,5",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Brüche",
+        "subject": "Mathematics",
+        "mastery_score": 60.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 1,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Brüche"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "Gleichwertige Formulierung.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "Die Hälfte"
+          }
+        ],
+        "confidence": {
+          "value": 0.9,
+          "basis": "Inhaltlich identisch mit 0,5."
+        },
+        "student_facing_explanation": "Richtig, die Hälfte ist 0,5."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "primary_diagnosis": "correct",
+        "next_action": "maintain_difficulty",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "guessing-triggers-diagnostic-check",
+      "student_answer": "b",
+      "expected_answer": "c",
+      "question_type": "multiple_choice",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "guessing_or_uncertain",
+          "statement": "The option changed three times with no working.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "b"
+          }
+        ],
+        "confidence": {
+          "value": 0.5,
+          "basis": "Answer changes with no reasoning."
+        },
+        "student_facing_explanation": "Let us check what you already know about this step."
+      },
+      "expected": {
+        "correctness_status": "incorrect",
+        "primary_diagnosis": "guessing_or_uncertain",
+        "next_action": "diagnostic_check",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "no-oscillation-after-a-reduction",
+      "note": "Last move lowered the difficulty; a promotion now would swing the level.",
+      "student_answer": "4",
+      "expected_answer": "4",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Linear equations",
+        "subject": "Mathematics",
+        "mastery_score": 75.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 2,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.25,
+        "difficulty_level": 1
+      },
+      "history": [
+        {
+          "primary_diagnosis": "prerequisite_gap",
+          "concept": "Linear equations",
+          "next_action": "reduce_difficulty"
+        }
+      ],
+      "model_output": {
+        "correctness_status": "correct",
+        "score": {
+          "points": 1.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Linear equations"
+        ],
+        "primary_diagnosis": {
+          "tag": "correct",
+          "statement": "Correct.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "x = 4"
+          }
+        ],
+        "confidence": {
+          "value": 0.9,
+          "basis": "Matches the expected answer."
+        },
+        "student_facing_explanation": "Correct."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "next_action": "maintain_difficulty",
+        "difficulty_delta": 0
+      }
+    },
+    {
+      "id": "deterministic-conflict-corrects-the-model",
+      "note": "The model marked a matching answer wrong; code overrides it.",
+      "student_answer": "0.5",
+      "expected_answer": "1/2",
+      "question_type": "short_answer",
+      "state": {
+        "concept": "Fractions",
+        "subject": "Mathematics",
+        "mastery_score": 50.0,
+        "status": "learning",
+        "attempts": 4,
+        "consecutive_correct": 0,
+        "consecutive_incorrect": 0,
+        "evidence_weight": 2.0,
+        "uncertainty": 0.33,
+        "difficulty_level": 2
+      },
+      "model_output": {
+        "correctness_status": "incorrect",
+        "score": {
+          "points": 0.0,
+          "max_points": 1.0
+        },
+        "concepts_assessed": [
+          "Fractions"
+        ],
+        "primary_diagnosis": {
+          "tag": "conceptual_misconception",
+          "statement": "Decimal and fraction treated as different values.",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source": "student_answer",
+            "quote": "0.5"
+          }
+        ],
+        "misconception_description": "Decimals are not recognised as fractions.",
+        "confidence": {
+          "value": 0.7,
+          "basis": "The form differs from the key."
+        },
+        "student_facing_explanation": "That is written as a decimal."
+      },
+      "expected": {
+        "correctness_status": "correct",
+        "primary_diagnosis": "correct"
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-valid",
+      "constraints": {
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "cognitive_demand": "apply",
+        "question_type": "short_answer",
+        "purpose": "Check sign handling.",
+        "learning_objective": "Solve two-step linear equations."
+      },
+      "question": {
+        "id": "q1",
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "type": "short_answer",
+        "prompt": "Solve for x and show the subtraction: 3x + 5 = 20.",
+        "hint": "Undo the addition first.",
+        "options": [],
+        "expected_answer": "5"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-duplicate-rejected",
+      "constraints": {
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "question_type": "short_answer"
+      },
+      "recent_prompts": [
+        "Solve for x and show the subtraction: 3x + 5 = 20."
+      ],
+      "question": {
+        "id": "q2",
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "type": "short_answer",
+        "prompt": "Solve for x and show the subtraction: 3x + 5 = 20.",
+        "hint": "Undo the addition.",
+        "options": [],
+        "expected_answer": "5"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "not_duplicate"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-wrong-answer-key-rejected",
+      "note": "Hallucinated answer key: the arithmetic in the prompt says otherwise.",
+      "constraints": {
+        "concept": "Arithmetic",
+        "difficulty": 1,
+        "question_type": "calculation"
+      },
+      "question": {
+        "id": "q3",
+        "concept": "Arithmetic",
+        "difficulty": 1,
+        "type": "calculation",
+        "prompt": "Work out 7 * 8 and write the result.",
+        "hint": "Use your times tables.",
+        "options": [],
+        "expected_answer": "54"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "answer_key_verified"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-dangling-reference-rejected",
+      "constraints": {
+        "concept": "Circles",
+        "difficulty": 2,
+        "question_type": "short_answer"
+      },
+      "question": {
+        "id": "q4",
+        "concept": "Circles",
+        "difficulty": 2,
+        "type": "short_answer",
+        "prompt": "Using the following diagram, find the shaded area.",
+        "hint": "Subtract the inner circle.",
+        "options": [],
+        "expected_answer": "12"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "self_contained"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-off-concept-rejected",
+      "constraints": {
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "question_type": "short_answer"
+      },
+      "question": {
+        "id": "q5",
+        "concept": "Photosynthesis",
+        "difficulty": 2,
+        "type": "short_answer",
+        "prompt": "Name the pigment that absorbs light in a leaf.",
+        "hint": "It is green.",
+        "options": [],
+        "expected_answer": "chlorophyll"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "concept_aligned"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-difficulty-out-of-bounds-rejected",
+      "constraints": {
+        "concept": "Linear equations",
+        "difficulty": 1,
+        "question_type": "short_answer"
+      },
+      "question": {
+        "id": "q6",
+        "concept": "Linear equations",
+        "difficulty": 9,
+        "type": "short_answer",
+        "prompt": "Solve the simultaneous system for x and y.",
+        "hint": "Substitute.",
+        "options": [],
+        "expected_answer": "x=1"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "difficulty_in_bounds"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-hint-reveals-answer-rejected",
+      "constraints": {
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "question_type": "short_answer"
+      },
+      "question": {
+        "id": "q7",
+        "concept": "Linear equations",
+        "difficulty": 2,
+        "type": "short_answer",
+        "prompt": "Solve for x in the equation 4x = 48.",
+        "hint": "The answer is 12.",
+        "options": [],
+        "expected_answer": "12"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "hint_safe"
+        ]
+      }
+    },
+    {
+      "kind": "question",
+      "id": "question-answer-not-in-options-rejected",
+      "constraints": {
+        "concept": "Circles",
+        "difficulty": 2,
+        "question_type": "multiple_choice"
+      },
+      "question": {
+        "id": "q8",
+        "concept": "Circles",
+        "difficulty": 2,
+        "type": "multiple_choice",
+        "prompt": "Which expression gives the area of a circle of radius r?",
+        "hint": "Think about squaring.",
+        "options": [
+          {
+            "id": "a",
+            "label": "2 pi r"
+          },
+          {
+            "id": "b",
+            "label": "pi r squared"
+          },
+          {
+            "id": "c",
+            "label": "pi d"
+          },
+          {
+            "id": "d",
+            "label": "r squared"
+          }
+        ],
+        "expected_answer": "e"
+      },
+      "expected": {
+        "valid": false,
+        "failed_checks": [
+          "answer_in_options"
+        ]
+      }
+    }
+  ]
+}

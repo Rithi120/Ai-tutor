@@ -1,0 +1,30 @@
+# Normalise line endings so a Windows checkout does not show every file as modified.
+# Text files are stored LF in the repository and checked out with the platform's native
+# endings; binaries are left alone.
+* text=auto
+
+# Always LF, because these are read by tooling that is fussy about it.
+*.py text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.example text eol=lf
+*.ini text eol=lf
+*.txt text eol=lf
+
+# Binary: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.svg text eol=lf
+*.pdf binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -1,7 +1,11 @@
 import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, selectedLanguage, FLAGS } from "./common.js";
 
 const isDe = selectedLanguage === "German";
-const LABEL = { study: isDe ? "Lernen" : "Study", edit: isDe ? "Bearbeiten" : "Edit" };
+const LABEL = {
+  study: isDe ? "Lernen" : "Study",
+  edit: isDe ? "Bearbeiten" : "Edit",
+  private: isDe ? "Privat" : "Private",
+};
 let allSets = [];
 
 async function load() {
@@ -38,8 +42,9 @@ function render() {
   };
   sets.sort(sorters[sort] || sorters.newest);
   grid.innerHTML = sets.map(set => `
-    <article class="set-card">
+    <article class="set-card" data-subject="${escapeHtml(set.subject.toLowerCase())}">
       <a class="set-card-link" href="/flashcards/${set.id}">
+        <span class="ln-status">${escapeHtml(LABEL.private)}</span>
         <h3>${escapeHtml(set.title)}</h3>
         <p class="set-meta">${escapeHtml(set.subject)} · ${escapeHtml(t(set.difficulty) || set.difficulty)}</p>
         <p class="set-stats">${set.total} ${set.total === 1 ? t("fcCard") : t("fcCards")}${set.due ? ` · <b>${set.due} ${t("fcDue")}</b>` : ""}${set.mastered ? ` · ${set.mastered} ${t("fcMastered")}` : ""}</p>

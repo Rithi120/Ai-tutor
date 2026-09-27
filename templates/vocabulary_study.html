@@ -2,7 +2,7 @@
 {% block title %}{{ _('Vocabulary Practice') }} — Learnova{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
 {% block content %}
-<main class="vocabulary-page" data-vocabulary-study data-list-id="{{ vocabulary_list.id }}">
+<main class="vocabulary-page" id="main-content" data-vocabulary-study data-list-id="{{ vocabulary_list.id }}">
   <header class="vocabulary-hero"><div><h1>{{ _('Vocabulary Practice') }}</h1><p>{{ vocabulary_list.title }}</p></div><a class="ghost-button" href="{{ url_for('vocabulary_list_page', list_id=vocabulary_list.id) }}">{{ _('Back to list') }}</a></header>
   <section id="vocabularyPracticeConfig" class="vocabulary-panel">
     <label class="field">{{ _('Exercise') }}<select id="vocabularyDirection"><option value="source_to_target">{{ _('See source word and type translation') }}</option><option value="target_to_source">{{ _('See translation and type source word') }}</option><option value="example">{{ _('Fill in example sentence') }}</option><option value="article">{{ _('Article practice') }}</option><option value="spelling">{{ _('Spelling practice') }}</option></select></label>

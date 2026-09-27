@@ -1,5 +1,6 @@
 {% extends "auth_base.html" %}
 {% from "components/_language_selector.html" import language_selector with context %}
+{% from "components/_grade_selector.html" import grade_selector with context %}
 {% block title %}{{ _('Create account') if mode == 'register' else _('Log in') }} — Learnova{% endblock %}
 {% block body_class %}account-page auth-body{% endblock %}
 {% block content %}
@@ -27,9 +28,10 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if request.args.get('next') %}<input type="hidden" name="next" value="{{ request.args.get('next') }}">{% endif %}
       {% if mode == 'register' %}
-      <label class="auth-field auth-reveal"><span>{{ _('Username') }}</span><input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,29}" value="{{ request.form.get('username', '') }}" required></label>
+      <label class="auth-field auth-reveal"><span>{{ _('Username') }}</span><input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,29}" value="{{ request.form.get('username', '') }}" required></label>
       <label class="auth-field auth-reveal"><span>{{ _('Email') }}</span><input name="email" type="email" autocomplete="email" maxlength="255" value="{{ request.form.get('email', '') }}" required></label>
       <label class="auth-field auth-reveal"><span>{{ _('Language') }}</span>{{ language_selector(selected=request.form.get('language', current_language)) }}</label>
+      <label class="auth-field auth-reveal"><span>{{ _('Grade / level') }}</span>{{ grade_selector(selected=request.form.get('grade', ''), required=True) }}</label>
       {% else %}
       <label class="auth-field auth-reveal"><span>{{ _('Username or email') }}</span><input name="identifier" autocomplete="username" maxlength="255" value="{{ request.form.get('identifier', request.form.get('email', '')) }}" required></label>
       {% endif %}

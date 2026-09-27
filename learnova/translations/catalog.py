@@ -4,15 +4,84 @@ English source strings are deliberately used as message identifiers so templates
 Python validation, and frontend dictionaries all share one small catalogue.
 """
 
+import json
 from functools import lru_cache
+from pathlib import Path
 
-SUPPORTED_LANGUAGES = ("en", "de")
+# Interface-language registry. `native` is the endonym shown in the selector; `rtl`
+# drives the page direction. A language becomes SELECTABLE only when it has a complete
+# catalogue (see below), so an unfinished language never shows half-English UI.
+LANGUAGES = (
+    {"code": "en", "name": "English", "native": "English", "rtl": False},
+    {"code": "de", "name": "German", "native": "Deutsch", "rtl": False},
+    {"code": "fr", "name": "French", "native": "Français", "rtl": False},
+    {"code": "es", "name": "Spanish", "native": "Español", "rtl": False},
+    {"code": "it", "name": "Italian", "native": "Italiano", "rtl": False},
+    {"code": "pt", "name": "Portuguese", "native": "Português", "rtl": False},
+    {"code": "nl", "name": "Dutch", "native": "Nederlands", "rtl": False},
+    {"code": "pl", "name": "Polish", "native": "Polski", "rtl": False},
+    {"code": "tr", "name": "Turkish", "native": "Türkçe", "rtl": False},
+    {"code": "ar", "name": "Arabic", "native": "العربية", "rtl": True},
+    {"code": "hi", "name": "Hindi", "native": "हिन्दी", "rtl": False},
+    {"code": "sv", "name": "Swedish", "native": "Svenska", "rtl": False},
+    {"code": "da", "name": "Danish", "native": "Dansk", "rtl": False},
+    {"code": "no", "name": "Norwegian", "native": "Norsk", "rtl": False},
+    {"code": "fi", "name": "Finnish", "native": "Suomi", "rtl": False},
+    {"code": "cs", "name": "Czech", "native": "Čeština", "rtl": False},
+    {"code": "sk", "name": "Slovak", "native": "Slovenčina", "rtl": False},
+    {"code": "hu", "name": "Hungarian", "native": "Magyar", "rtl": False},
+    {"code": "ro", "name": "Romanian", "native": "Română", "rtl": False},
+    {"code": "el", "name": "Greek", "native": "Ελληνικά", "rtl": False},
+    {"code": "hr", "name": "Croatian", "native": "Hrvatski", "rtl": False},
+    {"code": "sr", "name": "Serbian", "native": "Српски", "rtl": False},
+    {"code": "uk", "name": "Ukrainian", "native": "Українська", "rtl": False},
+)
+LANGUAGE_BY_CODE = {entry["code"]: entry for entry in LANGUAGES}
+RTL_LANGUAGES = frozenset(entry["code"] for entry in LANGUAGES if entry["rtl"])
+_DATA_DIR = Path(__file__).with_name("data")
 
 
 GERMAN = {
     # --- Flashcards feature (Phase 1) ---
     "Flashcards": "Karteikarten",
     "Community": "Community",
+    "Skip to main content": "Zum Hauptinhalt springen",
+    "Use dark mode": "Dunkles Design verwenden",
+    "Use light mode": "Helles Design verwenden",
+    "LEARNOVA LEARNING SPACE": "LEARNOVA LERNRAUM",
+    "Turn today’s effort into lasting knowledge.": "Mach aus deinem heutigen Einsatz dauerhaftes Wissen.",
+    "Your focus, mastery and next step—together in one calm learning view.": "Fokus, Lernstand und nächster Schritt – gemeinsam in einer ruhigen Lernansicht.",
+    "Open flashcards": "Karteikarten öffnen",
+    "Learning signals": "Lernsignale",
+    "Knowledge Pulse": "Wissenspuls",
+    "pulse": "Puls",
+    "Mastery Map": "Wissenskarte",
+    "Weak and strong topics": "Schwache und starke Themen",
+    "topics mapped": "Themen erfasst",
+    "Study Orbit": "Lernorbit",
+    "recent sets in orbit": "aktuelle Sets im Orbit",
+    "Focus Trail": "Fokuspfad",
+    "reviews ready today": "Wiederholungen heute bereit",
+    "FAST CREATOR": "SCHNELLERSTELLUNG",
+    "Write the essentials first. Everything else can wait.": "Schreibe zuerst das Wesentliche. Alles Weitere kann warten.",
+    "More": "Mehr",
+    "Description, subject and tags": "Beschreibung, Fach und Schlagwörter",
+    "Draft ready": "Entwurf bereit",
+    "Unsaved changes": "Ungespeicherte Änderungen",
+    "Ctrl/⌘ + S to save": "Strg/⌘ + S zum Speichern",
+    "LEARN TOGETHER": "GEMEINSAM LERNEN",
+    "Find thoughtful sets, save your favourites and start studying in seconds.": "Finde sorgfältige Sets, speichere deine Favoriten und lerne in wenigen Sekunden.",
+    "Community highlights": "Community-Highlights",
+    "RIGHT NOW": "GERADE ANGESAGT",
+    "View all": "Alle ansehen",
+    "STUDENT FAVOURITES": "FAVORITEN DER LERNENDEN",
+    "Top rated": "Am besten bewertet",
+    "FRESH SETS": "NEUE SETS",
+    "EXPLORE": "ENTDECKEN",
+    "All community sets": "Alle Community-Sets",
+    "Focus mode": "Fokusmodus",
+    "Next best action": "Nächster sinnvoller Schritt",
+    "Review mistakes now while the memory is still fresh.": "Wiederhole Fehler jetzt, solange die Erinnerung noch frisch ist.",
     "Your flashcards": "Deine Karteikarten",
     "Create flashcards": "Karteikarten erstellen",
     "Edit flashcards": "Karteikarten bearbeiten",
@@ -107,6 +176,44 @@ GERMAN = {
     "Recall grades update spaced-repetition scheduling on the server. Per-session counters are not stored.":
         "Bewertungen aktualisieren die Wiederholungsplanung auf dem Server. Sitzungszähler werden nicht gespeichert.",
     "Image and PDF sources are coming soon.": "Bild- und PDF-Quellen sind bald verfügbar.",
+    "Have images or a PDF?": "Hast du Bilder oder ein PDF?",
+    "Import from images or PDF": "Aus Bildern oder PDF importieren",
+    # Study-mode config, controls and results (were leaking English under a German UI)
+    "Card direction": "Kartenrichtung",
+    "Front to back": "Vorderseite zu Rückseite",
+    "Back to front": "Rückseite zu Vorderseite",
+    "Check answer": "Antwort prüfen",
+    "Flashcard controls": "Karteikarten-Steuerung",
+    "Previous": "Zurück",
+    "Next": "Weiter",
+    "Source": "Quelle",
+    # Progress / goals
+    "Cards": "Karten",
+    "Minutes": "Minuten",
+    "Questions": "Fragen",
+    "Goal type": "Zieltyp",
+    "Target": "Ziel",
+    "Save goal": "Ziel speichern",
+    "Goal saved.": "Ziel gespeichert.",
+    # Community library filters and sort options
+    "Community flashcards": "Community-Karteikarten",
+    "Search": "Suchen",
+    "Search title, topic, keyword…": "Titel, Thema, Stichwort suchen…",
+    "Sort": "Sortieren",
+    "Trending": "Angesagt",
+    "Most saved": "Am häufigsten gespeichert",
+    "Most studied": "Am meisten gelernt",
+    "Best overall": "Beste insgesamt",
+    "Highest AI rating": "Höchste KI-Bewertung",
+    "Highest student rating": "Höchste Schülerbewertung",
+    "Any AI rating": "Beliebige KI-Bewertung",
+    "Any student rating": "Beliebige Schülerbewertung",
+    "Any language": "Beliebige Sprache",
+    "Minimum AI rating": "Mindest-KI-Bewertung",
+    "Minimum student rating": "Mindest-Schülerbewertung",
+    "No community sets match your search yet.": "Noch keine Community-Sets entsprechen deiner Suche.",
+    "Publishing is disabled until moderation and reporting are ready.": "Die Veröffentlichung ist deaktiviert, bis Moderation und Meldefunktion bereit sind.",
+    "Your personal study tutor": "Dein persönlicher Lern-Tutor",
     "Cancel": "Abbrechen",
     "Confirm": "Bestätigen",
     "Delete this set? This cannot be undone.": "Dieses Set löschen? Das kann nicht rückgängig gemacht werden.",
@@ -719,6 +826,19 @@ GERMAN = {
 
 
 FRONTEND_MESSAGES = {
+    # --- Adaptive diagnostics panel ---
+    "dxWhy": "Why this happened",
+    "dxShows": "What your answer shows",
+    "dxFromAnswer": "From your answer",
+    "dxConcepts": "Concepts checked",
+    "dxPrerequisites": "Earlier skills to revisit",
+    "dxChecked": "What was checked",
+    "dxNextStep": "Next step",
+    "dxConfidence": "How sure this is",
+    "dxInsufficient": "Not enough to diagnose yet",
+    "dxShowWorking": "Show your working next time so the cause can be identified.",
+    "dxLoading": "Loading the details…",
+    "dxLoadFailed": "The details could not be loaded.",
     # --- Flashcards feature (Phase 1) ---
     "fcAddCard": "Add card",
     "fcSaveSet": "Save set",
@@ -780,6 +900,8 @@ FRONTEND_MESSAGES = {
     "fcNoHint": "No hint is available.",
     "fcCorrect": "Correct",
     "fcIncorrect": "Incorrect",
+    "fcTrue": "True",
+    "fcFalse": "False",
     "fcCorrectAnswer": "Correct answer",
     "fcXpEarned": "XP earned",
     "fcScore": "Score",
@@ -838,6 +960,19 @@ FRONTEND_MESSAGES = {
     "fcStatusDraft": "Draft",
     "fcStatusPrivate": "Private",
     "fcStatusPublic": "Public",
+    "fcStatusPendingModeration": "Being checked",
+    "asstYou": "You",
+    "asstAssistant": "Assistant",
+    "asstCopy": "Copy",
+    "asstCopied": "Copied.",
+    "asstCopyFailed": "Could not copy.",
+    "asstRequestFailed": "Request failed",
+    "asstRenamePrompt": "Name this conversation",
+    "asstDeleteConfirm": "Delete this conversation? This cannot be undone.",
+    "asstArchive": "Archive",
+    "asstUnarchive": "Unarchive",
+    "asstNoModelYet": "No reply yet",
+    "asstContextTrimmed": "{count} earlier message(s) were not sent",
     "fcStatusPendingAi": "Pending AI review",
     "fcStatusChangesRequested": "Changes requested",
     "fcStatusPendingManual": "Pending manual review",
@@ -1273,11 +1408,239 @@ GERMAN.update({
 })
 
 
+# Grade labels are ordinary translatable strings (English source string as the key),
+# so English shows the label itself and other locales translate it like everything else.
+GERMAN.update({f"Grade {n}": f"Klasse {n}" for n in range(1, 14)})
+GERMAN.update({
+    "University": "Universität",
+    "Vocational training": "Berufsausbildung",
+    "Not set": "Nicht festgelegt",
+    "Select your grade": "Wähle deine Klassenstufe",
+    "What grade are you in?": "In welcher Klassenstufe bist du?",
+    "This helps Learnova match explanations and difficulty to your level.":
+        "So passt Learnova Erklärungen und Schwierigkeit an dein Niveau an.",
+    "Grade / level": "Klassenstufe / Niveau",
+    "Save grade": "Klassenstufe speichern",
+    "Your grade was saved.": "Deine Klassenstufe wurde gespeichert.",
+    "Please choose your grade.": "Bitte wähle deine Klassenstufe.",
+    "Interface language": "Anzeigesprache",
+    "Skip for now": "Vorerst überspringen",
+    "True": "Wahr",
+    "False": "Falsch",
+    "Mistake Intelligence": "Fehleranalyse",
+    "How your understanding is developing, with evidence.": "Wie sich dein Verständnis entwickelt – mit Belegen.",
+    "No mistakes analyzed yet.": "Noch keine Fehler analysiert.",
+    "Answer some questions and your learning patterns will appear here.":
+        "Beantworte einige Fragen, dann erscheinen hier deine Lernmuster.",
+    "Recommended next action": "Empfohlener nächster Schritt",
+    "Try this": "Versuche dies",
+    "Prerequisites to review": "Grundlagen zum Wiederholen",
+    "Strongest topics": "Stärkste Themen",
+    "Not enough data yet.": "Noch nicht genug Daten.",
+    "Repeated misconceptions": "Wiederkehrende Fehlvorstellungen",
+    "seen {n} times": "{n}-mal aufgetreten",
+    "Resolved": "Behoben",
+    "Resolved mistakes": "Behobene Fehler",
+})
+
+# --- Adaptive diagnostics (learnova.diagnostics): taxonomy labels and panel copy ---
+GERMAN.update({
+    "Partly correct": "Teilweise richtig",
+    "Misunderstood concept": "Konzept missverstanden",
+    "Procedure applied incorrectly": "Verfahren falsch angewendet",
+    "Missing earlier skill": "Fehlende Vorkenntnis",
+    "Question read differently": "Frage anders gelesen",
+    "Calculation or copying slip": "Rechen- oder Übertragungsfehler",
+    "Reasoning left unfinished": "Begründung unvollständig",
+    "Answer looks uncertain": "Antwort wirkt unsicher",
+    "Not enough to judge yet": "Noch nicht beurteilbar",
+    "Problem with the question": "Problem mit der Frage",
+    "Re-read what the question asks": "Lies noch einmal, was gefragt ist",
+    "Answer one short check question": "Beantworte eine kurze Prüffrage",
+    "Revisit the earlier skill first": "Wiederhole zuerst die Vorkenntnis",
+    "Practise this exact step": "Übe genau diesen Schritt",
+    "Study a worked example, then practise": "Lies ein Beispiel, dann übe",
+    "Compare the two competing ideas": "Vergleiche die beiden Vorstellungen",
+    "Recall this again after a break": "Rufe es nach einer Pause erneut ab",
+    "Apply this in a new situation": "Wende es in einer neuen Situation an",
+    "Move on to a harder question": "Weiter mit einer schwereren Frage",
+    "Stay at this level": "Bleib auf diesem Niveau",
+    "Step back to an easier question": "Zurück zu einer leichteren Frage",
+    "Ask a teacher to look at this": "Lass das eine Lehrkraft ansehen",
+    "Why this happened": "Warum das passiert ist",
+    "What your answer shows": "Was deine Antwort zeigt",
+    "From your answer": "Aus deiner Antwort",
+    "Concepts checked": "Geprüfte Konzepte",
+    "Earlier skills to revisit": "Vorkenntnisse zum Wiederholen",
+    "What was checked": "Was geprüft wurde",
+    "Next step": "Nächster Schritt",
+    "How sure this is": "Wie sicher das ist",
+    "Not enough to diagnose yet": "Noch zu wenig für eine Diagnose",
+    "Show your working next time so the cause can be identified.": "Zeige beim nächsten Mal deinen Rechenweg, damit die Ursache erkennbar wird.",
+    "Loading the details…": "Details werden geladen…",
+    "The details could not be loaded.": "Die Details konnten nicht geladen werden.",
+    "That attempt was not found.": "Dieser Versuch wurde nicht gefunden.",
+    "The detailed diagnosis is temporarily unavailable; your score still applies.": "Die ausführliche Diagnose ist vorübergehend nicht verfügbar; deine Bewertung gilt weiterhin.",
+    "The detailed diagnosis could not be read this time.": "Die ausführliche Diagnose konnte diesmal nicht gelesen werden.",
+    "Not assessed enough yet": "Noch nicht ausreichend geprüft",
+    "Needs more evidence": "Braucht mehr Belege",
+    "Foundations to rebuild first": "Grundlagen, die zuerst dran sind",
+    "before": "vor",
+    "Why your mastery changed": "Warum sich dein Lernstand geändert hat",
+    "Publishing is turned off for this deployment.": "Die Veröffentlichung ist für diese Installation deaktiviert.",
+    "Copy": "Kopieren",
+    "Copied.": "Kopiert.",
+    "Could not copy.": "Konnte nicht kopiert werden.",
+    "Request failed": "Anfrage fehlgeschlagen",
+    "Name this conversation": "Diese Unterhaltung benennen",
+    "Delete this conversation? This cannot be undone.": "Diese Unterhaltung löschen? Das lässt sich nicht rückgängig machen.",
+    "Unarchive": "Aus dem Archiv holen",
+    "No reply yet": "Noch keine Antwort",
+    "{count} earlier message(s) were not sent": "{count} frühere Nachricht(en) wurden nicht mitgesendet",
+    "Assistant": "Assistent",
+    "New chat": "Neuer Chat",
+    "Conversations": "Unterhaltungen",
+    "Conversation": "Unterhaltung",
+    "Search conversations": "Unterhaltungen durchsuchen",
+    "No conversations yet.": "Noch keine Unterhaltungen.",
+    "Show archived": "Archivierte anzeigen",
+    "Assistant style": "Assistenz-Stil",
+    "Rename": "Umbenennen",
+    "Archive": "Archivieren",
+    "Ask anything": "Frag einfach",
+    "A direct line to the assistant — no lesson needed. Pick a style above to change how it answers.": "Eine direkte Leitung zum Assistenten – ganz ohne Lektion. Wähle oben einen Stil, um die Antwortweise zu ändern.",
+    "Explain the chain rule with a worked example": "Erkläre die Kettenregel mit einem gerechneten Beispiel",
+    "What is the evidence for and against this claim?": "Welche Belege sprechen für und gegen diese Behauptung?",
+    "Help me plan revision for an exam in three weeks": "Hilf mir, die Wiederholung für eine Prüfung in drei Wochen zu planen",
+    "Your message": "Deine Nachricht",
+    "Send a message…": "Nachricht senden …",
+    "Think harder": "Gründlicher denken",
+    "Use the stronger model. Slower, better on hard questions.": "Das stärkere Modell verwenden. Langsamer, aber besser bei schweren Fragen.",
+    "The assistant can be wrong. Check anything that matters.": "Der Assistent kann sich irren. Prüfe alles, worauf es ankommt.",
+    "This conversation could not be found.": "Diese Unterhaltung wurde nicht gefunden.",
+    "Write a message first.": "Schreibe zuerst eine Nachricht.",
+    "Give the conversation a name.": "Gib der Unterhaltung einen Namen.",
+    "This conversation is full. Start a new one to continue.": "Diese Unterhaltung ist voll. Starte eine neue, um fortzufahren.",
+    "You have reached the maximum number of conversations. Archive or delete one first.": "Du hast die maximale Anzahl an Unterhaltungen erreicht. Archiviere oder lösche zuerst eine.",
+    "The assistant returned an empty reply. You can retry.": "Der Assistent hat eine leere Antwort zurückgegeben. Du kannst es erneut versuchen.",
+    "General": "Allgemein",
+    "Everyday questions, explanations and drafting.": "Alltagsfragen, Erklärungen und Entwürfe.",
+    "Research": "Recherche",
+    "Careful answers that separate evidence from inference.": "Sorgfältige Antworten, die Belege von Schlussfolgerungen trennen.",
+    "Study coach": "Lerncoach",
+    "Works through problems with you instead of handing over answers.": "Arbeitet Aufgaben mit dir durch, statt Lösungen zu verraten.",
+    "Plain explanation": "Einfache Erklärung",
+    "Explains one thing thoroughly, from the ground up.": "Erklärt eine Sache gründlich und von Grund auf.",
+    "You have sent a lot of reports today. Please try again tomorrow.": "Du hast heute viele Meldungen gesendet. Bitte versuche es morgen erneut.",
+    "Please split this set into smaller parts before publishing it.": "Bitte teile dieses Set in kleinere Teile auf, bevor du es veröffentlichst.",
+    # Community moderation (learnova.moderation).
+    "Your set has been published to the community library.": "Dein Set wurde in der Community-Bibliothek veröffentlicht.",
+    "Your set is being checked and will appear once the check is complete.": "Dein Set wird geprüft und erscheint, sobald die Prüfung abgeschlossen ist.",
+    "Please review and update your set before publishing it again.": "Bitte überarbeite dein Set, bevor du es erneut veröffentlichst.",
+    "Please update your set before publishing it again: {reasons}.": "Bitte überarbeite dein Set, bevor du es erneut veröffentlichst: {reasons}.",
+    "Your set could not be published to the community library.": "Dein Set konnte nicht in der Community-Bibliothek veröffentlicht werden.",
+    "Your set could not be published: {reasons}.": "Dein Set konnte nicht veröffentlicht werden: {reasons}.",
+    "Choose a reason for your report.": "Wähle einen Grund für deine Meldung.",
+    "You cannot report your own flashcard set.": "Du kannst dein eigenes Karteikarten-Set nicht melden.",
+    "Choose a moderation decision.": "Wähle eine Moderationsentscheidung.",
+    "This content changed after it was checked. Ask for it to be checked again.": "Dieser Inhalt hat sich nach der Prüfung geändert. Lass ihn erneut prüfen.",
+    "Insulting or hurtful language about a person or group": "Beleidigende oder verletzende Sprache über eine Person oder Gruppe",
+    "Content that attacks a person or group": "Inhalt, der eine Person oder Gruppe angreift",
+    "Threatening or violent content": "Bedrohlicher oder gewaltsamer Inhalt",
+    "Sexual content involving or directed at minors": "Sexueller Inhalt, der Minderjährige betrifft oder an sie gerichtet ist",
+    "Sexual content that is not part of the lesson": "Sexueller Inhalt, der nicht zum Lernstoff gehört",
+    "Content that could lead to harm": "Inhalt, der zu Schaden führen könnte",
+    "Personal information about a real person": "Persönliche Daten einer realen Person",
+    "Content that does not match the chosen subject": "Inhalt, der nicht zum gewählten Fach passt",
+    "Not enough educational content to publish": "Zu wenig Lerninhalt für eine Veröffentlichung",
+    "Not suitable for the chosen level": "Für die gewählte Stufe nicht geeignet",
+    "Unclear wording or formatting": "Unklare Formulierung oder Formatierung",
+    "Statements that may be inaccurate or misleading": "Aussagen, die ungenau oder irreführend sein könnten",
+    "The content changed after it was checked": "Der Inhalt hat sich nach der Prüfung geändert",
+    "A reviewer will look at this": "Eine Prüferin oder ein Prüfer sieht sich das an",
+    "Published": "Veröffentlicht",
+    "Not published": "Nicht veröffentlicht",
+    "Changes needed": "Änderungen erforderlich",
+    "Waiting for a reviewer": "Wartet auf eine Prüfung",
+    "Being checked": "Wird geprüft",
+    "Report this set": "Dieses Set melden",
+    "Thanks — our team will look at this.": "Danke — unser Team sieht sich das an.",
+    "Why are you reporting this?": "Warum meldest du das?",
+})
+
+
+# The canonical set of interface strings a language must cover to be considered complete.
+# German is the reference translated locale; every offered language must cover the same
+# keys so no English ever leaks into a non-English interface.
+REQUIRED_KEYS = frozenset(GERMAN.keys())
+
+
+def _load_catalog(code: str) -> dict[str, str] | None:
+    path = _DATA_DIR / f"{code}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else None
+
+
+# Build the catalogue map. German is inlined; every other non-English locale is loaded
+# from learnova/translations/data/<code>.json (generated). English is the base (no dict).
+CATALOGS: dict[str, dict[str, str]] = {"de": dict(GERMAN)}
+for _entry in LANGUAGES:
+    _code = _entry["code"]
+    if _code in ("en", "de"):
+        continue
+    _loaded = _load_catalog(_code)
+    if _loaded is not None:
+        CATALOGS[_code] = _loaded
+
+# A language is enabled when it is English (the base) or its catalogue covers every
+# required key. This guarantees selectable languages never fall back to English.
+_ENABLED = ["en"]
+for _entry in LANGUAGES:
+    _code = _entry["code"]
+    if _code == "en":
+        continue
+    if REQUIRED_KEYS.issubset(CATALOGS.get(_code, {}).keys()):
+        _ENABLED.append(_code)
+SUPPORTED_LANGUAGES = tuple(_ENABLED)
+
+
+def is_rtl(language: str) -> bool:
+    return language in RTL_LANGUAGES
+
+
+def language_direction(language: str) -> str:
+    return "rtl" if is_rtl(language) else "ltr"
+
+
+def language_native_name(language: str) -> str:
+    entry = LANGUAGE_BY_CODE.get(language)
+    return entry["native"] if entry else language
+
+
+def language_english_name(language: str) -> str:
+    entry = LANGUAGE_BY_CODE.get(language)
+    return entry["name"] if entry else language
+
+
+def language_options() -> list[dict[str, str | bool]]:
+    """Selectable languages (complete catalogues only), in registry order, for the UI."""
+    return [
+        {"code": entry["code"], "native": entry["native"], "name": entry["name"], "rtl": entry["rtl"]}
+        for entry in LANGUAGES if entry["code"] in SUPPORTED_LANGUAGES
+    ]
+
+
 def translate(message: str, language: str = "en", **values) -> str:
-    translated = GERMAN.get(message, message) if language == "de" else message
+    catalog = CATALOGS.get(language)
+    translated = catalog.get(message, message) if catalog else message
     return translated.format(**values) if values else translated
 
 
-@lru_cache(maxsize=len(SUPPORTED_LANGUAGES))
+@lru_cache(maxsize=len(LANGUAGES))
 def frontend_catalog(language: str) -> dict[str, str]:
     return {key: translate(message, language) for key, message in FRONTEND_MESSAGES.items()}

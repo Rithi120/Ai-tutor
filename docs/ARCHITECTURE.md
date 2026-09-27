@@ -14,6 +14,12 @@ flowchart LR
     Web --> Planner[study planner]
     Projects --> OCR[OCR service]
     Projects --> AI[AI provider boundary]
+    Learning --> Diagnostics[diagnostics engine]
+    Web --> Moderation[community moderation]
+    Moderation --> AI
+    Moderation --> DB
+    Diagnostics --> AI
+    Diagnostics --> DB
     Learning --> AI
     Auth --> DB[(SQLAlchemy / PostgreSQL)]
     Projects --> DB
@@ -32,6 +38,9 @@ learnova/
   ai_services/       provider boundary and shared tutor prompts
   authentication/    account normalization, validation and authentication
   dashboard/         optimized dashboard and daily-practice read models
+  diagnostics/       evidence-based mistake diagnosis, knowledge model, adaptive policy
+  assistant/         direct chat: system-prompt presets and context-window mechanics
+  moderation/        community content safety: preprocessing, classification contract, decision policy
   exams/             exam scoring and allocation rules
   lessons/           lesson/session domain namespace
   ocr/               magic-byte validation, image processing and recognition helpers
@@ -50,7 +59,7 @@ templates/
 static/
   css/               tokens and shared components
   js/                core security/navigation, i18n, DOM and symbol modules
-docs/                 architecture and extension guidance
+docs/                 architecture, diagnostics design, and extension guidance
 app.py                compatible WSGI/CLI composition root and route orchestration
 ```
 
@@ -63,7 +72,9 @@ The top-level `adaptive_learning.py`, `document_processing.py`, `study_projects.
 | `authentication` | credential validation, password-backed user creation, identity lookup | templates or redirects |
 | `uploads` | one transaction for files/pages, de-duplication and page limits | request parsing |
 | `ocr` | file signatures, conservative image work and recognition normalization | account authorization |
-| `ai_services` | mock/cached/live gateway, sole provider client, private cache keys, sanitized accounting, JSON parsing and shared prompts | database transactions or raw student-data logging |
+| `ai_services` | cached/live gateway, the provider registry and sole provider client, private cache keys, sanitized accounting, JSON parsing and shared prompts | database transactions or raw student-data logging |
+| `assistant` | what the direct assistant is told to be, and what of a conversation the model sees | persistence, authorization, or the provider call itself |
+| `moderation` | community safety vocabulary, text preprocessing and obfuscation signals, the classification contract, and the decision policy | provider access, database writes, or publishing anything itself |
 | `projects` | section normalization, source weighting and preparation plans | Flask globals |
 | `quizzes` | deterministic mastery, difficulty and spaced repetition | AI mastery decisions |
 | `study_planner` | exam countdowns, task priority, schedule generation, incremental adaptation, redistribution, calendar/readiness metrics | Flask requests, ownership, AI decisions, or translated persistence text |

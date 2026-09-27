@@ -79,11 +79,11 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Mock AI is the safe development default, so a Groq key is not required for local setup. Edit `.env` and set at least:
+`AI_MODE=cached` is the safe development default: it cannot reach Groq unless you also set `ALLOW_LIVE_AI=true`, so a stray request is never billable. Edit `.env` and set at least:
 
 ```dotenv
 APP_ENV=development
-AI_MODE=mock
+AI_MODE=cached
 SECRET_KEY=a_long_random_value
 DATABASE_URL=sqlite:///learnova.db
 PORT=5000
@@ -127,22 +127,19 @@ PostgreSQL database. Startup applies idempotent schema migrations, including
 
 Every lesson, quiz, answer evaluation, tutor chat, translation, OCR/recognition, project section, adaptive-practice, and final-exam request passes through `learnova.ai_services.service`. No route or other domain service creates a Groq client.
 
-The three modes are:
+There are two modes:
 
-- `AI_MODE=mock`: reads deterministic English/German fixtures and never calls the network. This is the default in development and tests.
-- `AI_MODE=cached`: returns an identical request's saved response; a miss may call Groq and therefore requires `ALLOW_LIVE_AI=true` in development.
+- `AI_MODE=cached`: returns an identical request's saved response; a miss may call Groq and therefore requires `ALLOW_LIVE_AI=true` in development. This is the default outside production.
 - `AI_MODE=live`: always calls Groq. Development requires `ALLOW_LIVE_AI=true`; production refuses to start unless `AI_MODE=live` is explicitly configured.
 
-Run all features without tokens:
+Run without spending anything. Without `ALLOW_LIVE_AI`, a cache miss raises a safe configuration error instead of reaching the provider:
 
 ```dotenv
 APP_ENV=development
-AI_MODE=mock
-AI_MOCK_SCENARIO=valid
-AI_MOCK_LATENCY_MS=0
+AI_MODE=cached
 ```
 
-Use `AI_MOCK_SCENARIO=malformed_json`, `empty_response`, `missing_required_fields`, `wrong_types`, `timeout`, `rate_limit`, `duplicate_questions`, `duplicate_question_ids`, `invalid_source_references`, `incorrect_exam_question_count`, `invalid_scores`, `unsupported_difficulty`, or `oversized_output` to exercise failure handling. Set `AI_MOCK_LATENCY_MS` from `0` to `5000` to simulate latency without tokens.
+Failure handling is not a runtime switch. The sample-response corpus in `tests/fixtures/ai/` covers malformed and empty output, missing and wrongly typed fields, duplicate prompts and IDs, unknown source references, incorrect counts, invalid scores and difficulties, oversized output, and provider timeout/rate-limit errors; `tests/provider_stub.py` replays any of them through the real provider boundary. See `docs/AI_TESTING.md`.
 
 Run cached mode with explicitly permitted cache misses:
 
@@ -211,7 +208,12 @@ python -m pytest tests/test_study_planner.py -q
 python -m compileall -q app.py learnova tests
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\pyright.exe
+npm run test:js   # requires Node, which is not installed in the current image
 ```
+
+`npm run test:js` covers the browser-side helpers that cannot be exercised from
+Python: the safe-UUID fallback, and the assistant's markdown renderer, whose job is
+to ensure nothing a model writes can become markup.
 
 The suite verifies:
 
@@ -219,13 +221,15 @@ The suite verifies:
 - English/German resolution, onboarding preference, switching, refresh/logout/login/restart persistence, safe redirects, translated validation, shared desktop/mobile Settings navigation, frontend catalogue generation, and preference isolation;
 - duplicate username/email rejection, password hashing, login, and logout;
 - lesson, chat, translation, attempt, mastery, and restart persistence;
-- mock/cached/live safety, private cache partitioning, task schemas, prompt contracts/versioning, bounded corrective retry, quotas/token budgets, deterministic bilingual fixtures, sanitized observability/diagnostics, and global blocking of unmocked network calls;
+- cached/live safety, private cache partitioning, task schemas, prompt contracts/versioning, bounded corrective retry, quotas/token budgets, bilingual sample-response conformance, sanitized observability/diagnostics, and global blocking of unmocked network calls;
 - deterministic mastery bounds, review dates, adaptive difficulty, and overdue prioritization;
 - Mistake Notebook and adaptive-practice ownership isolation;
 - camera permission fallback, multi-page camera payloads, combined scans/uploads, secure magic-byte validation, conservative rotation/crop processing, and no temporary-file leakage;
 - structured handwriting/print/formula/diagram storage, low-confidence review, student correction, source-reference persistence, retry/recovery, page reordering, restart persistence, and cross-user image/block isolation;
 - validated section planning, confirmed priority weighting, recall, section testing, and section mastery persistence;
 - hidden exam answers before submission, autosave, deterministic scoring, server-side expiry, idempotent submission, result persistence, and exam/project/section user isolation.
+- direct assistant chat: preset system prompts and the shared honesty standard, context-window trimming (newest turn always sent, whole messages only, oversized turns truncated visibly, never opening on an assistant turn), title derivation, conversation lifecycle, per-account isolation across every route, feature-flag removal of the whole surface, provider-prefix routing, failures stored as turns without being replayed to the model, and the conversation and message ceilings.
+- community moderation: Unicode/homoglyph/encoding preprocessing, obfuscation scoring, strict classification schema, evidence grounding of safety flags, the full decision policy and its configurable thresholds, publication-bypass attempts across every public read path, publish idempotency, the oversized-submission ceiling, re-moderation on edit, stale-approval refusal and stale-state reporting, reporting with per-day ceiling and auto-hide, reviewer authorization and append-only decisions, quote retention and redaction, operational metrics carrying no content, provider-failure fail-closed behaviour, and upgrade of a database that predates the moderation migration.
 - deterministic study-plan creation, countdowns, due/weak priority, incremental performance adaptation, missed-day redistribution without schedule extension, calendar generation, completion/restart persistence, English/German planner UI, multiple projects, and cross-user plan/session isolation.
 
 ## Manual smoke test
@@ -276,6 +280,49 @@ languages are English, German, French, and Spanish. Production requires
 Limits and retention are configurable through the `MAX_FLASHCARD_*`, `FLASHCARD_IMPORT_*`, and
 `MAX_FLASHCARD_IMPORTS_PER_HOUR` environment variables documented in `.env.example`.
 
+### Direct assistant chat
+
+`/assistant` is a durable, general-purpose conversation with the model — no lesson, no
+upload, no session to expire. Conversations persist, are searchable and archivable, and
+each one carries a **style preset** that decides what the assistant is told to be:
+general, research (separates evidence from inference from what is still open), study coach
+(gives the next step, not the solution), or plain explanation. A "Think harder" toggle
+sends the turn to the stronger model.
+
+Models are named `provider:model`, so pointing the assistant at another provider is one
+environment variable. Groq and OpenAI are registered today; `docs/ASSISTANT.md` has the
+exact steps and a worked adapter for adding Anthropic. Everything still goes through the
+one AI gateway, so caching, token budgets, usage limits, sanitized errors and telemetry
+apply to every provider.
+
+Replies are not streamed in this release; `docs/ASSISTANT.md` explains why and what it
+would take.
+
+### Community moderation
+
+Anything published to the community library passes a context-aware safety gate before the
+existing quality review runs. It judges thirteen independent dimensions and keeps safety
+separate from subject relevance, so reproductive biology in a biology set is published
+while the same vocabulary attached to a mathematics card asks for a revision, and
+solicitation is rejected. Every safety flag has to quote text that actually appears in the
+submission; one that cannot is discarded and the item goes to a human instead. Obfuscation,
+prompt injection, low confidence and conflicting signals all escalate and never reject on
+their own, and nothing is publicly visible until both gates agree.
+
+Readers can report published content, two safety reports auto-hide a set pending review,
+and reviewers on the `COMMUNITY_MODERATORS` allowlist work the queue at
+`/internal/moderation`. Full design, thresholds and known limitations are in
+`docs/COMMUNITY_MODERATION.md`.
+
+```powershell
+python scripts/run_moderation_eval.py            # replay 46 labelled cases, no API cost
+python scripts/run_moderation_eval.py --usage    # add real latency/cost from telemetry
+flask redact-moderation-quotes                   # apply the quote retention window
+```
+
+Live decision metrics — the decision mix, escalation rate, latency and cost — appear on
+the protected `/internal/ai-diagnostics` page.
+
 ## Current boundaries
 
 - Recognition is deliberately not presented as perfect handwriting recognition. Low-confidence words, formulas, and regions remain visibly marked until the student verifies them.
@@ -283,6 +330,8 @@ Limits and retention are configurable through the `MAX_FLASHCARD_*`, `FLASHCARD_
 - Recognition and project generation require the configured AI service. Originals, processed images, and every successfully recognized page remain saved if another page or later generation step fails.
 - Processing is in-memory; Learnova does not create temporary image files. Production retention and deletion policy still needs to be defined before a broad student rollout.
 - This release intentionally does not include payments, leaderboards, parent accounts, voice tutoring, or social features.
+- Community moderation depends on the classifier being right: plainly written abuse that the model calls clean trips no deterministic detector and is published. Reader reporting is the compensating control, and the evaluation corpus measures this as a separate `classifier_miss_rate` rather than folding it into the policy's own numbers.
+- Moderation thresholds are calibrated against 46 synthetic cases, not production traffic, and an escalation queue only helps if somebody works it.
 
 ## Render deployment
 

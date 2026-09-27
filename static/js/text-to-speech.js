@@ -1,4 +1,5 @@
 import {t} from "./i18n.js";
+import {safeUUID} from "./dom.js";
 
 const synthesis = window.speechSynthesis;
 const Utterance = window.SpeechSynthesisUtterance;
@@ -117,7 +118,7 @@ export function attachListenControl(container) {
     readable.textContent = container.textContent;
     container.replaceChildren(readable);
   }
-  if (!readable.id) readable.id = `speech-text-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+  if (!readable.id) readable.id = `speech-text-${safeUUID()}`;
   const control = document.createElement("div");
   control.className = "listen-control compact-listen-control";
   control.dataset.listenControl = "";

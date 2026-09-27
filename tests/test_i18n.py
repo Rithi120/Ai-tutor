@@ -60,16 +60,16 @@ class LanguageSystemTests(unittest.TestCase):
 
     def test_default_browser_and_onboarding_language(self):
         default = self.client.get("/login")
-        self.assertIn(b'<html lang="en">', default.data)
+        self.assertIn(b'<html lang="en" dir="ltr">', default.data)
         self.assertIn(b"Welcome back", default.data)
 
         browser_client = application.app.test_client()
         german = browser_client.get("/login", headers={"Accept-Language": "de-DE,de;q=0.9"})
-        self.assertIn(b'<html lang="de">', german.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', german.data)
         self.assertIn("Willkommen zurück".encode(), german.data)
 
         response = self.register(language="de")
-        self.assertIn(b'<html lang="de">', response.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', response.data)
         with application.app.app_context():
             user = application.db.session.scalar(
                 application.db.select(application.User).where(application.User.username == "alice")
@@ -98,7 +98,7 @@ class LanguageSystemTests(unittest.TestCase):
             data={"identifier": "alice", "password": "correct-horse-battery"},
             follow_redirects=True,
         )
-        self.assertIn(b'<html lang="de">', logged_in.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', logged_in.data)
 
         application.SESSIONS.clear()
         restarted_client = application.app.test_client()
@@ -107,7 +107,7 @@ class LanguageSystemTests(unittest.TestCase):
             data={"identifier": "alice", "password": "correct-horse-battery"},
             follow_redirects=True,
         )
-        self.assertIn(b'<html lang="de">', restarted.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', restarted.data)
 
         english = restarted_client.post(
             "/settings/language",
@@ -138,7 +138,7 @@ class LanguageSystemTests(unittest.TestCase):
 
         self.register(language="de")
         rejected = self.client.post(
-            "/settings/language", data={"language": "fr"}, follow_redirects=False
+            "/settings/language", data={"language": "zz"}, follow_redirects=False
         )
         self.assertEqual(rejected.status_code, 400)
         with application.app.app_context():

@@ -2,11 +2,50 @@
 {% block title %}{{ _('Dashboard') }} — Learnova{% endblock %}
 {% block body_class %}dashboard-page{% endblock %}
 {% block content %}
-<main class="dashboard-shell">
+<main class="dashboard-shell" id="main-content">
   <div class="dashboard-heading">
     <div><div class="eyebrow">{{ _('YOUR PROGRESS') }}</div><h1>{{ _('Welcome back, {username}', username=current_user.username) }}</h1><p>{{ _('Your next best learning step is ready.') }}</p></div>
     <form method="post" action="{{ url_for('practice_weak') }}"><button class="secondary-button" type="submit">{{ _('Practice weakest concepts') }} →</button></form>
   </div>
+
+  <section class="ln-command-center reveal-card" aria-labelledby="learningCommandTitle">
+    <div class="ln-command-copy">
+      <span class="eyebrow">{{ _('LEARNOVA LEARNING SPACE') }}</span>
+      <h2 id="learningCommandTitle">{{ _('Turn today’s effort into lasting knowledge.') }}</h2>
+      <p>{{ _('Your focus, mastery and next step—together in one calm learning view.') }}</p>
+      <div class="ln-command-actions">
+        <a class="primary-button" href="{{ url_for('todays_practice') }}">{{ _('Continue learning') }} <span aria-hidden="true">→</span></a>
+        {% if feature_flags.private_flashcards %}<a class="ghost-button" href="{{ url_for('flashcards_page') }}">{{ _('Open flashcards') }}</a>{% endif %}
+      </div>
+    </div>
+    <div class="ln-learning-signals" aria-label="{{ _('Learning signals') }}">
+      <article class="ln-signal">
+        {% set pulse = ((gamification.current_level_xp / gamification.next_level_xp * 100)|round|int) if gamification and gamification.next_level_xp else 0 %}
+        <div class="knowledge-pulse" style="--pulse:{{ pulse }}" aria-label="{{ _('Knowledge Pulse') }}: {{ pulse }}%">
+          <strong>{{ pulse }}%</strong><small>{{ _('pulse') }}</small>
+        </div>
+        <span>{{ _('Knowledge Pulse') }}</span>
+      </article>
+      <article class="ln-signal">
+        <span>{{ _('Mastery Map') }}</span>
+        <div class="mastery-map" aria-label="{{ _('Weak and strong topics') }}">
+          {% if masteries %}{% for item in masteries[:8] %}<i style="height:{{ [item.mastery_score|round|int, 14]|max }}%" title="{{ item.concept }}: {{ item.mastery_score|round|int }}%"></i>{% endfor %}{% else %}<i style="height:18%"></i><i style="height:18%"></i><i style="height:18%"></i>{% endif %}
+        </div>
+        <small>{{ masteries|length }} {{ _('topics mapped') }}</small>
+      </article>
+      <article class="ln-signal">
+        <span>{{ _('Study Orbit') }}</span>
+        <div class="study-orbit" aria-hidden="true"><i></i><i></i><i></i><b>{{ flashcards_widget.recent|length if flashcards_widget and flashcards_widget.recent else 0 }}</b></div>
+        <small>{{ _('recent sets in orbit') }}</small>
+      </article>
+      <article class="ln-signal">
+        <span>{{ _('Focus Trail') }}</span>
+        <strong>{{ due_today }}</strong>
+        <small>{{ _('reviews ready today') }}</small>
+        <div class="focus-trail" aria-hidden="true"><i class="done"></i><i class="{{ 'done' if due_today == 0 }}"></i><i></i><i></i></div>
+      </article>
+    </div>
+  </section>
 
   <section class="dashboard-focus-card reveal-card">
     <div><span class="eyebrow">{{ _("TODAY'S FOCUS") }}</span><h2>{{ _("Today's Practice") }}</h2><p>{{ _('Review due concepts and keep your learning progress moving.') }}</p></div>

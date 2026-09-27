@@ -8,6 +8,59 @@ let saving = false;
 const IMPORT_ID = window.LEARNOVA_IMPORT_ID ?? null;
 const VOCABULARY_IMPORT_ID = window.LEARNOVA_VOCABULARY_IMPORT_ID ?? null;
 let vocabularyListId = null;
+const DRAFT_KEY = `learnova:flashcard-draft:${SET_ID || IMPORT_ID || VOCABULARY_IMPORT_ID || "new"}`;
+let autosaveTimer = null;
+
+function draftLabel(en, de) {
+  return window.LEARNOVA_LANGUAGE === "de" ? de : en;
+}
+function setAutosaveState(message) {
+  const status = document.querySelector("#autosaveState");
+  if (status) status.textContent = message;
+}
+function saveLocalDraft() {
+  const draft = {
+    savedAt: Date.now(),
+    title: document.querySelector("#setTitle").value,
+    description: document.querySelector("#setDescription").value,
+    subject: document.querySelector("#metaSubject").value,
+    topic: document.querySelector("#metaTopic").value,
+    grade: document.querySelector("#metaGrade").value,
+    difficulty: document.querySelector("#metaDifficulty").value,
+    tags: document.querySelector("#metaTags").value,
+    cards,
+  };
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    setAutosaveState(draftLabel("Draft saved", "Entwurf gespeichert"));
+  } catch (_) {
+    setAutosaveState(draftLabel("Draft not saved", "Entwurf nicht gespeichert"));
+  }
+}
+function scheduleAutosave() {
+  setAutosaveState(draftLabel("Saving draft…", "Entwurf wird gespeichert…"));
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(saveLocalDraft, 450);
+}
+function restoreLocalDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    if (!draft?.cards?.length) return false;
+    document.querySelector("#setTitle").value = draft.title || "";
+    document.querySelector("#setDescription").value = draft.description || "";
+    document.querySelector("#metaSubject").value = draft.subject || "Other";
+    document.querySelector("#metaTopic").value = draft.topic || "";
+    document.querySelector("#metaGrade").value = draft.grade || "";
+    document.querySelector("#metaDifficulty").value = draft.difficulty || "medium";
+    document.querySelector("#metaTags").value = draft.tags || "";
+    cards = draft.cards.map(normalize);
+    setAutosaveState(draftLabel("Draft restored", "Entwurf wiederhergestellt"));
+    return true;
+  } catch (_) {
+    localStorage.removeItem(DRAFT_KEY);
+    return false;
+  }
+}
 
 function blankCard() {
   return { type: "question_answer", front: "", back: "", explanation: "", hint: "", tags: [], options: [], difficulty: "medium" };
@@ -21,7 +74,11 @@ function normalize(card) {
     vocabulary_entry_id: card.vocabulary_entry_id || "",
   };
 }
-function markDirty() { dirty = true; document.querySelector("#saveBar").classList.remove("hidden"); }
+function markDirty() {
+  dirty = true;
+  document.querySelector("#saveBar").classList.remove("hidden");
+  scheduleAutosave();
+}
 
 /* --------------------------- rendering --------------------------- */
 function renderCards() {
@@ -30,16 +87,18 @@ function renderCards() {
   list.innerHTML = cards.map((card, index) => `
     <li class="card-row" data-index="${index}" draggable="true">
       <div class="card-row-main">
-        <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
+        <span class="drag-handle" aria-hidden="true" title="${escapeHtml(draftLabel("Drag to reorder", "Zum Sortieren ziehen"))}">⠿</span>
         <span class="card-num">${index + 1}</span>
         <label class="visually-hidden" for="front-${index}">${escapeHtml(t("fcTerm"))}</label>
         <textarea id="front-${index}" data-field="front" rows="2" placeholder="${escapeHtml(t("fcTerm"))}">${escapeHtml(card.front)}</textarea>
         <label class="visually-hidden" for="back-${index}">${escapeHtml(t("fcDefinition"))}</label>
         <textarea id="back-${index}" data-field="back" rows="2" placeholder="${escapeHtml(t("fcDefinition"))}">${escapeHtml(card.back)}</textarea>
         <div class="card-row-tools">
-          ${genParams ? `<button type="button" data-regen title="Regenerate">↻</button>` : ""}
-          <button type="button" data-dup title="${escapeHtml(t("fcDuplicateCard"))}">⧉</button>
-          <button type="button" data-del class="danger" title="${escapeHtml(t("fcDeleteCard"))}">🗑</button>
+          <button type="button" data-up title="${escapeHtml(draftLabel("Move up", "Nach oben"))}" aria-label="${escapeHtml(draftLabel("Move card up", "Karte nach oben"))}">↑</button>
+          <button type="button" data-down title="${escapeHtml(draftLabel("Move down", "Nach unten"))}" aria-label="${escapeHtml(draftLabel("Move card down", "Karte nach unten"))}">↓</button>
+          ${genParams ? `<button type="button" data-regen title="${escapeHtml(draftLabel("Regenerate", "Neu generieren"))}" aria-label="${escapeHtml(draftLabel("Regenerate card", "Karte neu generieren"))}">↻</button>` : ""}
+          <button type="button" data-dup title="${escapeHtml(t("fcDuplicateCard"))}" aria-label="${escapeHtml(t("fcDuplicateCard"))}">⧉</button>
+          <button type="button" data-del class="danger" title="${escapeHtml(t("fcDeleteCard"))}" aria-label="${escapeHtml(t("fcDeleteCard"))}">×</button>
         </div>
       </div>
       <details class="card-more">
@@ -63,6 +122,8 @@ function onListClick(event) {
   const index = Number(row.dataset.index);
   if (event.target.closest("[data-del]")) { cards.splice(index, 1); markDirty(); renderCards(); }
   else if (event.target.closest("[data-dup]")) { cards.splice(index + 1, 0, normalize({ ...cards[index], id: undefined })); markDirty(); renderCards(); }
+  else if (event.target.closest("[data-up]") && index > 0) { [cards[index - 1], cards[index]] = [cards[index], cards[index - 1]]; markDirty(); renderCards(); }
+  else if (event.target.closest("[data-down]") && index < cards.length - 1) { [cards[index + 1], cards[index]] = [cards[index], cards[index + 1]]; markDirty(); renderCards(); }
   else if (event.target.closest("[data-regen]")) { regenerateCard(index); }
 }
 function onListInput(event) {
@@ -158,6 +219,7 @@ function collectBody() {
   return {
     title: document.querySelector("#setTitle").value.trim() || "Untitled set",
     subject: document.querySelector("#metaSubject").value,
+    grade: document.querySelector("#metaGrade").value,
     difficulty: document.querySelector("#metaDifficulty").value,
     card_type: "mixed",
     vocabulary_list_id: vocabularyListId,
@@ -181,6 +243,7 @@ async function save() {
       toast(t("fcSaved"), "success");
     }
     dirty = false;
+    localStorage.removeItem(DRAFT_KEY);
     window.location.href = `/flashcards/${id}`;
   } catch (error) {
     toast(error.message, "error");
@@ -206,12 +269,19 @@ async function init() {
   document.querySelector("#addFive").addEventListener("click", () => addCards(5));
   document.querySelector("#genButton").addEventListener("click", generate);
   document.querySelector("#saveButton").addEventListener("click", save);
-  document.querySelector("#discardButton").addEventListener("click", () => { if (window.confirm(t("fcUnsaved"))) window.location.reload(); });
+  document.querySelector("#discardButton").addEventListener("click", () => {
+    if (window.confirm(t("fcUnsaved"))) { localStorage.removeItem(DRAFT_KEY); window.location.reload(); }
+  });
   document.querySelectorAll("#setTitle, #setDescription, #metaSubject, #metaTopic, #metaGrade, #metaDifficulty, #metaVisibility, #metaTags")
     .forEach(el => el.addEventListener("input", markDirty));
 
   document.addEventListener("keydown", event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); save(); }
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      addCards(1);
+      document.querySelector(`#front-${cards.length - 1}`)?.focus();
+    }
   });
   window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 
@@ -248,8 +318,9 @@ async function init() {
   } else {
     cards = [blankCard(), blankCard()];
   }
+  const restoredDraft = restoreLocalDraft();
   renderCards();
-  if (!IMPORT_ID) {
+  if (!IMPORT_ID && !VOCABULARY_IMPORT_ID && !restoredDraft) {
     dirty = false;
     document.querySelector("#saveBar").classList.add("hidden");
   }

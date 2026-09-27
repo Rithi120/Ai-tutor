@@ -9,7 +9,6 @@ from pathlib import Path
 TEST_DATABASE = Path(tempfile.gettempdir()) / "learnova_study_planner_test.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DATABASE.as_posix()}")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("AI_MODE", "mock")
 
 import app as application  # noqa: E402
 from learnova.study_planner import (  # noqa: E402

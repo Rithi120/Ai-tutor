@@ -10,3 +10,5 @@ python-dotenv==1.1.1
 pypdf==5.7.0
 Pillow==11.3.0
 PyMuPDF==1.26.3
+numpy==2.5.1
+opencv-python-headless==5.0.0.93

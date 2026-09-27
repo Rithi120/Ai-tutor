@@ -12,6 +12,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from learnova import moderation  # noqa: E402
 
 
 class FakeResponse:
@@ -118,7 +119,20 @@ class CardsFrontendTests(unittest.TestCase):
     # ---- saved community copy is isolated from the public original ----
     def test_save_community_copy_is_isolated(self):
         set_id = self._make_set()
-        with patch.object(application, "create_response", return_value=FakeResponse(REVIEW_HIGH)):
+        # Publishing runs a safety classification before the quality review, so the fake
+        # answers each task with its own payload rather than one canned response.
+        def respond(**kwargs):
+            if kwargs.get("task_type") == "content_moderation":
+                dimensions = {name: "pass" for name in moderation.DIMENSIONS}
+                dimensions["sexual_content_context"] = "not_applicable"
+                return FakeResponse({
+                    "recommendation": "allow", "dimensions": dimensions, "confidence": 0.95,
+                    "evidence_sufficiency": "sufficient", "reason_codes": [], "quotes": [],
+                    "evidence_summary": "Factual subject content with no safety concern.",
+                    "suggested_revision": None, "requires_review": False})
+            return FakeResponse(REVIEW_HIGH)
+
+        with patch.object(application, "create_response", side_effect=respond):
             published = self.client.post("/api/community/publish", json={
                 "source_set_id": set_id, "title": "Public Bio", "subject": "Biology",
                 "confirm": True, "author_display": "username"})

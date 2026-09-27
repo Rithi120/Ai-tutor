@@ -8,6 +8,7 @@ import app as application
 from learnova.ai_services import service
 from learnova.ai_services.contracts import AIValidationError, validate_output
 from learnova.ai_services.prompts import PROMPT_VERSIONS, STRUCTURED_TASKS, output_contract
+from tests.provider_stub import FIXTURE_ROOT, stub_provider
 
 
 class FakeUsage:
@@ -40,10 +41,9 @@ class AIObservabilityTests(unittest.TestCase):
         root = Path(self.temp.name)
         self.original = dict(application.app.config)
         application.app.config.update(
-            TESTING=False, ENV_NAME="development", AI_MODE="mock", AI_MOCK_SCENARIO="valid",
-            AI_MOCK_LATENCY_MS=0, AI_CACHE_DIR=str(root / "cache"),
+            TESTING=False, ENV_NAME="development", AI_MODE="live",
+            AI_CACHE_DIR=str(root / "cache"),
             AI_USAGE_PATH=str(root / "usage.jsonl"),
-            AI_FIXTURE_DIR=str(Path(application.app.root_path) / "tests" / "fixtures" / "ai"),
             ALLOW_LIVE_AI=True, RUN_LIVE_AI_TEST=False, AI_ENFORCE_LIMITS=False,
             AI_MAX_OUTPUT_CHARACTERS=200000,
         )
@@ -62,17 +62,17 @@ class AIObservabilityTests(unittest.TestCase):
         defaults.update(values)
         return service.create_response(**defaults)
 
-    def test_valid_fixtures_use_current_versions_and_production_schemas(self):
-        fixture_root = Path(application.app.config["AI_FIXTURE_DIR"])
+    def test_valid_samples_use_current_versions_and_production_schemas(self):
+        """Every shipped sample response still satisfies the live validator it documents."""
         for language in ("en", "de"):
-            fixture = json.loads((fixture_root / language / "valid.json").read_text(encoding="utf-8"))
+            fixture = json.loads((FIXTURE_ROOT / language / "valid.json").read_text(encoding="utf-8"))
             self.assertEqual(fixture["_meta"]["prompt_versions"], PROMPT_VERSIONS)
             for task, version in PROMPT_VERSIONS.items():
                 output = fixture[task]["output_text"]
                 text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
                 validate_output(task, text, version, {})
 
-    def test_invalid_fixture_categories(self):
+    def test_invalid_samples_map_to_stable_categories(self):
         cases = [
             ("malformed_json", "answer_evaluation", {}, "invalid_json"),
             ("missing_required_fields", "answer_evaluation", {}, "schema_validation"),
@@ -84,15 +84,16 @@ class AIObservabilityTests(unittest.TestCase):
             ("unsupported_difficulty", "adaptive_practice", {}, "schema_validation"),
         ]
         for scenario, task, context, category in cases:
-            application.app.config["AI_MOCK_SCENARIO"] = scenario
-            with self.assertRaises(AIValidationError) as caught:
-                self.call(task, validation_context=context)
-            self.assertEqual(caught.exception.category, category)
+            with stub_provider(scenario):
+                with self.assertRaises(AIValidationError) as caught:
+                    self.call(task, validation_context=context)
+            self.assertEqual(caught.exception.category, category, scenario)
             self.assertEqual(caught.exception.report.prompt_version, PROMPT_VERSIONS[task])
             self.assertFalse(caught.exception.report.valid)
-        application.app.config.update(AI_MOCK_SCENARIO="oversized_output", AI_MAX_OUTPUT_CHARACTERS=20)
-        with self.assertRaises(AIValidationError) as caught:
-            self.call("tutor_chat")
+        application.app.config["AI_MAX_OUTPUT_CHARACTERS"] = 20
+        with stub_provider("oversized_output"):
+            with self.assertRaises(AIValidationError) as caught:
+                self.call("tutor_chat")
         self.assertEqual(caught.exception.category, "token_limit_exceeded")
 
     def test_one_corrective_retry_then_success_is_measured(self):
@@ -130,15 +131,18 @@ class AIObservabilityTests(unittest.TestCase):
                 self.call()
             provider.assert_not_called()
         Path(application.app.config["AI_USAGE_PATH"]).unlink(missing_ok=True)
-        application.app.config.update(AI_MODE="mock", AI_LESSON_GENERATION_MAX_INPUT_TOKENS=9000,
+        application.app.config.update(AI_LESSON_GENERATION_MAX_INPUT_TOKENS=9000,
                                       AI_MAX_REQUESTS_PER_USER_HOUR=1)
-        self.call()
-        with self.assertRaises(service.AIRequestLimitError):
+        with stub_provider("valid") as provider:
             self.call()
+            with self.assertRaises(service.AIRequestLimitError):
+                self.call()
+            self.assertEqual(provider.call_count, 1)
 
     def test_metadata_is_complete_and_sanitized(self):
         secret = "PRIVATE STUDENT MATERIAL"
-        self.call(input=secret)
+        with stub_provider("valid"):
+            self.call(input=secret)
         raw = Path(application.app.config["AI_USAGE_PATH"]).read_text(encoding="utf-8")
         self.assertNotIn(secret, raw)
         record = json.loads(raw.splitlines()[-1])

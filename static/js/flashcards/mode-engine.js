@@ -1,4 +1,5 @@
 import { api, toast, t, renderMath, SET_ID } from "./common.js";
+import { safeUUID } from "../dom.js";
 import { matchPair, nextLives, scoreAnswer, shouldReduceMotion } from "./mode-rules.js";
 
 const MODE = window.LEARNOVA_MODE;
@@ -38,9 +39,13 @@ function renderItem() {
   $("#selfGrades").classList.add("hidden");
   $("#flashcardControls").classList.toggle("hidden", item.question_type !== "self_grade");
   $("#modeOptions").innerHTML = written || item.question_type === "self_grade" ? "" :
-    (item.options || []).map(value => `<button type="button" data-answer="${escapeAttr(value)}">${escapeText(value)}</button>`).join("");
+    (item.options || []).map(value => {
+      // The value stays raw (server compares it); only the visible label is localized.
+      const label = value === "true" ? t("fcTrue") : value === "false" ? t("fcFalse") : value;
+      return `<button type="button" data-answer="${escapeAttr(value)}">${escapeText(label)}</button>`;
+    }).join("");
   if (MODE === "match") renderMatch();
-  renderMath($("#modePrompt"));
+  renderMath($("#standardQuestion"));
   updateCounters();
 }
 function escapeText(value) { const span = document.createElement("span"); span.textContent = value; return span.innerHTML; }
@@ -54,6 +59,7 @@ function renderMatch() {
   ]).sort((a, b) => ((a.cardId * 17 + (a.side === "front" ? 1 : 7)) % 23) - ((b.cardId * 17 + (b.side === "front" ? 1 : 7)) % 23));
   $("#matchBoard").classList.remove("hidden");
   $("#matchBoard").innerHTML = tiles.map(tile => `<button role="gridcell" data-card="${tile.cardId}" data-side="${tile.side}">${escapeText(tile.text)}</button>`).join("");
+  renderMath($("#matchBoard"));
 }
 async function submit(answer, item = current()) {
   if (!item || state.locked || state.paused) return;
@@ -61,7 +67,7 @@ async function submit(answer, item = current()) {
   try {
     const responseMs = Math.max(150, Date.now() - state.started);
     const data = await api(`/api/flashcards/sessions/${state.session.id}/items/${item.id}/answer`, { method: "POST", body: {
-      answer, response_ms: responseMs, request_id: crypto.randomUUID(),
+      answer, response_ms: responseMs, request_id: safeUUID(),
     } });
     if (MODE === "test") {
       item.answered = true; item.student_answer = answer; state.session.answered_items++;
@@ -70,12 +76,21 @@ async function submit(answer, item = current()) {
     item.answered = true; item.correct = data.correct;
     state.session.answered_items++; state.session.correct_count += data.correct ? 1 : 0;
     state.session.incorrect_count += data.correct ? 0 : 1;
+    if (MODE === "match") {
+      // Matched pairs simply leave the board; no question-card feedback/advance.
+      updateCounters();
+      state.locked = false;
+      if (state.session.items.every(entry => entry.answered)) { window.setTimeout(finish, 250); }
+      else renderMatch();
+      return;
+    }
     const scored = scoreAnswer(data.correct, state.combo, MODE);
     state.combo = scored.combo; state.maxCombo = Math.max(state.maxCombo, state.combo);
     state.lives = nextLives(state.lives, data.correct);
     const feedback = $("#modeFeedback");
     feedback.innerHTML = `<strong>${escapeText(data.correct ? t("fcCorrect") : t("fcIncorrect"))}</strong><p>${escapeText(t("fcCorrectAnswer"))}: ${escapeText(data.correct_answer)}</p><p>${escapeText(t("fcXpEarned"))}: +${data.xp_earned}</p>`;
     feedback.classList.remove("hidden");
+    renderMath(feedback);
     updateCounters();
     if (["blast", "blocks"].includes(MODE) && state.lives <= 0) {
       window.setTimeout(finish, 250);
@@ -91,7 +106,7 @@ async function start(resume = true) {
       mode: MODE, objective: $("#modeObjective").value, count: Number($("#modeCount").value),
       time_limit: Number($("#modeTime")?.value || 0) * 60,
       direction: $("#modeDirection")?.value || "mixed", resume,
-      reduced_motion: $("#reducedMotion").checked, idempotency_key: crypto.randomUUID(),
+      reduced_motion: $("#reducedMotion").checked, idempotency_key: safeUUID(),
     } });
     state.session = data.session;
     state.index = Math.min(state.session.current_position || 0, state.session.items.length - 1);
@@ -124,7 +139,16 @@ function showSummary() {
   $("#modePlay").classList.add("hidden"); $("#modeSummary").classList.remove("hidden");
   const s = state.session;
   $("#summaryStats").innerHTML = `<div><b>${s.score}</b><span>${escapeText(t("fcScore"))}</span></div><div><b>${s.accuracy}%</b><span>${escapeText(t("fcAccuracy"))}</span></div><div><b>${s.active_seconds}s</b><span>${escapeText(t("fcStudyTime"))}</span></div><div><b>+${s.xp_earned}</b><span>${escapeText(t("fcXp"))}</span></div>`;
-  if (MODE === "test") $("#resultReview").innerHTML = s.items.map(item => `<article class="result-item ${item.correct ? "correct" : "incorrect"}"><b>${escapeText(item.prompt)}</b><p>${escapeText(t("fcYourAnswer"))}: ${escapeText(item.student_answer || "—")}</p><p>${escapeText(t("fcCorrectAnswer"))}: ${escapeText(item.correct_answer)}</p></article>`).join("");
+  renderMath($("#summaryStats"));
+  // "Review mistakes" must not appear when the session had no incorrect answers.
+  const hadMistakes = (s.incorrect_count || 0) > 0;
+  $("#reviewWeak")?.classList.toggle("hidden", !hadMistakes);
+  const nextAction = document.querySelector(".summary-next-action");
+  if (nextAction) nextAction.classList.toggle("hidden", !hadMistakes);
+  if (MODE === "test") {
+    $("#resultReview").innerHTML = s.items.map(item => `<article class="result-item ${item.correct ? "correct" : "incorrect"}"><b>${escapeText(item.prompt)}</b><p>${escapeText(t("fcYourAnswer"))}: ${escapeText(item.student_answer || "—")}</p><p>${escapeText(t("fcCorrectAnswer"))}: ${escapeText(item.correct_answer)}</p></article>`).join("");
+    renderMath($("#resultReview"));
+  }
 }
 async function onMatch(event) {
   const button = event.target.closest("[data-card]");

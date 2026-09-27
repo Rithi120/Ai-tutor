@@ -1,7 +1,7 @@
 """Cost-safe gateway for every Learnova AI provider request.
 
 Feature modules build prompts. This module exclusively owns provider access,
-mock fixtures, private cache partitioning, and sanitized usage accounting.
+response caching, private cache partitioning, and sanitized usage accounting.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from flask import current_app
 from openai import OpenAI
@@ -27,11 +27,15 @@ from .prompts import PROMPT_VERSIONS, corrective_instruction, output_contract
 
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-AI_MODES = {"mock", "cached", "live"}
+AI_MODES = {"cached", "live"}
 SUPPORTED_TASK_TYPES = {
     "lesson_generation",
     "quiz_generation",
     "answer_evaluation",
+    "mistake_analysis",
+    "answer_diagnosis",
+    "diagnosis_verification",
+    "question_generation",
     "tutor_chat",
     "translation",
     "ocr_document_recognition",
@@ -41,6 +45,8 @@ SUPPORTED_TASK_TYPES = {
     "final_exam_evaluation",
     "flashcard_generation",
     "flashcard_review",
+    "content_moderation",
+    "assistant_chat",
 }
 _ACCOUNTING_LOCK = threading.Lock()
 
@@ -51,14 +57,6 @@ class AIGatewayError(RuntimeError):
 
 class AIConfigurationError(AIGatewayError):
     """Raised when a potentially billable request is not explicitly allowed."""
-
-
-class AIMockTimeout(AIGatewayError):
-    """Deterministic timeout fixture."""
-
-
-class AIMockRateLimit(AIGatewayError):
-    """Deterministic rate-limit fixture."""
 
 
 class AIRequestLimitError(AIGatewayError):
@@ -97,6 +95,10 @@ class GatewayResponse:
 DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     "tutor_chat": 200,
     "answer_evaluation": 250,
+    "mistake_analysis": 3000,
+    "answer_diagnosis": 2600,
+    "diagnosis_verification": 300,
+    "question_generation": 1200,
     "translation": 400,
     "lesson_generation": 700,
     "quiz_generation": 600,
@@ -107,11 +109,17 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     "final_exam_evaluation": 600,
     "flashcard_generation": 4000,
     "flashcard_review": 900,
+    "content_moderation": 900,
+    "assistant_chat": 2000,
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
     "tutor_chat": 1800,
     "answer_evaluation": 5000,
+    "mistake_analysis": 6000,
+    "answer_diagnosis": 7000,
+    "diagnosis_verification": 4000,
+    "question_generation": 6000,
     "translation": 9000,
     "lesson_generation": 9000,
     "quiz_generation": 6000,
@@ -122,30 +130,155 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "final_exam_evaluation": 8000,
     "flashcard_generation": 10000,
     "flashcard_review": 12000,
+    "content_moderation": 12000,
+    "assistant_chat": 12000,
 }
 
 
-def _provider_client() -> OpenAI:
-    api_key = current_app.config.get("GROQ_API_KEY", "")
+@dataclass(frozen=True)
+class ProviderProfile:
+    """How to reach one AI provider.
+
+    Adding a provider means adding an entry here and, if its API is not
+    Responses-shaped, one `call` function. Nothing outside this module changes: every
+    caller names a model, and the model names its provider.
+    """
+
+    name: str
+    api_key_setting: str
+    base_url_setting: str = ""
+    default_base_url: str = ""
+    # Translates the canonical request (see `_provider_response`) into a real call and
+    # returns the provider's own response object. `_gateway_response` normalizes it.
+    call: Callable[["ProviderProfile", dict[str, Any]], Any] | None = None
+
+
+def _openai_compatible_call(profile: "ProviderProfile", request: dict[str, Any]) -> Any:
+    """Providers that speak the OpenAI Responses API verbatim: Groq today, OpenAI itself.
+
+    The canonical request shape *is* this API's shape, so there is nothing to translate.
+    """
+
+    api_key = current_app.config.get(profile.api_key_setting, "")
     if not api_key:
-        raise AIConfigurationError("GROQ_API_KEY is not configured.")
-    return OpenAI(api_key=api_key, base_url=current_app.config["GROQ_BASE_URL"])
+        raise AIConfigurationError(f"{profile.api_key_setting} is not configured.")
+    base_url = (current_app.config.get(profile.base_url_setting)
+                if profile.base_url_setting else None) or profile.default_base_url
+    return OpenAI(api_key=api_key, base_url=base_url).responses.create(**request)
+
+
+# The provider registry. `groq` stays the default so nothing about existing behaviour
+# changes; `openai` is registered because it costs nothing to support - the same SDK, a
+# different key and base URL.
+#
+# A provider whose API is not Responses-shaped (Anthropic's Messages API, for example)
+# supplies its own `call`, which receives the canonical request and is responsible for
+# translating it: `instructions` -> system prompt, `input` -> the user turn,
+# `max_output_tokens` -> that API's output cap, and for returning an object exposing
+# `output_text`, `model` and `usage`. `_gateway_response` already tolerates a missing or
+# differently-shaped `usage`, so an adapter does not have to fabricate token counts.
+PROVIDERS: dict[str, ProviderProfile] = {
+    "groq": ProviderProfile(
+        name="groq", api_key_setting="GROQ_API_KEY",
+        base_url_setting="GROQ_BASE_URL",
+        default_base_url="https://api.groq.com/openai/v1",
+        call=_openai_compatible_call),
+    "openai": ProviderProfile(
+        name="openai", api_key_setting="OPENAI_API_KEY",
+        base_url_setting="OPENAI_BASE_URL",
+        default_base_url="https://api.openai.com/v1",
+        call=_openai_compatible_call),
+}
+
+DEFAULT_PROVIDER = "groq"
+
+# Provider names the project expects to gain but has not registered yet. Naming one in a
+# model string is a configuration mistake worth a clear error, not a silent fall back to
+# the default provider with an unusable model name attached.
+PLANNED_PROVIDERS = frozenset({"anthropic", "azure", "google", "mistral", "ollama"})
+
+
+def split_model(model: str | None) -> tuple[str, str]:
+    """Split "provider:model" into its parts, defaulting to the configured provider.
+
+    A bare model name keeps working and keeps going to the default provider, so every
+    existing call site is unaffected. Only a caller that wants a specific provider has to
+    say so, and it says so in the one place it already names a model.
+
+    Groq model ids contain "/" but not ":" (openai/gpt-oss-20b), so the separator is
+    unambiguous.
+    """
+
+    text = str(model or "").strip()
+    if ":" in text:
+        provider, _, name = text.partition(":")
+        provider = provider.strip().casefold()
+        if provider in PROVIDERS:
+            return provider, name.strip()
+        if provider in PLANNED_PROVIDERS:
+            raise AIConfigurationError(
+                f"Provider {provider!r} is not registered. Add it to PROVIDERS in "
+                "learnova.ai_services.service with a client adapter.")
+    return DEFAULT_PROVIDER, text
+
+
+def _provider_client() -> OpenAI:
+    """Kept for callers that want a raw default-provider client."""
+
+    profile = PROVIDERS[DEFAULT_PROVIDER]
+    api_key = current_app.config.get(profile.api_key_setting, "")
+    if not api_key:
+        raise AIConfigurationError(f"{profile.api_key_setting} is not configured.")
+    return OpenAI(api_key=api_key, base_url=current_app.config[profile.base_url_setting])
 
 
 def _provider_response(**kwargs: Any) -> Any:
-    """The only external AI network call in the application."""
+    """The only external AI network call in the application.
 
-    return _provider_client().responses.create(**kwargs)
+    `kwargs` is the canonical request shape, which is the OpenAI Responses API's shape
+    because that is what every call site already speaks. A provider whose API differs
+    translates from it rather than the other way round, so adding one never touches a
+    caller.
+    """
+
+    provider, model = split_model(kwargs.get("model"))
+    profile = PROVIDERS[provider]
+    if profile.call is None:
+        raise AIConfigurationError(
+            f"Provider {provider!r} has no client adapter configured.")
+    # The provider is addressed by the registry, so the prefix is stripped before the
+    # request goes out: the remote side only knows its own model names.
+    return profile.call(profile, {**kwargs, "model": model})
+
+
+def available_providers() -> list[str]:
+    """Providers that are registered *and* have a key configured."""
+
+    return sorted(
+        name for name, profile in PROVIDERS.items()
+        if current_app.config.get(profile.api_key_setting)
+    )
 
 
 def quality_options(model: str | None = None) -> dict[str, Any]:
-    selected = model or current_app.config["GROQ_TUTOR_MODEL"]
+    _provider, selected = split_model(model or current_app.config["GROQ_TUTOR_MODEL"])
     return {"reasoning": {"effort": "low"}} if selected.startswith("openai/gpt-oss") else {}
 
 
 def parse_json(payload: str) -> Any:
-    cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", payload.strip()))
-    return json.loads(cleaned)
+    text = payload.strip()
+    # Reasoning models (e.g. Qwen3) may prepend a <think>…</think> block; drop it.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    cleaned = repair_latex_json(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Fall back to the outermost JSON object/array if the model wrapped it in prose.
+        match = re.search(r"[\{\[].*[\}\]]", cleaned, flags=re.DOTALL)
+        if match is None:
+            raise
+        return json.loads(repair_latex_json(match.group(0)))
 
 
 def image_data_url(upload: Any) -> str:
@@ -158,13 +291,34 @@ def image_data_url(upload: Any) -> str:
     return f"data:{upload.mimetype};base64,{encoded}"
 
 
+# AI content languages the gateway can be asked to generate in. Interface language can
+# be any of the app's 23 locales, but content generation is validated for this set; new
+# entries here follow the interface language once their prompts are trusted.
+_CONTENT_LANGUAGES = {
+    "en": ("English", {"en", "english"}),
+    "de": ("German", {"de", "deutsch", "german"}),
+    "fr": ("French", {"fr", "french", "français", "francais"}),
+    "es": ("Spanish", {"es", "spanish", "español", "espanol"}),
+    "it": ("Italian", {"it", "italian", "italiano"}),
+    "pt": ("Portuguese", {"pt", "portuguese", "português", "portugues"}),
+    "nl": ("Dutch", {"nl", "dutch", "nederlands"}),
+    "ar": ("Arabic", {"ar", "arabic", "العربية"}),
+}
+_LANGUAGE_ALIAS_TO_CODE = {
+    alias: code for code, (_name, aliases) in _CONTENT_LANGUAGES.items() for alias in aliases
+}
+
+
 def _normalized_language(value: str | None) -> str:
     normalized = str(value or "en").strip().casefold()
-    if normalized in {"de", "deutsch", "german"}:
-        return "de"
-    if normalized in {"en", "english"}:
-        return "en"
+    code = _LANGUAGE_ALIAS_TO_CODE.get(normalized)
+    if code:
+        return code
     raise AIProviderError("unsupported_language", "The requested AI language is not supported.")
+
+
+def _language_display_name(code: str) -> str:
+    return _CONTENT_LANGUAGES.get(code, ("English", set()))[0]
 
 
 def _clean_text(value: str) -> str:
@@ -247,7 +401,6 @@ def request_hash(
     provider_input: Any,
     instructions: Any = None,
     private_scope: str | int | None = None,
-    fixture_context: Any = None,
     validation_context: Any = None,
 ) -> str:
     canonical = {
@@ -257,7 +410,6 @@ def request_hash(
         "prompt_version": prompt_version,
         "input": _normalize_for_hash(provider_input),
         "instructions": _normalize_for_hash(instructions),
-        "fixture_context": _normalize_for_hash(fixture_context),
         "validation_context": _normalize_for_hash(validation_context),
         "private_partition": _private_partition(private_scope),
     }
@@ -400,158 +552,6 @@ def _gateway_response(response: Any, model: str, provider_input: Any) -> Gateway
     )
 
 
-def _fixture_path(language: str, scenario: str) -> Path:
-    root = Path(current_app.config["AI_FIXTURE_DIR"])
-    return root / _normalized_language(language) / f"{scenario}.json"
-
-
-def _apply_fixture_context(
-    task_type: str, output: Any, fixture_context: dict[str, Any] | None
-) -> Any:
-    """Fill sanitized fixture templates with non-secret structural identifiers."""
-
-    context = fixture_context or {}
-    if not isinstance(output, dict):
-        return output
-    if task_type == "translation" and isinstance(context.get("texts"), list):
-        output["translations"] = [str(item) for item in context["texts"]]
-    elif task_type == "project_section_generation":
-        sections = output.get("sections")
-        if isinstance(sections, list) and sections:
-            wanted = max(1, min(2, int(context.get("section_count") or len(sections))))
-            while len(sections) < wanted:
-                sections.append(json.loads(json.dumps(sections[0])))
-            output["sections"] = sections[:wanted]
-            page_ids = [int(item) for item in context.get("source_page_ids", [])]
-            for index, section in enumerate(output["sections"], start=1):
-                section["title"] = f"{section.get('title', 'Study section')} {index}"
-                if page_ids:
-                    section["source_page_ids"] = page_ids
-    elif task_type == "final_exam_generation":
-        questions = output.get("questions")
-        if isinstance(questions, list) and questions:
-            count = max(1, min(50, int(context.get("question_count") or len(questions))))
-            allocation = {
-                int(key): int(value) for key, value in (context.get("section_allocation") or {}).items()
-            }
-            section_ids = [
-                section_id for section_id, amount in allocation.items() for _ in range(amount)
-            ] or [int(item) for item in context.get("section_ids", [])] or [1]
-            page_ids = context.get("source_page_ids") or {}
-            supporting = context.get("supporting_text") or {}
-            difficulties = [
-                difficulty
-                for difficulty, amount in (context.get("difficulty_distribution") or {}).items()
-                for _ in range(int(amount))
-            ] or ["medium"]
-            question_types = context.get("question_types") or ["short_answer"]
-            template = questions[0]
-            generated = []
-            for index in range(count):
-                item = json.loads(json.dumps(template))
-                section_id = section_ids[index % len(section_ids)]
-                item["id"] = f"q{index + 1}"
-                item["section_id"] = section_id
-                item["prompt"] = f"{item.get('prompt', 'Practice question')} ({index + 1})"
-                item["source_page_ids"] = page_ids.get(str(section_id), page_ids.get(section_id, [1]))
-                item["supporting_text"] = supporting.get(
-                    str(section_id), supporting.get(section_id, item.get("supporting_text", "Fixture source"))
-                )
-                item["difficulty"] = difficulties[index % len(difficulties)]
-                item["question_type"] = question_types[index % len(question_types)]
-                if item["question_type"] in {"multiple_choice", "matching"}:
-                    item["options"] = ["A", "B", "C", "D"]
-                    item["expected_answer"] = "A"
-                elif item["question_type"] == "true_false":
-                    item["options"] = ["True", "False"]
-                    item["expected_answer"] = "True"
-                else:
-                    item["options"] = []
-                generated.append(item)
-            output["questions"] = generated
-    elif task_type == "final_exam_evaluation":
-        results = output.get("results")
-        if isinstance(results, list) and results:
-            template = results[0]
-            output["results"] = [
-                {**template, "question_id": int(question_id)}
-                for question_id in context.get("question_ids", [template.get("question_id", 1)])
-            ]
-    elif task_type == "adaptive_practice":
-        question = output.get("question") or output.get("next_question")
-        if isinstance(question, dict):
-            if context.get("concept"):
-                question["concept"] = str(context["concept"])
-                question["concepts"] = [str(context["concept"])]
-            if context.get("subject"):
-                question["subject"] = str(context["subject"])
-            if context.get("question_number") and not context.get("lesson"):
-                question["prompt"] = (
-                    f"{question.get('prompt', 'Practice question')} "
-                    f"({int(context['question_number'])})"
-                )
-            if context.get("lesson"):
-                concept = str(context.get("concept") or question.get("concept") or "Practice concept")
-                subject = str(context.get("subject") or question.get("subject") or "General studies")
-                return {
-                    "lesson_title": f"Adaptive practice: {concept}",
-                    "detected_level": "adaptive",
-                    "concepts": [{"name": concept, "evidence": "scheduled mastery review"}],
-                    "explanation": f"Review {concept} using the saved {subject} learning context.",
-                    "worked_example": {
-                        "problem": f"Review one {concept} example",
-                        "steps": ["Identify the relevant rule.", "Apply it one step at a time."],
-                        "answer": "Check each step against the saved material.",
-                    },
-                    "teacher_tips": ["Explain why each step is valid."],
-                    "exceptions": [],
-                    "question": question,
-                }
-    return output
-
-
-def _mock_response(
-    task_type: str,
-    language: str,
-    model: str,
-    fixture_context: dict[str, Any] | None = None,
-) -> GatewayResponse:
-    latency = max(0, min(5000, int(current_app.config.get("AI_MOCK_LATENCY_MS", 0))))
-    if latency:
-        time.sleep(latency / 1000)
-    scenario = str(current_app.config.get("AI_MOCK_SCENARIO", "valid")).strip() or "valid"
-    path = _fixture_path(language, scenario)
-    try:
-        fixture = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as error:
-        raise AIConfigurationError(f"AI mock fixture not found: {path}") from error
-    entry = fixture.get(task_type, fixture.get("default", fixture))
-    if not isinstance(entry, dict):
-        entry = {"output_text": entry}
-    error = entry.get("error")
-    if isinstance(error, dict):
-        error_type = str(error.get("type", "mock_error"))
-        message = str(error.get("message", "Simulated AI failure"))
-        if error_type == "timeout":
-            raise AIMockTimeout(message)
-        if error_type == "rate_limit":
-            raise AIMockRateLimit(message)
-        raise AIGatewayError(message)
-    output = entry.get("output_text", "")
-    if scenario == "valid":
-        output = _apply_fixture_context(task_type, output, fixture_context)
-    if not isinstance(output, str):
-        output = json.dumps(output, ensure_ascii=False)
-    usage = entry.get("usage") or {}
-    input_tokens = int(usage.get("input_tokens") or 0)
-    output_tokens = int(usage.get("output_tokens") or _estimate_tokens(output))
-    return GatewayResponse(
-        output_text=output,
-        model=str(entry.get("model") or f"mock/{model}"),
-        usage=GatewayUsage(input_tokens, output_tokens, input_tokens + output_tokens),
-    )
-
-
 def _assert_provider_allowed(mode: str) -> None:
     environment = current_app.config.get("ENV_NAME", "development")
     if current_app.testing and not current_app.config.get("RUN_LIVE_AI_TEST", False):
@@ -593,10 +593,6 @@ def _failure_details(error: Exception) -> tuple[str, str]:
         return "token_limit_exceeded", "The request exceeded the configured token budget."
     if isinstance(error, AIRequestLimitError):
         return "request_limit_reached", "The configured AI usage limit was reached."
-    if isinstance(error, AIMockTimeout):
-        return "provider_timeout", "The AI request timed out."
-    if isinstance(error, AIMockRateLimit):
-        return "provider_rate_limit", "The AI provider rate limit was reached."
     if isinstance(error, AIProviderError):
         return error.category, error.safe_summary
     if isinstance(error, AIConfigurationError):
@@ -659,7 +655,6 @@ def create_response(
     language: str = "en",
     prompt_version: str | None = None,
     private_scope: str | int | None = None,
-    fixture_context: dict[str, Any] | None = None,
     validation_context: dict[str, Any] | None = None,
     session_scope: str | int | None = None,
     **provider_kwargs: Any,
@@ -668,7 +663,7 @@ def create_response(
 
     if task_type not in SUPPORTED_TASK_TYPES:
         raise ValueError(f"Unsupported AI task type: {task_type}")
-    mode = str(current_app.config.get("AI_MODE", "mock")).strip().lower()
+    mode = str(current_app.config.get("AI_MODE", "cached")).strip().lower()
     if mode not in AI_MODES:
         raise AIConfigurationError(f"Unsupported AI_MODE {mode!r}")
     prompt_version = prompt_version or PROMPT_VERSIONS[task_type]
@@ -694,8 +689,8 @@ def create_response(
             "error_summary": error.safe_summary,
         })
         raise
-    language_name = "German" if normalized_language == "de" else "English"
-    validation_context = {**(fixture_context or {}), **(validation_context or {})}
+    language_name = _language_display_name(normalized_language)
+    validation_context = dict(validation_context or {})
     provider_kwargs = dict(provider_kwargs)
     provider_input = _compress_input(provider_kwargs.get("input"))
     provider_kwargs["input"] = provider_input
@@ -715,7 +710,6 @@ def create_response(
         provider_input=provider_input,
         instructions=provider_kwargs.get("instructions"),
         private_scope=private_scope,
-        fixture_context=fixture_context,
         validation_context=validation_context,
     )
     cache_hit = False
@@ -767,17 +761,7 @@ def create_response(
             user_ref, session_ref, mode,
             input_tokens_estimate + int(provider_kwargs.get("max_output_tokens") or 0),
         )
-        if mode == "mock":
-            response = _mock_response(task_type, normalized_language, model, fixture_context)
-            if not response.usage.input_tokens:
-                estimated_usage = GatewayUsage(
-                    input_tokens_estimate, response.usage.output_tokens,
-                    input_tokens_estimate + response.usage.output_tokens,
-                )
-                response = GatewayResponse(response.output_text, response.model, estimated_usage)
-            add_usage(response.usage)
-            response = validated(response)
-        elif mode == "cached":
+        if mode == "cached":
             response = _read_cache(key)
             cache_hit = response is not None
             if response is not None:
@@ -824,7 +808,7 @@ def create_response(
             validation_result = "invalid"
         raise
     finally:
-        usage = accumulated_usage if provider_called or mode == "mock" else (response.usage if response else GatewayUsage())
+        usage = accumulated_usage if provider_called else (response.usage if response else GatewayUsage())
         _record_usage({
             "request_id": request_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),

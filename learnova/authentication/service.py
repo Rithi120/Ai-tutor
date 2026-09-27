@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 
+from learnova.profiles import normalize_grade
+
 
 USERNAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9_.-]{2,29}")
 EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
@@ -18,18 +20,22 @@ class RegistrationInput:
     email: str
     password: str
     language: str
+    grade: str = ""
 
 
 class AccountConflict(Exception):
     """Raised when a unique account identity already exists."""
 
 
-def normalize_registration(username: str, email: str, password: str, language: str) -> RegistrationInput:
+def normalize_registration(
+    username: str, email: str, password: str, language: str, grade: str = "",
+) -> RegistrationInput:
     return RegistrationInput(
         username=username.strip().casefold(),
         email=email.strip().lower()[:255],
         password=password,
         language=language,
+        grade=normalize_grade(grade),
     )
 
 
@@ -38,6 +44,9 @@ def validate_registration(data: RegistrationInput, supported_languages: set[str]
         return "username"
     if data.language not in supported_languages:
         return "language"
+    # Grade is required of students via the registration form (HTML `required`) and the
+    # one-time onboarding prompt catches anyone without one; it is intentionally not a
+    # hard server rejection so non-interactive clients and existing accounts still work.
     if not EMAIL_PATTERN.fullmatch(data.email):
         return "email"
     if not 8 <= len(data.password) <= 256:
@@ -58,6 +67,7 @@ def create_user(database, user_model, data: RegistrationInput):
         username=data.username,
         email=data.email,
         preferred_language=data.language,
+        grade=data.grade,
     )
     user.set_password(data.password)
     database.session.add(user)

@@ -4,7 +4,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
-<main class="cards-page publish-page">
+<main class="cards-page publish-page" id="main-content">
   <header class="cards-header">
     <h1>{{ _('Publish flashcard set') }}</h1>
     <a class="ghost-button" href="/flashcards/{{ set_id }}">← {{ _('Back to library') }}</a>
@@ -42,6 +42,7 @@
       <span id="statusBadge" class="review-status"></span>
     </div>
     <p id="changedNote" class="form-error hidden"></p>
+    <div id="statusModeration" class="moderation-outcome"></div>
     <div id="statusReview"></div>
     <div class="form-actions" id="statusActions"></div>
     <p class="field-hint">{{ _('AI suggestions are never applied automatically — edit your set yourself, then resubmit.') if false else '' }}</p>

@@ -1,4 +1,5 @@
 import {escapeHtml} from "./js/dom.js";
+import {bindDiagnosisDetails, diagnosisMarkup} from "./js/diagnosis.js";
 import {selectedLanguage, t} from "./js/i18n.js";
 import {answerSymbols} from "./js/symbols.js";
 
@@ -39,7 +40,8 @@ function renderMath(root) {
   } catch (_) { /* never let a formatting glitch break the lesson */ }
 }
 function applyTranslations() {
-  document.documentElement.lang = selectedLanguage === "German" ? "de" : "en";
+  // The interface language (and RTL direction) is set authoritatively by the server on
+  // <html> in base.html; never override it here from the content language.
   document.querySelectorAll("[data-i18n]").forEach(node => { node.textContent = t(node.dataset.i18n); });
   document.querySelectorAll("[data-i18n-placeholder]").forEach(node => { node.placeholder = t(node.dataset.i18nPlaceholder); });
   const exampleAnswer = document.querySelector("#exampleAnswer");
@@ -349,8 +351,9 @@ answerForm.addEventListener("submit", async event => {
     document.querySelectorAll("#answerControl input, #answerControl select, #answerControl textarea, #answerControl button").forEach(control => { control.disabled = true; });
     feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
     const continueLabel = data.complete ? t("viewResults") : t("nextQuestion");
-    feedback.innerHTML = `<div id="feedbackSpeechText"><strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}</div><button class="next-button" type="button">${continueLabel}</button>`;
+    feedback.innerHTML = `<div id="feedbackSpeechText"><strong>${correct ? t("correctTitle") : t("incorrectTitle")}</strong><div class="feedback-steps">${escapeHtml(data.evaluation.feedback)}</div>${data.evaluation.correction ? `<div class="feedback-steps"><b>${t("correction")}:</b>\n${escapeHtml(data.evaluation.correction)}</div>` : ""}${data.evaluation.teacher_tip ? `<div class="feedback-note"><b>${t("tip")}:</b> ${escapeHtml(data.evaluation.teacher_tip)}</div>` : ""}${data.evaluation.exception_note ? `<div class="feedback-note exception"><b>${t("exceptionNote")}:</b> ${escapeHtml(data.evaluation.exception_note)}</div>` : ""}</div>${diagnosisMarkup(data.diagnosis)}<button class="next-button" type="button">${continueLabel}</button>`;
     renderMath(feedback);
+    bindDiagnosisDetails(feedback);
     document.querySelector("#feedbackListenControl")?.classList.remove("hidden");
     button.classList.add("hidden");
     document.querySelector("#score").textContent = data.progress.average_score;

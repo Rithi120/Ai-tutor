@@ -5,9 +5,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
-<main class="cards-page mode-page mode-{{ mode }}" id="modePage">
+<main class="cards-page mode-page mode-{{ mode }}" id="main-content" data-mode-page>
+  <div id="modePage">
   <header class="cards-header">
-    <div><h1 id="modeTitle">{{ _(mode|capitalize) }}</h1><p id="modeStatus" class="cards-subtitle" role="status"></p></div>
+    <div><span class="focus-mode-label">{{ _('Focus mode') }}</span><h1 id="modeTitle">{{ _(mode|capitalize) }}</h1><p id="modeStatus" class="cards-subtitle" role="status"></p></div>
     <div class="header-actions">
       <button id="soundToggle" type="button" class="ghost-button" aria-pressed="false">{{ _('Sound off') }}</button>
       <button id="pauseMode" type="button" class="ghost-button">{{ _('Pause') }}</button>
@@ -77,6 +78,7 @@
     <h2>{{ _('Session complete') }}</h2>
     <div id="summaryStats" class="summary-stats"></div>
     <div id="resultReview"></div>
+    <p class="summary-next-action"><strong>{{ _('Next best action') }}:</strong> {{ _('Review mistakes now while the memory is still fresh.') }}</p>
     <div class="study-summary-actions">
       <button id="retryMode" type="button" class="primary-button">{{ _('Retry') }}</button>
       <a id="reviewWeak" class="ghost-button" href="{{ url_for('flashcards_learn_page', set_id=set_id) }}?objective=weak">{{ _('Review mistakes') }}</a>
@@ -84,6 +86,7 @@
     </div>
   </section>
   <p id="modeError" class="form-error hidden" role="alert"></p>
+  </div>
 </main>
 {% endblock %}
 {% block scripts %}

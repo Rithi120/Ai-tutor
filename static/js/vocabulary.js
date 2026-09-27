@@ -1,4 +1,5 @@
 import { api, escapeHtml, t, toast } from "./flashcards/common.js";
+import { safeUUID } from "./dom.js";
 
 const importForm = document.querySelector("#vocabularyImportForm");
 const reviewPage = document.querySelector("[data-vocabulary-review]");
@@ -10,7 +11,7 @@ let practiceStarted = 0;
 let practiceSessionId = null;
 
 function uuid() {
-  return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  return safeUUID();
 }
 
 if (importForm) {

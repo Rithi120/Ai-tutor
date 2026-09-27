@@ -14,6 +14,7 @@ os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
 from learnova.community import service as community  # noqa: E402
+from learnova import moderation  # noqa: E402
 from learnova.config import configure_app  # noqa: E402
 
 
@@ -35,6 +36,34 @@ SET_CARDS = [
     {"type": "question_answer", "front": "What is a cell?", "back": "The basic unit of life."},
     {"type": "term_definition", "front": "Nucleus", "back": "Controls the cell and stores DNA."},
 ]
+
+
+def _moderation_allow():
+    """A clean classification, built from the live dimension list so it cannot drift."""
+
+    dimensions = {name: "pass" for name in moderation.DIMENSIONS}
+    dimensions["sexual_content_context"] = "not_applicable"
+    return {
+        "recommendation": "allow", "dimensions": dimensions, "confidence": 0.95,
+        "evidence_sufficiency": "sufficient", "reason_codes": [], "quotes": [],
+        "evidence_summary": "Factual subject content with no safety concern.",
+        "suggested_revision": None, "requires_review": False,
+    }
+
+
+def ai_responder(review_payload, moderation_payload=None):
+    """Answer each AI task with its own payload.
+
+    Publishing makes two calls now - a content_moderation classification and then the
+    flashcard_review quality pass - so a single canned response is no longer enough.
+    """
+
+    def respond(**kwargs):
+        if kwargs.get("task_type") == "content_moderation":
+            return FakeResponse(moderation_payload or _moderation_allow())
+        return FakeResponse(review_payload)
+
+    return patch.object(application, "create_response", side_effect=respond)
 
 
 class CommunityServiceTests(unittest.TestCase):
@@ -115,7 +144,7 @@ class CommunityApiTests(unittest.TestCase):
         return saved.get_json()["id"]
 
     def _publish(self, client, source_set_id, review_payload=REVIEW_HIGH):
-        with patch.object(application, "create_response", return_value=FakeResponse(review_payload)):
+        with ai_responder(review_payload):
             return client.post("/api/community/publish", json={
                 "source_set_id": source_set_id, "title": "Cell Biology Basics", "subject": "Biology",
                 "topic": "Cells", "grade": "8", "difficulty": "medium", "language": "en",

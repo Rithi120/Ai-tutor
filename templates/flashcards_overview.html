@@ -5,7 +5,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
-<main class="cards-page overview-page">
+<main class="cards-page overview-page" id="main-content">
   <header class="cards-header">
     <h1 id="ovTitle">…</h1>
     <a class="ghost-button" href="{{ url_for('flashcards_page') }}">← {{ _('Back to library') }}</a>

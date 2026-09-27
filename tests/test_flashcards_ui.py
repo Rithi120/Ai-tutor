@@ -99,11 +99,27 @@ class FlashcardsUiTests(unittest.TestCase):
         for mode in (b"/learn", b"/test", b"/match", b"/blast", b"/blocks"):
             self.assertIn(mode, html)
 
-    def test_import_controls_hidden_when_flags_off(self):
+    def test_create_page_links_to_importer_when_enabled(self):
+        # Import is enabled in the testing profile, so the creator must point to the
+        # working importer instead of the old, misleading "coming soon" placeholder.
         client = self._client()
         html = client.get("/flashcards/create").data
-        self.assertNotIn(b'type="file"', html)        # no non-functional upload control
-        self.assertIn(b"coming soon", html.lower())   # clearly marked instead
+        self.assertNotIn(b'type="file"', html)          # no non-functional upload control on the creator
+        self.assertNotIn(b"coming soon", html.lower())  # the feature exists: no stale placeholder
+        self.assertIn(b"/flashcards/import", html)      # real link to the working importer
+
+    def test_create_page_import_link_hidden_when_flags_off(self):
+        # When both import flags are off, hide the control entirely (no broken button, no placeholder).
+        client = self._client()
+        application.app.config["FEATURE_FLASHCARD_PDF_IMPORT"] = False
+        application.app.config["FEATURE_FLASHCARD_IMAGE_IMPORT"] = False
+        try:
+            html = client.get("/flashcards/create").data
+            self.assertNotIn(b'type="file"', html)
+            self.assertNotIn(b"/flashcards/import", html)
+        finally:
+            application.app.config["FEATURE_FLASHCARD_PDF_IMPORT"] = True
+            application.app.config["FEATURE_FLASHCARD_IMAGE_IMPORT"] = True
 
     def test_new_feature_flags_exposed_to_frontend(self):
         client = self._client()

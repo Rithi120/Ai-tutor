@@ -5,7 +5,7 @@
   --motion-ease: cubic-bezier(.22, 1, .36, 1);
 }
 
-.authenticated-app { position: relative; min-height: 100vh; overflow-x: hidden; background: #f6f5f1; }
+.authenticated-app { position: relative; min-height: 100vh; overflow-x: hidden; background: var(--ln-canvas, #f6f5f1); }
 .app-background { position: fixed; inset: var(--app-nav-height, 72px) 0 0; z-index: -1; overflow: hidden; pointer-events: none; background: radial-gradient(circle at 12% 8%, rgba(117, 101, 232, .055), transparent 32%), radial-gradient(circle at 88% 78%, rgba(79, 145, 164, .05), transparent 30%); }
 .app-background i { position: absolute; width: 70vw; height: 24vw; border: 1px solid rgba(92, 106, 151, .06); border-radius: 50%; transform: rotate(13deg); animation: app-contour-drift 38s ease-in-out infinite alternate; }
 .app-background i:first-child { top: 5vh; left: -35vw; }

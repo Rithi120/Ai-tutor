@@ -1,0 +1,125 @@
+.mode-page { --mode-accent: var(--ln-violet); min-height: calc(100dvh - var(--app-nav-height)); }
+.mode-learn { --mode-accent: var(--ln-cyan); }
+.mode-test { --mode-accent: var(--ln-coral); }
+.mode-match { --mode-accent: var(--ln-lime); }
+.mode-blast { --mode-accent: #f19b35; }
+.mode-blocks { --mode-accent: #5d8bf4; }
+.mode-page::before { position: fixed; z-index: -1; inset: var(--app-nav-height) 0 0; background: radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--mode-accent) 17%, transparent), transparent 35rem), linear-gradient(180deg, transparent, color-mix(in srgb, var(--mode-accent) 4%, transparent)); content: ""; }
+.mode-page .cards-header { margin-bottom: 18px; }
+.mode-page .cards-header h1 { font-size: clamp(1.75rem, 4vw, 2.6rem); }
+.focus-mode-label { display: inline-flex; align-items: center; gap: 8px; color: var(--ln-muted); font-size: 12px; font-weight: 800; }
+.focus-mode-label::before { width: 8px; height: 8px; border-radius: 50%; background: var(--mode-accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--mode-accent) 13%, transparent); content: ""; }
+.mode-config { max-width: 780px; margin: 5vh auto 0; padding: clamp(22px, 5vw, 40px); border-radius: var(--ln-radius-xl); box-shadow: var(--ln-shadow-glow); }
+.mode-config h2 { font-size: clamp(1.5rem, 3vw, 2.3rem); }
+.study-progress { height: 10px; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--ln-ink) 9%, transparent); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .1); }
+.study-progress-bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mode-accent), var(--ln-violet)); box-shadow: 0 0 18px color-mix(in srgb, var(--mode-accent) 60%, transparent); }
+.study-counters { margin: 12px auto 20px; color: var(--ln-muted); }
+.study-counters span { border: 1px solid var(--ln-line); border-radius: 99px; background: var(--ln-surface); }
+.mode-question-card { max-width: 920px; min-height: min(56vh, 560px); margin-inline: auto; border: 1px solid var(--ln-line); border-radius: clamp(22px, 4vw, 38px); background: linear-gradient(145deg, color-mix(in srgb, var(--ln-surface-solid) 96%, transparent), color-mix(in srgb, var(--mode-accent) 7%, var(--ln-surface))); box-shadow: var(--ln-shadow-glow); }
+.mode-question-card::after { position: absolute; width: 130px; height: 6px; right: 50%; bottom: 18px; border-radius: 99px; background: var(--mode-accent); content: ""; opacity: .45; transform: translateX(50%); }
+.mode-prompt { max-width: 760px; min-width: 0; font-family: var(--ln-font-display); font-size: clamp(1.65rem, 4vw, 3.25rem); line-height: 1.16; overflow-wrap: anywhere; }
+.mode-answer { color: var(--mode-accent); }
+.mode-options, .match-board, .summary-stats { min-width: 0; }
+.mode-options button, .match-board button { min-width: 0; overflow-wrap: anywhere; }
+.mode-options button { min-height: 56px; border-color: var(--ln-line); border-radius: 15px; background: var(--ln-surface-raised); color: var(--ln-ink); }
+.mode-options button:hover { border-color: var(--mode-accent); background: color-mix(in srgb, var(--mode-accent) 9%, var(--ln-surface-solid)); transform: translateY(-2px); }
+.mode-feedback { max-width: 920px; margin: 14px auto; border-radius: 15px; }
+.study-summary { max-width: 860px; margin: 6vh auto; padding: clamp(24px, 5vw, 46px); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-xl); background: var(--ln-surface); box-shadow: var(--ln-shadow-glow); }
+.study-summary h2::before { display: block; width: 52px; height: 7px; margin-bottom: 18px; border-radius: 99px; background: var(--ln-gradient-warm); content: ""; }
+.summary-stats > div { border: 1px solid var(--ln-line); background: color-mix(in srgb, var(--ln-surface-solid) 75%, transparent); }
+.summary-next-action { margin-top: 20px; padding: 17px; border-radius: 16px; background: color-mix(in srgb, var(--mode-accent) 9%, var(--ln-surface-solid)); }
+@media (max-width: 620px) {
+  .mode-page { padding-top: 16px; }
+  .mode-page .cards-header { align-items: flex-start; flex-direction: column; }
+  .mode-page .cards-header .header-actions { width: auto; }
+  .mode-page .cards-header .header-actions .ghost-button { flex: 0 0 auto; padding-inline: 11px; font-size: 12px; }
+  .mode-question-card { min-height: 56dvh; padding: 25px 17px 45px; }
+  .mode-options, .summary-stats { grid-template-columns: 1fr; }
+  .flashcard-controls { position: sticky; bottom: 8px; z-index: 3; padding: 8px; border: 1px solid var(--ln-line); border-radius: 16px; background: var(--ln-surface-raised); box-shadow: var(--ln-shadow-md); }
+}
+
+/* ---------------------------------------------------------------------------
+   Answer diagnosis (learnova.diagnostics)
+   Progressive disclosure: the short explanation is always visible, the
+   evidence-linked breakdown lives behind a <details> that fetches on open.
+   Colors come from the --ln-* tokens, so light and dark both work with no
+   per-theme rules here.
+   --------------------------------------------------------------------------- */
+.diagnosis {
+  margin: .85rem 0 .25rem;
+  padding: .85rem 1rem;
+  border: 1px solid var(--ln-line);
+  border-left: 3px solid var(--ln-subtle);
+  border-radius: 12px;
+  background: var(--ln-surface-raised);
+  color: var(--ln-ink);
+  font-size: .95rem;
+  line-height: 1.55;
+}
+.diagnosis.dx-correct { border-left-color: var(--ln-success); }
+.diagnosis.dx-partial { border-left-color: var(--ln-amber); }
+.diagnosis.dx-incorrect { border-left-color: var(--ln-coral); }
+.diagnosis.dx-unknown { border-left-color: var(--ln-subtle); }
+
+.diagnosis .dx-tag {
+  display: inline-block;
+  margin-bottom: .4rem;
+  padding: .12rem .55rem;
+  border-radius: 999px;
+  background: var(--ln-canvas-deep);
+  color: var(--ln-muted);
+  font-size: .76rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.diagnosis .dx-explanation { margin: 0; }
+.diagnosis .dx-missing {
+  margin: .5rem 0 0;
+  color: var(--ln-muted);
+  font-size: .9rem;
+}
+.diagnosis .dx-details { margin-top: .6rem; }
+.diagnosis .dx-details > summary {
+  cursor: pointer;
+  color: var(--ln-violet);
+  font-size: .88rem;
+  font-weight: 600;
+  list-style: none;
+}
+.diagnosis .dx-details > summary::-webkit-details-marker { display: none; }
+.diagnosis .dx-details > summary::before { content: "▸ "; }
+.diagnosis .dx-details[open] > summary::before { content: "▾ "; }
+.diagnosis .dx-details > summary:focus-visible {
+  outline: 2px solid var(--ln-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.diagnosis .dx-body {
+  margin-top: .55rem;
+  padding-top: .55rem;
+  border-top: 1px solid var(--ln-line);
+}
+.diagnosis .dx-body h4 {
+  margin: .7rem 0 .2rem;
+  color: var(--ln-muted);
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.diagnosis .dx-body ul { margin: 0; padding-inline-start: 1.1rem; }
+.diagnosis .dx-body li { margin: .15rem 0; }
+.diagnosis .dx-evidence li {
+  color: var(--ln-muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+.diagnosis .dx-rubric { list-style: none; padding-inline-start: 0; }
+.diagnosis .dx-rubric li::before { margin-inline-end: .4rem; }
+.diagnosis .dx-rubric li.met::before { content: "✓"; color: var(--ln-success); }
+.diagnosis .dx-rubric li.unmet::before { content: "✗"; color: var(--ln-coral); }
+.diagnosis .dx-statement { margin: 0 0 .35rem; }
+.diagnosis .dx-misconception { margin: 0 0 .35rem; color: var(--ln-muted); }
+.diagnosis .dx-next { margin: .65rem 0 .2rem; }
+.diagnosis .dx-confidence,
+.diagnosis .dx-loading { margin: .35rem 0 0; color: var(--ln-subtle); font-size: .82rem; }

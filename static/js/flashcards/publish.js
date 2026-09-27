@@ -1,8 +1,10 @@
 import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, SET_ID, selectedLanguage } from "./common.js";
 
 const STATUS_KEY = {
-  draft: "fcStatusDraft", pending_ai_review: "fcStatusPendingAi",
+  draft: "fcStatusDraft", pending_moderation: "fcStatusPendingModeration",
+  pending_ai_review: "fcStatusPendingAi",
   pending_manual_review: "fcStatusPendingManual", approved: "fcStatusApproved",
+  changes_requested: "fcStatusChangesRequested",
   rejected: "fcStatusRejected", hidden: "fcStatusHidden", unpublished: "fcStatusUnpublished",
 };
 const isDe = selectedLanguage === "German";
@@ -68,7 +70,8 @@ async function submitForm(event) {
   try {
     const data = await api("/api/community/publish", { method: "POST", body });
     document.querySelector("#publishForm").classList.add("hidden");
-    renderStatus({ published: true, public_id: data.id, status: data.status, review: data.review, changed_since_publish: false });
+    renderStatus({ published: true, public_id: data.id, status: data.status, review: data.review,
+                   moderation: data.moderation, changed_since_publish: false });
   } catch (error) {
     errorEl.textContent = error.message;
     errorEl.classList.remove("hidden");
@@ -82,6 +85,14 @@ function renderStatus(state) {
   badge.className = `review-status status-${escapeHtml(state.status)}`;
   document.querySelector("#changedNote").classList.toggle("hidden", !state.changed_since_publish);
   document.querySelector("#changedNote").textContent = state.changed_since_publish ? t("fcChangedSincePublish") : "";
+
+  const moderation = state.moderation;
+  document.querySelector("#statusModeration").innerHTML = moderation ? `
+    <p class="moderation-headline"><b>${escapeHtml(moderation.decision_label || "")}</b></p>
+    <p class="moderation-message">${escapeHtml(moderation.status_message || "")}</p>
+    ${(moderation.reasons || []).length ? `<ul class="moderation-reasons">${
+      moderation.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>` : ""}
+    ${moderation.suggested_revision ? `<p class="moderation-suggestion">${escapeHtml(moderation.suggested_revision)}</p>` : ""}` : "";
 
   const review = state.review;
   const scores = review ? review.scores : null;

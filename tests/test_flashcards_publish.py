@@ -12,6 +12,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from learnova import moderation  # noqa: E402
 
 
 class FakeResponse:
@@ -31,6 +32,34 @@ CARDS = [
     {"type": "question_answer", "front": "What is a cell?", "back": "The basic unit of life."},
     {"type": "term_definition", "front": "Nucleus", "back": "Stores DNA."},
 ]
+
+
+def _moderation_allow():
+    """A clean classification, built from the live dimension list so it cannot drift."""
+
+    dimensions = {name: "pass" for name in moderation.DIMENSIONS}
+    dimensions["sexual_content_context"] = "not_applicable"
+    return {
+        "recommendation": "allow", "dimensions": dimensions, "confidence": 0.95,
+        "evidence_sufficiency": "sufficient", "reason_codes": [], "quotes": [],
+        "evidence_summary": "Factual subject content with no safety concern.",
+        "suggested_revision": None, "requires_review": False,
+    }
+
+
+def ai_responder(review_payload, moderation_payload=None):
+    """Answer each AI task with its own payload.
+
+    Publishing makes two calls now - a content_moderation classification and then the
+    flashcard_review quality pass - so a single canned response is no longer enough.
+    """
+
+    def respond(**kwargs):
+        if kwargs.get("task_type") == "content_moderation":
+            return FakeResponse(moderation_payload or _moderation_allow())
+        return FakeResponse(review_payload)
+
+    return patch.object(application, "create_response", side_effect=respond)
 
 
 class PublishTests(unittest.TestCase):
@@ -58,7 +87,7 @@ class PublishTests(unittest.TestCase):
 
     def _publish(self, set_id, review=REVIEW_HIGH, client=None):
         client = client or self.client
-        with patch.object(application, "create_response", return_value=FakeResponse(review)):
+        with ai_responder(review):
             return client.post("/api/community/publish", json={
                 "source_set_id": set_id, "title": "Public Bio", "subject": "Biology",
                 "topic": "Cells", "grade": "8", "difficulty": "medium", "language": "en",
@@ -180,7 +209,7 @@ class PublishTests(unittest.TestCase):
         public_id = self._publish(set_id).get_json()["id"]
         self.client.put(f"/api/flashcards/sets/{set_id}", json={"title": "v2", "cards": [
             {"type": "question_answer", "front": "new front", "back": "new back"}]})
-        with patch.object(application, "create_response", return_value=FakeResponse(REVIEW_HIGH)):
+        with ai_responder(REVIEW_HIGH):
             resubmit = self.client.post(f"/api/community/sets/{public_id}/resubmit")
         self.assertEqual(resubmit.status_code, 200)
         with application.app.app_context():
@@ -204,7 +233,7 @@ class PublishTests(unittest.TestCase):
         self.client.put(f"/api/flashcards/sets/{set_id}", json={"cards": [
             {"type": "question_answer", "front": "unsafe edit", "back": "changed"}]})
         rejected = {**REVIEW_HIGH, "overallScore": 1.0}
-        with patch.object(application, "create_response", return_value=FakeResponse(rejected)):
+        with ai_responder(rejected):
             response = self.client.post(f"/api/community/sets/{public_id}/resubmit")
         self.assertEqual(response.get_json()["status"], "rejected")
         with application.app.app_context():

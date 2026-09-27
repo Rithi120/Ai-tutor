@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "components/_grade_selector.html" import grade_selector with context %}
+{% block title %}{{ _('Select your grade') }} — Learnova{% endblock %}
+{% block body_class %}account-page onboarding-page{% endblock %}
+{% block content %}
+<main class="account-shell settings-shell">
+  <section class="account-card">
+    <div class="eyebrow">LEARNOVA</div>
+    <h1>{{ _('What grade are you in?') }}</h1>
+    <p>{{ _('This helps Learnova match explanations and difficulty to your level.') }}</p>
+    <form method="post" action="{{ url_for('update_grade') }}">
+      {{ grade_selector(selected=current_grade, required=True) }}
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <div class="onboarding-actions">
+        <button class="primary-button" type="submit">{{ _('Save grade') }}</button>
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('skip_grade_onboarding') }}">
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <button class="ghost-button" type="submit">{{ _('Skip for now') }}</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

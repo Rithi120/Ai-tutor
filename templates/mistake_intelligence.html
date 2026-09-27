@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Mistake Intelligence') }} — Learnova{% endblock %}
+{% block content %}
+<main class="cards-page mistake-intel" id="main-content">
+  <header class="cards-header">
+    <div>
+      <span class="eyebrow">LEARNOVA</span>
+      <h1>{{ _('Mistake Intelligence') }}</h1>
+      <p class="cards-subtitle">{{ _('How your understanding is developing, with evidence.') }}</p>
+    </div>
+  </header>
+
+  {% if total_analyzed == 0 %}
+    <section class="card-panel empty-state">
+      <h3>{{ _('No mistakes analyzed yet.') }}</h3>
+      <p>{{ _('Answer some questions and your learning patterns will appear here.') }}</p>
+    </section>
+  {% else %}
+
+  {% if next_action %}
+  <section class="card-panel intel-next">
+    <h2>{{ _('Recommended next action') }}</h2>
+    <p class="intel-concept">{{ next_action.concept }}</p>
+    {% if next_action.advice %}<p class="edu-content">{{ next_action.advice }}</p>{% endif %}
+    {% if next_action.action_label %}
+      <p class="intel-nextq"><strong>{{ _('Next step') }}:</strong> {{ next_action.action_label }}</p>
+    {% elif next_action.next_question and next_action.next_question.question %}
+      <p class="intel-nextq"><strong>{{ _('Try this') }}:</strong> {{ next_action.next_question.question }}</p>
+    {% endif %}
+    {% if next_action.prerequisites %}
+      <p class="intel-prereq"><strong>{{ _('Prerequisites to review') }}:</strong> {{ next_action.prerequisites|join(', ') }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <div class="intel-grid">
+    <section class="card-panel">
+      <h2>{{ _('Strongest topics') }}</h2>
+      {% if strongest %}<ul class="intel-list">
+        {% for m in strongest %}<li><span>{{ m.concept }}</span><b class="intel-score good">{{ m.score }}%</b></li>{% endfor %}
+      </ul>{% else %}<p class="cards-subtitle">{{ _('Not enough data yet.') }}</p>{% endif %}
+    </section>
+    <section class="card-panel">
+      <h2>{{ _('Weakest concepts') }}</h2>
+      {% if weakest %}<ul class="intel-list">
+        {% for m in weakest %}<li><span>{{ m.concept }}{% if m.uncertain %} <small class="intel-provisional">{{ _('Needs more evidence') }}</small>{% endif %}</span><b class="intel-score weak">{{ m.score }}%</b></li>{% endfor %}
+      </ul>{% else %}<p class="cards-subtitle">{{ _('Not enough data yet.') }}</p>{% endif %}
+    </section>
+  </div>
+
+  {% if unassessed or prerequisites %}
+  <div class="intel-grid">
+    {% if unassessed %}
+    <section class="card-panel">
+      {# Unassessed is deliberately separate from weak: one lucky or unlucky answer is
+         not a conclusion, so these concepts are shown as unknown rather than scored. #}
+      <h2>{{ _('Not assessed enough yet') }}</h2>
+      <ul class="intel-list">
+        {% for m in unassessed %}<li><span>{{ m.concept }}</span><b class="intel-score">—</b></li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+    {% if prerequisites %}
+    <section class="card-panel">
+      <h2>{{ _('Foundations to rebuild first') }}</h2>
+      <ul class="intel-list">
+        {% for edge in prerequisites %}
+        <li><span>{{ edge.prerequisite }} <small>{{ _('before') }}</small> {{ edge.concept }}</span><b class="intel-score">{{ _('seen {n} times', n=edge.evidence_count) }}</b></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if clusters %}
+  <section class="card-panel">
+    <h2>{{ _('Repeated misconceptions') }}</h2>
+    <ul class="intel-cluster-list">
+      {% for c in clusters %}
+      <li class="intel-cluster {{ 'resolved' if c.resolved }}">
+        <div class="intel-cluster-head">
+          <span class="intel-cat">{{ c.top_category|replace('_', ' ') }}</span>
+          <span class="intel-count">{{ _('seen {n} times', n=c.count) }}</span>
+        </div>
+        <p class="edu-content">{{ c.root_cause }}</p>
+        {% if c.concepts %}<p class="intel-tags">{{ c.concepts|join(', ') }}</p>{% endif %}
+        {% if c.resolved %}<span class="intel-badge ok">{{ _('Resolved') }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if recent %}
+  <section class="card-panel">
+    <h2>{{ _('Recent mistakes') }}</h2>
+    <ul class="intel-mistakes">
+      {% for m in recent %}
+      <li>
+        <div class="intel-mistake-head"><span class="intel-cat">{{ m.tag_label or (m.categories[0] if m.categories else m.verdict)|replace('_',' ') }}</span><small>{{ m.subject }} · {{ m.concept }} · {{ m.when }}</small></div>
+        {% if m.root_cause %}<p class="edu-content">{{ m.root_cause }}</p>{% endif %}
+        {% if m.evidence %}<ul class="intel-evidence">{% for quote in m.evidence %}<li>{{ quote }}</li>{% endfor %}</ul>{% endif %}
+        {% if m.advice %}<p class="intel-advice edu-content">{{ m.advice }}</p>{% endif %}
+        {% if m.next_action_label %}<p class="intel-nextq"><strong>{{ _('Next step') }}:</strong> {{ m.next_action_label }}</p>{% endif %}
+        {% if m.missing_evidence %}<p class="intel-provisional">{{ _('Not enough to diagnose yet') }}</p>{% endif %}
+        <span class="intel-conf">{{ _('AI confidence') }}: {{ (m.confidence * 100)|round|int }}%</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if resolved %}
+  <section class="card-panel">
+    <h2>{{ _('Resolved mistakes') }}</h2>
+    <ul class="intel-mistakes resolved">
+      {% for m in resolved %}
+      <li><span class="intel-cat">{{ m.tag_label or (m.categories[0] if m.categories else m.verdict)|replace('_',' ') }}</span> <small>{{ m.subject }} · {{ m.concept }}</small></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</main>
+{% endblock %}

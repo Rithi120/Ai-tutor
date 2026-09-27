@@ -241,3 +241,33 @@ a.ghost-button { text-decoration: none; display: inline-block; }
 .fc-dash-card:hover { border-color: #7c5cff; }
 .fc-dash-progress { height: 6px; background: #ece7fb; border-radius: 999px; overflow: hidden; }
 .fc-dash-progress i { display: block; height: 100%; background: linear-gradient(90deg,#7c5cff,#a58bff); }
+
+/* Community reporting and moderation review. Deliberately quiet: reporting is a safety
+   affordance, not a call to action, so it must not compete with studying or saving. */
+.subtle-button { opacity: .72; }
+.subtle-button:hover { opacity: 1; }
+.report-panel { display: grid; gap: .6rem; margin: .75rem 0 1rem; padding: 1rem; border: 1px solid #ece7fb; border-radius: 14px; background: #fbfaff; }
+.report-question { margin: 0; font-weight: 600; font-size: .9rem; }
+.report-reasons { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .3rem .8rem; }
+.report-reason { display: flex; align-items: center; gap: .4rem; font-size: .85rem; }
+.report-panel textarea { width: 100%; border: 1px solid #ece7fb; border-radius: 10px; padding: .5rem .6rem; font: inherit; resize: vertical; }
+.report-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+.mod-queue { display: grid; gap: 1rem; }
+.mod-record { border: 1px solid #ece7fb; border-radius: 16px; padding: 1.1rem; background: #fff; }
+.mod-record header { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+.mod-record h3 { margin: 0; font-size: 1.05rem; }
+.mod-meta { font-size: .82rem; opacity: .75; }
+.mod-decision { font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .2rem .55rem; border-radius: 999px; background: #ece7fb; color: #4b3b9c; }
+.mod-decision[data-decision="reject"] { background: #fde8e8; color: #9b1c1c; }
+.mod-decision[data-decision="allow"] { background: #e6f6ec; color: #1b6b3a; }
+.mod-decision[data-decision="revision_required"] { background: #fff4e0; color: #8a5a00; }
+.mod-dimensions { display: flex; flex-wrap: wrap; gap: .35rem; margin: .6rem 0; }
+.mod-dimension { font-size: .76rem; padding: .18rem .5rem; border-radius: 999px; background: #f2f0fa; }
+.mod-dimension[data-status="flag"] { background: #fde8e8; color: #9b1c1c; font-weight: 600; }
+.mod-dimension[data-status="unknown"] { background: #fff4e0; color: #8a5a00; }
+.mod-section { margin: .6rem 0; }
+.mod-section h4 { margin: 0 0 .25rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.mod-section ul { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
+.mod-content { max-height: 16rem; overflow-y: auto; border: 1px solid #ece7fb; border-radius: 10px; padding: .6rem .8rem; font-size: .85rem; background: #fbfaff; }
+.mod-stale { color: #9b1c1c; font-weight: 600; font-size: .85rem; }

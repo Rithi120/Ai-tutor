@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from collections import Counter
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -29,6 +30,8 @@ from learnova.quizzes.adaptive import (
     update_mastery,
 )
 from learnova.ocr.service import (
+    RECOGNITION_VARIANTS,
+    apply_recognition_variant,
     crop_image_region,
     normalize_recognition,
     preprocess_document_image,
@@ -45,11 +48,53 @@ from learnova.projects.planning import (
     preparation_plan,
     proportional_section_counts,
 )
-from learnova.translations import SUPPORTED_LANGUAGES, frontend_catalog, translate
+from learnova.translations import (
+    SUPPORTED_LANGUAGES,
+    frontend_catalog,
+    language_direction,
+    language_options,
+    translate,
+)
+from learnova.profiles import GRADE_CHOICES, grade_descriptor, grade_label, normalize_grade
+from learnova.analysis import (
+    analysis_system_prompt,
+    analysis_user_prompt,
+    build_evidence,
+    empty_analysis,
+    normalize_analysis,
+    repeated_misconceptions,
+)
+from learnova.diagnostics import (
+    annotate_question,
+    apply_second_opinion,
+    build_evidence_bundle,
+    confident_status,
+    confirmed_prerequisites,
+    diagnosis_label,
+    diagnosis_system_prompt,
+    diagnosis_user_prompt,
+    evidence_summary,
+    insufficient_evidence_diagnosis,
+    mastery_reason,
+    merge_prerequisite,
+    next_action_label,
+    normalize_diagnosis,
+    plan_next_action,
+    question_system_prompt,
+    question_user_prompt,
+    spec_from_constraints,
+    student_view,
+    to_legacy_analysis,
+    update_evidence,
+    validate_question,
+    verification_system_prompt,
+    verification_user_prompt,
+    verify_diagnosis,
+)
 from learnova.config import configure_app
 from learnova.extensions import csrf, db, limiter, login_manager
 from learnova.ai_services import service as ai_service
-from learnova.ai_services.prompts import TUTOR_RULES
+from learnova.ai_services.prompts import PROMPT_VERSIONS, TUTOR_RULES
 from learnova import media_enrichment as media
 from learnova.flashcards import service as flashcards
 from learnova.flashcards import imports as flashcard_imports
@@ -59,6 +104,8 @@ from learnova.flashcards import modes as flashcard_modes
 from learnova.gamification import service as gamification
 from learnova.vocabulary import service as vocabulary
 from learnova.community import service as community
+from learnova import moderation
+from learnova import assistant
 from learnova.authentication.service import (
     AccountConflict,
     authenticate,
@@ -87,6 +134,12 @@ load_dotenv()
 
 app = Flask(__name__)
 APP_ENV = configure_app(app)
+# Emit INFO-level operational diagnostics (e.g. safe OCR recognition metrics) outside
+# production; content is never logged, only dimensions/size/variant/confidence.
+if APP_ENV != "production":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    app.logger.setLevel(logging.INFO)
 db.init_app(app)
 login_manager.init_app(app)
 csrf.init_app(app)
@@ -103,6 +156,10 @@ login_manager.session_protection = "strong"
 VISION_MODEL = app.config["GROQ_VISION_MODEL"]
 TUTOR_MODEL = app.config["GROQ_TUTOR_MODEL"]
 FAST_MODEL = app.config["GROQ_FAST_MODEL"]
+ANALYSIS_MODEL = app.config["GROQ_ANALYSIS_MODEL"]
+DIAGNOSIS_MODEL = app.config["GROQ_DIAGNOSIS_MODEL"]
+DIAGNOSIS_VERIFY_MODEL = app.config["GROQ_DIAGNOSIS_VERIFY_MODEL"]
+QUESTION_MODEL = app.config["GROQ_QUESTION_MODEL"]
 LESSON_TOKEN_LIMIT = app.config["LESSON_TOKEN_LIMIT"]
 ANSWER_TOKEN_LIMIT = app.config["ANSWER_TOKEN_LIMIT"]
 CHAT_TOKEN_LIMIT = app.config["CHAT_TOKEN_LIMIT"]
@@ -129,7 +186,8 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(30), unique=True, nullable=False, index=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    preferred_language = db.Column(db.String(2), nullable=False, default="en", index=True)
+    preferred_language = db.Column(db.String(8), nullable=False, default="en", index=True)
+    grade = db.Column(db.String(20), nullable=False, default="", index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     lessons = db.relationship("Lesson", back_populates="user", cascade="all, delete-orphan")
     concept_masteries = db.relationship("ConceptMastery", back_populates="user", cascade="all, delete-orphan")
@@ -185,6 +243,22 @@ class Attempt(db.Model):
     response_confidence = db.Column(db.Float, nullable=True)
     mastery_before = db.Column(db.Float, nullable=True)
     mastery_after = db.Column(db.Float, nullable=True)
+    # Deep mistake-analysis (learnova.analysis): full JSON plus indexed summary fields.
+    verdict = db.Column(db.String(20), nullable=False, default="", index=True)
+    mistake_categories = db.Column(db.Text, nullable=False, default="[]")
+    root_cause = db.Column(db.Text, nullable=False, default="")
+    analysis_confidence = db.Column(db.Float, nullable=True)
+    analysis_json = db.Column(db.Text, nullable=False, default="{}")
+    resolved = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    # Evidence-based diagnosis (learnova.diagnostics). analysis_json above stays the
+    # legacy projection so existing readers keep working; these columns are the new
+    # contract plus the fields worth querying on.
+    diagnosis_json = db.Column(db.Text, nullable=False, default="{}")
+    diagnosis_version = db.Column(db.String(20), nullable=False, default="", index=True)
+    primary_diagnosis = db.Column(db.String(40), nullable=False, default="", index=True)
+    next_action = db.Column(db.String(40), nullable=False, default="")
+    diagnosis_validation = db.Column(db.String(30), nullable=False, default="")
+    missing_evidence = db.Column(db.Boolean, nullable=False, default=False, index=True)
     lesson = db.relationship("Lesson", back_populates="attempts")
 
     def __init__(self, **kwargs: Any):
@@ -214,6 +288,11 @@ class ConceptMastery(db.Model):
     next_review_at = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
     difficulty_level = db.Column(db.Integer, nullable=False, default=1)
     status = db.Column(db.String(20), nullable=False, default="weak", index=True)
+    # Evidence layer (learnova.diagnostics.knowledge). evidence_weight decays with time,
+    # so uncertainty of 1.0 means "never assessed" rather than "assessed and weak".
+    evidence_weight = db.Column(db.Float, nullable=False, default=0.0)
+    uncertainty = db.Column(db.Float, nullable=False, default=1.0)
+    last_action = db.Column(db.String(40), nullable=False, default="")
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
     user = db.relationship("User", back_populates="concept_masteries")
     history = db.relationship(
@@ -248,9 +327,38 @@ class MasteryHistory(db.Model):
     confidence_before = db.Column(db.Float, nullable=False, default=50)
     confidence_after = db.Column(db.Float, nullable=False, default=50)
     outcome = db.Column(db.String(20), nullable=False, index=True)
+    # Short human-readable justification for this change, shown on the concept page.
+    reason = db.Column(db.Text, nullable=False, default="")
     practised_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     mastery = db.relationship("ConceptMastery", back_populates="history")
     attempt = db.relationship("Attempt")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class ConceptPrerequisite(db.Model):
+    """One evidence-backed prerequisite edge for one learner.
+
+    Edges accumulate: `evidence_count` only rises when a diagnosis names the same
+    prerequisite again with quoted evidence, so a single wrong answer never rewires a
+    student's learning path (see learnova.diagnostics.knowledge).
+    """
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "subject", "concept", "prerequisite",
+                         name="uq_user_concept_prerequisite"),
+        Index("ix_concept_prerequisite_user_concept", "user_id", "subject", "concept"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    subject = db.Column(db.String(80), nullable=False, index=True)
+    concept = db.Column(db.String(255), nullable=False, index=True)
+    prerequisite = db.Column(db.String(255), nullable=False)
+    evidence_count = db.Column(db.Integer, nullable=False, default=1)
+    confidence = db.Column(db.Float, nullable=False, default=0.5)
+    first_seen_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    last_seen_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -432,6 +540,7 @@ class DocumentBlock(db.Model):
     important = db.Column(db.Boolean, nullable=False, default=False)
     teacher_highlighted = db.Column(db.Boolean, nullable=False, default=False)
     crossed_out = db.Column(db.Boolean, nullable=False, default=False)
+    suggested_correction = db.Column(db.Text, nullable=False, default="")
     page = db.relationship("ProjectPage", back_populates="blocks")
 
     def __init__(self, **kwargs: Any):
@@ -1003,6 +1112,12 @@ class PublicFlashcardSet(db.Model):
     helpful_votes = db.Column(db.Integer, nullable=False, default=0)
     report_count = db.Column(db.Integer, nullable=False, default=0)
     teacher_verified = db.Column(db.Boolean, nullable=False, default=False)
+    # Current moderation state, denormalized from the latest ModerationRecord so the
+    # library query does not need a join. `status` above stays the publication state;
+    # these two are the safety gate, and both must agree before anything is visible.
+    moderation_decision = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    moderation_record_id = db.Column(db.Integer, nullable=True, index=True)
+    safety_report_count = db.Column(db.Integer, nullable=False, default=0)
     ranking_score = db.Column(db.Float, nullable=False, default=0.0, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
@@ -1071,6 +1186,11 @@ class FlashcardPublicationVersion(db.Model):
     card_count = db.Column(db.Integer, nullable=False)
     submission_status = db.Column(
         db.String(30), nullable=False, default="pending_ai_review", index=True)
+    # sha256 of the exact text moderation read. Recomputed on every submission and
+    # compared before any approval is honoured, so an approval can never be carried
+    # across an edit.
+    content_hash = db.Column(db.String(64), nullable=False, default="", index=True)
+    moderation_status = db.Column(db.String(20), nullable=False, default="pending")
     submitted_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
@@ -1100,6 +1220,162 @@ class CommunityStudyRecord(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     public_set = db.relationship("PublicFlashcardSet", back_populates="study_records")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class Conversation(db.Model):
+    """One durable assistant thread owned by one learner.
+
+    Deliberately separate from `ChatMessage`, which belongs to a Lesson and dies with it.
+    A conversation here has no lesson behind it and outlives every session.
+    """
+
+    __tablename__ = "conversation"
+    __table_args__ = (
+        Index("ix_conversation_owner_recent", "user_id", "archived", "last_message_at"),
+    )
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False, default="New conversation")
+    preset = db.Column(db.String(40), nullable=False, default="general")
+    # The provider/model that answered most recently, kept so the interface can show what
+    # produced an answer and so a thread can be resumed on what it started with.
+    provider = db.Column(db.String(30), nullable=False, default="")
+    model = db.Column(db.String(120), nullable=False, default="")
+    language = db.Column(db.String(10), nullable=False, default="en")
+    message_count = db.Column(db.Integer, nullable=False, default=0)
+    input_tokens = db.Column(db.Integer, nullable=False, default=0)
+    output_tokens = db.Column(db.Integer, nullable=False, default=0)
+    archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    last_message_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    messages = db.relationship(
+        "ConversationMessage", back_populates="conversation",
+        cascade="all, delete-orphan", order_by="ConversationMessage.created_at")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class ConversationMessage(db.Model):
+    """One turn. Stored verbatim, because a transcript that has been tidied is not one."""
+
+    __tablename__ = "conversation_message"
+    __table_args__ = (
+        Index("ix_conversation_message_thread", "conversation_id", "created_at"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(
+        db.String(36), db.ForeignKey("conversation.id"), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    provider = db.Column(db.String(30), nullable=False, default="")
+    model = db.Column(db.String(120), nullable=False, default="")
+    input_tokens = db.Column(db.Integer, nullable=False, default=0)
+    output_tokens = db.Column(db.Integer, nullable=False, default=0)
+    latency_ms = db.Column(db.Float, nullable=False, default=0.0)
+    # Set when this turn is the record of a failure rather than a reply, so a thread can
+    # show what went wrong in place without inventing an assistant message that reads
+    # like the model said it.
+    error_category = db.Column(db.String(40), nullable=False, default="")
+    # How much history the model actually saw, recorded per turn: without it, "why did it
+    # forget?" is unanswerable after the fact.
+    context_messages = db.Column(db.Integer, nullable=False, default=0)
+    context_dropped = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    conversation = db.relationship("Conversation", back_populates="messages")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class ModerationRecord(db.Model):
+    """One moderation decision for one version of one piece of community content.
+
+    Deliberately not a copy of the submission. The content already lives on
+    FlashcardPublicationVersion; this row keeps the decision, the reasons, the signals
+    and a handful of short quoted spans, which is the minimum an audit or an appeal
+    needs. `content_hash` is what makes a decision refuse to outlive the text it was
+    made about (see `moderation_is_current`).
+    """
+
+    __tablename__ = "moderation_record"
+    __table_args__ = (
+        Index("ix_moderation_target", "content_type", "content_id", "created_at"),
+        Index("ix_moderation_queue", "requires_review", "reviewed_at"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    content_type = db.Column(db.String(30), nullable=False, default="flashcard_set")
+    content_id = db.Column(db.Integer, nullable=False, index=True)
+    publication_version_id = db.Column(
+        db.Integer, db.ForeignKey("flashcard_publication_version.id"), nullable=True, index=True)
+    content_version = db.Column(db.Integer, nullable=False, default=1)
+    # sha256 of the exact text that was moderated. A decision whose hash no longer
+    # matches the live content is stale and may never be used to publish anything.
+    content_hash = db.Column(db.String(64), nullable=False, default="", index=True)
+    decision = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    previous_decision = db.Column(db.String(20), nullable=False, default="")
+    requires_review = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    reason_codes_json = db.Column(db.Text, nullable=False, default="[]")
+    dimensions_json = db.Column(db.Text, nullable=False, default="{}")
+    confidence = db.Column(db.Float, nullable=False, default=0.0)
+    evidence_sufficiency = db.Column(db.String(20), nullable=False, default="")
+    evidence_summary = db.Column(db.Text, nullable=False, default="")
+    # Deterministic measurements only: counts, risk score and short descriptions. Never
+    # the text they were measured on.
+    signals_json = db.Column(db.Text, nullable=False, default="{}")
+    # The only fragments of submitted content this table holds, and the only field the
+    # retention job redacts.
+    quotes_json = db.Column(db.Text, nullable=False, default="[]")
+    quotes_redacted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    author_message = db.Column(db.Text, nullable=False, default="")
+    suggested_revision = db.Column(db.Text, nullable=False, default="")
+    rationale_json = db.Column(db.Text, nullable=False, default="[]")
+    policy_version = db.Column(db.String(40), nullable=False, default="")
+    schema_version = db.Column(db.String(40), nullable=False, default="")
+    prompt_version = db.Column(db.String(40), nullable=False, default="")
+    model = db.Column(db.String(80), nullable=False, default="")
+    escalated = db.Column(db.Boolean, nullable=False, default=False)
+    source = db.Column(db.String(20), nullable=False, default="policy")
+    latency_ms = db.Column(db.Float, nullable=False, default=0.0)
+    reviewer_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    reviewer_note = db.Column(db.String(500), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class ContentReport(db.Model):
+    """A reader's report about published content.
+
+    One open report per reader per set, so a single account cannot manufacture the
+    report count that triggers an auto-hide.
+    """
+
+    __tablename__ = "content_report"
+    __table_args__ = (
+        UniqueConstraint("public_set_id", "reporter_id", name="uq_content_report_reporter"),
+        # Not "ix_content_report_status": that name is already taken by the single-column
+        # index SQLAlchemy generates for status=index=True, and a duplicate index name
+        # fails CREATE at table-creation time.
+        Index("ix_content_report_status_created", "status", "created_at"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    public_set_id = db.Column(
+        db.Integer, db.ForeignKey("public_flashcard_set.id"), nullable=False, index=True)
+    reporter_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    reason = db.Column(db.String(40), nullable=False, default="other")
+    detail = db.Column(db.String(500), nullable=False, default="")
+    status = db.Column(db.String(20), nullable=False, default="open", index=True)
+    resolution = db.Column(db.String(40), nullable=False, default="")
+    resolver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    resolved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -1170,6 +1446,91 @@ def ensure_database():
                         'ON "user" (preferred_language)'
                     ))
             apply_schema_migration("008_add_user_preferred_language", add_preferred_language)
+        columns = {column["name"] for column in inspect(db.engine).get_columns("user")}
+        if "grade" not in columns:
+            def add_user_grade():
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        'ALTER TABLE "user" ADD COLUMN grade VARCHAR(20) NOT NULL DEFAULT \'\''
+                    ))
+                    connection.execute(text(
+                        'CREATE INDEX IF NOT EXISTS ix_user_grade ON "user" (grade)'
+                    ))
+                    # Postgres: widen the language column for future locale variants; harmless on SQLite.
+                    if db.engine.dialect.name == "postgresql":
+                        connection.execute(text('ALTER TABLE "user" ALTER COLUMN preferred_language TYPE VARCHAR(8)'))
+            apply_schema_migration("010_add_user_grade", add_user_grade)
+        attempt_columns = {column["name"] for column in inspect(db.engine).get_columns("attempt")}
+        analysis_fields = {
+            "verdict": "VARCHAR(20) NOT NULL DEFAULT ''",
+            "mistake_categories": "TEXT NOT NULL DEFAULT '[]'",
+            "root_cause": "TEXT NOT NULL DEFAULT ''",
+            "analysis_confidence": "FLOAT",
+            "analysis_json": "TEXT NOT NULL DEFAULT '{}'",
+            "resolved": "BOOLEAN NOT NULL DEFAULT FALSE",
+        }
+        missing_analysis = {n: d for n, d in analysis_fields.items() if n not in attempt_columns}
+        if missing_analysis:
+            def add_attempt_analysis():
+                with db.engine.begin() as connection:
+                    for name, definition in missing_analysis.items():
+                        connection.execute(text(f"ALTER TABLE attempt ADD COLUMN {name} {definition}"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_attempt_verdict ON attempt (verdict)"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_attempt_resolved ON attempt (resolved)"))
+            apply_schema_migration("011_add_attempt_analysis", add_attempt_analysis)
+        attempt_columns = {column["name"] for column in inspect(db.engine).get_columns("attempt")}
+        diagnosis_fields = {
+            "diagnosis_json": "TEXT NOT NULL DEFAULT '{}'",
+            "diagnosis_version": "VARCHAR(20) NOT NULL DEFAULT ''",
+            "primary_diagnosis": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "next_action": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "diagnosis_validation": "VARCHAR(30) NOT NULL DEFAULT ''",
+            "missing_evidence": "BOOLEAN NOT NULL DEFAULT FALSE",
+        }
+        missing_diagnosis = {n: d for n, d in diagnosis_fields.items() if n not in attempt_columns}
+        if missing_diagnosis:
+            def add_attempt_diagnosis():
+                with db.engine.begin() as connection:
+                    for name, definition in missing_diagnosis.items():
+                        connection.execute(text(f"ALTER TABLE attempt ADD COLUMN {name} {definition}"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_attempt_primary_diagnosis "
+                        "ON attempt (primary_diagnosis)"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_attempt_diagnosis_version "
+                        "ON attempt (diagnosis_version)"))
+                    connection.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_attempt_missing_evidence "
+                        "ON attempt (missing_evidence)"))
+            apply_schema_migration("016_add_attempt_diagnosis", add_attempt_diagnosis)
+        mastery_columns = {column["name"] for column in inspect(db.engine).get_columns("concept_mastery")}
+        evidence_fields = {
+            "evidence_weight": "FLOAT NOT NULL DEFAULT 0",
+            "uncertainty": "FLOAT NOT NULL DEFAULT 1.0",
+            "last_action": "VARCHAR(40) NOT NULL DEFAULT ''",
+        }
+        missing_evidence_fields = {n: d for n, d in evidence_fields.items() if n not in mastery_columns}
+        if missing_evidence_fields:
+            def add_mastery_evidence():
+                with db.engine.begin() as connection:
+                    for name, definition in missing_evidence_fields.items():
+                        connection.execute(text(
+                            f"ALTER TABLE concept_mastery ADD COLUMN {name} {definition}"))
+                    # Existing rows already carry attempts; seed their evidence weight
+                    # from the attempt count so prior practice is not thrown away.
+                    connection.execute(text(
+                        "UPDATE concept_mastery SET evidence_weight = MIN(attempts, 6), "
+                        "uncertainty = 1.0 / (1.0 + MIN(attempts, 6)) WHERE attempts > 0"))
+            apply_schema_migration("017_add_mastery_evidence", add_mastery_evidence)
+        history_columns = {column["name"] for column in inspect(db.engine).get_columns("mastery_history")}
+        if "reason" not in history_columns:
+            def add_history_reason():
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        "ALTER TABLE mastery_history ADD COLUMN reason TEXT NOT NULL DEFAULT ''"))
+            apply_schema_migration("018_add_mastery_history_reason", add_history_reason)
         attempt_columns = {column["name"] for column in inspect(db.engine).get_columns("attempt")}
         if "understood_at" not in attempt_columns:
             def add_understood_at():
@@ -1324,6 +1685,15 @@ def ensure_database():
                     ))
             apply_schema_migration("007_add_document_recognition", add_document_recognition_fields)
 
+        block_columns = {column["name"] for column in inspect(db.engine).get_columns("document_block")}
+        if "suggested_correction" not in block_columns:
+            def add_document_block_suggestion():
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        "ALTER TABLE document_block ADD COLUMN suggested_correction TEXT NOT NULL DEFAULT ''"
+                    ))
+            apply_schema_migration("008_add_block_suggested_correction", add_document_block_suggestion)
+
         def add_query_path_indexes():
             indexes = (
                 "CREATE INDEX IF NOT EXISTS ix_attempt_lesson_timestamp ON attempt (lesson_id, timestamp)",
@@ -1454,6 +1824,71 @@ def ensure_database():
             apply_schema_migration("015_immutable_publication_versions", add_publication_versions)
         else:
             apply_schema_migration("015_immutable_publication_versions", lambda: None)
+        # Must run before any ORM query below touches these tables: SQLAlchemy selects
+        # every mapped column, so the publication backfill would ask an upgraded
+        # application for columns an un-upgraded database does not have yet.
+        public_columns = {
+            column["name"] for column in inspect(db.engine).get_columns("public_flashcard_set")
+        }
+        version_columns = {
+            column["name"] for column in inspect(db.engine).get_columns(
+                "flashcard_publication_version")
+        }
+        moderation_additions = {
+            "public_flashcard_set": {
+                "moderation_decision": "VARCHAR(20) NOT NULL DEFAULT 'pending'",
+                "moderation_record_id": "INTEGER",
+                "safety_report_count": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "flashcard_publication_version": {
+                "content_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
+                "moderation_status": "VARCHAR(20) NOT NULL DEFAULT 'pending'",
+            },
+        }
+        missing_moderation = {
+            "public_flashcard_set": {
+                name: definition
+                for name, definition in moderation_additions["public_flashcard_set"].items()
+                if name not in public_columns
+            },
+            "flashcard_publication_version": {
+                name: definition
+                for name, definition in moderation_additions["flashcard_publication_version"].items()
+                if name not in version_columns
+            },
+        }
+        if any(missing_moderation.values()):
+            def add_community_moderation():
+                with db.engine.begin() as connection:
+                    for table, additions in missing_moderation.items():
+                        for name, definition in additions.items():
+                            connection.execute(text(
+                                f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+                    # Index names match the ones SQLAlchemy generates for these
+                    # index=True columns, so an upgraded database ends up identical to a
+                    # freshly created one rather than carrying differently named indexes.
+                    for index, table, column in (
+                        ("ix_public_flashcard_set_moderation_decision",
+                         "public_flashcard_set", "moderation_decision"),
+                        ("ix_public_flashcard_set_moderation_record_id",
+                         "public_flashcard_set", "moderation_record_id"),
+                        ("ix_flashcard_publication_version_content_hash",
+                         "flashcard_publication_version", "content_hash"),
+                    ):
+                        if column in missing_moderation[table]:
+                            connection.execute(text(
+                                f"CREATE INDEX IF NOT EXISTS {index} ON {table} ({column})"))
+                    # Every set that was already approved was approved by the previous
+                    # quality-only gate. Grandfathering it as moderated would assert a
+                    # safety check that never ran, so it is marked for review instead:
+                    # it stays visible (the publication state is untouched) and appears
+                    # in the queue to be checked against the new policy.
+                    connection.execute(text(
+                        "UPDATE public_flashcard_set SET moderation_decision = 'review' "
+                        "WHERE status = 'approved'"))
+            apply_schema_migration("019_add_community_moderation", add_community_moderation)
+        else:
+            apply_schema_migration("019_add_community_moderation", lambda: None)
         existing_public_sets = db.session.scalars(db.select(PublicFlashcardSet)).all()
         for existing_public in existing_public_sets:
             if db.session.scalar(db.select(FlashcardPublicationVersion.id).where(
@@ -1479,6 +1914,10 @@ def ensure_database():
                 latest_review.publication_version_id = snapshot_version.id
             if existing_public.status == "approved":
                 existing_public.active_version_id = snapshot_version.id
+        # Purely new tables, so db.create_all() above has already made them on every
+        # database, new or existing. The marker only records that this version has been
+        # reached, the same way 012 and 014 do for their tables.
+        apply_schema_migration("020_add_assistant_conversations", lambda: None)
         badge_rows = (
             ("first_steps", "First Steps", "Complete your first meaningful learning activity.", "spark", "general", 1, "bronze", 10),
             ("flashcard_beginner", "Flashcard Beginner", "Review 10 flashcards.", "cards", "flashcards", 10, "bronze", 15),
@@ -1518,16 +1957,25 @@ def get_current_language() -> str:
     return browser
 
 
+# AI content languages that follow the interface language (English name per code).
+CONTENT_LANGUAGE_NAMES = {
+    "en": "English", "de": "German", "fr": "French", "es": "Spanish",
+    "it": "Italian", "pt": "Portuguese", "nl": "Dutch", "ar": "Arabic",
+}
+
+
 def learning_content_language() -> str:
-    return "German" if get_current_language() == "de" else "English"
+    """English name of the AI content language, which follows the interface language."""
+    return CONTENT_LANGUAGE_NAMES.get(get_current_language(), "English")
 
 
 def language_instruction() -> str:
-    return (
-        "Antworte vollständig auf Deutsch."
-        if get_current_language() == "de"
-        else "Respond entirely in English."
-    )
+    language = get_current_language()
+    if language == "de":
+        return "Antworte vollständig auf Deutsch."
+    if language == "en":
+        return "Respond entirely in English."
+    return f"Respond entirely in {learning_content_language()}."
 
 
 # Subjects whose formulas should be typeset with LaTeX in the tutor UI.
@@ -1569,10 +2017,285 @@ def subject_teaching_instruction(subject: str | None) -> str:
     return "\n".join(parts)
 
 
+def learner_profile_instruction() -> str:
+    """Grade-based calibration injected into AI prompts (empty when no grade is set)."""
+    grade = str(getattr(current_user, "grade", "") or "") if current_user.is_authenticated else ""
+    return grade_descriptor(grade)
+
+
 def tutor_instructions(subject: str | None = None) -> str:
     base = f"{TUTOR_RULES}\n\n{language_instruction()}"
+    profile = learner_profile_instruction()
+    if profile:
+        base = f"{base}\n\n{profile}"
     extra = subject_teaching_instruction(subject)
     return f"{base}\n\n{extra}" if extra else base
+
+
+def analyze_student_answer(*, question, expected_answer, student_answer, subject, concept="",
+                           solution_steps=None, previous_mistakes=None, mastery=None,
+                           hints_used=False, time_seconds=None, response_confidence=None,
+                           answer_changes=None, source_context="") -> dict:
+    """Run the world-class diagnostic analysis for one answer.
+
+    Returns a normalized analysis dict (learnova.analysis schema). The AI gateway
+    performs strict schema validation and one corrective retry on malformed output;
+    if the provider is unavailable we return a safe, well-formed 'limitations' analysis
+    rather than silently substituting generic feedback.
+    """
+    language = learning_content_language()
+    grade = grade_label(getattr(current_user, "grade", "")) if getattr(current_user, "grade", "") else ""
+    if grade == "Not set":
+        grade = ""
+    evidence = build_evidence(
+        question=question, expected_answer=expected_answer, student_answer=student_answer,
+        subject=subject, grade=grade, language=language, concept=concept,
+        solution_steps=solution_steps, previous_mistakes=previous_mistakes, mastery=mastery,
+        hints_used=hints_used, time_seconds=time_seconds, response_confidence=response_confidence,
+        answer_changes=answer_changes, source_context=source_context,
+    )
+    try:
+        response = create_response(
+            task_type="mistake_analysis",
+            language=language,
+            model=ANALYSIS_MODEL,
+            instructions=analysis_system_prompt(subject, language, grade),
+            input=analysis_user_prompt(evidence),
+            max_output_tokens=app.config.get("AI_MISTAKE_ANALYSIS_MAX_OUTPUT_TOKENS", 3000),
+            temperature=0,
+        )
+        return normalize_analysis(parse_json(response.output_text))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        app.logger.warning("mistake analysis unavailable: %s", type(error).__name__)
+        return empty_analysis(note="Detailed analysis is temporarily unavailable; the basic result still applies.")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        app.logger.exception("mistake analysis parse failure")
+        return empty_analysis(note="Detailed analysis could not be parsed this time.")
+
+
+def diagnostics_enabled() -> bool:
+    """Whether the evidence-based engine handles this answer.
+
+    When off, `/api/answer` keeps using the previous mistake-analysis path, so grading
+    never depends on the new engine being available.
+    """
+
+    return bool(app.config.get("FEATURE_ADAPTIVE_DIAGNOSTICS", True))
+
+
+def _learner_grade() -> str:
+    grade = grade_label(getattr(current_user, "grade", "")) if getattr(current_user, "grade", "") else ""
+    return "" if grade == "Not set" else grade
+
+
+def _second_opinion(diagnosis: dict, *, language: str, bundle: dict) -> dict:
+    """Buy one independent critique for a risky diagnosis, or return it unchanged.
+
+    The critic sees only the quoted evidence and the claim, never the full bundle, so it
+    cannot introduce new claims; apply_second_opinion only ever weakens the result.
+    """
+
+    if not app.config.get("FEATURE_DIAGNOSTIC_VERIFICATION", True):
+        return diagnosis
+    review = {
+        "question": bundle.get("question"),
+        "expected_answer": bundle.get("expected_answer"),
+        "student_answer": bundle.get("student_answer"),
+        "claimed_status": diagnosis.get("correctness_status"),
+        "claimed_tag": diagnosis.get("primary_diagnosis", {}).get("tag"),
+        "claimed_statement": diagnosis.get("primary_diagnosis", {}).get("statement"),
+        "evidence": diagnosis.get("evidence", []),
+    }
+    try:
+        response = create_response(
+            task_type="diagnosis_verification",
+            language=language,
+            private_scope=current_user.id if current_user.is_authenticated else None,
+            model=DIAGNOSIS_VERIFY_MODEL,
+            instructions=verification_system_prompt(language),
+            input=verification_user_prompt(review),
+            max_output_tokens=app.config.get("AI_DIAGNOSIS_VERIFICATION_MAX_OUTPUT_TOKENS", 300),
+            temperature=0,
+        )
+        critique = parse_json(response.output_text)
+    except (ai_service.AIGatewayError, ai_service.AIValidationError,
+            json.JSONDecodeError, TypeError, ValueError):
+        # A failed second opinion must never fail the answer; the first result stands,
+        # flagged as unverified so the knowledge model discounts it.
+        app.logger.info("diagnosis verification unavailable")
+        updated = dict(diagnosis)
+        updated["validation_status"] = "unverified"
+        return updated
+    return apply_second_opinion(diagnosis, critique if isinstance(critique, dict) else {})
+
+
+def diagnose_student_answer(
+    *, question, expected_answer, student_answer, subject, concept="", question_type="",
+    options=None, rubric=None, solution_steps=None, work_steps=None, learning_objectives=None,
+    previous_attempts=None, knowledge_state=None, hints_used=False, time_seconds=None,
+    answer_changes=None, response_confidence=None, ocr_confidence=None, source_context="",
+) -> dict:
+    """Stages A to C: understand the response, diagnose it, then verify the diagnosis.
+
+    Always returns a well-formed diagnosis:v2 object. A provider failure produces an
+    insufficient_evidence result rather than a silent generic verdict, so the planner
+    still has something honest to act on and the student is never blamed for an outage.
+    """
+
+    language = learning_content_language()
+    grade = _learner_grade()
+    bundle = build_evidence_bundle(
+        question=question, expected_answer=expected_answer, student_answer=student_answer,
+        subject=subject, concept=concept, grade=grade, language=language,
+        question_type=question_type, options=options, rubric=rubric,
+        solution_steps=solution_steps, work_steps=work_steps,
+        learning_objectives=learning_objectives, previous_attempts=previous_attempts,
+        knowledge_state=knowledge_state, hints_used=hints_used, time_seconds=time_seconds,
+        answer_changes=answer_changes, response_confidence=response_confidence,
+        ocr_confidence=ocr_confidence, source_context=source_context,
+    )
+    try:
+        response = create_response(
+            task_type="answer_diagnosis",
+            language=language,
+            private_scope=current_user.id if current_user.is_authenticated else None,
+            model=DIAGNOSIS_MODEL,
+            instructions=diagnosis_system_prompt(subject, language, grade),
+            input=diagnosis_user_prompt(bundle),
+            max_output_tokens=app.config.get("AI_ANSWER_DIAGNOSIS_MAX_OUTPUT_TOKENS", 2600),
+            temperature=0,
+        )
+        diagnosis = normalize_diagnosis(parse_json(response.output_text))
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        app.logger.warning("diagnosis unavailable: %s", type(error).__name__)
+        return insufficient_evidence_diagnosis(
+            tr("The detailed diagnosis is temporarily unavailable; your score still applies."),
+            [concept] if concept else [],
+        )
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        app.logger.exception("diagnosis parse failure")
+        return insufficient_evidence_diagnosis(
+            tr("The detailed diagnosis could not be read this time."),
+            [concept] if concept else [],
+        )
+    diagnosis, verification = verify_diagnosis(
+        diagnosis,
+        student_answer=student_answer,
+        expected_answer=expected_answer,
+        question_type=question_type,
+        ocr_confidence=ocr_confidence,
+        verify_risk_threshold=float(app.config.get("AI_DIAGNOSIS_VERIFY_RISK_THRESHOLD", 0.6)),
+    )
+    app.logger.info(
+        "diagnosis.checked tag=%s status=%s method=%s risk=%.2f conflicts=%d",
+        diagnosis.get("primary_diagnosis", {}).get("tag", ""),
+        diagnosis.get("correctness_status", ""), verification.method,
+        verification.risk, len(verification.conflicts),
+    )
+    if diagnosis.pop("_needs_second_opinion", False):
+        diagnosis = _second_opinion(diagnosis, language=language, bundle=bundle)
+    diagnosis.pop("_needs_second_opinion", None)
+    return diagnosis
+
+
+def concept_knowledge_state(record) -> dict:
+    """The safe, compact view of one concept handed to prompts and the planner."""
+
+    return evidence_summary(mastery_state(record))
+
+
+def recent_diagnosis_history(user_id, subject, concept, limit=5):
+    """Recent diagnoses for one concept, newest first, for the planner repeat rules."""
+
+    rows = db.session.execute(
+        db.select(Attempt.primary_diagnosis, Attempt.concept, Attempt.next_action,
+                  Attempt.timestamp).join(Lesson).where(
+            Lesson.user_id == user_id,
+            func.coalesce(Attempt.subject, Lesson.subject) == subject,
+            Attempt.concept == concept,
+            Attempt.primary_diagnosis != "",
+        ).order_by(Attempt.timestamp.desc()).limit(limit)
+    ).all()
+    return [
+        {"primary_diagnosis": row.primary_diagnosis, "concept": row.concept,
+         "next_action": row.next_action}
+        for row in rows
+    ]
+
+
+def stored_prerequisites(user_id, subject, concept):
+    """Every recorded prerequisite edge for one concept, as plain dicts."""
+
+    rows = db.session.scalars(db.select(ConceptPrerequisite).where(
+        ConceptPrerequisite.user_id == user_id,
+        ConceptPrerequisite.subject == subject,
+        ConceptPrerequisite.concept == concept,
+    )).all()
+    return [
+        {"concept": row.concept, "prerequisite": row.prerequisite,
+         "evidence_count": row.evidence_count, "confidence": row.confidence,
+         "last_seen_at": row.last_seen_at}
+        for row in rows
+    ]
+
+
+def record_prerequisite_gaps(user_id, subject, concept, diagnosis) -> None:
+    """Accumulate evidence-backed prerequisite gaps into the learner concept graph.
+
+    The diagnosis schema already dropped any gap that was not linked to a quote, so
+    everything reaching here is supported. Edges are counted, never asserted outright:
+    confirmed_prerequisites decides when there is enough evidence to act on.
+    """
+
+    gaps = [item.get("concept", "") for item in diagnosis.get("prerequisite_gaps", []) if item.get("concept")]
+    if not gaps:
+        return
+    now = utcnow()
+    confidence = float(diagnosis.get("confidence", {}).get("value", 0.5))
+    edges: dict[str, Any] = {}
+    for gap in gaps:
+        merge_prerequisite(edges, concept=concept, prerequisite=gap, now=now, confidence=confidence)
+    for edge in edges.values():
+        existing = db.session.scalar(db.select(ConceptPrerequisite).where(
+            ConceptPrerequisite.user_id == user_id,
+            ConceptPrerequisite.subject == subject,
+            ConceptPrerequisite.concept == concept,
+            ConceptPrerequisite.prerequisite == edge["prerequisite"],
+        ))
+        if existing:
+            existing.evidence_count += 1
+            existing.confidence = round(
+                (existing.confidence * (existing.evidence_count - 1) + confidence)
+                / existing.evidence_count, 3)
+            existing.last_seen_at = now
+        else:
+            db.session.add(ConceptPrerequisite(
+                user_id=user_id, subject=subject, concept=concept[:255],
+                prerequisite=edge["prerequisite"][:255], evidence_count=1,
+                confidence=round(confidence, 3), first_seen_at=now, last_seen_at=now,
+            ))
+
+
+def apply_evidence_update(record, diagnosis, *, difficulty, hints_used, ocr_confidence=None):
+    """Update one concept evidence weight and uncertainty, and explain the change.
+
+    Runs before apply_mastery_update writes last_practised_at, because the decay is
+    measured from the previous practice time.
+    """
+
+    evidence = update_evidence(
+        mastery_state(record),
+        now=utcnow(),
+        hints_used=hints_used,
+        missing_evidence=bool(diagnosis.get("missing_evidence")),
+        diagnosis_confidence=float(diagnosis.get("confidence", {}).get("value", 0.5)),
+        difficulty=difficulty,
+        ocr_confidence=ocr_confidence,
+        validation_status=str(diagnosis.get("validation_status", "validated")),
+    )
+    record.evidence_weight = evidence["evidence_weight"]
+    record.uncertainty = evidence["uncertainty"]
+    return evidence
 
 
 def media_score(value: Any) -> int:
@@ -1624,20 +2347,28 @@ def safe_internal_url(value: str | None) -> str | None:
 @app.context_processor
 def inject_i18n():
     language = get_current_language()
-    ai_mode = app.config.get("AI_MODE", "mock")
+    ai_mode = app.config.get("AI_MODE", "cached")
     return {
         "_": lambda message, **values: translate(message, language, **values),
         "current_language": language,
-        "learning_content_language_code": "de-DE" if learning_content_language() == "German" else "en-US",
+        "interface_direction": language_direction(language),
+        "language_options": language_options(),
+        "grade_choices": [{"value": value, "label": grade_label(value)} for value in GRADE_CHOICES],
+        "current_grade": str(getattr(current_user, "grade", "") or "") if current_user.is_authenticated else "",
+        "learning_content_language_code": {
+            "en": "en-US", "de": "de-DE", "fr": "fr-FR", "es": "es-ES", "it": "it-IT",
+            "pt": "pt-PT", "nl": "nl-NL", "ar": "ar-SA",
+        }.get(language, "en-US"),
         "frontend_translations": frontend_catalog(language),
         "ai_mode_badge": (
-            {"mock": "Mock AI", "cached": "Cached AI", "live": "Live AI"}.get(ai_mode)
+            {"cached": "Cached AI", "live": "Live AI"}.get(ai_mode)
             if app.config.get("ENV_NAME") == "development" else None
         ),
         "ai_mode": ai_mode,
         "planner_task_title": planner_task_title,
         "planner_date": planner_date,
         "feature_flags": {
+            "assistant_chat": app.config.get("FEATURE_ASSISTANT_CHAT", False),
             "private_flashcards": app.config.get("FEATURE_PRIVATE_FLASHCARDS", False),
             "community_library": app.config.get("FEATURE_COMMUNITY_LIBRARY", False),
             "community_publishing": app.config.get("FEATURE_COMMUNITY_PUBLISHING", False),
@@ -1960,7 +2691,14 @@ def ai_diagnostics():
     identities = {current_user.username.casefold(), current_user.email.casefold()}
     if app.config.get("ENV_NAME") != "development" or not identities.intersection(allowed):
         return "Not found", 404
-    return render_template("ai_diagnostics.html", diagnostics=ai_service.diagnostics_summary())
+    return render_template(
+        "ai_diagnostics.html", diagnostics=ai_service.diagnostics_summary(),
+        moderation_metrics=moderation_summary() if moderation_enabled() else None,
+        ai_providers={
+            "registered": sorted(ai_service.PROVIDERS),
+            "configured": ai_service.available_providers(),
+            "default": ai_service.DEFAULT_PROVIDER,
+        })
 
 
 def quality_options() -> dict[str, Any]:
@@ -2078,6 +2816,9 @@ def mastery_state(record):
         "next_review_at": record.next_review_at,
         "difficulty_level": record.difficulty_level,
         "status": record.status,
+        "evidence_weight": getattr(record, "evidence_weight", 0.0) or 0.0,
+        "uncertainty": 1.0 if getattr(record, "uncertainty", None) is None else record.uncertainty,
+        "last_action": getattr(record, "last_action", "") or "",
     }
 
 
@@ -2103,6 +2844,9 @@ def get_or_create_mastery(user_id, subject, concept):
             confidence_trend=50,
             difficulty_level=1,
             status="weak",
+            evidence_weight=0.0,
+            uncertainty=1.0,
+            last_action="",
         )
         db.session.add(record)
         db.session.flush()
@@ -2136,6 +2880,10 @@ def apply_mastery_update(
         "confidence_trend",
     ):
         setattr(record, field, updated[field])
+    # One strong answer is not a permanent conclusion: "mastered" needs accumulated,
+    # non-decayed evidence behind it (learnova.diagnostics.knowledge.confident_status).
+    updated["status"] = confident_status(mastery_state(record), updated["status"])
+    record.status = updated["status"]
     record.total_score = int(record.total_score or 0) + int(score)
     record.updated_at = updated["last_practised_at"]
     return before, updated
@@ -2163,6 +2911,7 @@ def add_mastery_history(
     retry_count=0,
     response_confidence: float = 50.0,
     attempt=None,
+    reason: str = "",
 ):
     previous_confidence = float(record.confidence_trend or 50)
     if updated.get("confidence_trend") is not None:
@@ -2187,6 +2936,7 @@ def add_mastery_history(
         confidence_before=previous_confidence,
         confidence_after=updated["confidence_trend"],
         outcome=updated["outcome"],
+        reason=reason[:400],
         practised_at=updated["last_practised_at"],
     ))
 
@@ -2278,6 +3028,7 @@ def store_page_recognition(page, recognized):
             important=item["important_candidate"],
             teacher_highlighted=item["teacher_highlight_candidate"],
             crossed_out=item["crossed_out"],
+            suggested_correction=item.get("suggested_correction", ""),
         ))
 
 
@@ -2323,36 +3074,117 @@ def sync_page_recognition_json(page):
     page.recognition_json = json.dumps(saved, ensure_ascii=False)
 
 
-def recognize_single_project_page(page, project):
+def _recognize_variant(project, page, image_data, image_mime):
+    """Run one vision-OCR attempt against a single preprocessing variant."""
+    response = create_response(
+        task_type="ocr_document_recognition",
+        language=learning_content_language(),
+        model=VISION_MODEL,
+        instructions=(
+            "You are a careful school-document recognition system. Transcribe printed text and "
+            "handwriting, including messy handwriting, using the vision of the image itself. Preserve "
+            "headings, tables, columns, arrows and line structure. Never invent unreadable words: give "
+            "your best literal reading with a low confidence, and mark truly illegible fragments as "
+            "uncertain rather than skipping the whole page. Return structured JSON only."
+        ),
+        input=[{"role": "user", "content": [
+            {"type": "input_text", "text": recognition_instructions(project.subject, page.page_order)},
+            {"type": "input_image", "image_url": (
+                f"data:{image_mime};base64,{base64.b64encode(image_data).decode('ascii')}"
+            ), "detail": "high"},
+        ]}],
+        max_output_tokens=PROJECT_TOKEN_LIMIT,
+        temperature=0,
+    )
+    return normalize_recognition(parse_json(response.output_text))
+
+
+def _usable_block_count(recognized):
+    return sum(1 for block in recognized["blocks"] if block["content"] and not block["crossed_out"])
+
+
+def recognize_single_project_page(page, project, mode=None):
+    """Recognize one page by trying preprocessing variants until readable text is found.
+
+    Handwriting is read by the vision model. The whole page is only reported unreadable
+    when *every* variant returns no usable content; any usable block (even low-confidence)
+    is accepted so partial results and individually-uncertain words survive."""
     page_id = page.id
+    forced = mode if mode in RECOGNITION_VARIANTS else None
+    variants = (forced,) if forced else RECOGNITION_VARIANTS
     try:
         ensure_processed_page_image(page)
         page.processing_stage = "recognizing"
         db.session.commit()
-        response = create_response(
-            task_type="ocr_document_recognition",
-            language=learning_content_language(),
-            model=VISION_MODEL,
-            instructions=(
-                "You are a conservative school-document recognition system. Never guess missing words, "
-                "symbols, labels, or handwriting. Return structured JSON only."
-            ),
-            input=[{"role": "user", "content": [
-                {"type": "input_text", "text": recognition_instructions(project.subject, page.page_order)},
-                {"type": "input_image", "image_url": (
-                    f"data:{page.processed_mime_type};base64,"
-                    f"{base64.b64encode(page.processed_data).decode('ascii')}"
-                ), "detail": "high"},
-            ]}],
-            max_output_tokens=PROJECT_TOKEN_LIMIT,
-            temperature=0,
-        )
-        recognized = normalize_recognition(parse_json(response.output_text))
-        if not recognized["readable"]:
-            raise ValueError("No reliable printed or handwritten content was recognized")
+
+        best = None  # (usable_count, confidence, recognized, variant_name)
+        last_error = None
+        for variant_name in variants:
+            if variant_name == "enhanced":
+                variant_data, variant_mime = page.processed_data, page.processed_mime_type
+            else:
+                variant = apply_recognition_variant(page.processed_data, variant_name)
+                variant_data, variant_mime = variant.data, variant.mime_type
+            try:
+                recognized = _recognize_variant(project, page, variant_data, variant_mime)
+            except (ai_service.AIGatewayError, ai_service.AIValidationError) as variant_error:
+                # A later variant failing (e.g. a free-tier rate limit) must NOT discard a
+                # usable result an earlier variant already produced. Keep best-so-far.
+                last_error = variant_error
+                app.logger.info(
+                    "ocr.attempt project=%s page=%s variant=%s error=%s",
+                    project.id, page_id, variant_name, type(variant_error).__name__,
+                )
+                if best is not None:
+                    break
+                continue
+            usable = _usable_block_count(recognized)
+            score = (usable, recognized["confidence"])
+            if best is None or score > (best[0], best[1]):
+                best = (usable, recognized["confidence"], recognized, variant_name)
+            # Safe diagnostics only — dimensions, size, variant and confidence, never content.
+            app.logger.info(
+                "ocr.attempt project=%s page=%s dims=%sx%s src_bytes=%s variant_bytes=%s variant=%s conf=%.2f usable_blocks=%s",
+                project.id, page_id, page.image_width, page.image_height,
+                len(page.source_file.original_data or b""), len(variant_data),
+                variant_name, recognized["confidence"], usable,
+            )
+            if usable >= 1 and recognized["confidence"] >= 0.55:
+                break  # good enough — no need to spend more vision calls
+
+        if best is None:
+            # No variant produced any result. Surface the provider error if there was one,
+            # otherwise fall through to the "nothing readable" guidance below.
+            if last_error is not None:
+                raise last_error
+            raise ValueError("No recognition variant produced a result")
+        usable, confidence, recognized, variant_name = best
+        if usable == 0:
+            # Every variant came back empty: specific, actionable guidance (not a generic reject).
+            page.extraction_status = "unreadable"
+            page.processing_stage = "failed"
+            page.review_status = "pending"
+            page.retry_count += 1
+            page.warning = (
+                "We tried enhanced, grayscale and high-contrast modes but could not read any text on "
+                "this page. Use Retry recognition (or a different mode), or rescan with a sharper, "
+                "evenly lit, straight-on photo. Small handwriting is fine as long as it is in focus."
+            )
+            project.status = "reviewing"
+            db.session.commit()
+            app.logger.info("ocr.empty project=%s page=%s variants_tried=%s", project.id, page_id, list(variants))
+            return False, page.warning
+
+        if variant_name != "enhanced":
+            note = f"Recognized using the {variant_name} image mode."
+            recognized["warning"] = " ".join(v for v in [recognized.get("warning", ""), note] if v).strip()
         store_page_recognition(page, recognized)
         project.status = "reviewing"
         db.session.commit()
+        app.logger.info(
+            "ocr.ready project=%s page=%s variant=%s conf=%.2f blocks=%s status=%s",
+            project.id, page_id, variant_name, confidence, usable, recognized["confidence_status"],
+        )
         return True, ""
     except Exception as error:
         db.session.rollback()
@@ -2365,7 +3197,7 @@ def recognize_single_project_page(page, project):
             if isinstance(error, (ai_service.AIGatewayError, ai_service.AIValidationError)):
                 saved_page.warning = ai_failure_message(error)[0]
             else:
-                saved_page.warning = "Recognition failed safely. Retry is available."
+                saved_page.warning = "Recognition failed safely. Use Retry recognition to try again."
             saved_project = db.session.get(LearningProject, saved_page.project_id)
             if saved_project:
                 saved_project.status = "reviewing"
@@ -2373,7 +3205,7 @@ def recognize_single_project_page(page, project):
         app.logger.exception("Recognition failed for project %s page %s", project.id, page_id)
         if isinstance(error, (ai_service.AIGatewayError, ai_service.AIValidationError)):
             return False, ai_failure_message(error)[0]
-        return False, "Recognition failed safely. Retry is available."
+        return False, "Recognition failed safely. Use Retry recognition to try again."
 
 
 def owned_section(project_id, section_id):
@@ -2392,6 +3224,29 @@ def owned_exam(exam_id):
             FinalExam.id == exam_id, LearningProject.user_id == current_user.id
         )
     )
+
+
+def section_recognition_confidence(section):
+    """The weakest OCR confidence among the pages a section was built from.
+
+    The diagnostics engine treats a poorly recognised source as evidence uncertainty:
+    if the material the question was written from could not be read reliably, a wrong
+    answer is not conclusive about the student (learnova.diagnostics.verification).
+    Returns None when the section has no recognised pages, meaning "not applicable".
+    """
+
+    page_ids = json_value(section.source_page_ids_json)
+    if not page_ids:
+        return None
+    confidences = [
+        value for value in db.session.scalars(
+            db.select(ProjectPage.recognition_confidence).where(
+                ProjectPage.project_id == section.project_id,
+                ProjectPage.id.in_(page_ids),
+            )
+        ).all() if value is not None
+    ]
+    return round(min(confidences), 3) if confidences else None
 
 
 def section_source_text(section):
@@ -2467,10 +3322,96 @@ def update_section_mastery(section, completed=False):
     )
 
 
-def generate_adaptive_question(session, target, question_number, question_type):
+def generate_targeted_question(session, target, question_number, question_type, plan, recent_questions):
+    """Stages F and G: generate one question from the planner spec, then validate it.
+
+    Nothing reaches the student until the deterministic validator in
+    learnova.diagnostics.question_spec has checked alignment, difficulty bounds,
+    answerability, the answer key and duplication. A rejected question is regenerated at
+    most AI_QUESTION_MAX_REGENERATIONS times, with the failure reasons fed back, and the
+    caller falls back to the previous generator if that still fails.
+    """
+
+    spec = spec_from_constraints(
+        {**plan.constraints, "difficulty": plan.difficulty, "avoid_prompts": recent_questions},
+        fallback_concept=target["concept"],
+        fallback_type=question_type,
+    )
+    # The session fixes the control type for this slot, so the spec must not fight it.
+    spec = replace(spec, question_type=question_type)
+    context = {
+        "subject": target["subject"],
+        "mastery_score": target["mastery_score"],
+        "status": target["status"],
+        "uncertainty": target.get("uncertainty", 1.0),
+        "planner_action": plan.action,
+        "planner_reason": plan.reason,
+        "avoid_prompts": recent_questions,
+        "lesson_context": str(session["lesson"].get("explanation", ""))[:1500],
+        "source_material": str(session.get("source_context", ""))[:1200],
+        "response_language": session["language"],
+    }
+    attempts = 1 + max(0, int(app.config.get("AI_QUESTION_MAX_REGENERATIONS", 1)))
+    correction = ""
+    last_failure = ""
+    for attempt in range(attempts):
+        response = create_response(
+            task_type="question_generation",
+            language=session["language"],
+            private_scope=current_user.id if current_user.is_authenticated else None,
+            validation_context={"avoid_prompts": recent_questions},
+            model=QUESTION_MODEL,
+            instructions=question_system_prompt(
+                target["subject"], session["language"], _learner_grade()),
+            input=question_user_prompt(spec.as_dict(), {**context, "correction": correction}),
+            max_output_tokens=app.config.get("AI_QUESTION_GENERATION_MAX_OUTPUT_TOKENS", 1200),
+            temperature=0.15 if attempt == 0 else 0.4,
+            **ai_service.quality_options(QUESTION_MODEL),
+        )
+        result = parse_json(response.output_text)
+        question = result.get("question") or result.get("next_question")
+        if not isinstance(question, dict):
+            raise KeyError("question")
+        question.setdefault("type", question_type)
+        question.setdefault("concept", spec.concept)
+        question.setdefault("difficulty", spec.difficulty)
+        validation = validate_question(question, spec, recent_prompts=recent_questions)
+        if validation.valid:
+            question.update({
+                "id": f"q{question_number}",
+                "subject": target["subject"],
+                "concept": target["concept"],
+                "concepts": [target["concept"]],
+                "difficulty": plan.difficulty,
+                "type": question_type,
+            })
+            question.setdefault("options", [])
+            question.setdefault("hint", "")
+            app.logger.info(
+                "question.validated action=%s difficulty=%s attempt=%s",
+                plan.action, plan.difficulty, attempt + 1)
+            return annotate_question(question, spec, validation)
+        last_failure = validation.summary
+        correction = (
+            "The previous attempt was rejected for these reasons; fix all of them: "
+            + last_failure
+        )
+        app.logger.info("question.rejected attempt=%s reasons=%s", attempt + 1, last_failure)
+    raise ValueError(f"generated question failed validation: {last_failure}")
+
+
+def generate_adaptive_question(session, target, question_number, question_type, plan=None):
     recent_questions = recent_concept_questions(
         current_user.id, target["subject"], target["concept"]
     )
+    if plan is not None and diagnostics_enabled():
+        try:
+            return generate_targeted_question(
+                session, target, question_number, question_type, plan, list(recent_questions))
+        except (ai_service.AIValidationError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            # The spec-driven path is an upgrade, not a dependency: fall back to the
+            # previous generator rather than failing the answer the student just gave.
+            app.logger.warning("targeted question generation failed: %s", type(error).__name__)
     previous_mistakes = db.session.execute(
         db.select(Attempt.question, Attempt.student_answer, Attempt.feedback).join(Lesson).where(
             Lesson.user_id == current_user.id,
@@ -2498,10 +3439,6 @@ Match the requested easy/medium/hard difficulty. Do not duplicate a recent quest
     response = create_response(
         task_type="adaptive_practice",
         language=session["language"],
-        fixture_context={
-            "subject": target["subject"], "concept": target["concept"],
-            "question_number": question_number,
-        },
         validation_context={"recent_questions": recent_questions},
         model=TUTOR_MODEL, instructions=tutor_instructions(target["subject"]), input=prompt,
         max_output_tokens=ANSWER_TOKEN_LIMIT, temperature=0.15,
@@ -2559,6 +3496,7 @@ def register():
             request.form.get("email", ""),
             request.form.get("password", ""),
             request.form.get("language", get_current_language()),
+            request.form.get("grade", ""),
         )
         validation_error = validate_registration(registration, SUPPORTED_LANGUAGES)
         conflict = identity_conflict(db, User, registration) if validation_error is None else None
@@ -2641,6 +3579,55 @@ def update_language():
     flash(translate("Your language preference was saved.", language), "success")
     destination = safe_internal_url(request.form.get("next"))
     return redirect(destination or url_for("settings"))
+
+
+@app.post("/settings/grade")
+@login_required
+def update_grade():
+    grade = normalize_grade(request.form.get("grade", ""))
+    destination = safe_internal_url(request.form.get("next")) or url_for("settings")
+    if not grade:
+        flash(tr("Please choose your grade."), "error")
+        return redirect(destination)
+    # Only ever set on explicit submit — grade is never overwritten automatically.
+    current_user.grade = grade
+    db.session.commit()
+    flash(tr("Your grade was saved."), "success")
+    return redirect(destination)
+
+
+# Paths exempt from the one-time grade prompt (APIs, auth, static, the prompt itself).
+_GRADE_GATE_EXEMPT = ("/static", "/api", "/onboarding", "/settings", "/logout", "/login", "/register", "/health")
+
+
+@app.before_request
+def grade_onboarding_gate():
+    """Ask existing users without a grade to set one, once per session (never auto-set)."""
+    if not current_user.is_authenticated or request.method != "GET":
+        return None
+    if getattr(current_user, "grade", "") or flask_session.get("grade_prompt_dismissed"):
+        return None
+    if "text/html" not in request.headers.get("Accept", ""):
+        return None
+    path = request.path
+    if any(path == prefix or path.startswith(prefix + "/") for prefix in _GRADE_GATE_EXEMPT):
+        return None
+    return redirect(url_for("grade_onboarding", next=path))
+
+
+@app.get("/onboarding/grade")
+@login_required
+def grade_onboarding():
+    if getattr(current_user, "grade", ""):
+        return redirect(url_for("index"))
+    return render_template("onboarding_grade.html", next_url=safe_internal_url(request.args.get("next")))
+
+
+@app.post("/onboarding/grade/skip")
+@login_required
+def skip_grade_onboarding():
+    flask_session["grade_prompt_dismissed"] = True  # asked once this session; never forces a value
+    return redirect(safe_internal_url(request.form.get("next")) or url_for("index"))
 
 
 @app.get("/")
@@ -2842,7 +3829,9 @@ def recognize_one_project_page(project_id, page_id):
         return api_error("Page not found", 404, "not_found")
     if page.excluded:
         return api_error("Excluded pages are not recognized", 400, "page_excluded")
-    success, error = recognize_single_project_page(page, project)
+    payload = request.get_json(silent=True) or {}
+    mode = str(payload.get("mode") or request.args.get("mode") or "").strip().lower() or None
+    success, error = recognize_single_project_page(page, project, mode=mode)
     if not success:
         return jsonify(ok=False, status="failed", error=error, code="recognition_failed", page_id=page_id), 422
     return jsonify(ok=True,
@@ -2862,7 +3851,8 @@ def retry_project_page(project_id, page_id):
     page.processing_stage = "improved"
     page.warning = ""
     db.session.commit()
-    success, error = recognize_single_project_page(page, project)
+    mode = str(request.form.get("mode") or "").strip().lower() or None
+    success, error = recognize_single_project_page(page, project, mode=mode)
     flash(
         f"Page {page.page_order} is ready for review." if success
         else f"Page {page.page_order} still could not be recognized: {error}",
@@ -3108,7 +4098,7 @@ Return JSON exactly as {{"sections":[{{"title":"...","main_topic":"...","learnin
         response = create_response(
             task_type="project_section_generation",
             language=learning_content_language(),
-            fixture_context={
+            validation_context={
                 "source_page_ids": sorted(valid_page_ids),
                 "section_count": 1,
             },
@@ -3293,7 +4283,7 @@ Return JSON as {{"sections":[{{"title":"...","main_topic":"...","simple_explanat
         response = create_response(
             task_type="project_section_generation",
             language=learning_content_language(),
-            fixture_context={
+            validation_context={
                 "source_page_ids": json_value(section.source_page_ids_json),
                 "section_count": 2,
                 "exact_section_count": True,
@@ -3442,6 +4432,7 @@ Return the normal lesson JSON shape with lesson_title, detected_level, concepts,
         state["session_kind"] = "section_test"
         state["section_id"] = section.id
         state["source_context"] = source[:24000]
+        state["source_confidence"] = section_recognition_confidence(section)
         save_session_state(session_id, commit=False)
         db.session.commit()
         return redirect(url_for("index", session_id=session_id))
@@ -3504,7 +4495,7 @@ Return JSON as {{"results":[{{"question_id":1,"score":0,"evaluation":"brief sour
         response = create_response(
             task_type="final_exam_evaluation",
             language=learning_content_language(),
-            fixture_context={"question_ids": [item["question_id"] for item in open_items]},
+            validation_context={"question_ids": [item["question_id"] for item in open_items]},
             model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
             max_output_tokens=PROJECT_TOKEN_LIMIT, temperature=0, **quality_options(),
         )
@@ -3682,7 +4673,7 @@ Return exactly {count} questions and follow each section's question_count propor
             response = create_response(
                 task_type="final_exam_generation",
                 language=learning_content_language(),
-                fixture_context={
+                validation_context={
                     "question_count": count,
                     "section_ids": [item.id for item in included],
                     "section_allocation": {str(key): value for key, value in allocation.items()},
@@ -4536,7 +5527,8 @@ def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=No
     response = create_response(
         task_type=("adaptive_practice" if adaptive_plan or "practice" in log_task else "lesson_generation"),
         language=learning_content_language(),
-        fixture_context=(
+        validation_context=(
+            # "lesson" switches the adaptive_practice validator to the lesson contract.
             {
                 "subject": adaptive_plan[0]["subject"],
                 "concept": adaptive_plan[0]["concept"],
@@ -4611,6 +5603,145 @@ def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=No
     return session_id
 
 
+@app.get("/insights/mistakes")
+@login_required
+def mistake_intelligence():
+    """Student-facing Mistake Intelligence: repeated misconceptions, weak/strong concepts,
+    recent + resolved mistakes, and the recommended next action — all evidence-based."""
+    attempts = db.session.execute(
+        db.select(Attempt).join(Lesson).where(Lesson.user_id == current_user.id)
+        .order_by(Attempt.timestamp.desc()).limit(400)
+    ).scalars().all()
+    cluster_records: list[dict[str, Any]] = []
+    recent: list[dict[str, Any]] = []
+    resolved: list[dict[str, Any]] = []
+    next_action = None
+    for attempt in attempts:
+        if not attempt.verdict or attempt.verdict == "correct":
+            continue
+        categories = json_value(attempt.mistake_categories, [])
+        cluster_records.append({
+            "root_cause": attempt.root_cause, "mistake_categories": categories,
+            "subject": attempt.subject or "", "concept": attempt.concept,
+            "resolved": bool(attempt.resolved or attempt.understood_at),
+            "last_seen": as_utc(attempt.timestamp).isoformat() if attempt.timestamp else "",
+        })
+        analysis = json_object(attempt.analysis_json)
+        diagnosis = json_object(attempt.diagnosis_json)
+        tag = attempt.primary_diagnosis or ""
+        entry = {
+            "id": attempt.id, "subject": attempt.subject or "", "concept": attempt.concept,
+            "verdict": attempt.verdict, "root_cause": attempt.root_cause,
+            "categories": categories, "advice": analysis.get("improvement_advice", ""),
+            "confidence": attempt.analysis_confidence or analysis.get("confidence", 0),
+            "prerequisites": analysis.get("prerequisites_to_review", []),
+            "resolved": bool(attempt.resolved or attempt.understood_at),
+            "when": as_utc(attempt.timestamp).strftime("%Y-%m-%d") if attempt.timestamp else "",
+            # diagnosis:v2 fields. Empty for attempts recorded before the engine existed,
+            # which the template falls back from rather than showing blanks.
+            "tag": tag,
+            "tag_label": tr(diagnosis_label(tag)) if tag else "",
+            "next_action": attempt.next_action or "",
+            "next_action_label": tr(next_action_label(attempt.next_action)) if attempt.next_action else "",
+            "missing_evidence": bool(attempt.missing_evidence),
+            "validation": attempt.diagnosis_validation or "",
+            "evidence": [
+                item.get("quote", "") for item in diagnosis.get("evidence", [])
+                if item.get("source") in ("student_answer", "work_step")
+            ][:2],
+        }
+        if entry["resolved"]:
+            if len(resolved) < 8:
+                resolved.append(entry)
+        else:
+            if len(recent) < 12:
+                recent.append(entry)
+            if next_action is None and (attempt.next_action or analysis.get("next_question")):
+                next_action = {
+                    "concept": attempt.concept, "advice": analysis.get("improvement_advice", ""),
+                    "next_question": analysis.get("next_question", {}),
+                    "prerequisites": (
+                        [item.get("concept", "") for item in diagnosis.get("prerequisite_gaps", [])]
+                        or analysis.get("prerequisites_to_review", [])),
+                    "action": attempt.next_action or "",
+                    "action_label": tr(next_action_label(attempt.next_action)) if attempt.next_action else "",
+                    "attempt_id": attempt.id,
+                }
+    clusters = repeated_misconceptions(cluster_records, min_count=2)
+    mastery = db.session.scalars(
+        db.select(ConceptMastery).where(
+            ConceptMastery.user_id == current_user.id, ConceptMastery.attempts > 0)
+    ).all()
+    # Uncertainty separates "not assessed enough to say" from "assessed and weak", so a
+    # concept with one lucky answer never appears as a strength.
+    confident = [m for m in mastery if float(m.uncertainty or 1.0) < 0.75]
+    strongest = sorted(confident, key=lambda m: m.mastery_score, reverse=True)[:5]
+    weakest = sorted(mastery, key=lambda m: m.mastery_score)[:5]
+    unassessed = [m for m in mastery if float(m.uncertainty or 1.0) >= 0.75][:5]
+    prerequisite_rows = confirmed_prerequisites([
+        {"concept": row.concept, "prerequisite": row.prerequisite,
+         "evidence_count": row.evidence_count, "confidence": row.confidence}
+        for row in db.session.scalars(db.select(ConceptPrerequisite).where(
+            ConceptPrerequisite.user_id == current_user.id)).all()
+    ])[:6]
+    return render_template(
+        "mistake_intelligence.html",
+        clusters=clusters, recent=recent, resolved=resolved, next_action=next_action,
+        strongest=[{"subject": m.subject, "concept": m.concept, "score": round(m.mastery_score)} for m in strongest],
+        weakest=[{"subject": m.subject, "concept": m.concept, "score": round(m.mastery_score),
+                  "uncertain": float(m.uncertainty or 1.0) >= 0.75} for m in weakest],
+        unassessed=[{"subject": m.subject, "concept": m.concept} for m in unassessed],
+        prerequisites=prerequisite_rows,
+        total_analyzed=len(cluster_records),
+    )
+
+
+@app.get("/api/diagnosis/<int:attempt_id>")
+@limiter.limit("60 per minute")
+@login_required
+def attempt_diagnosis(attempt_id):
+    """The detailed diagnosis for one of the signed-in student's own attempts.
+
+    Fetched only when the student opens the detail panel, so the answer response stays
+    small. `student_view` is the only mapping used, so internal fields and other
+    attempts' evidence never leave the server.
+    """
+
+    attempt = db.session.scalar(
+        db.select(Attempt).join(Lesson).where(
+            Attempt.id == attempt_id, Lesson.user_id == current_user.id
+        )
+    )
+    if not attempt:
+        return api_error(tr("That attempt was not found."), 404, "attempt_not_found")
+    diagnosis = json_object(attempt.diagnosis_json)
+    if not diagnosis:
+        # Attempts saved before diagnosis:v2 still show their stored analysis summary.
+        legacy = json_object(attempt.analysis_json)
+        return jsonify(ok=True, legacy=True, diagnosis={
+            "correctness_status": attempt.verdict or "insufficient_evidence",
+            "explanation": legacy.get("improvement_advice", ""),
+            "primary_tag": "", "primary_label": "",
+            "missing_evidence": False, "confidence": attempt.analysis_confidence or 0.0,
+            "detail": {
+                "statement": attempt.root_cause,
+                "prerequisite_gaps": legacy.get("prerequisites_to_review", []),
+                "evidence": [], "secondary_tags": [], "misconception": "",
+                "concepts_assessed": [attempt.concept], "rubric": [],
+                "recommended_intervention": "",
+            },
+        })
+    view = student_view(diagnosis)
+    view["primary_label"] = tr(diagnosis_label(view["primary_tag"]))
+    view["next_action"] = attempt.next_action or view.get("next_action", "")
+    view["next_action_label"] = tr(next_action_label(view["next_action"]))
+    view["attempt_id"] = attempt.id
+    view["detail"]["tag_labels"] = [
+        tr(diagnosis_label(tag)) for tag in view["detail"].get("secondary_tags", [])
+    ]
+    return jsonify(ok=True, legacy=False, diagnosis=view)
+
+
 @app.post("/mistakes/<int:attempt_id>/understood")
 @login_required
 def mark_mistake_understood(attempt_id):
@@ -4674,6 +5805,7 @@ Use exactly one correct option and do not repeat the original question. When upl
             lesson.section_id = source_section.id
             state = SESSIONS[session_id]
             state["source_context"] = grounded_source
+            state["source_confidence"] = section_recognition_confidence(source_section)
             state["section_id"] = source_section.id
             save_session_state(session_id, commit=False)
             db.session.commit()
@@ -5058,6 +6190,81 @@ Follow the exact null/object structure shown above. Do not replace a required ob
         evaluation = result["evaluation"]
         score = max(0, min(100, int(evaluation["score"])))
         evaluation["score"] = score
+        # Stages A-E: diagnose the response against quoted evidence, verify that
+        # diagnosis deterministically, then plan the next learning action.
+        prior_mistakes = db.session.execute(
+            db.select(Attempt.root_cause, Attempt.verdict).join(Lesson).where(
+                Lesson.user_id == current_user.id,
+                func.coalesce(Attempt.subject, Lesson.subject) == question_subject,
+                Attempt.concept == question["concept"],
+                Attempt.root_cause != "",
+            ).order_by(Attempt.timestamp.desc()).limit(3)
+        ).all()
+        primary_mastery_record = get_or_create_mastery(
+            current_user.id, question_subject, question["concept"])
+        knowledge_state = concept_knowledge_state(primary_mastery_record)
+        if diagnostics_enabled():
+            diagnosis = diagnose_student_answer(
+                question=question.get("prompt", ""),
+                expected_answer=question.get("expected_answer", ""),
+                student_answer=answer,
+                subject=question_subject,
+                concept=question["concept"],
+                question_type=str(question.get("type", "")),
+                options=question.get("options") or None,
+                rubric=question.get("rubric") or None,
+                solution_steps=question.get("solution_steps") or None,
+                learning_objectives=[item.get("name", "") for item in session["lesson"]["concepts"]][:4],
+                previous_attempts=[
+                    {"cause": row.root_cause, "verdict": row.verdict} for row in prior_mistakes],
+                knowledge_state=knowledge_state,
+                hints_used=hints_used,
+                answer_changes=retry_count,
+                response_confidence=response_confidence,
+                ocr_confidence=session.get("source_confidence"),
+                source_context=session.get("source_context", ""),
+            )
+            # The legacy analysis object is a pure projection of the diagnosis, so saved
+            # attempts, Mistake Intelligence and existing API consumers are unchanged and
+            # no second provider call is spent producing it.
+            analysis = to_legacy_analysis(diagnosis)
+        else:
+            diagnosis = insufficient_evidence_diagnosis(
+                "The evidence-based diagnosis is disabled for this deployment.",
+                [question["concept"]],
+            )
+            analysis = analyze_student_answer(
+                question=question.get("prompt", ""),
+                expected_answer=question.get("expected_answer", ""),
+                student_answer=answer,
+                subject=question_subject,
+                concept=question["concept"],
+                previous_mistakes=[
+                    {"root_cause": row.root_cause, "verdict": row.verdict} for row in prior_mistakes],
+                mastery=mastery_snapshot(session),
+                hints_used=hints_used,
+                response_confidence=response_confidence,
+                answer_changes=retry_count,
+                source_context=session.get("source_context", ""),
+            )
+        result["analysis"] = analysis
+        plan = plan_next_action(
+            diagnosis,
+            knowledge_state,
+            now=utcnow(),
+            history=recent_diagnosis_history(
+                current_user.id, question_subject, question["concept"]),
+            recent_prompts=list(recent_concept_questions(
+                current_user.id, question_subject, question["concept"])),
+            confirmed_prerequisites=[
+                edge["prerequisite"] for edge in confirmed_prerequisites(
+                    stored_prerequisites(current_user.id, question_subject, question["concept"]))],
+            hints_used=hints_used,
+            objective=str(session["lesson"].get("lesson_title", "")),
+        )
+        # A defective question or an undiagnosable response must not move the knowledge
+        # model at all; the attempt is still recorded so it can be reviewed.
+        score_counts = plan.update_mastery
         next_question = result.get("next_question")
         public_question = None
         if not is_final and not adaptive_plan:
@@ -5096,16 +6303,45 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             persistent_mastery = get_or_create_mastery(
                 current_user.id, question_subject, concept_name
             )
+            # Evidence first: the decay is measured from the previous practice time,
+            # which apply_mastery_update is about to overwrite.
+            evidence = apply_evidence_update(
+                persistent_mastery, diagnosis,
+                difficulty=question_difficulty, hints_used=hints_used,
+                ocr_confidence=session.get("source_confidence"),
+            ) if score_counts else {"observation_weight": 0.0}
             mastery_before, mastery_update = apply_mastery_update(
                 persistent_mastery,
-                score,
+                score if score_counts else max(score, 50),
                 hints_used=hints_used,
                 difficulty=question_difficulty,
                 retry_count=retry_count,
                 response_confidence=response_confidence,
+            ) if score_counts else (
+                float(persistent_mastery.mastery_score or 0),
+                {**mastery_state(persistent_mastery),
+                 "delta": 0.0, "outcome": "not_counted",
+                 "last_practised_at": persistent_mastery.last_practised_at or utcnow(),
+                 "next_review_at": persistent_mastery.next_review_at or utcnow()},
             )
-            mastery_updates.append((persistent_mastery, mastery_before, mastery_update))
-        _primary_mastery, mastery_before, mastery_update = mastery_updates[0]
+            persistent_mastery.last_action = plan.action[:40]
+            mastery_updates.append((
+                persistent_mastery, mastery_before, mastery_update,
+                mastery_reason(
+                    outcome=str(mastery_update.get("outcome", "")),
+                    delta=float(mastery_update.get("delta", 0.0)),
+                    diagnosis_tag=diagnosis.get("primary_diagnosis", {}).get("tag", ""),
+                    hints_used=hints_used,
+                    missing_evidence=bool(diagnosis.get("missing_evidence")),
+                    observation_weight_value=float(evidence.get("observation_weight", 0.0)),
+                    uncertainty=float(persistent_mastery.uncertainty or 1.0),
+                ) if score_counts else
+                "Mastery was not changed: the question or the response could not be assessed fairly.",
+            ))
+        if score_counts:
+            record_prerequisite_gaps(
+                current_user.id, question_subject, question["concept"], diagnosis)
+        _primary_mastery, mastery_before, mastery_update, _primary_reason = mastery_updates[0]
         evaluation["skill_status"] = mastery_update["status"]
         attempt = Attempt(
             lesson=lesson_record,
@@ -5122,10 +6358,22 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             response_confidence=response_confidence,
             mastery_before=mastery_before,
             mastery_after=mastery_update["mastery_score"],
+            verdict=analysis["verdict"],
+            mistake_categories=json.dumps(analysis["mistake_categories"], ensure_ascii=False),
+            root_cause=analysis["root_cause"],
+            analysis_confidence=analysis["confidence"],
+            analysis_json=json.dumps(analysis, ensure_ascii=False),
+            resolved=(analysis["verdict"] == "correct"),
+            diagnosis_json=json.dumps(diagnosis, ensure_ascii=False),
+            diagnosis_version=str(diagnosis.get("analysis_version", ""))[:20],
+            primary_diagnosis=str(diagnosis.get("primary_diagnosis", {}).get("tag", ""))[:40],
+            next_action=plan.action[:40],
+            diagnosis_validation=str(diagnosis.get("validation_status", ""))[:30],
+            missing_evidence=bool(diagnosis.get("missing_evidence")),
         )
         db.session.add(attempt)
         db.session.flush()
-        for record, before, updated in mastery_updates:
+        for record, before, updated, reason in mastery_updates:
             add_mastery_history(
                 record,
                 before,
@@ -5136,6 +6384,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                 retry_count=retry_count,
                 response_confidence=response_confidence,
                 attempt=attempt,
+                reason=reason,
             )
         if lesson_record.section_id:
             section = db.session.scalar(
@@ -5156,7 +6405,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             section_id=lesson_record.section_id,
         )
         if session.get("session_kind") == "adaptive_practice":
-            for record, before, updated in mastery_updates:
+            for record, before, updated, _reason in mastery_updates:
                 change_key = f"{question_subject}::{record.concept}"
                 initial = session.get("initial_mastery", {}).get(change_key, before)
                 session["mastery_changes"][change_key] = {
@@ -5178,8 +6427,16 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                 ))
                 if not target_record:
                     raise KeyError("planned_concept")
+                # The plan applies to the concept it diagnosed; a different planned
+                # target keeps its own stored difficulty.
+                target_state = mastery_state(target_record)
+                target_plan = plan if (
+                    diagnostics_enabled()
+                    and str(target_record.concept).casefold() == str(question["concept"]).casefold()
+                ) else None
                 next_question = generate_adaptive_question(
-                    session, mastery_state(target_record), next_question_number, next_question_type
+                    session, target_state, next_question_number, next_question_type,
+                    plan=target_plan,
                 )
             else:
                 next_subject = str(next_question.get("subject") or lesson_record.subject)[:80]
@@ -5187,7 +6444,15 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                     current_user.id, next_subject, str(next_question["concept"])[:255]
                 )
                 next_question["subject"] = next_subject
-                next_question["difficulty"] = next_mastery.difficulty_level
+                # The planner owns difficulty when it diagnosed this same concept;
+                # otherwise the concept's own stored level applies.
+                next_question["difficulty"] = (
+                    plan.difficulty
+                    if diagnostics_enabled()
+                    and str(next_mastery.concept).casefold() == str(question["concept"]).casefold()
+                    else next_mastery.difficulty_level
+                )
+                next_mastery.difficulty_level = int(next_question["difficulty"])
             session["current_question"] = next_question
             public_question = {
                 key: value for key, value in next_question.items() if key != "expected_answer"}
@@ -5205,7 +6470,15 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             sum(item["score"] for item in session["history"]) / len(session["history"]))
         mastery = mastery_snapshot(session)
         practice_results = adaptive_session_results(session) if is_final and adaptive_plan else None
-        return jsonify(ok=True, evaluation=evaluation, next_question=public_question,
+        safe_diagnosis = student_view(diagnosis)
+        safe_diagnosis["next_action"] = plan.action
+        safe_diagnosis["next_action_label"] = tr(next_action_label(plan.action))
+        safe_diagnosis["primary_label"] = tr(diagnosis_label(safe_diagnosis["primary_tag"]))
+        safe_diagnosis["attempt_id"] = attempt.id
+        return jsonify(ok=True, evaluation=evaluation, analysis=analysis, next_question=public_question,
+                       diagnosis=safe_diagnosis,
+                       plan={"action": plan.action, "difficulty": plan.difficulty,
+                             "difficulty_delta": plan.difficulty_delta, "reason": plan.reason},
                        complete=is_final, summary=result.get("summary") if is_final else None, progress={
             "answered": len(session["history"]),
             "total": session["test_total"],
@@ -5297,8 +6570,9 @@ Treat a short reply as an answer to the latest chat question. End with one short
             instructions=(
                 "You are a careful, friendly Socratic tutor across school subjects. "
                 "Teach complex ideas in respectful baby steps without removing their real difficulty. "
-                f"Factual accuracy and internal consistency are mandatory. {language_instruction()}"
-            ),
+                f"Factual accuracy and internal consistency are mandatory. {language_instruction()} "
+                f"{learner_profile_instruction()}"
+            ).strip(),
             input=prompt,
             max_output_tokens=CHAT_TOKEN_LIMIT,
             temperature=0.2,
@@ -6311,8 +7585,8 @@ def generate_vocabulary_example(import_id):
         response = create_response(
             task_type="translation", language=vocabulary.SUPPORTED_LANGUAGES[item.source_language],
             validation_context={"texts": [term]}, model=TUTOR_MODEL,
-            instructions="Return one safe example sentence as JSON.", input=prompt,
-            max_output_tokens=200, temperature=0.2)
+            instructions=f"Return one safe example sentence as JSON. {learner_profile_instruction()}".strip(),
+            input=prompt, max_output_tokens=200, temperature=0.2)
         result = parse_json(response.output_text)
         sentence = vocabulary.clean_text(
             result.get("sentence") or (result.get("translations") or [""])[0], 1200)
@@ -7180,6 +8454,9 @@ def generate_flashcards():
     payload = request.get_json(silent=True) or {}
     subject = str(payload.get("subject") or "Other").strip()[:80] or "Other"
     grade = str(payload.get("grade") or "").strip()[:40]
+    if not grade and current_user.is_authenticated:
+        profile_grade = str(getattr(current_user, "grade", "") or "")
+        grade = grade_label(profile_grade) if profile_grade else ""
     source_kind = str(payload.get("source_kind", "text")).strip()
     if source_kind not in flashcards.SOURCE_KINDS:
         source_kind = "text"
@@ -7370,6 +8647,8 @@ def update_flashcard_set(set_id):
         flashcard_set.subject = str(payload.get("subject") or "Other").strip()[:80] or "Other"
     if "difficulty" in payload:
         flashcard_set.difficulty = str(payload.get("difficulty") or "medium").strip()[:20] or "medium"
+    if "grade" in payload:
+        flashcard_set.grade = str(payload.get("grade") or "").strip()[:40]
     if "card_type" in payload:
         flashcard_set.card_type = str(payload.get("card_type") or "mixed").strip()[:30] or "mixed"
     if isinstance(payload.get("cards"), list):
@@ -7450,10 +8729,12 @@ def flashcard_publication_state(set_id):
         return jsonify(ok=True, published=False, publishing_enabled=publishing_enabled)
     latest = db.session.scalar(db.select(AIReview).where(
         AIReview.public_set_id == public.id).order_by(AIReview.version.desc()))
+    record, stale = current_moderation_state(public)
     return jsonify(
         ok=True, published=True, public_id=public.id, status=public.status,
         changed_since_publish=as_utc(private.updated_at) > as_utc(public.updated_at),
         review=serialize_review(latest) if latest else None,
+        moderation=serialize_moderation(record, override=stale),
         publishing_enabled=publishing_enabled,
     )
 
@@ -7502,9 +8783,24 @@ def owned_public_set(set_id: Any) -> "PublicFlashcardSet | None":
         PublicFlashcardSet.id == identifier, PublicFlashcardSet.creator_id == current_user.id))
 
 
+def visible_set_filters() -> list[Any]:
+    """The conditions every public read must satisfy. One definition, no exceptions.
+
+    Two independent gates have to agree: the publication state says the quality review
+    approved it, and the moderation decision says the safety check allowed it. Any new
+    endpoint that lists or serves community content must use this, or it becomes the
+    bypass - which is exactly what `test_every_public_read_path_is_gated` checks for.
+    """
+
+    filters: list[Any] = [PublicFlashcardSet.status == "approved"]
+    if moderation_enabled():
+        filters.append(PublicFlashcardSet.moderation_decision == "allow")
+    return filters
+
+
 def approved_public_set(set_id: int) -> "PublicFlashcardSet | None":
     return db.session.scalar(db.select(PublicFlashcardSet).where(
-        PublicFlashcardSet.id == set_id, PublicFlashcardSet.status == "approved"))
+        PublicFlashcardSet.id == set_id, *visible_set_filters()))
 
 
 def update_public_ranking(public_set: "PublicFlashcardSet") -> None:
@@ -7559,6 +8855,597 @@ def create_publication_version(
     db.session.add(version)
     db.session.flush()
     return version
+
+
+def moderation_enabled() -> bool:
+    return bool(app.config.get("FEATURE_COMMUNITY_MODERATION"))
+
+
+def is_moderator(user: Any = None) -> bool:
+    """Whether a user may act on the review queue.
+
+    An explicit allowlist, matched on username or email, exactly like the AI diagnostics
+    page. An empty allowlist means nobody qualifies: an unstaffed queue leaves content
+    unpublished, which is the safe failure, rather than opening it to any account.
+    """
+
+    account = user if user is not None else current_user
+    if not getattr(account, "is_authenticated", False):
+        return False
+    allowed = app.config.get("COMMUNITY_MODERATORS", set())
+    if not allowed:
+        return False
+    identities = {str(account.username or "").casefold(), str(account.email or "").casefold()}
+    return bool(identities.intersection(allowed))
+
+
+def require_moderator(view):
+    """Guard a reviewer route. 404 rather than 403: the queue is not advertised."""
+
+    @wraps(view)
+    def guarded(*args, **kwargs):
+        if not moderation_enabled() or not is_moderator():
+            return api_error(tr("This feature is not available yet."), 404, "feature_disabled")
+        return view(*args, **kwargs)
+    return guarded
+
+
+def moderation_thresholds() -> "moderation.Thresholds":
+    """Build the policy thresholds from configuration.
+
+    The policy stays pure and takes these as an argument, so a deployment can retune the
+    confidence floors and report counts without a code change, and `configure_app` has
+    already validated the values.
+    """
+
+    reject = float(app.config.get("MODERATION_REJECT_CONFIDENCE", 0.75))
+    # Clamped rather than validated here. `configure_app` already refuses an inconsistent
+    # pair loudly at startup, which is the right place to complain; at request time the
+    # cost of raising is that one bad number turns every publish into a 422, so the
+    # invariant is restored quietly instead.
+    severe = min(reject, float(app.config.get("MODERATION_REJECT_CONFIDENCE_SEVERE", 0.55)))
+    return moderation.Thresholds(
+        reject_confidence=reject,
+        reject_confidence_severe=severe,
+        min_allow_confidence=float(app.config.get("MODERATION_MIN_ALLOW_CONFIDENCE", 0.40)),
+        safety_reports=max(1, int(app.config.get("MODERATION_SAFETY_REPORT_THRESHOLD", 2))),
+        total_reports=max(1, int(app.config.get("MODERATION_TOTAL_REPORT_THRESHOLD", 5))),
+    )
+
+
+def moderation_content_hash(text: str) -> str:
+    """Bind a decision to the exact text it was made about."""
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def moderation_items(publication_version: FlashcardPublicationVersion) -> list[dict[str, Any]]:
+    """Everything about a submission that a reader can see, in the order they see it."""
+
+    return moderation.flashcard_items(
+        publication_version.title, publication_version.description,
+        json_value(publication_version.cards_json, []))
+
+
+def moderation_context(
+    publication_version: FlashcardPublicationVersion,
+) -> "moderation.ModerationContext":
+    """Publication context for the classifier. Carries no author identity.
+
+    The learner level comes from the *set's* declared grade, never from the submitting
+    account's profile: what matters is who the material is for, and the author's own
+    grade is personal data the classifier has no need for.
+    """
+
+    return moderation.ModerationContext(
+        content_type="flashcard_set",
+        subject=publication_version.subject or "",
+        topic=publication_version.topic or "",
+        grade=publication_version.grade or "",
+        language=publication_version.language or "en",
+        is_public=True,
+        content_version=publication_version.version,
+    )
+
+
+def moderation_needs_escalation(
+    classification: dict[str, Any], findings: "moderation.DeterministicFindings",
+) -> bool:
+    """Whether the cheap pass justifies paying for the stronger model.
+
+    The second call is bought when the first answer is the kind that would otherwise
+    strand content in a review queue: a safety concern, an unjudged safety dimension,
+    thin evidence, low confidence, or raw-character signals the classifier could not see.
+    A clean, confident allow on unremarkable text is never re-run.
+    """
+
+    if not classification.get("available", True):
+        return True
+    threshold = float(app.config.get("MODERATION_ESCALATION_RISK_THRESHOLD", 0.25))
+    if findings.signals.obfuscation_risk >= threshold or findings.injection_detected:
+        return True
+    if classification.get("recommendation") != "allow" or classification.get("requires_review"):
+        return True
+    if float(classification.get("confidence") or 0.0) < moderation_thresholds().min_allow_confidence:
+        return True
+    if classification.get("evidence_sufficiency") == "insufficient":
+        return True
+    dimensions = classification.get("dimensions") or {}
+    return any(dimensions.get(name) != "pass" for name in moderation.SAFETY_DIMENSIONS)
+
+
+def classify_content(
+    items: list[dict[str, Any]], context: "moderation.ModerationContext",
+    findings: "moderation.DeterministicFindings", *, model: str,
+) -> tuple[dict[str, Any], str]:
+    """One classification pass through the shared AI gateway.
+
+    Returns the normalized classification and the model that produced it. Never raises:
+    a gateway failure becomes an unavailable classification, which the policy engine
+    turns into a held review rather than a publication.
+
+    No `private_scope` is passed, so the gateway cache is shared rather than partitioned
+    per author. Two people submitting byte-identical content get the same classification,
+    which is correct and saves a call; the cache key is a hash of content the requester
+    already holds, so sharing it reveals nothing. The author's identity is deliberately
+    absent from the request for the same reason it is absent from the prompt.
+    """
+
+    try:
+        response = create_response(
+            task_type="content_moderation",
+            language=learning_content_language(),
+            model=model,
+            instructions=moderation.moderation_system_prompt(learning_content_language()),
+            input=moderation.moderation_user_prompt(context, items, findings.signals),
+            max_output_tokens=app.config.get("AI_CONTENT_MODERATION_MAX_OUTPUT_TOKENS", 900),
+            temperature=0,
+            **ai_service.quality_options(model),
+        )
+    except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        category, _summary = ai_service._failure_details(error)
+        return moderation.unavailable_classification(
+            f"The automatic check could not be completed ({category})."), model
+    except Exception:
+        app.logger.exception("Content moderation call failed")
+        return moderation.unavailable_classification(
+            "The automatic check could not be completed."), model
+    try:
+        payload = parse_json(response.output_text)
+        moderation.validate_classification(payload)
+        classification = moderation.normalize_classification(
+            payload, content=moderation.moderation_text(items))
+    except (moderation.ModerationSchemaError, ValueError, TypeError, KeyError,
+            json.JSONDecodeError):
+        return moderation.unavailable_classification(
+            "The automatic check returned an unreadable result."), response.model
+    return classification, response.model
+
+
+def run_content_moderation(
+    public_set: "PublicFlashcardSet", publication_version: FlashcardPublicationVersion,
+) -> tuple["ModerationRecord", "moderation.PolicyDecision"]:
+    """Moderate one submitted version and persist the decision. Never raises.
+
+    The order is deliberate and is the whole cost story: the free deterministic pass
+    first, then the cheap model on everything, then the strong model only on the cases
+    the cheap one could not settle. A clean set costs exactly one small call.
+    """
+
+    started = time.perf_counter()
+    items = moderation_items(publication_version)
+    text_blob = moderation.moderation_text(items)
+    ceiling = int(app.config.get("MODERATION_MAX_CONTENT_CHARACTERS", 40000))
+    if len(text_blob) > ceiling:
+        # Stage A. Too large to assess as one unit, so it is held rather than partially
+        # checked: moderating a prefix and publishing the whole thing is the worst of
+        # both. The author is asked to split it, which is a revision, not a rejection.
+        decision = moderation.PolicyDecision(
+            decision="revision_required",
+            reason_codes=("INSUFFICIENT_EDUCATIONAL_CONTEXT",),
+            author_message="Please split this set into smaller parts before publishing it.",
+            rationale=(f"content is {len(text_blob)} characters, over the {ceiling} "
+                       "character limit for a single check",),
+            source="deterministic")
+        record = ModerationRecord(
+            content_type="flashcard_set", content_id=public_set.id,
+            publication_version_id=publication_version.id,
+            content_version=publication_version.version,
+            content_hash=moderation_content_hash(text_blob),
+            decision=decision.decision, requires_review=False,
+            reason_codes_json=json.dumps(list(decision.reason_codes), ensure_ascii=False),
+            evidence_summary="The submission is too large to check as a single unit.",
+            author_message=decision.author_message,
+            rationale_json=json.dumps(list(decision.rationale), ensure_ascii=False),
+            policy_version=decision.policy_version, source=decision.source,
+            latency_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        db.session.add(record)
+        db.session.flush()
+        apply_moderation_outcome(public_set, publication_version, record, decision)
+        return record, decision
+    findings = moderation.inspect(text_blob)
+    context = moderation_context(publication_version)
+
+    classification, model = classify_content(
+        items, context, findings, model=app.config["GROQ_MODERATION_MODEL"])
+    escalated = False
+    escalation_model = app.config["GROQ_MODERATION_ESCALATION_MODEL"]
+    if escalation_model != model and moderation_needs_escalation(classification, findings):
+        second, second_model = classify_content(
+            items, context, findings, model=escalation_model)
+        # The stronger model replaces the first answer only when it actually produced
+        # one. A failed escalation must not discard a usable first classification.
+        if second.get("available", True):
+            classification, model, escalated = second, second_model, True
+
+    reports = report_counts(public_set.id)
+    decision = moderation.decide(
+        classification, findings, context,
+        safety_reports=reports["safety"], total_reports=reports["total"],
+        thresholds=moderation_thresholds())
+
+    content_hash = moderation_content_hash(text_blob)
+    previous = latest_moderation_record(public_set.id)
+    record = ModerationRecord(
+        content_type="flashcard_set", content_id=public_set.id,
+        publication_version_id=publication_version.id,
+        content_version=publication_version.version, content_hash=content_hash,
+        decision=decision.decision,
+        previous_decision=previous.decision if previous else "",
+        requires_review=decision.requires_review,
+        reason_codes_json=json.dumps(list(decision.reason_codes), ensure_ascii=False),
+        dimensions_json=json.dumps(classification.get("dimensions") or {}, ensure_ascii=False),
+        confidence=float(classification.get("confidence") or 0.0),
+        evidence_sufficiency=str(classification.get("evidence_sufficiency") or ""),
+        evidence_summary=str(classification.get("evidence_summary") or "")[:2000],
+        signals_json=json.dumps(findings.signals.as_dict(), ensure_ascii=False),
+        quotes_json=json.dumps(classification.get("quotes") or [], ensure_ascii=False),
+        author_message=decision.author_message,
+        suggested_revision=decision.suggested_revision or "",
+        rationale_json=json.dumps(list(decision.rationale), ensure_ascii=False),
+        policy_version=decision.policy_version,
+        schema_version=str(classification.get("schema_version") or ""),
+        prompt_version=PROMPT_VERSIONS["content_moderation"],
+        model=model, escalated=escalated, source=decision.source,
+        latency_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
+    db.session.add(record)
+    db.session.flush()
+    apply_moderation_outcome(public_set, publication_version, record, decision)
+    return record, decision
+
+
+def apply_moderation_outcome(
+    public_set: "PublicFlashcardSet", publication_version: FlashcardPublicationVersion | None,
+    record: "ModerationRecord", decision: "moderation.PolicyDecision",
+) -> None:
+    """Write one decision onto the set and its version.
+
+    The publication state is only ever *narrowed* here. A moderation allow does not
+    publish anything by itself - it clears the safety gate so the quality review can run
+    and make its own call.
+    """
+
+    public_set.moderation_decision = decision.decision
+    public_set.moderation_record_id = record.id
+    if publication_version is not None:
+        publication_version.content_hash = record.content_hash
+        publication_version.moderation_status = decision.decision
+    if decision.decision == "allow":
+        return
+    status = {
+        "reject": "rejected",
+        "revision_required": "changes_requested",
+        "review": "pending_manual_review",
+        "pending": "pending_moderation",
+    }[decision.decision]
+    public_set.status = status
+    if publication_version is not None:
+        publication_version.submission_status = status
+    # Nothing that failed the safety gate keeps an active public version.
+    if decision.decision in {"reject", "review"} and public_set.active_version_id and (
+        publication_version is None or public_set.active_version_id == publication_version.id
+    ):
+        public_set.active_version_id = None
+
+
+def moderation_summary(limit: int = 2000) -> dict[str, Any]:
+    """Operational metrics for moderation, from the decisions actually made.
+
+    This is the production counterpart to the offline evaluation harness. The harness
+    measures whether the rules are right against labelled cases; this measures what the
+    rules are doing to real traffic - the decision mix, how often a human is called, how
+    often the stronger model is bought, and what it costs.
+
+    Counts only. No submitted content, no quoted spans, no author identifiers, so the page
+    that renders it stays as safe to look at as the AI diagnostics page beside it.
+    """
+
+    records = db.session.scalars(db.select(ModerationRecord).order_by(
+        ModerationRecord.id.desc()).limit(limit)).all()
+    total = len(records)
+    if not total:
+        return {"total": 0, "decisions": {}, "reasons": [], "latency_ms_p50": 0.0,
+                "latency_ms_p95": 0.0, "escalation_rate": 0.0, "model_escalation_rate": 0.0,
+                "grounding_drop_rate": 0.0, "unavailable_rate": 0.0, "by_source": {},
+                "reviewed": 0, "awaiting_review": 0, "open_reports": 0, "cost": 0.0,
+                "provider_calls": 0}
+
+    latencies = sorted(record.latency_ms for record in records)
+
+    def percentile(fraction: float) -> float:
+        return round(latencies[min(len(latencies) - 1,
+                                   int(round(fraction * (len(latencies) - 1))))], 1)
+
+    reason_counts: Counter[str] = Counter()
+    for record in records:
+        reason_counts.update(json_value(record.reason_codes_json, []))
+    # Cost and provider-call counts come from the gateway's own telemetry rather than
+    # being recomputed here, so there is one source of truth for what was spent.
+    usage = [item for item in ai_service._read_usage_records()
+             if item.get("task_type") == "content_moderation"]
+    return {
+        "total": total,
+        "decisions": {name: sum(record.decision == name for record in records)
+                      for name in moderation.DECISIONS},
+        "by_source": {name: sum(record.source == name for record in records)
+                      for name in ("deterministic", "classifier", "policy", "moderator", "system")
+                      if any(record.source == name for record in records)},
+        "reasons": [{"code": code, "label": moderation.reason_label(code), "count": count}
+                    for code, count in reason_counts.most_common(10)],
+        "latency_ms_p50": percentile(0.5),
+        "latency_ms_p95": percentile(0.95),
+        "escalation_rate": round(
+            sum(record.decision == "review" for record in records) / total, 4),
+        "model_escalation_rate": round(
+            sum(record.escalated for record in records) / total, 4),
+        "grounding_drop_rate": round(sum(
+            "NEEDS_HUMAN_REVIEW" in json_value(record.reason_codes_json, [])
+            and record.source == "policy" for record in records) / total, 4),
+        "unavailable_rate": round(sum(
+            "MODERATION_UNAVAILABLE" in json_value(record.reason_codes_json, [])
+            for record in records) / total, 4),
+        "reviewed": sum(record.reviewed_at is not None for record in records),
+        "awaiting_review": int(db.session.scalar(db.select(db.func.count(
+            ModerationRecord.id)).where(
+            ModerationRecord.requires_review.is_(True),
+            ModerationRecord.reviewed_at.is_(None))) or 0),
+        "open_reports": int(db.session.scalar(db.select(db.func.count(
+            ContentReport.id)).where(ContentReport.status == "open")) or 0),
+        "quotes_redacted": sum(record.quotes_redacted_at is not None for record in records),
+        "provider_calls": sum(1 for item in usage if item.get("provider_called")),
+        "cost": round(sum(float(item.get("estimated_or_reported_cost") or 0)
+                          for item in usage), 6),
+        "models": sorted({record.model for record in records if record.model}),
+    }
+
+
+def redact_expired_moderation_quotes(now: datetime | None = None) -> int:
+    """Drop the quoted spans from moderation records past their retention window.
+
+    The quotes are the only fragments of submitted content a moderation record holds, so
+    they are the only thing that needs a retention policy. Everything else - the decision,
+    the reason codes, the per-dimension statuses and the measurements - is metadata about
+    a decision and is kept, because an audit that outlives its own evidence is still worth
+    more than no audit at all.
+
+    Redaction is in place rather than a delete: the row stays, `quotes_redacted_at`
+    records when it happened, and the reviewer view reports it, so a reviewer looking at
+    an old record can tell "no quotes were cited" apart from "the quotes have aged out".
+    """
+
+    now = now or utcnow()
+    cutoff = now - timedelta(days=int(app.config.get("MODERATION_QUOTE_RETENTION_DAYS", 90)))
+    expired = db.session.scalars(db.select(ModerationRecord).where(
+        ModerationRecord.created_at <= cutoff,
+        ModerationRecord.quotes_redacted_at.is_(None),
+        ModerationRecord.quotes_json != "[]",
+    )).all()
+    for record in expired:
+        record.quotes_json = "[]"
+        record.quotes_redacted_at = now
+    if expired:
+        db.session.commit()
+    return len(expired)
+
+
+@app.cli.command("redact-moderation-quotes")
+def redact_moderation_quotes_command():
+    """Redact quoted content from moderation records past their retention window."""
+    print(f"Redacted quotes on {redact_expired_moderation_quotes()} moderation record(s).")
+
+
+def latest_moderation_record(
+    set_id: int, *, content_type: str = "flashcard_set",
+) -> "ModerationRecord | None":
+    return db.session.scalar(db.select(ModerationRecord).where(
+        ModerationRecord.content_type == content_type,
+        ModerationRecord.content_id == set_id,
+    ).order_by(ModerationRecord.id.desc()))
+
+
+def open_report_reasons(set_id: int) -> dict[str, int]:
+    """Open reports on one set, grouped by reason. Counts only, never the free text."""
+
+    rows = db.session.scalars(db.select(ContentReport).where(
+        ContentReport.public_set_id == set_id, ContentReport.status == "open")).all()
+    return dict(Counter(row.reason for row in rows))
+
+
+def report_counts(set_id: int) -> dict[str, int]:
+    """Open reports on one set, split into safety-flavoured and total."""
+
+    rows = db.session.scalars(db.select(ContentReport).where(
+        ContentReport.public_set_id == set_id, ContentReport.status == "open")).all()
+    return {
+        "total": len(rows),
+        "safety": sum(row.reason in moderation.SAFETY_REPORT_REASONS for row in rows),
+    }
+
+
+def moderation_is_current(
+    publication_version: FlashcardPublicationVersion, record: "ModerationRecord | None",
+) -> bool:
+    """Whether a stored decision still describes the content that is live.
+
+    This is the check that stops a stale approval from covering edited text. It compares
+    the hash of the *current* content against the hash the decision was made on, so an
+    edit invalidates the approval even if nothing else in the row changed.
+    """
+
+    if record is None or not record.content_hash:
+        return False
+    if record.publication_version_id != publication_version.id:
+        return False
+    current = moderation_content_hash(
+        moderation.moderation_text(moderation_items(publication_version)))
+    return current == record.content_hash
+
+
+def current_moderation_state(
+    public_set: "PublicFlashcardSet",
+) -> tuple["ModerationRecord | None", "moderation.PolicyDecision | None"]:
+    """The moderation state to show an author, with staleness resolved.
+
+    A stored decision only describes the text it was made about. When the live version no
+    longer hashes to the recorded content, the decision is reported as `pending` rather
+    than as whatever it used to say, so an author is never shown an approval that no
+    longer applies to what they have.
+    """
+
+    record = latest_moderation_record(public_set.id)
+    if record is None:
+        return None, None
+    version = (db.session.get(FlashcardPublicationVersion, record.publication_version_id)
+               if record.publication_version_id else None)
+    if version is not None and not moderation_is_current(version, record):
+        return record, moderation.stale_decision(
+            moderation.PolicyDecision(decision=record.decision))
+    return record, None
+
+
+def moderation_author_message(decision: str, reason_codes: list[str]) -> str:
+    """Localized, author-safe explanation built from author-visible reasons only.
+
+    Rebuilt at read time from the stored codes rather than translating the stored English
+    sentence, so the author sees it in their own language and the record keeps one stable
+    English copy for audit.
+    """
+
+    visible = moderation.author_visible_reasons(reason_codes)
+    reasons = "; ".join(tr(moderation.reason_label(code)) for code in visible[:3])
+    if decision == "allow":
+        return tr("Your set has been published to the community library.")
+    if decision in {"review", "pending"}:
+        return tr("Your set is being checked and will appear once the check is complete.")
+    if decision == "revision_required":
+        if not reasons:
+            return tr("Please review and update your set before publishing it again.")
+        return tr("Please update your set before publishing it again: {reasons}.", reasons=reasons)
+    if not reasons:
+        return tr("Your set could not be published to the community library.")
+    return tr("Your set could not be published: {reasons}.", reasons=reasons)
+
+
+def serialize_moderation(
+    record: "ModerationRecord | None", *, for_reviewer: bool = False,
+    override: "moderation.PolicyDecision | None" = None,
+) -> dict[str, Any] | None:
+    """Two views of one decision.
+
+    The author view carries the outcome, an explanation and a revision hint. It omits the
+    per-dimension statuses, the raw-character measurements, the quoted spans and the
+    rationale, because naming which check fired is a usable instruction for getting past
+    it next time. The reviewer view carries everything.
+    """
+
+    if record is None:
+        return None
+    # An override replaces the stored outcome without rewriting history: the row keeps
+    # the decision it made, and the caller reports the one that currently applies.
+    decision = override.decision if override else record.decision
+    reason_codes = (list(override.reason_codes) if override
+                    else json_value(record.reason_codes_json, []))
+    data: dict[str, Any] = {
+        "decision": decision,
+        "decision_label": tr(moderation.decision_label(decision)),
+        "status_message": moderation_author_message(decision, reason_codes),
+        "suggested_revision": None if override else (record.suggested_revision or None),
+        "content_version": record.content_version,
+        "created_at": as_utc(record.created_at).isoformat(),
+        "policy_version": record.policy_version,
+    }
+    if not for_reviewer:
+        data["reasons"] = [
+            tr(moderation.reason_label(code))
+            for code in moderation.author_visible_reasons(reason_codes)
+        ]
+        return data
+    # Coerced rather than trusted: a stored value that is not an object would otherwise
+    # raise on .items() while rendering the queue, taking the whole page down over one
+    # bad row.
+    stored_dimensions = json_value(record.dimensions_json, {})
+    dimensions: dict[str, Any] = (
+        stored_dimensions if isinstance(stored_dimensions, dict) else {})
+    data.update({
+        "id": record.id,
+        "reason_codes": reason_codes,
+        "reason_labels": [moderation.reason_label(code) for code in reason_codes],
+        "dimensions": dimensions,
+        "dimension_labels": {
+            name: {
+                "dimension": moderation.dimension_label(name),
+                "status": moderation.dimension_status_label(str(status)),
+            }
+            for name, status in dimensions.items()
+        },
+        "flagged_dimensions": moderation.flagged_dimensions({"dimensions": dimensions}),
+        "unknown_dimensions": moderation.unknown_dimensions({"dimensions": dimensions}),
+        "confidence": record.confidence,
+        "evidence_sufficiency": record.evidence_sufficiency,
+        "evidence_summary": record.evidence_summary,
+        "signals": json_value(record.signals_json, {}),
+        "quotes": json_value(record.quotes_json, []),
+        "rationale": json_value(record.rationale_json, []),
+        "requires_review": record.requires_review,
+        "previous_decision": record.previous_decision,
+        "schema_version": record.schema_version,
+        "prompt_version": record.prompt_version,
+        "model": record.model,
+        "escalated": record.escalated,
+        "source": record.source,
+        "latency_ms": record.latency_ms,
+        "content_hash": record.content_hash,
+        "reviewer_id": record.reviewer_id,
+        "reviewed_at": as_utc(record.reviewed_at).isoformat() if record.reviewed_at else None,
+        "reviewer_note": record.reviewer_note,
+        "quotes_redacted": record.quotes_redacted_at is not None,
+    })
+    return data
+
+
+def moderate_then_review(
+    public_set: "PublicFlashcardSet", publication_version: FlashcardPublicationVersion,
+) -> tuple["ModerationRecord | None", "AIReview | None"]:
+    """The full submission pipeline: safety gate first, quality review only if it clears.
+
+    Ordering the safety check first is both the safety property and the cost property.
+    Content that is rejected or held never reaches the quality review, so an abusive
+    submission costs one small classification instead of a small one plus a large one.
+
+    `run_ai_review` can still raise - a quality-review failure is reported to the author
+    and the transaction rolls back, exactly as before. The moderation stage never raises:
+    if it cannot reach a verdict the content is held for a human, because failing to
+    check is not permission to publish.
+    """
+
+    if not moderation_enabled():
+        return None, run_ai_review(public_set, publication_version)[0]
+    record, decision = run_content_moderation(public_set, publication_version)
+    if not decision.publishable:
+        return record, None
+    return record, run_ai_review(public_set, publication_version)[0]
 
 
 def run_ai_review(
@@ -7719,6 +9606,27 @@ def publish_flashcard_set():
         author_display = "username"
     tags = ([str(tag).strip()[:40] for tag in payload.get("tags", []) if str(tag).strip()][:12]
             if isinstance(payload.get("tags"), list) else [])
+    # Stage A idempotency. A double-submitted form, a retried request or an impatient
+    # second click must not create a second publication and a second moderation job for
+    # the same source set. An existing live publication is returned as-is; "unpublished"
+    # is excluded because republishing something taken down is a deliberate new act.
+    existing = db.session.scalar(db.select(PublicFlashcardSet).where(
+        PublicFlashcardSet.source_set_id == source.id,
+        PublicFlashcardSet.creator_id == current_user.id,
+        PublicFlashcardSet.status != "unpublished",
+    ).order_by(PublicFlashcardSet.id.desc()))
+    if existing:
+        record, stale = current_moderation_state(existing)
+        latest_review = db.session.scalar(db.select(AIReview).where(
+            AIReview.public_set_id == existing.id).order_by(AIReview.version.desc()))
+        active = active_publication_version(existing)
+        return jsonify(
+            ok=True, id=existing.id, status=existing.status,
+            version=active.version if active else 1,
+            public_url=url_for("community_set_detail_page", set_id=existing.id),
+            moderation=serialize_moderation(record, override=stale),
+            review=serialize_review(latest_review) if latest_review else None,
+            already_published=True), 200
     public_set = PublicFlashcardSet(
         creator_id=current_user.id, source_set_id=source.id,
         title=str(payload.get("title") or source.title).strip()[:200] or source.title,
@@ -7729,7 +9637,9 @@ def publish_flashcard_set():
         difficulty=str(payload.get("difficulty") or source.difficulty).strip()[:20] or "medium",
         language=str(payload.get("language") or source.language).strip()[:10] or "en",
         tags_json=json.dumps(tags, ensure_ascii=False), author_display=author_display,
-        nickname=str(payload.get("nickname") or "").strip()[:80], status="pending_ai_review",
+        nickname=str(payload.get("nickname") or "").strip()[:80],
+        status="pending_moderation" if moderation_enabled() else "pending_ai_review",
+        moderation_decision="pending",
         cards_json=public_snapshot(cards), card_count=len(cards),
     )
     db.session.add(public_set)
@@ -7743,7 +9653,7 @@ def publish_flashcard_set():
             "language": public_set.language,
         })
     try:
-        review, _decision = run_ai_review(public_set, publication_version)
+        record, review = moderate_then_review(public_set, publication_version)
         db.session.commit()
     except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
@@ -7760,7 +9670,8 @@ def publish_flashcard_set():
         ok=True, id=public_set.id, status=public_set.status,
         version=publication_version.version,
         public_url=url_for("community_set_detail_page", set_id=public_set.id),
-        review=serialize_review(review)), 201
+        moderation=serialize_moderation(record),
+        review=serialize_review(review) if review else None), 201
 
 
 @app.get("/api/community/sets/<int:set_id>/review")
@@ -7773,7 +9684,9 @@ def get_public_review(set_id):
     latest = db.session.scalar(
         db.select(AIReview).where(AIReview.public_set_id == public_set.id)
         .order_by(AIReview.version.desc()))
+    record, stale = current_moderation_state(public_set)
     return jsonify(ok=True, status=public_set.status,
+                   moderation=serialize_moderation(record, override=stale),
                    review=serialize_review(latest) if latest else None)
 
 
@@ -7798,9 +9711,16 @@ def resubmit_public_set(set_id):
         "language": source.language,
         "tags": json_value(active.tags_json if active else public_set.tags_json, []),
     })
-    public_set.status = "pending_ai_review"
+    # Edited content is unpublished for the duration of the re-check: both gates below
+    # are what `visible_set_filters` reads, so nothing is served while the new version is
+    # assessed. `active_version_id` is deliberately left alone - it points at the older,
+    # already-approved snapshot, not at the new text, so clearing it would discard a
+    # cleared version rather than close a bypass. Only a decision against the active
+    # version itself retires it, in `apply_moderation_outcome`.
+    public_set.status = "pending_moderation" if moderation_enabled() else "pending_ai_review"
+    public_set.moderation_decision = "pending"
     try:
-        review, _decision = run_ai_review(public_set, publication_version)
+        record, review = moderate_then_review(public_set, publication_version)
         db.session.commit()
     except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
@@ -7815,7 +9735,8 @@ def resubmit_public_set(set_id):
         return api_error(tr("AI is temporarily unavailable. You can retry."), 503, "ai_unavailable")
     return jsonify(
         ok=True, status=public_set.status, version=publication_version.version,
-        review=serialize_review(review))
+        moderation=serialize_moderation(record),
+        review=serialize_review(review) if review else None)
 
 
 @app.post("/api/community/sets/<int:set_id>/unpublish")
@@ -7836,7 +9757,7 @@ def unpublish_public_set(set_id):
 @require_feature("FEATURE_COMMUNITY_LIBRARY")
 def community_library():
     args = request.args
-    query = db.select(PublicFlashcardSet).where(PublicFlashcardSet.status == "approved")
+    query = db.select(PublicFlashcardSet).where(*visible_set_filters())
     for field, column in (
         ("subject", PublicFlashcardSet.subject), ("grade", PublicFlashcardSet.grade),
         ("difficulty", PublicFlashcardSet.difficulty), ("language", PublicFlashcardSet.language),
@@ -7984,6 +9905,512 @@ def rate_public_set(set_id):
     return jsonify(ok=True, student_rating=serialize_public_set(public_set)["student_rating"])
 
 
+@app.post("/api/community/sets/<int:set_id>/report")
+@limiter.limit("10 per hour")
+@login_required
+@require_feature("FEATURE_COMMUNITY_MODERATION")
+def report_public_set(set_id):
+    """Report published content. Enough safety reports hide it pending a human check."""
+
+    payload = request.get_json(silent=True) or {}
+    reason = str(payload.get("reason") or "other").strip().casefold()
+    if reason not in moderation.REPORT_REASONS:
+        return api_error(tr("Choose a reason for your report."), 400, "invalid_report_reason")
+    public_set = approved_public_set(set_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    if public_set.creator_id == current_user.id:
+        return api_error(tr("You cannot report your own flashcard set."), 403, "self_report")
+    # A per-day ceiling on top of the per-hour rate limit. The rate limit stops a burst;
+    # this stops a determined account from reporting steadily all day to push many sets
+    # over the auto-hide threshold at once.
+    since = utcnow() - timedelta(days=1)
+    today = int(db.session.scalar(db.select(db.func.count(ContentReport.id)).where(
+        ContentReport.reporter_id == current_user.id,
+        ContentReport.created_at >= since)) or 0)
+    if today >= int(app.config.get("MODERATION_MAX_REPORTS_PER_USER_DAY", 20)):
+        return api_error(
+            tr("You have sent a lot of reports today. Please try again tomorrow."),
+            429, "report_limit_reached")
+    existing = db.session.scalar(db.select(ContentReport).where(
+        ContentReport.public_set_id == set_id, ContentReport.reporter_id == current_user.id))
+    if existing:
+        # Idempotent on purpose: a second submission is not a second report, so it can
+        # neither inflate the auto-hide threshold nor leak whether the first one acted.
+        return jsonify(ok=True, reported=True, status=existing.status)
+    db.session.add(ContentReport(
+        public_set_id=set_id, reporter_id=current_user.id, reason=reason,
+        detail=str(payload.get("detail") or "").strip()[:500], status="open"))
+    db.session.flush()
+
+    counts = report_counts(set_id)
+    public_set.report_count = counts["total"]
+    public_set.safety_report_count = counts["safety"]
+    hidden = False
+    thresholds = moderation_thresholds()
+    if counts["safety"] >= thresholds.safety_reports or (
+        counts["total"] >= thresholds.total_reports
+    ):
+        # Auto-hide is reversible and decides nothing. It takes the content out of the
+        # library while a person looks, which is the cautious move when several readers
+        # independently say something is wrong.
+        public_set.status = "hidden"
+        public_set.moderation_decision = "review"
+        hidden = True
+        record = latest_moderation_record(set_id)
+        if record:
+            record.requires_review = True
+    update_public_ranking(public_set)
+    db.session.commit()
+    # The reporter is never told whether their report crossed a threshold; that would
+    # turn the endpoint into an oracle for how many reports it takes to hide a set.
+    app.logger.info(
+        "community report recorded set=%s reason=%s auto_hidden=%s", set_id, reason, hidden)
+    return jsonify(ok=True, reported=True, status="open"), 201
+
+
+@app.get("/internal/moderation")
+@login_required
+def moderation_queue_page():
+    """The reviewer queue. 404 for everyone not on the allowlist; never linked from the UI."""
+
+    if not moderation_enabled() or not is_moderator():
+        abort(404)
+    return render_template("moderation_queue.html")
+
+
+@app.get("/api/moderation/queue")
+@login_required
+@require_moderator
+def moderation_queue():
+    """Everything waiting on a human, newest first."""
+
+    limit_raw = request.args.get("limit", "50")
+    limit = min(100, max(1, int(limit_raw))) if limit_raw.isdigit() else 50
+    records = db.session.scalars(db.select(ModerationRecord).where(
+        ModerationRecord.requires_review.is_(True),
+        ModerationRecord.reviewed_at.is_(None),
+    ).order_by(ModerationRecord.created_at.desc()).limit(limit)).all()
+    items = []
+    for record in records:
+        public_set = db.session.get(PublicFlashcardSet, record.content_id)
+        entry = serialize_moderation(record, for_reviewer=True) or {}
+        entry["set"] = {
+            "id": record.content_id,
+            "title": public_set.title if public_set else "",
+            "subject": public_set.subject if public_set else "",
+            "grade": public_set.grade if public_set else "",
+            "language": public_set.language if public_set else "",
+            "status": public_set.status if public_set else "",
+        }
+        entry["reports"] = report_counts(record.content_id)
+        entry["report_reasons"] = [
+            {"reason": reason, "label": moderation.report_reason_label(reason), "count": count}
+            for reason, count in sorted(open_report_reasons(record.content_id).items())
+        ]
+        items.append(entry)
+    return jsonify(ok=True, records=items, count=len(items))
+
+
+@app.get("/api/moderation/records/<int:record_id>")
+@login_required
+@require_moderator
+def moderation_record_detail(record_id):
+    """One record plus the exact content the decision was made about."""
+
+    record = db.session.get(ModerationRecord, record_id)
+    if not record:
+        return api_error(tr("This flashcard set could not be found."), 404, "record_not_found")
+    data = serialize_moderation(record, for_reviewer=True) or {}
+    version = (db.session.get(FlashcardPublicationVersion, record.publication_version_id)
+               if record.publication_version_id else None)
+    if version:
+        data["content"] = {
+            "title": version.title, "description": version.description,
+            "subject": version.subject, "topic": version.topic, "grade": version.grade,
+            "language": version.language, "version": version.version,
+            "cards": json_value(version.cards_json, []),
+        }
+        data["content_is_current"] = moderation_is_current(version, record)
+    return jsonify(ok=True, record=data)
+
+
+@app.post("/api/moderation/records/<int:record_id>/decide")
+@limiter.limit("60 per hour")
+@login_required
+@require_moderator
+def decide_moderation_record(record_id):
+    """A reviewer's decision. Recorded as a new record, never an edit of the old one."""
+
+    payload = request.get_json(silent=True) or {}
+    choice = str(payload.get("decision") or "").strip().casefold()
+    if choice not in {"allow", "reject", "revision_required", "review"}:
+        return api_error(tr("Choose a moderation decision."), 400, "invalid_decision")
+    original = db.session.get(ModerationRecord, record_id)
+    if not original:
+        return api_error(tr("This flashcard set could not be found."), 404, "record_not_found")
+    public_set = db.session.get(PublicFlashcardSet, original.content_id)
+    if not public_set:
+        return api_error(tr("This flashcard set could not be found."), 404, "set_not_found")
+    version = (db.session.get(FlashcardPublicationVersion, original.publication_version_id)
+               if original.publication_version_id else None)
+    if choice == "allow" and version is not None and not moderation_is_current(version, original):
+        # The content changed after the reviewer opened it. Approving now would approve
+        # text nobody read, so the approval is refused and a re-check is required.
+        return api_error(
+            tr("This content changed after it was checked. Ask for it to be checked again."),
+            409, "content_changed")
+
+    note = str(payload.get("note") or "").strip()[:500]
+    decision = moderation.moderator_decision(
+        choice, note=note, reviewer=str(current_user.username or ""))
+    decided_at = utcnow()
+    record = ModerationRecord(
+        content_type=original.content_type, content_id=original.content_id,
+        publication_version_id=original.publication_version_id,
+        content_version=original.content_version, content_hash=original.content_hash,
+        decision=decision.decision, previous_decision=original.decision,
+        requires_review=decision.requires_review,
+        reason_codes_json=json.dumps(list(decision.reason_codes), ensure_ascii=False),
+        dimensions_json=original.dimensions_json,
+        confidence=decision.confidence, evidence_sufficiency=original.evidence_sufficiency,
+        evidence_summary=original.evidence_summary, signals_json=original.signals_json,
+        quotes_json=original.quotes_json,
+        author_message=decision.author_message, suggested_revision="",
+        rationale_json=json.dumps(list(decision.rationale), ensure_ascii=False),
+        policy_version=decision.policy_version, schema_version=original.schema_version,
+        prompt_version=original.prompt_version, model="", escalated=False,
+        source="moderator", reviewer_id=current_user.id, reviewed_at=decided_at,
+        reviewer_note=note,
+    )
+    db.session.add(record)
+    db.session.flush()
+    # The original stays exactly as it was; it is only marked as handled so it leaves
+    # the queue. The audit trail is append-only.
+    original.reviewed_at = decided_at
+    original.reviewer_id = current_user.id
+    original.requires_review = False
+    apply_moderation_outcome(public_set, version, record, decision)
+    if decision.decision == "allow":
+        # Clearing the safety gate restores the publication state the quality review had
+        # reached; it does not grant approval the quality review never gave.
+        latest_review = db.session.scalar(db.select(AIReview).where(
+            AIReview.public_set_id == public_set.id).order_by(AIReview.version.desc()))
+        public_set.status = latest_review.decision_status if latest_review else "pending_ai_review"
+        if public_set.status == "approved" and version is not None:
+            public_set.active_version_id = version.id
+            public_set.published_at = public_set.published_at or decided_at
+        for report in db.session.scalars(db.select(ContentReport).where(
+                ContentReport.public_set_id == public_set.id,
+                ContentReport.status == "open")).all():
+            report.status = "dismissed"
+            report.resolution = "reviewed_allowed"
+            report.resolver_id = current_user.id
+            report.resolved_at = decided_at
+    else:
+        for report in db.session.scalars(db.select(ContentReport).where(
+                ContentReport.public_set_id == public_set.id,
+                ContentReport.status == "open")).all():
+            report.status = "actioned"
+            report.resolution = f"reviewed_{decision.decision}"
+            report.resolver_id = current_user.id
+            report.resolved_at = decided_at
+    counts = report_counts(public_set.id)
+    public_set.report_count = counts["total"]
+    public_set.safety_report_count = counts["safety"]
+    update_public_ranking(public_set)
+    db.session.commit()
+    return jsonify(ok=True, status=public_set.status,
+                   record=serialize_moderation(record, for_reviewer=True))
+
+
+def assistant_enabled() -> bool:
+    return bool(app.config.get("FEATURE_ASSISTANT_CHAT"))
+
+
+def owned_conversation(conversation_id: Any) -> "Conversation | None":
+    """A conversation, only if it belongs to the caller. Ownership is never inferred."""
+
+    identifier = str(conversation_id or "").strip()
+    if not identifier or len(identifier) > 36:
+        return None
+    return db.session.scalar(db.select(Conversation).where(
+        Conversation.id == identifier, Conversation.user_id == current_user.id))
+
+
+def assistant_model(deep: bool = False) -> str:
+    """The configured assistant model, optionally the stronger one."""
+
+    key = "ASSISTANT_DEEP_MODEL" if deep else "ASSISTANT_MODEL"
+    return str(app.config.get(key) or app.config["GROQ_TUTOR_MODEL"])
+
+
+def conversation_history(conversation: "Conversation") -> list[dict[str, str]]:
+    """The thread as the window builder wants it, oldest first.
+
+    Failed turns are left out: they are shown to the learner so they know what happened,
+    but replaying an error message to the model as if the assistant had said it would
+    teach it to apologise for something it never did.
+    """
+
+    rows = db.session.scalars(db.select(ConversationMessage).where(
+        ConversationMessage.conversation_id == conversation.id,
+    ).order_by(ConversationMessage.created_at, ConversationMessage.id)).all()
+    return [{"role": row.role, "content": row.content}
+            for row in rows if not row.error_category]
+
+
+def serialize_conversation(
+    conversation: "Conversation", include_messages: bool = False,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": conversation.id,
+        "title": conversation.title,
+        "preset": conversation.preset,
+        "preset_label": tr(assistant.preset_label(conversation.preset)),
+        "provider": conversation.provider,
+        "model": conversation.model,
+        "language": conversation.language,
+        "message_count": conversation.message_count,
+        "archived": conversation.archived,
+        "created_at": as_utc(conversation.created_at).isoformat(),
+        "last_message_at": as_utc(conversation.last_message_at).isoformat(),
+    }
+    if include_messages:
+        data["messages"] = [
+            serialize_conversation_message(row) for row in db.session.scalars(
+                db.select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == conversation.id,
+                ).order_by(ConversationMessage.created_at, ConversationMessage.id)).all()
+        ]
+    return data
+
+
+def serialize_conversation_message(row: "ConversationMessage") -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": row.id,
+        "role": row.role,
+        "content": row.content,
+        "created_at": as_utc(row.created_at).isoformat(),
+    }
+    if row.role == "assistant":
+        data.update({
+            "provider": row.provider, "model": row.model,
+            "latency_ms": round(row.latency_ms),
+            # Surfaced so a learner can see when the model was not shown the whole
+            # thread, rather than concluding it forgot for no reason.
+            "context_dropped": row.context_dropped,
+        })
+    if row.error_category:
+        data["error"] = True
+    return data
+
+
+def assistant_reply(
+    conversation: "Conversation", history: list[dict[str, str]], *, deep: bool = False,
+) -> "ConversationMessage":
+    """Ask the assistant for one reply and store it. Never raises.
+
+    A failure is stored as a turn with an `error_category`, so the thread records what
+    happened at the point it happened. The alternative - discarding the exchange - loses
+    the learner's question too.
+    """
+
+    started = time.perf_counter()
+    window = assistant.build_window(
+        history,
+        token_budget=int(app.config.get("ASSISTANT_CONTEXT_TOKEN_BUDGET", 8000)),
+        reserve_for_reply=int(app.config.get("ASSISTANT_REPLY_TOKEN_RESERVE", 2000)),
+    )
+    model = assistant_model(deep)
+    provider, _name = ai_service.split_model(model)
+    message = ConversationMessage(
+        conversation_id=conversation.id, role="assistant", content="",
+        provider=provider, model=model,
+        context_messages=len(window.messages), context_dropped=window.dropped_messages,
+    )
+    try:
+        response = create_response(
+            task_type="assistant_chat",
+            language=learning_content_language(),
+            private_scope=current_user.id,
+            session_scope=conversation.id,
+            model=model,
+            instructions=assistant.system_prompt(
+                conversation.preset, language=learning_content_language(),
+                learner_context=learner_profile_instruction()),
+            input=assistant.render_transcript(window),
+            max_output_tokens=app.config.get("AI_ASSISTANT_CHAT_MAX_OUTPUT_TOKENS", 2000),
+            temperature=0.3,
+            **ai_service.quality_options(model),
+        )
+    except Exception as error:  # noqa: BLE001 - every failure becomes a stored turn
+        category, _summary = ai_service._failure_details(error)
+        if not isinstance(error, (ai_service.AIGatewayError, ai_service.AIValidationError)):
+            app.logger.exception("Assistant reply failed")
+        friendly, _status, _code = ai_failure_message(error)
+        message.content = friendly
+        message.error_category = category
+        message.latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        db.session.add(message)
+        db.session.flush()
+        return message
+
+    text = str(response.output_text or "").strip()
+    if not text:
+        message.content = tr("The assistant returned an empty reply. You can retry.")
+        message.error_category = "empty_response"
+    else:
+        message.content = text[:int(app.config.get("ASSISTANT_MAX_MESSAGE_CHARACTERS", 16000))]
+        message.model = response.model or model
+        conversation.provider = provider
+        conversation.model = message.model
+        conversation.input_tokens += response.usage.input_tokens
+        conversation.output_tokens += response.usage.output_tokens
+        message.input_tokens = response.usage.input_tokens
+        message.output_tokens = response.usage.output_tokens
+    message.latency_ms = round((time.perf_counter() - started) * 1000, 2)
+    db.session.add(message)
+    db.session.flush()
+    return message
+
+
+@app.get("/assistant")
+@login_required
+def assistant_page():
+    if not assistant_enabled():
+        abort(404)
+    return render_template(
+        "assistant.html", presets=[
+            {**item, "label": tr(item["label"]), "description": tr(item["description"])}
+            for item in assistant.options_for_ui()
+        ])
+
+
+@app.get("/api/assistant/conversations")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def list_conversations():
+    include_archived = request.args.get("archived") in {"1", "true", "yes"}
+    query = db.select(Conversation).where(Conversation.user_id == current_user.id)
+    if not include_archived:
+        query = query.where(Conversation.archived.is_(False))
+    rows = db.session.scalars(
+        query.order_by(Conversation.last_message_at.desc()).limit(200)).all()
+    return jsonify(ok=True, conversations=[serialize_conversation(row) for row in rows])
+
+
+@app.post("/api/assistant/conversations")
+@limiter.limit("30 per hour")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def create_conversation():
+    payload = request.get_json(silent=True) or {}
+    active = int(db.session.scalar(db.select(db.func.count(Conversation.id)).where(
+        Conversation.user_id == current_user.id,
+        Conversation.archived.is_(False))) or 0)
+    if active >= int(app.config.get("ASSISTANT_MAX_CONVERSATIONS", 200)):
+        return api_error(
+            tr("You have reached the maximum number of conversations. Archive or delete one first."),
+            409, "conversation_limit_reached")
+    conversation = Conversation(
+        user_id=current_user.id,
+        title=str(payload.get("title") or "New conversation").strip()[:200] or "New conversation",
+        preset=assistant.normalize_preset(payload.get("preset")),
+        language=get_current_language(),
+    )
+    db.session.add(conversation)
+    db.session.commit()
+    return jsonify(ok=True, conversation=serialize_conversation(conversation)), 201
+
+
+@app.get("/api/assistant/conversations/<conversation_id>")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def get_conversation(conversation_id):
+    conversation = owned_conversation(conversation_id)
+    if not conversation:
+        return api_error(tr("This conversation could not be found."), 404, "conversation_not_found")
+    return jsonify(ok=True, conversation=serialize_conversation(conversation, include_messages=True))
+
+
+@app.patch("/api/assistant/conversations/<conversation_id>")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def update_conversation(conversation_id):
+    conversation = owned_conversation(conversation_id)
+    if not conversation:
+        return api_error(tr("This conversation could not be found."), 404, "conversation_not_found")
+    payload = request.get_json(silent=True) or {}
+    if "title" in payload:
+        title = str(payload.get("title") or "").strip()[:200]
+        if not title:
+            return api_error(tr("Give the conversation a name."), 400, "title_required")
+        conversation.title = title
+    if "archived" in payload:
+        conversation.archived = bool(payload.get("archived"))
+    if "preset" in payload:
+        # Applies to later turns only. Past replies are stored, not regenerated, so the
+        # thread keeps an honest record of what produced each answer.
+        conversation.preset = assistant.normalize_preset(payload.get("preset"))
+    db.session.commit()
+    return jsonify(ok=True, conversation=serialize_conversation(conversation))
+
+
+@app.delete("/api/assistant/conversations/<conversation_id>")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def delete_conversation(conversation_id):
+    conversation = owned_conversation(conversation_id)
+    if not conversation:
+        return api_error(tr("This conversation could not be found."), 404, "conversation_not_found")
+    db.session.delete(conversation)
+    db.session.commit()
+    return jsonify(ok=True, deleted=True)
+
+
+@app.post("/api/assistant/conversations/<conversation_id>/messages")
+@limiter.limit("40 per hour")
+@login_required
+@require_feature("FEATURE_ASSISTANT_CHAT")
+def send_conversation_message(conversation_id):
+    conversation = owned_conversation(conversation_id)
+    if not conversation:
+        return api_error(tr("This conversation could not be found."), 404, "conversation_not_found")
+    payload = request.get_json(silent=True) or {}
+    text = assistant.clean_message(
+        payload.get("message"),
+        limit=int(app.config.get("ASSISTANT_MAX_MESSAGE_CHARACTERS", 16000)))
+    if not text:
+        return api_error(tr("Write a message first."), 400, "message_required")
+    ceiling = int(app.config.get("ASSISTANT_MAX_MESSAGES_PER_CONVERSATION", 400))
+    if conversation.message_count >= ceiling:
+        return api_error(
+            tr("This conversation is full. Start a new one to continue."),
+            409, "conversation_full")
+
+    history = conversation_history(conversation)
+    user_message = ConversationMessage(
+        conversation_id=conversation.id, role="user", content=text)
+    db.session.add(user_message)
+    db.session.flush()
+    if not history:
+        conversation.title = assistant.derive_title(text)
+
+    reply = assistant_reply(
+        conversation, history + [{"role": "user", "content": text}],
+        deep=bool(payload.get("deep")))
+    # A failed turn still counts the learner's message; the failure itself does not add
+    # to the total, so retrying does not eat the conversation's budget.
+    conversation.message_count += 1 if reply.error_category else 2
+    conversation.last_message_at = utcnow()
+    db.session.commit()
+    return jsonify(
+        ok=True, conversation=serialize_conversation(conversation),
+        message=serialize_conversation_message(user_message),
+        reply=serialize_conversation_message(reply)), 201
+
+
 @app.post("/api/translate")
 @limiter.limit("20 per minute")
 @login_required
@@ -8011,7 +10438,7 @@ Strings: {json.dumps(cleaned, ensure_ascii=False)}"""
         response = create_response(
             task_type="translation",
             language=language,
-            fixture_context={"texts": cleaned},
+            validation_context={"texts": cleaned},
             model=FAST_MODEL,
             instructions="You are a precise educational translator. Return valid JSON only.",
             input=prompt,
