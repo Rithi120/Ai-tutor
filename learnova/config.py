@@ -524,4 +524,10 @@ def configure_app(app, environment: str | None = None) -> str:
             app.config[name] = max(1, int(os.getenv(name, str(default))))
         except ValueError as error:
             raise RuntimeError(f"{name} must be a positive integer") from error
+    # Hours a student is paused after hitting their own AI cap (0 disables the cooldown and
+    # the cap is simply re-checked on the next request, as before).
+    try:
+        app.config["AI_USER_COOLDOWN_HOURS"] = max(0.0, float(os.getenv("AI_USER_COOLDOWN_HOURS", "6")))
+    except ValueError as error:
+        raise RuntimeError("AI_USER_COOLDOWN_HOURS must be a number of hours") from error
     return selected

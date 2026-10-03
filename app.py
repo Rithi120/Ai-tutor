@@ -207,6 +207,9 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     # When the first-time walkthrough was finished or skipped; None = it still opens by itself.
     tour_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # AI help is paused for this account until then (set when the student hits their own
+    # cap; see learnova/ai_services/service.py). None = not paused.
+    ai_cooldown_until = db.Column(db.DateTime(timezone=True), nullable=True)
     lessons = db.relationship("Lesson", back_populates="user", cascade="all, delete-orphan")
     concept_masteries = db.relationship("ConceptMastery", back_populates="user", cascade="all, delete-orphan")
     study_plans = db.relationship("StudyPlan", back_populates="user", cascade="all, delete-orphan")
@@ -2241,6 +2244,13 @@ def ensure_database():
             apply_schema_migration("024_add_user_tour_completed_at", add_tour_completed_at)
         else:
             apply_schema_migration("024_add_user_tour_completed_at", lambda: None)
+        if "ai_cooldown_until" not in user_columns:
+            def add_ai_cooldown():
+                with db.engine.begin() as connection:
+                    connection.execute(text('ALTER TABLE "user" ADD COLUMN ai_cooldown_until TIMESTAMP'))
+            apply_schema_migration("027_add_user_ai_cooldown", add_ai_cooldown)
+        else:
+            apply_schema_migration("027_add_user_ai_cooldown", lambda: None)
         # Two new tables (competency, exam_prep_state); create_all made them above.
         apply_schema_migration("025_exam_autopilot", lambda: None)
         badge_rows = (
@@ -2268,6 +2278,36 @@ ensure_database()
 # From here on token budgets are checked against the database; the JSONL log is still
 # written as a mirror for the diagnostics page and for a checkout with no database.
 ai_service.set_usage_ledger(DatabaseLedger())
+
+
+def _cooldown_account(user_reference):
+    """The account behind a gateway call: the signed-in student of this request.
+
+    The gateway's user reference is a privacy-preserving token, not the id, so the account
+    is taken from the request itself. Outside a request (scripts, tests calling the gateway
+    directly) there is no account and therefore no cooldown - the ordinary limit applies.
+    """
+
+    if has_request_context() and current_user.is_authenticated:
+        return db.session.get(User, int(current_user.get_id()))
+    return None
+
+
+def _read_user_cooldown(user_reference):
+    user = _cooldown_account(user_reference)
+    return as_utc(user.ai_cooldown_until) if user is not None and user.ai_cooldown_until else None
+
+
+def _write_user_cooldown(user_reference, until):
+    user = _cooldown_account(user_reference)
+    if user is None:
+        return False
+    user.ai_cooldown_until = until
+    db.session.commit()
+    return True
+
+
+ai_service.set_user_cooldown_store(_read_user_cooldown, _write_user_cooldown)
 
 
 @app.teardown_appcontext
@@ -3044,13 +3084,13 @@ def ai_failure_message(error: Exception) -> tuple[str, int, str]:
         "schema_validation": ("The AI response could not be validated. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
         "invalid_json": ("The AI response could not be validated. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
         "source_reference_validation": ("The AI response could not be validated against your material. You can retry. Your saved work remains safe.", 422, "invalid_ai_output"),
-        "request_limit_reached": ("Max limit reached: your AI requests for now are used up. Try again later or use your saved content.", 429, "ai_limit_reached"),
+        "request_limit_reached": ("You have reached your limit. AI help is back at {time}. Your saved lessons, flashcards and vocabulary still work.", 429, "ai_limit_reached"),
         "token_limit_exceeded": ("The uploaded material is too large for one AI request. Split it into smaller sections and try again. Your saved work remains safe.", 413, "ai_input_too_large"),
         "provider_timeout": ("Generation timed out. You can retry. Your saved work remains safe.", 504, "ai_timeout"),
         # The site or a provider is out of budget: not the student's doing, and it ends at
         # a known time. Said so, with the time.
-        "budget_exhausted": ("Max limit reached: AI help is paused until {time} because the budget for this period is used up. Your saved work is safe.", 503, "ai_budget_exhausted"),
-        "provider_rate_limit": ("Max limit reached on every AI model right now. Please try again in a moment. Your saved work is safe.", 503, "ai_provider_busy"),
+        "budget_exhausted": ("The AI has reached its limit until {time}. Your saved work is safe.", 503, "ai_budget_exhausted"),
+        "provider_rate_limit": ("The AI has reached its limit right now. Please try again in a moment. Your saved work is safe.", 503, "ai_provider_busy"),
     }
     default = ("AI is temporarily unavailable. You can retry. Your saved work remains safe.",
                503, "ai_unavailable")
@@ -3058,7 +3098,9 @@ def ai_failure_message(error: Exception) -> tuple[str, int, str]:
     values: dict[str, str] = {}
     if "{time}" in message:
         resets_at = getattr(error, "resets_at", None)
-        if resets_at is None:
+        if resets_at is None and category == "request_limit_reached":
+            message = "You have reached your limit. Please try again later. Your saved lessons, flashcards and vocabulary still work."
+        elif resets_at is None:
             message, status, code = default
         else:
             values["time"] = format_reset_time(resets_at)

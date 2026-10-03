@@ -61,7 +61,7 @@ class AiNoticeHookTests(unittest.TestCase):
         self.assertEqual(flashes[0][0], "warning")
         self.assertIn("Max limit reached", flashes[0][1])
 
-    def test_hard_limits_say_max_limit_reached(self):
+    def test_hard_limits_are_one_plain_sentence(self):
         from learnova.ai_services import service
         with application.app.test_request_context():
             user_limit, status, code = application.ai_failure_message(
@@ -69,9 +69,10 @@ class AiNoticeHookTests(unittest.TestCase):
             busy, busy_status, busy_code = application.ai_failure_message(
                 service.AIProviderError("provider_rate_limit", "429"))
         self.assertEqual((status, code), (429, "ai_limit_reached"))
-        self.assertTrue(user_limit.startswith("Max limit reached"), user_limit)
+        self.assertTrue(user_limit.startswith("You have reached your limit"), user_limit)
+        self.assertNotIn("API", user_limit)
         self.assertEqual((busy_status, busy_code), (503, "ai_provider_busy"))
-        self.assertTrue(busy.startswith("Max limit reached"), busy)
+        self.assertTrue(busy.startswith("The AI has reached its limit"), busy)
 
 
 if __name__ == "__main__":

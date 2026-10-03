@@ -62,6 +62,22 @@ For one request the router produces an ordered list of **candidates**:
 
 There is at most one premium candidate, and the list always ends in Groq.
 
+### A student's own cap: one sentence and a cooldown
+
+A student who exceeds their own allowance (`AI_MAX_REQUESTS_PER_USER_HOUR` / `_DAY`,
+`AI_BUDGET_USER_TOKENS_*`) is not told to try again every minute. The gateway puts the
+account on a cooldown of `AI_USER_COOLDOWN_HOURS` (default 6; 0 disables), stored on the
+account (`User.ai_cooldown_until`, so it survives restarts and follows the student to
+another device), and every AI request during it is refused *before* any counting or any
+provider call with scope `user_cooldown`. The student sees exactly one sentence: "You
+have reached your limit. AI help is back at 14:30 UTC. Your saved lessons, flashcards and
+vocabulary still work." (429, `Retry-After` set). Site and provider limits are not the
+student's doing and are worded as the AI's limit, never with provider or API jargon.
+
+Study modes never touch the gateway — flashcard study/learn/test/match/blast, vocabulary
+practice and reading saved lessons are deterministic endpoints — so a cooldown never
+blocks them; `tests/test_ai_cooldown.py` pins that.
+
 ### When a limit is hit: the slower model, and the student is told
 
 Rate limits are metered **per model**, so a 429 on `gpt-oss-20b` says nothing about

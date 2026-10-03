@@ -999,6 +999,59 @@ def _remember_result(key: str, response: GatewayResponse) -> None:
 # A provider that just answered 429 or 529 is left alone for a minute. Per process, like
 # the reservations: a cooldown is a hint that saves a call, not a correctness guarantee.
 _PROVIDER_COOLDOWNS: dict[str, float] = {}
+
+# A student who hits their own cap is put on a cooldown (AI_USER_COOLDOWN_HOURS, default
+# six) instead of being told to try again every minute. The store is the app's: it keeps
+# the moment per account in the database, so a cooldown survives a restart and follows the
+# student to another device. Nothing here is per process.
+_USER_COOLDOWN_STORE: tuple[Callable[[str], datetime | None], Callable[[str, datetime], bool]] | None = None
+
+
+def set_user_cooldown_store(reader: Callable[[str], datetime | None], writer: Callable[[str, datetime], bool]) -> None:
+    """`reader(user_ref)` -> the moment the cooldown ends, or None. `writer(user_ref, until)`
+    -> True when it was stored; a reference that is not an account (a test scope, an
+    anonymous caller) returns False and keeps the ordinary limit error."""
+
+    global _USER_COOLDOWN_STORE
+    _USER_COOLDOWN_STORE = (reader, writer)
+
+
+def _user_cooldown_hours() -> float:
+    try:
+        return max(0.0, float(current_app.config.get("AI_USER_COOLDOWN_HOURS", 6) or 0))
+    except (TypeError, ValueError):
+        return 6.0
+
+
+def _assert_user_cooldown(user_ref: str | None) -> None:
+    """Refuse while the student's cooldown runs - before any limit is counted or any
+    provider is asked, so a cooling-down student costs nothing and sees one clear message."""
+
+    if not user_ref or _USER_COOLDOWN_STORE is None:
+        return
+    until = _USER_COOLDOWN_STORE[0](str(user_ref))
+    if until is None:
+        return
+    now = datetime.now(timezone.utc)
+    until = until if until.tzinfo else until.replace(tzinfo=timezone.utc)
+    if until > now:
+        raise AIRequestLimitError(
+            "You have reached your limit.", scope="user_cooldown", resets_at=until,
+            retry_after_seconds=max(1, int((until - now).total_seconds())))
+
+
+def _cooled_down(user_ref: str | None, error: AIRequestLimitError) -> AIRequestLimitError:
+    """Turn a student's own limit into the start of their cooldown. Site and provider
+    limits are not the student's doing and are passed through unchanged."""
+
+    hours = _user_cooldown_hours()
+    if error.site_wide or not user_ref or _USER_COOLDOWN_STORE is None or hours <= 0:
+        return error
+    until = datetime.now(timezone.utc) + timedelta(hours=hours)
+    if not _USER_COOLDOWN_STORE[1](str(user_ref), until):
+        return error
+    return AIRequestLimitError("You have reached your limit.", scope="user_cooldown",
+                               resets_at=until, retry_after_seconds=int(hours * 3600))
 # Rate limits are metered per model, so their cooldowns are kept per (provider, model):
 # gpt-oss-20b being out of tokens must not take gpt-oss-120b down with it.
 _MODEL_COOLDOWNS: dict[tuple[str, str], float] = {}
@@ -1542,6 +1595,7 @@ def create_response(
     try:
         if input_tokens_estimate > _task_budget(task_type, "input"):
             raise AITokenLimitError("The relevant input is too large for this AI task.")
+        _assert_user_cooldown(user_ref)
         _assert_usage_limits(user_ref, mode)
         if mode == "cached":
             response = _read_cache(key)
@@ -1603,6 +1657,11 @@ def create_response(
             refused = ledger_entry("refused")
             refused.error_category = error_category
             usage_ledger().record(refused)
+        if isinstance(error, AIRequestLimitError) and error.scope != "user_cooldown":
+            # The student's own cap (hourly/daily requests, their token budget): from now on
+            # a cooldown, so the answer is one clear "back at <time>" rather than a retry
+            # loop against a cap that is still full.
+            raise _cooled_down(user_ref, error) from error
         raise
     finally:
         usage = accumulated_usage if provider_called else (response.usage if response else GatewayUsage())

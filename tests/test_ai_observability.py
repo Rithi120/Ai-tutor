@@ -292,7 +292,7 @@ class AIObservabilityTests(unittest.TestCase):
         with application.app.test_request_context():
             message, status, code = application.ai_failure_message(error)
         self.assertEqual((status, code), (503, "ai_provider_busy"))
-        self.assertIn("Max limit reached", message)
+        self.assertIn("reached its limit", message)
 
     def test_a_groq_rate_limit_hands_the_student_the_slower_groq_model_and_says_so(self):
         from tests.provider_stub import StubRateLimit
