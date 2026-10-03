@@ -6901,7 +6901,7 @@ Match the requested difficulty. Do not repeat any recent question exactly. Make 
         return redirect(url_for("todays_practice"))
 
 
-@app.post("/lessons/<int:lesson_id>/resume")
+@app.route("/lessons/<int:lesson_id>/resume", methods=["GET", "POST"])
 @login_required
 def resume_lesson(lesson_id):
     lesson = db.session.scalar(db.select(Lesson).where(

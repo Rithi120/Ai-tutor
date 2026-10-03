@@ -209,6 +209,12 @@ class QuickStartTests(unittest.TestCase):
         self.assertIn("Not started yet", overview)
         fresh = self.client.get("/").data.decode()
         self.assertIn("CONTINUE WHERE YOU LEFT OFF", fresh)
+        # The banner is a plain link, so resuming must work as a GET (it used to be POST-only: 405).
+        link = fresh.split('class="primary-button" href="')[1].split('"')[0]
+        self.assertTrue(link.endswith("/resume"), link)
+        followed = self.client.get(link)
+        self.assertEqual(followed.status_code, 302, followed.get_data(as_text=True))
+        self.assertEqual(followed.headers["Location"], f"/?session_id={session_id}")
         resumed = self.client.get(f"/?session_id={session_id}").data.decode()
         self.assertNotIn("CONTINUE WHERE YOU LEFT OFF", resumed, "not while that very lesson is open")
         project_page = self.client.get(f"/projects/{project_id}").data.decode()
