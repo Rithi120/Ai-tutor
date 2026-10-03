@@ -191,7 +191,9 @@ class ExamAutopilotTests(unittest.TestCase):
             mastery.last_practised_at = application.utcnow()
             saved = application.db.session.scalar(application.db.select(application.StudySession))
             state = json.loads(saved.state_json)
-            state["knowledge_gate"] = {"complete": True}
+            state["knowledge_gate"] = {"complete": True, "reached": True, "reason": "target_reached", "concepts": [
+                    {"concept": "Mitochondria", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"},
+                    {"concept": "Cell membrane", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"}]}
             saved.state_json = json.dumps(state)
             application.db.session.commit()
             card = application.exam_prep_card(project)

@@ -4856,8 +4856,28 @@ def section_concept_records(project, section):
     )).all()
 
 
+def latest_gate_verdict(project, section):
+    """The knowledge gate's view from the most recent *finished* test on this section."""
+
+    lessons = db.session.scalars(db.select(Lesson).where(
+        Lesson.user_id == project.user_id, Lesson.section_id == section.id,
+    ).order_by(Lesson.created_at.desc()).limit(5)).all()
+    for lesson in lessons:
+        if not lesson.study_session:
+            continue
+        try:
+            state = json.loads(lesson.study_session.state_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        gate = state.get("knowledge_gate") or {}
+        if gate.get("complete"):
+            return gate
+    return None
+
+
 def exam_prep_topics(project):
-    """TopicState per section, from the knowledge model - never from a single answer."""
+    """TopicState per section: the knowledge gate's verdict where a test has finished,
+    otherwise the knowledge model - never a single answer."""
 
     target = float(test_range()["target"])
     rows = competency_rows(project)
@@ -4868,8 +4888,17 @@ def exam_prep_topics(project):
     for section in sorted(project.sections, key=lambda item: item.position):
         if section.excluded:
             continue
+        gate = latest_gate_verdict(project, section)
         records = [record for record in section_concept_records(project, section) if (record.attempts or 0) > 0]
-        if records:
+        if gate is not None:
+            # The knowledge gate already judged this topic in a finished test: that is the
+            # evidence-based verdict, and the long-term mastery score (which moves slowly by
+            # design) must not overrule it either way.
+            concepts = gate.get("concepts") or []
+            knowledge = sum(float(c.get("knowledge") or 0) for c in concepts) / len(concepts) if concepts else 0.0
+            confidence = sum(float(c.get("confidence") or 0) for c in concepts) / len(concepts) if concepts else 0.0
+            known = bool(gate.get("reached"))
+        elif records:
             weights = [max(0.3, decayed_weight(float(record.evidence_weight or 0.0), record.last_practised_at, now))
                        for record in records]
             knowledge = sum(w * float(r.mastery_score or 0.0) for w, r in zip(weights, records)) / sum(weights)
