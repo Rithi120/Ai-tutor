@@ -30,7 +30,7 @@
   .mode-options button, .match-board button, .summary-stats div,
   .gamification-dashboard > *, .progress-hero > *, .import-steps li,
   .detail-review, .grade, .ghost-button, .card-editor-move button,
-  .card-row-tools button, .continue-button.ghost) {
+  .suggest-chip, .continue-button.ghost) {
   background: var(--fc-muted-surface);
   border-color: var(--ln-line-strong);
   color: var(--ln-ink);
@@ -44,12 +44,12 @@
   .field textarea, .field input, .field select,
   .card-editor textarea, .card-editor input, .card-editor select,
   .card-more-body textarea, .card-more-body input, .card-more-body select,
-  .card-row-main textarea, .import-page-review textarea) {
+  .import-page-review textarea) {
   background: var(--fc-input-bg);
   border-color: var(--ln-line-strong);
   color: var(--ln-ink);
 }
-:root[data-theme="dark"] :is(.field textarea, .field input, .card-row-main textarea, .card-editor textarea, .card-editor input)::placeholder {
+:root[data-theme="dark"] :is(.field textarea, .field input, .card-editor textarea, .card-editor input)::placeholder {
   color: var(--ln-subtle);
 }
 
@@ -128,8 +128,8 @@
   box-shadow: 0 12px 35px rgba(0, 0, 0, .35);
 }
 :root[data-theme="dark"] .upload-drop { border-color: var(--ln-line-strong); }
-:root[data-theme="dark"] .vocabulary-review-row { border-color: var(--ln-line-strong); }
-:root[data-theme="dark"] .vocabulary-validation { background: var(--fc-muted-surface); }
+:root[data-theme="dark"] .review-row { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .review-more { border-top: 1px solid var(--ln-line); }
 :root[data-theme="dark"] .vocabulary-table article { border-bottom-color: var(--ln-line-strong); }
 
 /* ================= styles.css: AI-tutor home + lesson output ================= */

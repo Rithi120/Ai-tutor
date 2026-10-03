@@ -47,6 +47,7 @@ _MAX_RUBRIC = 8
 QUESTION_TYPES = (
     "multiple_choice", "checkboxes", "dropdown", "ordering", "text", "true_false",
     "matching", "fill_blank", "short_answer", "explanation", "calculation",
+    "photo_response", "photo_ordering",
 )
 QUESTION_TYPE_SET = frozenset(QUESTION_TYPES)
 

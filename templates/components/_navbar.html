@@ -15,11 +15,11 @@
     <a class="app-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span></a>
     {% if current_user.is_authenticated %}
     <nav class="desktop-app-nav global-nav-links" aria-label="{{ _('Main navigation') }}">
-      <a class="app-nav-link {{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %}>{{ _('Overview') }}</a>
-      <a class="app-nav-link nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
-      <a class="app-nav-link {{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>
+      <a class="app-nav-link {{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %} data-tour-target="overview">{{ _('Overview') }}</a>
+      <a class="app-nav-link nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %} data-tour-target="new-lesson"><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
+      <a class="app-nav-link {{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %} data-tour-target="projects">{{ _('Projects') }}</a>
       <div class="app-menu">
-        <button class="app-menu-trigger {{ 'is-active' if practice_active or exam_active }}" type="button" aria-expanded="false" aria-controls="moreMenu">{{ _('More') }} <span aria-hidden="true">⌄</span></button>
+        <button class="app-menu-trigger {{ 'is-active' if practice_active or exam_active }}" data-tour-target="more" type="button" aria-expanded="false" aria-controls="moreMenu">{{ _('More') }} <span aria-hidden="true">⌄</span></button>
         <div id="moreMenu" class="app-dropdown" role="menu" aria-hidden="true">
           {% if feature_flags.assistant_chat %}<a role="menuitem" class="{{ 'is-active' if assistant_active }}" href="{{ url_for('assistant_page') }}" {% if assistant_active %}aria-current="page"{% endif %}>{{ _('Assistant') }}</a>{% endif %}
           {% if feature_flags.private_flashcards %}<a role="menuitem" class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %}>{{ _('Flashcards') }}</a>{% endif %}
@@ -40,6 +40,7 @@
       <div id="profileMenu" class="app-dropdown app-dropdown-right" role="menu" aria-hidden="true">
         <a class="settings-link {{ 'is-active' if profile_active }}" role="menuitem" href="{{ url_for('settings', next=request.full_path if request.query_string else request.path) }}">{{ _('Settings') }}</a>
         <a role="menuitem" href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+        <a role="menuitem" href="#tour" data-tour-open>{{ _('Tutorial') }}</a>
         <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout" role="menuitem" type="submit">{{ _('Log out') }}</button></form>
       </div>
     </div>
@@ -66,6 +67,7 @@
     <div class="mobile-menu-divider"></div>
     <a class="settings-link {{ 'is-active' if profile_active }}" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
     <a href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+    <a href="#tour" data-tour-open>{{ _('Tutorial') }}</a>
     <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout" type="submit">{{ _('Log out') }}</button></form>
   </nav>
   {% endif %}

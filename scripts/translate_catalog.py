@@ -26,7 +26,7 @@ from learnova.translations.catalog import LANGUAGE_BY_CODE, REQUIRED_KEYS  # noq
 
 DATA_DIR = ROOT / "learnova" / "translations" / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-MODEL = os.getenv("GROQ_TRANSLATE_MODEL", "llama-3.3-70b-versatile")
+MODEL = os.getenv("GROQ_TRANSLATE_MODEL", "openai/gpt-oss-120b")
 CLIENT = OpenAI(api_key=os.environ["GROQ_API_KEY"],
                 base_url=os.getenv("GROQ_BASE_URL") or "https://api.groq.com/openai/v1")
 BATCH = 30

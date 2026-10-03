@@ -1,0 +1,32 @@
+{# The first-time walkthrough shell. tour.js fills it: four mask panels darken everything
+   except the thing to tap, the spot outlines that thing, and the panel says what to do. The
+   steps themselves live in static/js/tour-rules.js; their words come from the frontend
+   catalogue (window.LEARNOVA_I18N), so this file carries no step text.
+
+   It opens by itself for an account that has never finished or skipped it (the server
+   remembers that in User.tour_completed_at) and can be restarted from Account -> Tutorial. #}
+<div id="tourRoot" class="tour-root" hidden
+     data-tour-autostart="{{ 'true' if current_user.tour_completed_at is none else 'false' }}"
+     data-tour-page="{{ 'index' if request.endpoint == 'index' else ('dashboard' if request.endpoint == 'dashboard' else 'other') }}">
+  <div class="tour-mask" data-mask="top"></div>
+  <div class="tour-mask" data-mask="bottom"></div>
+  <div class="tour-mask" data-mask="left"></div>
+  <div class="tour-mask" data-mask="right"></div>
+  <div class="tour-spot" aria-hidden="true" hidden></div>
+  <section class="tour-panel" role="dialog" aria-labelledby="tourText" aria-live="polite" tabindex="-1">
+    <div class="tour-head">
+      <span class="tour-progress" id="tourProgress"></span>
+      <button type="button" class="tour-skip" data-tour-skip>{{ _('Skip') }}</button>
+    </div>
+    <div class="tour-body">
+      <span class="tour-icon" id="tourIcon" aria-hidden="true"></span>
+      <div>
+        <h2 class="tour-title" id="tourTitle" hidden></h2>
+        <p class="tour-text" id="tourText"></p>
+      </div>
+    </div>
+    <div class="tour-actions">
+      <button type="button" class="primary-button tour-next" data-tour-next hidden></button>
+    </div>
+  </section>
+</div>

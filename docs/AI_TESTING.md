@@ -52,6 +52,10 @@ $env:ALLOW_LIVE_AI_TESTS="true"
 python scripts/live_ai_smoke_test.py --task lesson --language de
 ```
 
+`--task` accepts `lesson`, `moderation`, `assistant`, `diagnosis`, `suggestion`, `handwriting`, or `all`. Each makes exactly one request and checks the contract its feature actually depends on, so a replayed fixture passing is never mistaken for a real model complying. `suggestion` is the one worth running before trusting one-word card creation: it reports how many of the three definitions were usable, whether they were genuinely distinct, and their lengths. A real model that returns one definition, or three paraphrases of the same sentence, makes the feature not worth the tap it saves — and only a live run can show that.
+
+`handwriting` builds a close-up sheet and checks the model answers one reading per numbered fragment with matching indexes. It verifies the contract, not accuracy: the fragments are rendered text, so a pass means the second look will not fall over in production, not that messy handwriting is now readable. Only real scanned pages show that.
+
 Unset `ALLOW_LIVE_AI_TESTS` afterwards. Never enable it in the normal CI job.
 
 ## Add fixtures
@@ -66,23 +70,30 @@ Unset `ALLOW_LIVE_AI_TESTS` afterwards. Never enable it in the normal CI job.
 
 ## Usage and cost accounting
 
-Each logical gateway request appends one sanitized JSON line to `instance/ai_usage.jsonl` containing:
+Every provider call is reserved before and settled after against a **ledger**: the
+`ai_usage_event` table in production (`DatabaseLedger`, `app.py`), the JSONL log for a
+checkout with no database wiring (`JsonlLedger`). Token budgets (`AI_BUDGET_*`), per-provider
+rate limits and the per-user request caps are all evaluated against it, under one lock, so
+two requests racing for the last of a budget cannot both pass. Cache hits, coalesced
+requests and refused requests are recorded but never counted.
 
-- request ID, timestamp, anonymized user/session reference, task, model, language, prompt version, and AI mode;
-- estimated or provider-reported input/output/total tokens;
-- cache hit or miss;
-- estimated cost using `AI_INPUT_COST_PER_MILLION` and `AI_OUTPUT_COST_PER_MILLION`;
-- duration, retry count, validation result, success, safe error category, and short safe summary.
+`instance/ai_usage.jsonl` is still written, one line per request, with the provider that
+answered and a `routing_reason`. It carries hashed user/session references and no content.
 
-It records only a request hash, never the complete prompt, upload, API key, or raw private user identifier.
-
-```powershell
-Get-Content .\instance\ai_usage.jsonl -Tail 20 |
-  ConvertFrom-Json |
-  Format-Table request_id,timestamp,task_type,prompt_version,ai_mode,total_tokens,cache_status,retry_count,validation_result,error_category
+```bash
+pytest tests/test_ai_budgets.py tests/test_ai_ledger.py tests/test_ai_observability.py   # the rules, the ledger, the gateway
+ALLOW_LIVE_AI_TESTS=true python scripts/live_budget_check.py                             # the same, against real Groq calls
 ```
 
-For the aggregate view, list a development administrator username/email in `AI_DIAGNOSTICS_ADMINS`, sign in as that account, and open `/internal/ai-diagnostics`. The route returns 404 outside development and for ordinary students.
+The live check runs on a scratch database and costs a few hundred tokens. It proves one
+call becomes one settled row with the billed tokens, a repeated OCR page is a cache hit
+that bills nothing, a spent site budget refuses the next call *before* the provider with a
+503 and a reset time, and a user cap is a 429 with `Retry-After`.
+
+Routing (which model answers which task, premium eligibility, fallback, the call bound) is
+pure code in `learnova/ai_services/routing.py` and is tested in `tests/test_ai_routing.py`;
+the gateway's behaviour on failures and retries is in `tests/test_ai_observability.py`.
+`docs/AI_ROUTING.md` describes the policy.
 
 ## Community moderation
 

@@ -623,5 +623,25 @@ class EvaluationHarnessTests(unittest.TestCase):
         self.assertTrue(self.metrics["passed"], format_report(self.metrics))
 
 
+class SerialisedAnswerCheckTests(unittest.TestCase):
+    """The app hands multi-part answers to the checker as a JSON string (see
+    /api/answer); the checker has to read them back or a correct order is always wrong."""
+
+    def test_a_json_encoded_ordering_answer_is_compared_as_an_order(self):
+        from learnova.diagnostics.verification import check_answer
+
+        right = check_answer('["a", "b", "c"]', ["a", "b", "c"], question_type="ordering")
+        self.assertEqual((right.method, right.decided, right.matches_expected), ("choice", True, True))
+        wrong = check_answer('["c", "b", "a"]', ["a", "b", "c"], question_type="ordering")
+        self.assertEqual(wrong.matches_expected, False)
+
+    def test_a_json_encoded_checkbox_answer_still_matches_and_plain_text_is_untouched(self):
+        from learnova.diagnostics.verification import check_answer
+
+        self.assertTrue(check_answer('["a", "b"]', ["a", "b"], question_type="checkboxes").matches_expected)
+        self.assertFalse(check_answer('["a"]', ["a", "b"], question_type="checkboxes").matches_expected)
+        self.assertTrue(check_answer("[x] marks the spot", "[x] marks the spot", question_type="text").matches_expected)
+
+
 if __name__ == "__main__":
     unittest.main()

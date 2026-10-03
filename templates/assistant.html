@@ -1,10 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Assistant') }} — Learnova{% endblock %}
 {% block head %}
-  {# KaTeX is loaded here for the same reason it is loaded on the tutor page: this is a
-     surface where a learner asks a question and the answer is often mathematics. It is
-     deliberately not enabled for the project or exam flows. #}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant.css') }}">
 {% endblock %}
 {% block content %}
@@ -59,15 +55,18 @@
     </div>
 
     <form id="asstComposer" class="asst-composer">
-      <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
-      <textarea id="asstInput" rows="1" maxlength="16000"
-                placeholder="{{ _('Send a message…') }}" autocomplete="off"></textarea>
-      <div class="asst-composer-actions">
-        <label class="asst-deep" title="{{ _('Use the stronger model. Slower, better on hard questions.') }}">
-          <input type="checkbox" id="asstDeep"> {{ _('Think harder') }}
-        </label>
-        <span id="asstCount" class="asst-count" aria-live="polite"></span>
-        <button type="submit" class="primary-button" id="asstSend">{{ _('Send') }}</button>
+      <div class="asst-composer-shell">
+        <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
+        <textarea id="asstInput" rows="1" maxlength="16000"
+                  placeholder="{{ _('Send a message…') }}" autocomplete="off"></textarea>
+        <div class="asst-composer-actions">
+          <label class="asst-deep" title="{{ _('Use the stronger model. Slower, better on hard questions.') }}">
+            <input type="checkbox" id="asstDeep"> {{ _('Think harder') }}
+          </label>
+          <span id="asstCount" class="asst-count" aria-live="polite"></span>
+          <button type="submit" class="asst-send" id="asstSend" title="{{ _('Send') }}"
+                  aria-label="{{ _('Send') }}"><span aria-hidden="true">&uarr;</span></button>
+        </div>
       </div>
       <p class="asst-disclaimer">{{ _('The assistant can be wrong. Check anything that matters.') }}</p>
     </form>
@@ -75,7 +74,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <script type="module" src="{{ url_for('static', filename='js/assistant.js') }}"></script>
 {% endblock %}

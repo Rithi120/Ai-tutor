@@ -76,7 +76,11 @@ class CommunityServiceTests(unittest.TestCase):
 
     def test_publication_decision_bands_and_safety_override(self):
         self.assertEqual(community.publication_decision(4.2, [])["status"], "approved")
-        self.assertEqual(community.publication_decision(3.4, [])["status"], "pending_manual_review")
+        # A middling set is published with its suggestions showing, not parked in the
+        # human queue - that queue is for safety doubts, and quality is not one.
+        middling = community.publication_decision(3.4, [])
+        self.assertEqual((middling["status"], middling["reason"], middling["correctable"]),
+                         ("approved", "approved_with_suggestions", True))
         needs = community.publication_decision(2.5, [])
         self.assertEqual((needs["status"], needs["correctable"]), ("rejected", True))
         self.assertEqual(community.publication_decision(1.2, [])["status"], "rejected")

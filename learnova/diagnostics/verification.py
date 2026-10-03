@@ -9,6 +9,7 @@ bought when it would actually change something.
 from __future__ import annotations
 
 import ast
+import json
 import math
 import operator
 import re
@@ -186,6 +187,16 @@ def check_answer(
     notes: list[str] = []
     if expected_answer in (None, "") or student_answer in (None, ""):
         return VerificationResult("none", False, None, notes=["no comparable answer key"])
+    # The app serialises a multi-part answer (checkboxes, ordering) to JSON before it
+    # reaches the model and this check. Read it back, or an ordering answer is compared
+    # as one string against the joined key and a correct order is always "wrong".
+    if isinstance(student_answer, str) and student_answer.lstrip().startswith("["):
+        try:
+            decoded = json.loads(student_answer)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, list):
+            student_answer = decoded
 
     closed_types = {"multiple_choice", "checkboxes", "dropdown", "ordering", "true_false", "matching"}
     if question_type in closed_types or isinstance(expected_answer, (list, tuple)):

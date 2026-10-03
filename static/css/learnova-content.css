@@ -3,6 +3,17 @@
  * math never scales with a large container font, display math scrolls instead of
  * overflowing, and long content wraps sensibly. Works in light and dark. */
 
+/* Every formula the global renderer (static/js/math.js) produces is wrapped in .ln-math,
+ * which carries its LaTeX source in data-ln-math so the original is always recoverable.
+ * Colour is deliberately left to inherit: that is what makes formulas follow dark mode
+ * without a single dark-specific rule, since KaTeX draws fraction bars, roots and boxes
+ * with currentColor. */
+.ln-math { display: inline; color: inherit; }
+.ln-math-display { display: block; }
+/* If KaTeX cannot be reached at all, the span holds the untouched source instead of an
+   empty gap - unrendered but readable, and still copyable. */
+.ln-math:not(:has(.katex)) { font-family: var(--ln-font-body, monospace); opacity: .85; }
+
 /* Math sizing: keep formulas readable but never enormous, relative to text. */
 .katex { font-size: 1.05em; line-height: 1.25; }
 .katex-display { margin: .55em 0; padding-bottom: 2px; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
@@ -104,6 +115,33 @@
    78px metric boxes beside it — keep it tall there only (background stays violet). */
 .learning-overview .continue-button { min-height: 78px; border-radius: 16px; flex-direction: column; gap: 2px; }
 
+/* ---- Dashboard flashcard + vocabulary widgets ----
+ * Same trap as the gamification header above: .dashboard-flashcards and every
+ * .fc-dash-* class are laid out in flashcards.css, which the dashboard does NOT
+ * load. Unstyled, the panel kept its border but lost its padding, so the heading
+ * and stats ran flush to the edge, and the stat row lost its flex: "New words"
+ * and its number collapsed onto one line and every stat stacked. A grid rather
+ * than the original flex row, because long German labels ("Gemeisterte Wörter")
+ * must be allowed to reflow instead of pushing the row past the card. */
+.dashboard-flashcards { margin-bottom: 18px; padding: clamp(14px, 2.5vw, 22px); }
+.dashboard-flashcards .notebook-heading { margin-bottom: 14px; }
+.fc-dash-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: .75rem 1.5rem; margin: .8rem 0 1rem;
+}
+.fc-dash-stats > div { min-width: 0; }
+.fc-dash-stats span { display: block; color: var(--ln-muted); font-size: .8rem; overflow-wrap: anywhere; }
+.fc-dash-stats strong { font-size: 1.3rem; line-height: 1.2; }
+.fc-dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .8rem; }
+/* The left padding clears the 4px ::before accent bar .fc-dash-card inherits from
+   the shared card rule in learnova-layouts.css. */
+.fc-dash-card { display: flex; flex-direction: column; gap: .35rem; padding: .8rem 1rem .8rem calc(1rem + 4px); color: inherit; text-decoration: none; }
+.fc-dash-progress { display: block; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--ln-violet) 14%, transparent); overflow: hidden; }
+.fc-dash-progress i { display: block; height: 100%; background: var(--ln-gradient-brand); }
+/* Scoped to the dashboard: on the library pages flashcards.css already sizes these. */
+.dashboard-flashcards .cards-empty { margin: 0; padding: 2rem 1rem; }
+.dashboard-flashcards .set-meta, .dashboard-flashcards .set-stats { margin: 0; font-size: .8rem; }
+
 /* ---- Handwriting "fix the uncertain words" region editor (recognition review) ----
  * Draws each low-confidence OCR region as a numbered, tappable box over the page image
  * (positioned by its normalized bbox), and a tap opens an on-the-spot editor so the
@@ -174,4 +212,18 @@
 @keyframes region-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
   .region-box, .region-popover.as-sheet { animation: none !important; }
+}
+
+/* ---- Exercises built on the student's own scanned diagrams ----
+ * The picture is part of the question, so it gets real size on a phone and the ordering
+ * tiles stay big enough to drag. Cropped regions vary wildly in shape, so height is
+ * capped rather than fixed and the image is contained, never stretched. */
+.question-media { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
+.question-photo { margin: 0; }
+.question-photo img { max-width: min(100%, 460px); max-height: 46vh; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface); object-fit: contain; }
+.ordering-photos .ordering-photo { align-items: center; gap: 10px; }
+.ordering-photos img { max-width: 160px; max-height: 110px; border-radius: 10px; object-fit: contain; background: var(--ln-surface); }
+@media (max-width: 620px) {
+  .question-photo img { max-height: 38vh; }
+  .ordering-photos img { max-width: 104px; max-height: 76px; }
 }

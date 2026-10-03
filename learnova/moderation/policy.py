@@ -92,6 +92,10 @@ class Thresholds:
 
 DEFAULT_THRESHOLDS = Thresholds()
 
+# What the author reads when the automatic check itself failed. Shared with the
+# taxonomy label so the two never drift.
+UNAVAILABLE_MESSAGE = 'The automatic check could not run, so your set is held unpublished. Try publishing it again.'
+
 # A suggested revision longer than this, or containing markup, is not shown to the author.
 MAX_SAFE_REVISION_LENGTH = 400
 
@@ -250,8 +254,12 @@ def _author_message(decision: str, reasons: list[str]) -> str:
 
     visible = [code for code in reasons if code in AUTHOR_VISIBLE_REASONS]
     if decision == "allow":
-        return "Your set has been published to the community library."
+        return "Your set passed the safety check."
     if decision == "review":
+        # Held because the check *failed*, not because a person is looking. The author
+        # can fix this one themselves by resubmitting, so the message says so.
+        if "MODERATION_UNAVAILABLE" in reasons:
+            return UNAVAILABLE_MESSAGE
         return "Your set is being checked and will appear once the check is complete."
     if decision == "revision_required":
         if not visible:

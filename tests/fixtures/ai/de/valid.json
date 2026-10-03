@@ -196,6 +196,30 @@
       "warning": ""
     }
   },
+  "handwriting_region_review": {
+    "output_text": {
+      "regions": [
+        {
+          "index": 1,
+          "content": "Photosynthese",
+          "confidence": 0.91,
+          "illegible": false
+        },
+        {
+          "index": 2,
+          "content": "Chloroplast",
+          "confidence": 0.86,
+          "illegible": false
+        },
+        {
+          "index": 3,
+          "content": "",
+          "confidence": 0.1,
+          "illegible": true
+        }
+      ]
+    }
+  },
   "project_section_generation": {
     "output_text": {
       "sections": [
@@ -344,6 +368,24 @@
           ],
           "sourceReference": "",
           "difficulty": "easy"
+        }
+      ]
+    }
+  },
+  "flashcard_back_suggestion": {
+    "output_text": {
+      "suggestions": [
+        {
+          "back": "Der Vorgang, bei dem Pflanzen mit Sonnenlicht aus Kohlendioxid und Wasser Zucker und Sauerstoff herstellen.",
+          "style": "short"
+        },
+        {
+          "back": "Die Photosynthese laeuft in den Chloroplasten ab. Chlorophyll nimmt Lichtenergie auf, die eine Reaktion zwischen Kohlendioxid aus der Luft und Wasser aus den Wurzeln antreibt. Dabei entsteht Traubenzucker und Sauerstoff wird frei.",
+          "style": "detailed"
+        },
+        {
+          "back": "6 CO2 + 6 H2O + Licht -> C6H12O6 + 6 O2",
+          "style": "example"
         }
       ]
     }
@@ -552,6 +594,36 @@
   "assistant_chat": {
     "output_text": "Die Ableitung von x hoch zwei ist 2x. Nach der Potenzregel ziehst du den Exponenten als Faktor nach vorn und verringerst ihn um eins."
   },
+  "competency_extraction": {
+    "output_text": {
+      "competencies": [
+        {
+          "statement": "Ich kann quadratische Gleichungen mit der Mitternachtsformel lösen.",
+          "topic": "Quadratische Gleichungen",
+          "subtopic": "Mitternachtsformel",
+          "level": "intermediate",
+          "importance": 3,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "covered",
+          "evidence": "x = (-b ± √(b²-4ac)) / 2a"
+        },
+        {
+          "statement": "Ich kann erklären, wann eine quadratische Gleichung keine reelle Lösung hat.",
+          "topic": "Quadratische Gleichungen",
+          "subtopic": "Diskriminante",
+          "level": "advanced",
+          "importance": 2,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "missing",
+          "evidence": ""
+        }
+      ]
+    }
+  },
   "_meta": {
     "prompt_versions": {
       "lesson_generation": "lesson_generation:v3",
@@ -571,7 +643,10 @@
       "flashcard_generation": "flashcard_generation:v1",
       "flashcard_review": "flashcard_review:v1",
       "content_moderation": "content_moderation:v1",
-      "assistant_chat": "assistant_chat:v1"
+      "assistant_chat": "assistant_chat:v1",
+      "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
+      "handwriting_region_review": "handwriting_region_review:v1",
+      "competency_extraction": "competency_extraction:v1"
     }
   }
 }

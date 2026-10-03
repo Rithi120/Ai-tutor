@@ -1,4 +1,6 @@
 import { escapeHtml } from "./dom.js";
+import { withRetryHint } from "./ai-limit-rules.js";
+import { renderMath } from "./math.js";
 
 const SUBJECTS = ["Mathematics", "English", "German", "History", "Biology", "Chemistry", "Physics", "Other"];
 const MODERATION_ENABLED =
@@ -17,20 +19,8 @@ const REPORT_REASONS = [
   ["other", "Something else", "Etwas anderes"],
 ];
 const tx = (en, de) => window.LEARNOVA_LANGUAGE === "de" ? de : en;
-const MATH_DELIMITERS = [
-  { left: "$$", right: "$$", display: true },
-  { left: "\\[", right: "\\]", display: true },
-  { left: "$", right: "$", display: false },
-  { left: "\\(", right: "\\)", display: false },
-];
 
-function renderMath(root) {
-  if (!root || typeof window.renderMathInElement !== "function") return;
-  try {
-    window.renderMathInElement(root, { delimiters: MATH_DELIMITERS, throwOnError: false,
-      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option", "input"] });
-  } catch (_) { /* ignore */ }
-}
+
 
 async function api(url, { method = "GET", body } = {}) {
   const options = { method, headers: {} };
@@ -40,7 +30,9 @@ async function api(url, { method = "GET", body } = {}) {
   try { data = await response.json(); } catch (_) { /* non-JSON */ }
   if (!response.ok) {
     const error = new Error(data.error || `Request failed (${response.status})`);
-    error.code = data.code; error.status = response.status; throw error;
+    error.code = data.code; error.status = response.status; error.details = data.details || {};
+    error.message = withRetryHint(error.message, error);
+    throw error;
   }
   return data;
 }

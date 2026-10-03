@@ -1,6 +1,26 @@
 /* Direct assistant chat.
-   Two columns on a desktop, stacked below 900px. Uses the shared design tokens so the
-   page inherits light/dark with everything else rather than defining its own palette. */
+ *
+ * Shaped like a modern chat client: one centred reading column, the learner's own words
+ * in a rounded bubble on the right, and the reply as plain text rather than a second
+ * bubble - a wall of alternating boxes is harder to read than prose. The brand colour
+ * sits on the send button and the avatar instead of on every message.
+ *
+ * Colours come from the learnova tokens. They did not before: this file asked for
+ * --border, --surface, --accent and --surface-muted, none of which are defined anywhere,
+ * so every rule fell through to a hardcoded light-mode hex and the page ignored dark
+ * mode entirely.
+ *
+ * Corner radii are the shared --ln-radius-* scale, used one step rounder than the rest of
+ * the app, because a chat surface reads as softer than a data panel.
+ */
+
+/* Defined here because this is the only page using the class that does not load
+   flashcards.css, where the other copy lives - so these three labels were being drawn
+   as loose text above the search box, the style picker and the composer. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 .assistant-page {
   display: grid;
@@ -23,16 +43,17 @@
   top: 5rem;
   max-height: calc(100vh - 7rem);
 }
-.asst-sidebar-head { display: flex; flex-direction: column; gap: .6rem; }
+.asst-sidebar-head { display: flex; flex-direction: column; gap: .7rem; }
 .asst-title { margin: 0; font-size: 1.35rem; }
-.asst-new { width: 100%; }
+.asst-new { width: 100%; border-radius: 999px; }
 .asst-sidebar input[type="search"] {
   width: 100%;
-  padding: .45rem .65rem;
-  border: 1px solid var(--border, #ece7fb);
-  border-radius: 10px;
+  padding: .55rem .9rem;
+  border: 1px solid var(--ln-line);
+  border-radius: 999px;
   font: inherit;
-  background: var(--surface, #fff);
+  font-size: .88rem;
+  background: var(--ln-surface-solid);
   color: inherit;
 }
 .asst-list { display: flex; flex-direction: column; gap: .2rem; overflow-y: auto; flex: 1; }
@@ -42,18 +63,19 @@
   gap: .1rem;
   width: 100%;
   text-align: start;
-  padding: .5rem .65rem;
+  padding: .55rem .75rem;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 14px;
   background: none;
   color: inherit;
   cursor: pointer;
   font: inherit;
+  transition: background 140ms var(--ln-ease);
 }
-.asst-list-item:hover { background: var(--surface-muted, #f6f3ff); }
+.asst-list-item:hover { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
 .asst-list-item.is-active {
-  background: var(--surface-muted, #f2eeff);
-  border-color: var(--accent, #7c5cff);
+  background: color-mix(in srgb, var(--ln-violet) 13%, transparent);
+  border-color: color-mix(in srgb, var(--ln-violet) 32%, transparent);
 }
 .asst-list-item.is-archived { opacity: .6; }
 .asst-list-title {
@@ -63,9 +85,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.asst-list-meta { font-size: .72rem; opacity: .65; }
-.asst-empty-note { font-size: .85rem; opacity: .7; margin: .25rem 0; }
-.asst-archived-toggle { display: flex; gap: .4rem; align-items: center; font-size: .8rem; opacity: .8; }
+.asst-list-meta { font-size: .72rem; color: var(--ln-muted); }
+.asst-empty-note { font-size: .85rem; color: var(--ln-muted); margin: .25rem 0; }
+.asst-archived-toggle {
+  display: flex; gap: .4rem; align-items: center;
+  font-size: .8rem; color: var(--ln-muted);
+}
 
 /* --------------------------------------------------------------------- thread */
 
@@ -73,9 +98,10 @@
   display: flex;
   flex-direction: column;
   min-height: 60vh;
-  border: 1px solid var(--border, #ece7fb);
-  border-radius: 18px;
-  background: var(--surface, #fff);
+  border: 1px solid var(--ln-line);
+  border-radius: var(--ln-radius-lg);
+  background: var(--ln-surface);
+  box-shadow: var(--ln-shadow-sm);
   overflow: hidden;
 }
 .asst-thread-head {
@@ -84,116 +110,153 @@
   align-items: flex-start;
   gap: 1rem;
   flex-wrap: wrap;
-  padding: .9rem 1.1rem;
-  border-bottom: 1px solid var(--border, #ece7fb);
+  padding: .9rem 1.2rem;
+  border-bottom: 1px solid var(--ln-line);
 }
 .asst-thread-title h2 { margin: 0; font-size: 1.05rem; }
-.asst-meta { margin: .15rem 0 0; font-size: .78rem; opacity: .7; }
+.asst-meta { margin: .15rem 0 0; font-size: .78rem; color: var(--ln-muted); }
 .asst-thread-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .asst-thread-actions select {
-  padding: .35rem .5rem;
-  border: 1px solid var(--border, #ece7fb);
-  border-radius: 8px;
+  padding: .4rem .85rem;
+  border: 1px solid var(--ln-line);
+  border-radius: 999px;
   font: inherit;
   font-size: .85rem;
-  background: var(--surface, #fff);
+  background: var(--ln-surface-solid);
   color: inherit;
 }
+.asst-thread-actions .ghost-button { border-radius: 999px; }
 
 .asst-thread {
   flex: 1;
   overflow-y: auto;
-  padding: 1.1rem;
+  padding: 1.4rem 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.35rem;
   scroll-behavior: smooth;
 }
 
 .asst-welcome { margin: auto; text-align: center; max-width: 34rem; padding: 1.5rem 0; }
-.asst-welcome h3 { margin: 0 0 .4rem; font-size: 1.2rem; }
-.asst-welcome p { margin: 0 0 1rem; opacity: .8; }
-.asst-suggestions { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.asst-welcome h3 { margin: 0 0 .4rem; font-size: 1.25rem; }
+.asst-welcome p { margin: 0 0 1.1rem; color: var(--ln-muted); }
+.asst-suggestions { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 .asst-suggestion {
   width: 100%;
-  padding: .55rem .8rem;
-  border: 1px solid var(--border, #ece7fb);
-  border-radius: 12px;
-  background: none;
+  padding: .7rem 1rem;
+  border: 1px solid var(--ln-line);
+  border-radius: 16px;
+  background: var(--ln-surface-solid);
   color: inherit;
   cursor: pointer;
   font: inherit;
   font-size: .88rem;
   text-align: start;
+  transition: border-color 140ms var(--ln-ease), transform 140ms var(--ln-ease);
 }
-.asst-suggestion:hover { border-color: var(--accent, #7c5cff); }
+.asst-suggestion:hover {
+  border-color: color-mix(in srgb, var(--ln-violet) 45%, var(--ln-line));
+  transform: translateY(-1px);
+}
 
-.asst-msg { display: flex; flex-direction: column; gap: .25rem; max-width: 52rem; }
-.asst-msg-user { align-self: flex-end; align-items: flex-end; }
-.asst-who { margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; opacity: .6; }
-.asst-body {
-  padding: .7rem .95rem;
-  border-radius: 14px;
-  background: var(--surface-muted, #f6f3ff);
-  overflow-wrap: anywhere;
+/* One centred column, the width of comfortable prose. The user's bubble floats to the
+   right edge of that column rather than of the whole panel. */
+.asst-msg {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
 }
+.asst-msg-user { align-items: flex-end; }
+/* The reply sits beside its mark, not under it: avatar in the first column, everything
+   the assistant produced in the second. The visually-hidden name is absolutely
+   positioned, so it takes no grid cell. */
+.asst-msg-assistant {
+  display: grid;
+  grid-template-columns: 1.65rem minmax(0, 1fr);
+  column-gap: .8rem;
+  row-gap: .35rem;
+  align-items: start;
+}
+.asst-msg-assistant > .asst-avatar { grid-column: 1; grid-row: 1; margin-top: .2rem; }
+.asst-msg-assistant > .asst-body,
+.asst-msg-assistant > .asst-msg-meta,
+.asst-msg-assistant > .asst-copy { grid-column: 2; }
+
+/* The assistant is marked by a small brand dot, not a label above every reply. */
+.asst-avatar {
+  width: 1.65rem; height: 1.65rem; flex: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ln-violet), var(--ln-violet-deep));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ln-violet) 35%, transparent);
+}
+
+/* A reply is prose, so it gets no box - only the learner's own words are bubbled. */
+.asst-body { overflow-wrap: anywhere; line-height: 1.65; }
 .asst-msg-user .asst-body {
-  background: var(--accent, #7c5cff);
-  color: #fff;
+  max-width: min(82%, 34rem);
+  padding: .7rem 1.05rem;
+  /* Rounded on three corners with a shorter one at the bottom, which is what makes a
+     bubble read as pointing at its sender. */
+  border-radius: 22px 22px 6px 22px;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 22%, transparent);
+  background: color-mix(in srgb, var(--ln-violet) 13%, var(--ln-surface-solid));
   white-space: pre-wrap;   /* the learner's own text keeps its line breaks */
 }
-.asst-msg-user .asst-body a { color: #fff; }
 .asst-msg-error .asst-body {
-  background: #fde8e8;
-  color: #9b1c1c;
-  border: 1px solid #f5c2c2;
+  padding: .7rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--ln-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--ln-danger) 10%, var(--ln-surface-solid));
+  color: var(--ln-danger);
 }
 .asst-body > *:first-child { margin-top: 0; }
 .asst-body > *:last-child { margin-bottom: 0; }
-.asst-body p { margin: .5rem 0; line-height: 1.6; }
-.asst-body ul, .asst-body ol { margin: .5rem 0; padding-inline-start: 1.3rem; }
-.asst-body li { margin: .2rem 0; line-height: 1.55; }
-.asst-body h3, .asst-body h4, .asst-body h5, .asst-body h6 { margin: .8rem 0 .3rem; font-size: 1rem; }
+.asst-body p { margin: .55rem 0; line-height: 1.65; }
+.asst-body ul, .asst-body ol { margin: .55rem 0; padding-inline-start: 1.3rem; }
+.asst-body li { margin: .25rem 0; line-height: 1.6; }
+.asst-body h3, .asst-body h4, .asst-body h5, .asst-body h6 { margin: .9rem 0 .35rem; font-size: 1rem; }
 .asst-body code {
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: .88em;
-  padding: .1rem .3rem;
-  border-radius: 5px;
-  background: rgba(124, 92, 255, .12);
+  padding: .12rem .35rem;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ln-violet) 13%, transparent);
 }
 .asst-code {
   position: relative;
-  margin: .6rem 0;
-  padding: .7rem .85rem;
-  border-radius: 10px;
-  background: #1e1b2e;
+  margin: .7rem 0;
+  padding: .85rem 1rem;
+  border-radius: 16px;
+  background: #1a1830;
   color: #ece9ff;
   overflow-x: auto;      /* long lines scroll instead of widening the page */
 }
 .asst-code code { background: none; padding: 0; color: inherit; }
 .code-lang {
   position: absolute;
-  top: .35rem;
-  inset-inline-end: .6rem;
+  top: .45rem;
+  inset-inline-end: .75rem;
   font-size: .68rem;
   text-transform: uppercase;
   letter-spacing: .06em;
   opacity: .55;
 }
-.asst-msg-meta { margin: 0; font-size: .7rem; opacity: .55; }
+.asst-msg-meta { margin: 0; font-size: .7rem; color: var(--ln-muted); }
 .asst-copy {
   align-self: flex-start;
-  border: none;
+  padding: .2rem .65rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: none;
-  padding: 0;
   font: inherit;
   font-size: .72rem;
-  opacity: .55;
+  color: var(--ln-muted);
   cursor: pointer;
-  color: inherit;
-  text-decoration: underline;
 }
-.asst-copy:hover { opacity: 1; }
+.asst-copy:hover { border-color: var(--ln-line); color: var(--ln-ink); }
 
 .asst-dots { display: inline-flex; gap: .25rem; padding: .2rem 0; }
 .asst-dots i {
@@ -207,38 +270,78 @@
 @media (prefers-reduced-motion: reduce) {
   .asst-dots i { animation: none; opacity: .5; }
   .asst-thread { scroll-behavior: auto; }
+  .asst-suggestion, .asst-list-item, .asst-send { transition: none; }
 }
 
 /* ------------------------------------------------------------------ composer */
 
 .asst-composer {
-  border-top: 1px solid var(--border, #ece7fb);
   padding: .8rem 1.1rem 1rem;
   display: grid;
   gap: .5rem;
+  justify-items: center;
+}
+/* Textarea and controls share one rounded shell, so the composer reads as a single
+   object the way the thread above it reads as a single column. */
+.asst-composer-shell {
+  width: 100%;
+  max-width: 48rem;
+  display: grid;
+  gap: .35rem;
+  padding: .55rem .6rem .5rem .9rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 28px;
+  background: var(--ln-surface-solid);
+  box-shadow: var(--ln-shadow-sm);
+  transition: border-color 140ms var(--ln-ease), box-shadow 140ms var(--ln-ease);
+}
+.asst-composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--ln-violet) 55%, var(--ln-line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 16%, transparent);
 }
 .asst-composer textarea {
   width: 100%;
-  min-height: 2.6rem;
+  min-height: 2.4rem;
   max-height: 14rem;
   resize: none;
-  padding: .6rem .8rem;
-  border: 1px solid var(--border, #ece7fb);
-  border-radius: 12px;
+  padding: .45rem .2rem .1rem;
+  border: 0;
+  background: none;
   font: inherit;
-  line-height: 1.5;
-  background: var(--surface, #fff);
+  line-height: 1.55;
   color: inherit;
 }
-.asst-composer textarea:focus-visible { outline: 2px solid var(--accent, #7c5cff); outline-offset: 1px; }
+/* The shell carries the focus ring, so the textarea must not draw a second one. */
+.asst-composer textarea:focus,
+.asst-composer textarea:focus-visible { outline: none; }
 .asst-composer-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-.asst-deep { display: flex; align-items: center; gap: .35rem; font-size: .82rem; opacity: .85; }
-.asst-count { font-size: .75rem; opacity: .6; margin-inline-start: auto; }
-.asst-disclaimer { margin: 0; font-size: .72rem; opacity: .6; text-align: center; }
+.asst-deep { display: flex; align-items: center; gap: .35rem; font-size: .82rem; color: var(--ln-muted); }
+.asst-count { font-size: .75rem; color: var(--ln-muted); margin-inline-start: auto; }
+/* A round send button is where the brand colour lives now that messages are quiet. */
+.asst-send {
+  display: grid; place-items: center;
+  width: 2.3rem; height: 2.3rem;
+  margin-inline-start: auto;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ln-violet), var(--ln-violet-deep));
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 140ms var(--ln-ease), opacity 140ms var(--ln-ease);
+}
+.asst-count + .asst-send { margin-inline-start: 0; }
+.asst-send:hover:not(:disabled) { transform: translateY(-1px); }
+.asst-send:disabled { opacity: .45; cursor: default; }
+.asst-disclaimer { margin: 0; font-size: .72rem; color: var(--ln-muted); text-align: center; }
 
 @media (max-width: 900px) {
-  .assistant-page { grid-template-columns: 1fr; }
+  .assistant-page { grid-template-columns: 1fr; padding-inline: .75rem; }
   .asst-sidebar { position: static; max-height: none; }
   .asst-list { max-height: 14rem; }
-  .asst-msg { max-width: 100%; }
+  .asst-main { border-radius: var(--ln-radius-md); }
+  .asst-thread { padding: 1rem .8rem; }
+  .asst-msg-user .asst-body { max-width: 88%; }
+  .asst-composer { padding: .6rem .7rem .8rem; }
 }

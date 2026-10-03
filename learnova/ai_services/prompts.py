@@ -26,14 +26,17 @@ PROMPT_VERSIONS = {
     "tutor_chat": "tutor_chat:v2",
     "translation": "translation:v2",
     "ocr_document_recognition": "ocr_document_recognition:v2",
+    "handwriting_region_review": "handwriting_region_review:v1",
     "project_section_generation": "project_section_generation:v3",
     "adaptive_practice": "adaptive_practice:v3",
     "final_exam_generation": "final_exam_generation:v3",
     "final_exam_evaluation": "final_exam_evaluation:v2",
     "flashcard_generation": "flashcard_generation:v1",
+    "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
     "flashcard_review": "flashcard_review:v1",
     "content_moderation": "content_moderation:v1",
     "assistant_chat": "assistant_chat:v1",
+    "competency_extraction": "competency_extraction:v1",
 }
 
 # Conversational tasks return prose, so there is no JSON structure to demand or
@@ -51,11 +54,14 @@ SCHEMA_SUMMARIES = {
     "diagnosis_verification": '{"agrees":bool,"reason":str,"better_tag":str}',
     "question_generation": _QUESTION_SCHEMA_SUMMARY,
     "ocr_document_recognition": '{"blocks":list[{"type":enum,"content":str,"bbox":list[4],"confidence":0..1}],"detected_page_number":str}',
+    "handwriting_region_review": '{"regions":list[{"index":int,"content":str,"confidence":0..1,"illegible":bool}]}',
     "project_section_generation": '{"sections":list[{"title":str,"source_page_ids":list[int],"estimated_minutes":int,"recall_cards":list}]}',
     "adaptive_practice": '{"question":question}',
+    "competency_extraction": '{"competencies":list[{"statement":str,"topic":str,"subtopic":str,"level":"basic|intermediate|advanced","importance":1..3,"source_page_ids":list[int],"coverage":"covered|partial|missing","evidence":str}]}',
     "final_exam_generation": '{"questions":list[{"id":str,"section_id":int,"source_page_ids":list[int],"difficulty":"easy|medium|hard","question_type":enum,"prompt":str,"expected_answer":value}]}',
     "final_exam_evaluation": '{"results":list[{"question_id":int,"score":0..100,"evaluation":str}]}',
     "flashcard_generation": '{"title":str,"cards":list[{"type":enum,"front":str,"back":str,"explanation":str,"hint":str,"tags":list[str],"difficulty":"easy|medium|hard"}]}',
+    "flashcard_back_suggestion": '{"suggestions":list[{"back":str,"style":"short|detailed|example"}]}',
     # moderation:v1 - the context-aware community contract (learnova.moderation.schema).
     "content_moderation": _MODERATION_SCHEMA_SUMMARY,
     "flashcard_review": '{"overallScore":0..5,"accuracyScore":0..5,"clarityScore":0..5,"usefulnessScore":0..5,"coverageScore":0..5,"difficultyScore":0..5,"originalityScore":0..5,"confidence":"Low|Medium|High","summary":str,"strengths":list[str],"improvements":list[str],"flaggedCards":list,"safetyFlags":list[str]}',
@@ -107,7 +113,7 @@ def output_contract(task_type: str, language: str, context: dict[str, Any] | Non
             "The question must be answerable from its own prompt and must not repeat anything in avoid_prompts.",
             "Solve the question yourself: expected_answer must be correct and solution_steps must reach it.",
         ])
-    if task_type in {"ocr_document_recognition", "project_section_generation", "final_exam_generation", "final_exam_evaluation"}:
+    if task_type in {"ocr_document_recognition", "project_section_generation", "final_exam_generation", "final_exam_evaluation", "competency_extraction"}:
         lines.extend([
             "Use only the supplied source material. Do not invent facts, page references, section IDs, or quotations.",
             "Every source page reference and section ID must exist in the supplied allowed identifiers.",

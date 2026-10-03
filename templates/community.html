@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Community') }} — Learnova{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
@@ -78,8 +77,6 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <script>window.LEARNOVA_COMMUNITY_SET_ID={{ (initial_public_set_id|default(None))|tojson }};window.LEARNOVA_AUTHENTICATED={{ current_user.is_authenticated|tojson }};</script>
   <script type="module" src="{{ url_for('static', filename='js/community.js') }}"></script>
 {% endblock %}

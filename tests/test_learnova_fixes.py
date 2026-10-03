@@ -10,6 +10,7 @@ Covers the concrete defects fixed in this change set:
 """
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,10 +64,13 @@ class KatexRenderSiteTests(unittest.TestCase):
         self.assertIn("renderMath(feedback)", engine)
 
     def test_render_math_supports_all_delimiters_and_safe_fallback(self):
-        common = read("static", "js", "flashcards", "common.js")
-        for left in ("$$", "\\\\[", "$", "\\\\("):
-            self.assertIn(f'left: "{left}"', common)
-        self.assertIn("throwOnError: false", common)  # readable fallback for malformed LaTeX
+        # The four copies of this helper became one module; flashcards/common.js now
+        # re-exports it, so none of its importers had to change.
+        self.assertIn('from "../math.js"', read("static", "js", "flashcards", "common.js"))
+        rules = read("static", "js", "math-rules.js")
+        for opening in ('$$', '\\\\[', '$', '\\\\('):
+            self.assertIn(f'open: "{opening}"', rules)
+        self.assertIn("throwOnError: false", read("static", "js", "math.js"))
 
 
 class DarkModeWiringTests(unittest.TestCase):
@@ -183,6 +187,80 @@ class OcrPipelineTests(unittest.TestCase):
         out = Image.open(io.BytesIO(processed.data)).convert("RGB")
         r, g, b = out.getpixel((10, 10))
         self.assertTrue(abs(r - g) <= 2 and abs(g - b) <= 2)  # channels equalised -> grayscale
+
+
+class DashboardWidgetStyleTests(unittest.TestCase):
+    """The dashboard does not load flashcards.css, so its widgets need global styles.
+
+    templates/dashboard.html renders .dashboard-flashcards and the .fc-dash-* classes,
+    but only eight flashcard/community templates link css/flashcards.css. The panel
+    therefore picked up its border from learnova-components.css and nothing else: no
+    padding, so the heading and stats ran flush to the card edge, and no flex on
+    .fc-dash-stats, so every label collapsed onto its number ("New words5") and each
+    stat stacked. Styles for anything the dashboard renders must live in a sheet
+    base.html always loads.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dashboard = read("templates", "dashboard.html")
+        cls.base = read("templates", "base.html")
+        # Read the sheet list out of base.html rather than copying it, so the test
+        # cannot drift when a stylesheet is added, renamed or dropped. learnova-rtl
+        # is excluded: it is loaded only for RTL interfaces, so a rule that lives
+        # only there is still missing for everyone else.
+        sheets = [name for name in re.findall(
+            r"url_for\('static', filename='([^']+\.css)'\)", cls.base)
+            if "learnova-rtl" not in name]
+        assert len(sheets) >= 10, sheets
+        assert "css/learnova-content.css" in sheets, sheets
+        cls.global_css = "\n".join(read("static", *name.split("/")) for name in sheets)
+
+    def declarations(self, selector):
+        """Every declaration block whose selector list mentions `selector`."""
+        found = []
+        for chunk in self.global_css.split("}"):
+            head, _, body = chunk.rpartition("{")
+            if not head:
+                continue
+            selectors = head.rsplit(";", 1)[-1].rsplit("*/", 1)[-1]
+            if re.search(re.escape(selector) + r"(?![\w-])", selectors):
+                found.append(body)
+        return found
+
+    def assert_declares(self, selector, prop):
+        blocks = self.declarations(selector)
+        self.assertTrue(blocks, f"{selector} has no rule in any globally loaded sheet")
+        self.assertTrue(
+            any(re.search(r"(?<![\w-])" + prop + r"\s*:", block) for block in blocks),
+            f"{selector} is never given a {prop} in a globally loaded sheet")
+
+    def test_dashboard_does_not_link_flashcards_css(self):
+        # The premise of every assertion below. If this ever changes, they can be dropped.
+        self.assertNotIn("flashcards.css", self.dashboard)
+
+    def test_widget_panel_has_padding_so_text_clears_the_border(self):
+        self.assert_declares(".dashboard-flashcards", "padding")
+
+    def test_stat_row_lays_out_instead_of_running_label_into_value(self):
+        self.assert_declares(".fc-dash-stats", "display")
+        self.assert_declares(".fc-dash-stats span", "display")
+
+    def test_recent_set_cards_are_laid_out_and_padded(self):
+        self.assert_declares(".fc-dash-grid", "display")
+        self.assert_declares(".fc-dash-card", "padding")
+        self.assert_declares(".fc-dash-progress", "height")
+
+    def test_every_widget_class_on_the_dashboard_is_styled_globally(self):
+        """Catches the next .fc-dash-* class added to the dashboard and styled only
+        in flashcards.css, which is how this whole defect arose."""
+        used = set()
+        for value in re.findall(r'class="([^"{}]+)"', self.dashboard):
+            used.update(name for name in value.split() if name.startswith("fc-dash"))
+        self.assertIn("fc-dash-stats", used, "the widget markup moved; update this test")
+        for name in sorted(used):
+            self.assertTrue(self.declarations("." + name),
+                            f".{name} is used on the dashboard but styled only in flashcards.css")
 
 
 if __name__ == "__main__":

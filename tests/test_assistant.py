@@ -218,9 +218,15 @@ class ProviderSeamTests(unittest.TestCase):
         """Silently falling back would send a nonsense model name to the wrong provider."""
 
         with self.assertRaises(self.service.AIConfigurationError) as error:
-            self.service.split_model("anthropic:claude-sonnet-5")
+            self.service.split_model("mistral:mistral-large")
         self.assertIn("not registered", str(error.exception))
         self.assertIn("PROVIDERS", str(error.exception))
+
+    def test_anthropic_and_gemini_are_registered_providers(self):
+        self.assertEqual(self.service.split_model("anthropic:claude-sonnet-5"),
+                         ("anthropic", "claude-sonnet-5"))
+        self.assertEqual(self.service.split_model("gemini:gemini-2.5-flash"),
+                         ("gemini", "gemini-2.5-flash"))
 
     def test_a_colon_in_an_ordinary_model_name_is_not_a_provider(self):
         self.assertEqual(self.service.split_model("llama3:8b"), ("groq", "llama3:8b"))
@@ -245,7 +251,11 @@ class ProviderSeamTests(unittest.TestCase):
         with app.app_context(), patch.dict(app.config):
             self.assertEqual(self.service.quality_options("groq:openai/gpt-oss-20b"),
                              {"reasoning": {"effort": "low"}})
-            self.assertEqual(self.service.quality_options("openai:gpt-5"), {})
+            # A non-reasoning model at another provider gets nothing, whatever its prefix;
+            # OpenAI's reasoning ids get low effort because every budget here is small.
+            self.assertEqual(self.service.quality_options("openai:gpt-4.1"), {})
+            self.assertEqual(self.service.quality_options("openai:gpt-5"),
+                             {"reasoning": {"effort": "low"}})
 
 
 class PackageSurfaceTests(unittest.TestCase):

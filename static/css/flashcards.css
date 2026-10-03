@@ -118,29 +118,103 @@ button.danger, .danger-button { color: #b3261e; }
 .primary-button:hover { background: #6a4cff; }
 a.ghost-button { text-decoration: none; display: inline-block; }
 
-/* creator */
-.meta-panel { margin-bottom: 1rem; }
-.gen-panel { margin-bottom: 1rem; }
-.gen-panel summary { cursor: pointer; font-weight: 600; padding: .3rem 0; }
-.gen-body { display: flex; flex-direction: column; gap: 1rem; padding-top: .8rem; }
-.creator-cards-head { margin: 1rem 0 .4rem; }
-.card-rows { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
-.card-row { background: #fff; border: 1px solid #ece7fb; border-radius: 12px; padding: .7rem .8rem; }
+/* creator -------------------------------------------------------------------------
+ * Quizlet-shaped: one big title, three quiet ways into AI, then spacious rows whose
+ * fields are underlines rather than boxes. Everything a card *can* do is still here,
+ * it is just behind the row menu or a disclosure instead of competing at rest. */
+.creator-header { align-items: center; }
+.creator-header h1 { font-size: 1.35rem; }
+.creator-meta { margin-bottom: 1.6rem; }
+.creator-title {
+  width: 100%; padding: .45rem 0; border: 0; border-bottom: 2px solid #ece7fb;
+  background: none; font: 800 clamp(1.4rem, 3.4vw, 2rem) Manrope, sans-serif;
+}
+.creator-title:focus { outline: none; border-bottom-color: #7c5cff; }
+.set-more { margin-top: .9rem; }
+.set-more summary { cursor: pointer; font-size: .85rem; font-weight: 700; color: #7c5cff; }
+.set-more-body { padding-top: .9rem; display: flex; flex-direction: column; gap: .8rem; }
+
+.gen-entry { margin-bottom: 1.8rem; }
+.gen-entry-title { margin: 0 0 .5rem; font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
+.gen-choices { display: flex; flex-wrap: wrap; gap: .5rem; }
+.gen-choice {
+  padding: .55rem .95rem; border: 1px solid #e0daf3; border-radius: 999px;
+  background: #fff; color: inherit; font: inherit; font-size: .9rem;
+  text-decoration: none; cursor: pointer;
+}
+.gen-choice:hover, .gen-choice[aria-expanded="true"] { border-color: #7c5cff; color: #5a4bd0; }
+.gen-body { display: flex; flex-direction: column; gap: .9rem; margin-top: 1rem; }
+.gen-options summary { cursor: pointer; font-size: .82rem; font-weight: 700; color: #7c5cff; }
+.gen-options .field-row { padding-top: .7rem; }
+
+.creator-cards-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: 1.6rem 0 .6rem; }
+.creator-cards-head #cardCount { font-weight: 700; }
+.creator-cards-head #autosaveState { margin-inline-start: auto; }
+.card-rows { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .8rem; }
+.card-row { background: #fff; border: 1px solid #ece7fb; border-radius: 14px; padding: 1rem 1.25rem 1.15rem; }
 .card-row.dragging { opacity: .5; }
-.card-row-main { display: grid; grid-template-columns: auto auto 1fr 1fr auto; gap: .6rem; align-items: start; }
-.drag-handle { cursor: grab; color: #bbb; padding-top: .5rem; user-select: none; }
-.card-num { font-weight: 700; color: #9a8fd0; padding-top: .45rem; min-width: 1.4rem; }
-.card-row-main textarea { padding: .45rem .6rem; border-radius: 8px; border: 1px solid #d9d3ee; font: inherit; resize: vertical; }
-.card-row-tools { display: flex; flex-direction: column; gap: .3rem; }
-.card-row-tools button { border: 1px solid #e0daf3; background: #fff; border-radius: 8px; width: 32px; height: 30px; cursor: pointer; }
-.card-more { margin-top: .5rem; }
-.card-more summary { cursor: pointer; font-size: .82rem; color: #7c5cff; }
-.card-more-body { padding-top: .5rem; display: flex; flex-direction: column; gap: .5rem; }
+.card-row-head { display: flex; align-items: center; gap: .5rem; min-height: 32px; }
+.card-num { font-weight: 800; color: #9a8fd0; font-size: .9rem; min-width: 1.2rem; }
+.drag-handle { cursor: grab; color: #cfc8e6; user-select: none; }
+.card-row-tools { display: flex; align-items: center; gap: .25rem; margin-inline-start: auto; }
+.card-row-tools button, .card-menu-trigger {
+  display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px;
+  background: none; color: #6b6480; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.card-row-tools button:hover, .card-menu-trigger:hover { background: #f4f1ff; color: #5a4bd0; }
+
+/* Row actions: one menu instead of a column of icon buttons. */
+.card-menu { position: relative; }
+.card-menu-trigger { list-style: none; }
+.card-menu-trigger::-webkit-details-marker { display: none; }
+.card-menu-body {
+  position: absolute; z-index: 5; inset-inline-end: 0; top: calc(100% + 4px);
+  display: flex; flex-direction: column; min-width: 190px; padding: .3rem;
+  border: 1px solid #e0daf3; border-radius: 12px; background: #fff;
+  box-shadow: 0 12px 30px rgba(80, 60, 160, .16);
+}
+.card-menu-body button {
+  display: flex; align-items: center; gap: .55rem; width: 100%; height: auto;
+  padding: .5rem .6rem; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: .88rem; text-align: start; cursor: pointer;
+}
+.card-menu-body button:hover { background: #f4f1ff; }
+
+/* Underlined fields: the writing is the interface, the box around it is not. */
+.card-row-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1.6rem; margin-top: .35rem; }
+.card-field { display: flex; flex-direction: column; min-width: 0; }
+.card-field textarea {
+  width: 100%; padding: .35rem 0 .45rem; border: 0; border-bottom: 1px solid #ddd6f2;
+  background: none; font: inherit; line-height: 1.45; resize: none; overflow: hidden;
+}
+.card-field textarea:focus { outline: none; border-bottom-color: #7c5cff; border-bottom-width: 2px; padding-bottom: calc(.45rem - 1px); }
+.card-field-label { margin-top: .35rem; font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #9a93ad; }
+
+/* One-word card creation: tappable answers, shown under the term they belong to. */
+.card-suggest { display: flex; flex-direction: column; gap: .3rem; margin: .5rem 0 .1rem; }
+.suggest-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.suggest-title { font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #7c5cff; }
+.suggest-close { border: 0; background: none; cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 0 .25rem; color: inherit; }
+.suggest-status { margin: 0; font-size: .8rem; opacity: .75; }
+.suggest-chip { display: block; width: 100%; padding: .5rem .65rem; border: 1px solid #e0daf3; border-radius: 10px; background: #faf8ff; font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
+.suggest-chip:hover { border-color: #7c5cff; }
+.auto-suggest-toggle { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; }
+
+.card-more { margin-top: .7rem; }
+.card-more summary { cursor: pointer; font-size: .78rem; color: #7c5cff; }
+.card-more-body { padding-top: .6rem; display: flex; flex-direction: column; gap: .5rem; }
 .card-more-body label { font-size: .78rem; font-weight: 600; display: flex; flex-direction: column; gap: .2rem; }
 .card-more-body textarea, .card-more-body input, .card-more-body select { padding: .4rem .55rem; border-radius: 8px; border: 1px solid #d9d3ee; font: inherit; font-weight: 400; }
 .card-more-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; }
-.creator-add-row { display: flex; gap: .5rem; margin: .8rem 0 5rem; }
-@media (max-width: 640px) { .card-row-main { grid-template-columns: auto 1fr auto; } .card-num { display: none; } }
+
+.creator-add-row { display: flex; align-items: center; gap: .6rem; margin: 1.1rem 0 5rem; }
+.add-card-button {
+  flex: 1; min-height: 52px; border: 2px dashed #ddd6f2; border-radius: 14px;
+  background: #fff; color: #5a4bd0; font: inherit; font-weight: 800; cursor: pointer;
+}
+.add-card-button:hover { border-color: #7c5cff; background: #faf8ff; }
+.add-more-button { border: 0; background: none; color: #6b6480; font: inherit; font-size: .85rem; cursor: pointer; padding: .5rem; }
+.add-more-button:hover { color: #5a4bd0; }
 
 /* sticky save bar */
 .save-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid #e0daf3; box-shadow: 0 -4px 16px rgba(80,60,160,.08); display: flex; justify-content: space-between; align-items: center; padding: .7rem 1.2rem; z-index: 50; gap: 1rem; }

@@ -1,0 +1,41 @@
+/* The first-time walkthrough: a light on the thing to tap, everything else dimmed, and a
+   short instruction - a bottom sheet on phones, a card beside the target on wider screens.
+   Colours come from the Learnova tokens so dark mode and the brand violet follow along. */
+.tour-root { position: fixed; inset: 0; z-index: 140; pointer-events: none; }
+.tour-root[hidden] { display: none; }
+.tour-mask { position: fixed; background: rgba(8, 14, 26, .55); pointer-events: auto; transition: all .25s var(--ln-ease); }
+.tour-root.is-card .tour-mask { inset: 0; width: auto; height: auto; }
+.tour-root.is-card .tour-mask[data-mask="top"] { left: 0; top: 0; width: 100%; height: 100%; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.tour-spot { position: fixed; border-radius: 14px; box-shadow: 0 0 0 3px var(--ln-violet), 0 0 0 10px rgba(110, 92, 255, .25); pointer-events: none; transition: all .25s var(--ln-ease); animation: tour-pulse 1.6s ease-in-out infinite; }
+.tour-spot[hidden] { display: none; }
+.tour-panel { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-lg) var(--ln-radius-lg) 0 0; background: var(--ln-surface-solid); color: var(--ln-ink); box-shadow: var(--ln-shadow-md); outline: none; pointer-events: auto; animation: tour-rise .3s var(--ln-ease); }
+.tour-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tour-progress { font: 700 12px var(--ln-font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--ln-subtle); }
+.tour-skip { padding: 8px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--ln-muted); font: 600 14px var(--ln-font-body); cursor: pointer; }
+.tour-skip:hover, .tour-skip:focus-visible { background: var(--ln-canvas-deep); color: var(--ln-ink); }
+.tour-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 8px; }
+.tour-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 15px; background: var(--ln-canvas-deep); font-size: 24px; }
+.tour-icon:empty { display: none; }
+.tour-title { margin: 2px 0 4px; font: 800 22px var(--ln-font-display); letter-spacing: -.01em; }
+.tour-text { margin: 0; color: var(--ln-ink); font-size: 16px; line-height: 1.5; }
+.tour-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+.tour-actions .primary-button { min-height: 46px; padding-inline: 22px; }
+.tour-actions:has(> [hidden]:only-child) { display: none; }
+/* A card step (welcome, done) sits in the middle of the screen on every size. */
+.tour-root.is-card .tour-panel { left: 50%; right: auto; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); border-radius: var(--ln-radius-lg); padding: 22px 24px 24px; animation: tour-pop .3s var(--ln-ease); }
+.tour-root.is-card .tour-body { grid-template-columns: 1fr; justify-items: start; }
+.tour-root.is-card .tour-icon { width: 56px; height: 56px; border-radius: 18px; font-size: 28px; }
+.tour-root.is-card .tour-text { color: var(--ln-muted); }
+.tour-root.is-card .tour-actions .primary-button { width: 100%; justify-content: center; }
+
+@keyframes tour-rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tour-pop { from { transform: translate(-50%, -46%); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
+@keyframes tour-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--ln-violet), 0 0 0 10px rgba(110, 92, 255, .25); } 50% { box-shadow: 0 0 0 3px var(--ln-violet), 0 0 0 16px rgba(110, 92, 255, 0); } }
+
+@media (min-width: 640px) {
+  .tour-panel { right: auto; bottom: auto; width: 360px; border-radius: var(--ln-radius-lg); padding: 16px 20px 18px; animation: tour-pop-in .25s var(--ln-ease); }
+  @keyframes tour-pop-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-panel, .tour-spot, .tour-mask { animation: none; transition: none; }
+}

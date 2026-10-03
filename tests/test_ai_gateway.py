@@ -35,6 +35,8 @@ class ProviderResponse:
 
 class AIGatewayTests(unittest.TestCase):
     def setUp(self):
+        service._RECENT_RESULTS.clear()
+        service._RESERVATIONS.clear()
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
         self.original_config = dict(application.app.config)
@@ -104,6 +106,40 @@ class AIGatewayTests(unittest.TestCase):
             with self.assertRaises(service.AIProviderError) as limited:
                 self.request(input="a different question")
         self.assertEqual(limited.exception.category, "provider_rate_limit")
+
+    def test_a_withdrawn_model_and_a_rejected_request_are_named_not_hidden(self):
+        """A 404 for a retired model id spent three months filed under
+        'internal_application_error', which reads as an application bug and sent every
+        community submission into a review queue nobody could clear. The provider says
+        exactly what is wrong; the category has to say it too."""
+        with stub_provider("model_not_found"):
+            with self.assertRaises(service.AIProviderError) as missing:
+                self.request(input="a question for a retired model")
+        self.assertEqual(missing.exception.category, "model_not_found")
+        self.assertNotIn("retired-model", missing.exception.safe_summary)
+        with stub_provider("bad_request"):
+            with self.assertRaises(service.AIProviderError) as rejected:
+                self.request(input="a question the provider rejects")
+        self.assertEqual(rejected.exception.category, "invalid_request")
+        self.assertNotIn("Simulated", rejected.exception.safe_summary)
+
+    def test_a_dict_input_reaches_the_provider_as_text(self):
+        """`input={"texts": [...]}` is this application's shorthand for structured data.
+        The Responses API takes a string or a message list, so the raw dict was rejected
+        on every translation call. The gateway serialises it once, centrally."""
+        # Patched directly rather than through a fixture scenario: the point is what the
+        # provider *received*, and the reply only has to validate for two inputs.
+        reply = StubResponse(json.dumps({"translations": ["Haus", "Baum"]}))
+        with patch.object(service, "_provider_response", return_value=reply) as provider:
+            service.create_response(
+                task_type="translation", language="German", model="stub-model",
+                instructions="Translate each term.",
+                input={"texts": ["house", "tree"]},
+                validation_context={"texts": ["house", "tree"]},
+                max_output_tokens=100)
+        sent = provider.call_args.kwargs["input"]
+        self.assertIsInstance(sent, str)
+        self.assertEqual(json.loads(sent), {"texts": ["house", "tree"]})
 
     def test_broken_samples_are_rejected_in_both_languages(self):
         for language in ("English", "German"):
@@ -182,13 +218,19 @@ class AIGatewayTests(unittest.TestCase):
     def test_provider_boundary_is_centralized(self):
         root = Path(application.app.root_path)
         offenders = []
+        markers = ("from openai import", "from anthropic import", ".responses.create(",
+                   ".chat.completions.create(", ".messages.create(")
         for path in [root / "app.py", *sorted((root / "learnova").rglob("*.py"))]:
             if path == root / "learnova" / "ai_services" / "service.py":
                 continue
             text = path.read_text(encoding="utf-8")
-            if "from openai import" in text or ".responses.create(" in text:
+            if any(marker in text for marker in markers):
                 offenders.append(str(path.relative_to(root)))
         self.assertEqual(offenders, [])
+        # And the translation module stays SDK-free, so every shape is testable without a key.
+        adapters = (root / "learnova" / "ai_services" / "adapters.py").read_text(encoding="utf-8")
+        for marker in ("import openai", "import anthropic", "from flask"):
+            self.assertNotIn(marker, adapters)
 
     def test_development_badge_reflects_mode_and_is_hidden_in_production(self):
         client = application.app.test_client()

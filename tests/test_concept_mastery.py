@@ -88,7 +88,7 @@ class ConceptMasteryIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(analyzed.status_code, 200)
         session_id = analyzed.get_json()["session_id"]
-        application.SESSIONS[session_id]["test_total"] = 1
+        application.SESSIONS[session_id]["max_questions"] = 1   # end after one answer
         with patch.object(application, "create_response", return_value=FakeResponse(EVALUATION)):
             answered = self.client.post("/api/answer", json={
                 "session_id": session_id,

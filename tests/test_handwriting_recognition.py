@@ -252,7 +252,12 @@ class RecognitionFlowTests(unittest.TestCase):
             rec_payload([block("grayscale read", 0.7)]))) as mocked:
             response = self._recognize(project_id, page_id, mode="grayscale")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mocked.call_count, 1)  # only the forced variant is tried
+        # Count page reads, not total calls: a 0.7 reading is below CONFIDENCE_HIGH, so
+        # the close-up second look legitimately follows it. What this test guards is that
+        # the *variant* search stopped at the one the student forced.
+        page_reads = [call for call in mocked.call_args_list
+                      if call.kwargs.get("task_type") == "ocr_document_recognition"]
+        self.assertEqual(len(page_reads), 1)  # only the forced variant is tried
 
 
 # ---------------------------------------------------------- frontend upload

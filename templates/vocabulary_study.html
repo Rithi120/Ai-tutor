@@ -7,6 +7,21 @@
   <section id="vocabularyPracticeConfig" class="vocabulary-panel">
     <label class="field">{{ _('Exercise') }}<select id="vocabularyDirection"><option value="source_to_target">{{ _('See source word and type translation') }}</option><option value="target_to_source">{{ _('See translation and type source word') }}</option><option value="example">{{ _('Fill in example sentence') }}</option><option value="article">{{ _('Article practice') }}</option><option value="spelling">{{ _('Spelling practice') }}</option></select></label>
     <label class="field">{{ _('Strictness') }}<select id="vocabularyStrictness"><option value="exact">{{ _('Exact') }}</option><option value="normal" selected>{{ _('Normal') }}</option><option value="flexible">{{ _('Flexible') }}</option></select></label>
+    {# A scanned page mixes headwords with the sentences that illustrate them, so a
+       student revising for a vocabulary test and one practising whole sentences want
+       different sets. An option with nothing behind it is disabled rather than hidden,
+       so the list's shape stays visible. #}
+    <div class="field">
+      <span class="field-label">{{ _('What do you want to learn?') }}</span>
+      <div class="scope-picker" role="radiogroup" aria-label="{{ _('What do you want to learn?') }}">
+        <label class="scope-option"><input type="radio" name="scope" value="words">
+          <span class="scope-name">{{ _('Words') }}</span><small data-scope-count="words"></small></label>
+        <label class="scope-option"><input type="radio" name="scope" value="sentences">
+          <span class="scope-name">{{ _('Sentences') }}</span><small data-scope-count="sentences"></small></label>
+        <label class="scope-option"><input type="radio" name="scope" value="all" checked>
+          <span class="scope-name">{{ _('Both') }}</span><small data-scope-count="all"></small></label>
+      </div>
+    </div>
     <label class="field">{{ _('Objective') }}<select id="vocabularyObjective"><option value="all">{{ _('All words') }}</option><option value="due">{{ _('Due words') }}</option><option value="difficult">{{ _('Difficult words') }}</option></select></label>
     <button id="startVocabularyPractice" class="primary-button" type="button">{{ _('Start practice') }}</button>
   </section>

@@ -253,6 +253,22 @@ def _select(
         return ("clarify_instruction", 0,
                 "The response answers a different question from the one asked.")
 
+    # 3b. The words were the obstacle: the next task uses plain language and names the
+    # term; nothing about the level changes, because nothing about the idea failed.
+    if tag == "language_or_vocabulary":
+        return ("clarify_instruction", 0,
+                "The wording or a term got in the way, so the next task is asked in plainer words with the term explained.")
+
+    # 3c. Known in the familiar form, not carried to this one: show the bridge, then ask
+    # for the transfer again - a correct textbook answer alone does not close this.
+    if tag == "transfer_or_application":
+        repeats = recurring_misconception_count(history, concept=concept, tag=tag)
+        if repeats >= ENTRENCHED_REPEATS:
+            return ("transfer_question", 0,
+                    "Applying the idea to new cases keeps failing, so the next tasks are all transfer tasks.")
+        return ("worked_example_then_practice", 0,
+                "A worked example shows how the familiar idea carries over, then a new case is practised.")
+
     # 4. An earlier skill is missing: go back to it rather than repeating this task.
     if tag == "prerequisite_gap":
         return ("prerequisite_reteach", -1,

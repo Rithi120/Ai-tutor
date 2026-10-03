@@ -243,6 +243,40 @@ class PresetAndModelTests(AssistantTestCase):
         self.assertEqual(patcher.captured["model"], "openai:gpt-5")
 
 
+class StyleRoutingTests(AssistantTestCase):
+    """The owner maps styles to models; the student only ever picks a style."""
+
+    def test_a_mapped_style_routes_its_replies_and_records_the_provider(self):
+        application.app.config.update(ASSISTANT_MODEL_RESEARCH="anthropic:claude-x")
+        conversation_id = self._conversation(preset="research")
+        with ai() as captured:
+            reply = self._send(conversation_id, "Compare two sources.")
+        self.assertEqual(captured.captured["model"], "anthropic:claude-x")
+        self.assertEqual(captured.captured["preset"], "research")
+        self.assertFalse(captured.captured["deep"])
+        self.assertEqual(reply.get_json()["reply"]["provider"], "anthropic")
+        with ai() as general:
+            self._send(self._conversation(preset="general"), "Hello")
+        self.assertEqual(general.captured["model"], "openai/gpt-oss-20b", "other styles keep the global model")
+
+    def test_think_harder_reaches_the_gateway_as_a_routing_signal(self):
+        conversation_id = self._conversation(preset="explain")
+        with ai() as captured:
+            self._send(conversation_id, "Why is the sky blue?", deep=True)
+        self.assertTrue(captured.captured["deep"])
+        self.assertEqual(captured.captured["preset"], "explain")
+        self.assertEqual(captured.captured["model"], "llama-3.3-70b-versatile")
+
+    def test_a_student_cannot_name_a_model_or_provider(self):
+        conversation_id = self._conversation(preset="general")
+        with ai() as captured:
+            response = self._send(conversation_id, "Hello",
+                                  model="anthropic:claude-opus-5-5", provider="anthropic")
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        self.assertEqual(captured.captured["model"], "openai/gpt-oss-20b")
+        self.assertEqual(captured.captured["preset"], "general")
+
+
 class ContextWindowTests(AssistantTestCase):
     def test_a_long_thread_is_trimmed_and_the_trim_is_reported(self):
         application.app.config.update(

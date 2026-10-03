@@ -14,6 +14,32 @@
     <article class="stat-card"><strong>{{ diagnostics.average_duration_ms }} ms</strong><span>Average response</span></article>
     <article class="stat-card"><strong>{{ diagnostics.total_tokens }}</strong><span>Total tokens</span></article>
     <article class="stat-card"><strong>{{ diagnostics.retries }}</strong><span>Corrective retries</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.total_cost }}</strong><span>Estimated cost</span></article>
+    <article class="stat-card"><strong>{{ diagnostics.failed_requests }}</strong><span>Failed requests</span></article>
+  </section>
+  {# Every configured ceiling and how much of it is used. "Used" counts only tokens a
+     provider actually billed; cache hits and refused requests cost nothing and are not
+     here. A row's reset time is the calendar UTC boundary of its window. #}
+  <section class="panel" aria-label="Budgets and limits">
+    <h2>Budgets and limits</h2>
+    <div class="table-scroll"><table><thead><tr><th>Scope</th><th>Provider</th><th>Window</th><th>Configured</th><th>Used</th><th>Remaining</th><th>Resets at (UTC)</th></tr></thead>
+      <tbody>{% for row in diagnostics.limits %}<tr><td><code>{{ row.scope }}</code></td><td>{{ row.provider or '—' }}</td><td>{{ row.window or 'minute' }}</td><td>{{ row.configured }} {{ row.unit }}</td><td>{{ row.used }}</td><td>{{ row.remaining }}</td><td>{{ row.resets_at or '—' }}</td></tr>{% else %}<tr><td colspan="7">No budgets configured. Set AI_BUDGET_* to cap spend; Groq is unlimited until you do, and other providers are off until they have a cap.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  {# Which model answers which task. Premium is "off" until a provider:model is named,
+     keyed and given a budget; a failing premium call falls back to the Groq model shown. #}
+  <section class="panel" aria-label="Routing">
+    <h2>Routing</h2>
+    <div class="table-scroll"><table><thead><tr><th>Task</th><th>Tier</th><th>Groq model</th><th>Fallback</th><th>Premium slot</th><th>Premium model</th></tr></thead>
+      <tbody>{% for row in diagnostics.routing %}<tr><td><code>{{ row.task_type }}</code></td><td>{{ row.tier }}</td><td><code>{{ row.model }}</code></td><td>{{ row.fallback or '—' }}</td><td>{{ row.premium_slot or '—' }}</td><td>{% if row.premium_slot %}{{ row.premium_model or 'off' }}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="field-hint">Coalesced requests (identical, within seconds, served from one call): {{ diagnostics.coalesced_requests }}</p>
+  </section>
+  <section class="panel">
+    <h2>Requests by provider</h2>
+    <div class="table-scroll"><table><thead><tr><th>Provider</th><th>Requests</th><th>Tokens billed</th><th>Estimated cost</th><th>Failures</th></tr></thead>
+      <tbody>{% for name, item in diagnostics.by_provider.items() %}<tr><td><code>{{ name }}</code></td><td>{{ item.requests }}</td><td>{{ item.tokens }}</td><td>{{ item.cost }}</td><td>{{ item.failures }}</td></tr>{% else %}<tr><td colspan="5">No requests recorded.</td></tr>{% endfor %}</tbody>
+    </table></div>
   </section>
   <section class="panel">
     <h2>Requests by task</h2>

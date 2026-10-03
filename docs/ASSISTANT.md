@@ -22,8 +22,8 @@ without a request, a database or a provider call.
 A model is named `provider:model`, or bare for the default:
 
 ```python
-"llama-3.3-70b-versatile"   -> groq   (unchanged: every existing call site)
-"groq:llama-3.1-8b-instant" -> groq
+"openai/gpt-oss-120b"       -> groq   (unchanged: every existing call site)
+"groq:openai/gpt-oss-20b"   -> groq
 "openai:gpt-5"              -> openai
 ```
 
@@ -36,50 +36,37 @@ the model already names its provider.
 Responses API verbatim, so both use `_openai_compatible_call` and differ only in key and
 base URL. Set `OPENAI_API_KEY` and `openai:gpt-5` works immediately.
 
-### Adding Claude
+### The four providers
 
-The canonical request shape is the Responses API's shape, because that is what every call
-site already speaks. A provider whose API differs translates *from* it. For Anthropic:
+Groq, OpenAI, Anthropic and Gemini are registered in `PROVIDERS`
+(`learnova/ai_services/service.py`). Each has an adapter that translates the canonical
+request into the provider's shape - the translation itself is pure code in
+`learnova/ai_services/adapters.py`, so it is tested without a key:
 
-1. `pip install anthropic` and add it to `requirements.txt`.
-2. Write the adapter in `learnova/ai_services/service.py`:
+| Prefix | API | Notes |
+| --- | --- | --- |
+| `groq:` (or no prefix) | Responses | the default; everything the app does today |
+| `openai:` | Responses | `temperature` is dropped for reasoning models (`gpt-5*`, `gpt-6*`, `o*`) |
+| `anthropic:` | Messages | `system` is top-level, images are base64 blocks, `temperature` is never sent - current Claude models answer anything but 1.0 with a 400 |
+| `gemini:` | OpenAI-compatible **Chat Completions** | Google's endpoint does not speak Responses; images are `image_url` data URLs |
 
-```python
-def _anthropic_call(profile: ProviderProfile, request: dict[str, Any]) -> Any:
-    from anthropic import Anthropic                      # keep the import local
-    client = Anthropic(api_key=current_app.config[profile.api_key_setting])
-    message = client.messages.create(
-        model=request["model"],
-        system=request.get("instructions", ""),          # instructions -> system
-        messages=[{"role": "user", "content": request.get("input", "")}],
-        max_tokens=request.get("max_output_tokens", 2000),
-        temperature=request.get("temperature", 0.3),
-    )
-    # Return anything exposing output_text / model / usage. `_gateway_response`
-    # tolerates a missing or differently shaped usage, so nothing has to be faked.
-    return SimpleNamespace(
-        output_text="".join(block.text for block in message.content if block.type == "text"),
-        model=message.model,
-        usage=SimpleNamespace(
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            total_tokens=message.usage.input_tokens + message.usage.output_tokens),
-    )
-```
+Set the key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) and, for a paid
+provider, a budget (`AI_BUDGET_<PROVIDER>_TOKENS_PER_MONTH`) - a provider without a key is
+not offered, and one without a cap is not permitted. Then name a model:
+`ASSISTANT_MODEL_RESEARCH=gemini:gemini-3.8-flash`. Of the three paid providers only
+Gemini has answered live from this codebase (`gemini-3.8-flash`, `gemini-3.5-flash-lite`);
+run `scripts/live_ai_smoke_test.py --task models` to see what your key is served before
+trusting an id. `docs/AI_ROUTING.md` has the whole picture.
 
-3. Register it:
+### Styles map to models
 
-```python
-"anthropic": ProviderProfile(
-    name="anthropic", api_key_setting="ANTHROPIC_API_KEY",
-    default_base_url="https://api.anthropic.com", call=_anthropic_call),
-```
-
-4. Set `ANTHROPIC_API_KEY` and `ASSISTANT_DEEP_MODEL=anthropic:claude-sonnet-5`.
-
-Until step 3, writing `anthropic:` anywhere raises a configuration error naming exactly
-what is missing. That is deliberate: silently falling back to the default provider would
-send an unusable model name and fail somewhere far less obvious.
+Students pick a style; you decide what answers it. `ASSISTANT_MODEL_<PRESET>` and
+`ASSISTANT_DEEP_MODEL_<PRESET>` (`GENERAL`, `RESEARCH`, `STUDY_COACH`, `EXPLAIN`) override
+the global `ASSISTANT_MODEL` / `ASSISTANT_DEEP_MODEL` for one style. A student request
+carries only `preset` and `deep`; a `model` or `provider` field in the body is ignored.
+On top of that, the router may lead with `AI_PREMIUM_REASONING_MODEL` for "think harder"
+and the research style when it is configured, keyed and within budget, and falls back to
+the style's model if it fails.
 
 Everything the gateway already provides — caching, private cache partitioning, token
 budgets, usage limits, sanitized error categories, the corrective retry, JSONL telemetry —
@@ -159,8 +146,11 @@ does not eat the budget.
 | `FEATURE_ASSISTANT_CHAT` | on | the whole surface, page and API |
 | `ASSISTANT_MODEL` | tutor model | the default model; accepts `provider:model` |
 | `ASSISTANT_DEEP_MODEL` | analysis model | the "Think harder" model |
+| `ASSISTANT_MODEL_<PRESET>` / `ASSISTANT_DEEP_MODEL_<PRESET>` | unset | per-style override of the two above |
 | `OPENAI_API_KEY` | empty | enables `openai:` models |
 | `OPENAI_BASE_URL` | OpenAI | override for a compatible endpoint |
+| `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | empty | enable `anthropic:` / `gemini:` models |
+| `AI_PREMIUM_REASONING_MODEL` | unset | the premium model for "think harder" and research (see docs/AI_ROUTING.md) |
 | `ASSISTANT_CONTEXT_TOKEN_BUDGET` | 8000 | what the history is trimmed to |
 | `ASSISTANT_REPLY_TOKEN_RESERVE` | 2000 | held back so there is room to answer |
 | `ASSISTANT_MAX_MESSAGE_CHARACTERS` | 16000 | per message |

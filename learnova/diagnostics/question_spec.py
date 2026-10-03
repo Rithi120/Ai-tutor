@@ -20,8 +20,12 @@ from .verification import evaluate_arithmetic, numbers_match, parse_number
 DUPLICATE_SIMILARITY = 0.75
 
 # Question types that must ship a fixed option set, and how many options are sensible.
-CHOICE_TYPES = {"multiple_choice", "dropdown", "checkboxes", "ordering", "matching", "true_false"}
-OPEN_TYPES = {"text", "short_answer", "explanation", "calculation", "fill_blank"}
+CHOICE_TYPES = {"multiple_choice", "dropdown", "checkboxes", "ordering", "matching",
+                "true_false", "photo_ordering"}
+OPEN_TYPES = {"text", "short_answer", "explanation", "calculation", "fill_blank",
+              "photo_response"}
+# Types whose prompt is about a picture the student is shown.
+PHOTO_TYPES = {"photo_response", "photo_ordering"}
 ALL_TYPES = CHOICE_TYPES | OPEN_TYPES
 
 # Wording that makes an item unanswerable on its own because it points at context the
@@ -165,12 +169,26 @@ def validate_question(
         failures.append("prompt is too short to be answerable")
 
     lowered = prompt.casefold()
-    dangling = [phrase for phrase in _DANGLING_REFERENCES if phrase in lowered]
+    # "Refer to the image" is unanswerable when there is no image and is exactly the
+    # right wording when there is one. The caller has already replaced question["media"]
+    # with only the pictures it verified, so a model cannot unlock this by claiming media
+    # it was never offered.
+    has_media = bool(question.get("media"))
+    dangling = [] if has_media else [
+        phrase for phrase in _DANGLING_REFERENCES if phrase in lowered]
     checks["self_contained"] = not dangling
     if dangling:
         failures.append(f"prompt refers to material the student cannot see ({dangling[0]})")
 
     question_type = str(question.get("type") or question.get("question_type") or "").strip().lower()
+    # A photo exercise without pictures is a question about something invisible. This
+    # has to be its own failure: such a prompt often contains no dangling phrase at all
+    # ("Put these stages in order"), so the check above would let it through.
+    if question_type in PHOTO_TYPES:
+        enough = 2 if question_type == "photo_ordering" else 1
+        checks["has_pictures"] = len(question.get("media") or []) >= enough
+        if not checks["has_pictures"]:
+            failures.append(f"{question_type} needs at least {enough} verified picture(s)")
     checks["type_supported"] = question_type in ALL_TYPES
     if question_type not in ALL_TYPES:
         failures.append(f"unsupported question type {question_type!r}")

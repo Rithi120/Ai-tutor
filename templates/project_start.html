@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Start lesson') }} — {{ project.title }} — Learnova{% endblock %}
+{% block body_class %}project-page start-page{% endblock %}
+{% block content %}
+  {# The page after an upload. It runs the whole chain itself - read the pages, build the
+     sections, open the lesson - and shows three plain steps while it does. Without
+     JavaScript the button posts to the same endpoint and the server does the chain. #}
+  <main class="start-shell" id="main-content">
+    <section class="start-card" id="projectStart"
+             data-auto="{{ 'true' if auto else 'false' }}"
+             data-page-ids="{{ page_ids|tojson|forceescape }}"
+             data-recognize-url="{{ url_for('recognize_one_project_page', project_id=project.id, page_id=0) }}"
+             data-quick-start-url="{{ url_for('quick_start_project', project_id=project.id) }}">
+      <span class="eyebrow">{{ project.subject }}</span>
+      <h1>{{ project.title }}</h1>
+      <p class="start-copy">{{ _('{count} pages saved. Learnova reads them, explains the material, then tests you - 3 to 15 questions, until you know it.', count=pages|length) }}</p>
+      <ol class="start-steps" aria-live="polite">
+        <li data-step="read"><i aria-hidden="true"></i><div><span>{{ _('Reading your pages') }}</span><small id="startReadDetail"></small></div></li>
+        <li data-step="build"><i aria-hidden="true"></i><div><span>{{ _('Building your lesson') }}</span></div></li>
+        <li data-step="open"><i aria-hidden="true"></i><div><span>{{ _('Opening your lesson') }}</span></div></li>
+      </ol>
+      <form method="post" action="{{ url_for('quick_start_project', project_id=project.id) }}" id="startForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="primary-button start-button" type="submit" id="startButton">{{ _('Start lesson') }} <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="start-error" id="startError" role="alert" hidden></p>
+      <a class="start-review-link" href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check the scan first (optional)') }}</a>
+    </section>
+  </main>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/project-start.js') }}"></script>{% endblock %}

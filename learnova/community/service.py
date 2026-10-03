@@ -116,14 +116,24 @@ def ai_stars(overall_score: float) -> tuple[int, str]:
 
 
 def publication_decision(overall_score: float, safety_flags: list[str] | None = None) -> dict[str, Any]:
-    """Decide publication status from the AI score; safety/copyright/privacy always override."""
+    """Decide publication status from the AI score; safety/copyright/privacy always override.
+
+    Quality is information, safety is the gate. Safety has already been decided by the
+    moderation pass before this runs, and a safety flag from this review still rejects.
+    What the score decides is only whether the set is good enough to show at all: a
+    middling set is published with its stars and the reviewer's suggestions visible,
+    not held. The 3.0-4.0 band used to return `pending_manual_review` under the reason
+    `approved_with_suggestions` - its own name said publish - and that parked ordinary
+    three-star sets in a human queue that exists for safety doubts and, on most
+    deployments, has nobody in it.
+    """
 
     if safety_flags:
         return {"status": "rejected", "reason": "safety_violation", "correctable": False}
     if overall_score >= 4.0:
         return {"status": "approved", "reason": "auto_approved", "correctable": False}
     if overall_score >= 3.0:
-        return {"status": "pending_manual_review", "reason": "approved_with_suggestions", "correctable": True}
+        return {"status": "approved", "reason": "approved_with_suggestions", "correctable": True}
     if overall_score >= 2.0:
         return {"status": "rejected", "reason": "needs_correction", "correctable": True}
     return {"status": "rejected", "reason": "poor_quality", "correctable": False}

@@ -1,0 +1,25 @@
+{# The exam autopilot card: one glance, one button. `card` comes from app.exam_prep_card. #}
+<section class="autopilot-card reveal-card" aria-labelledby="autopilotTitle-{{ card.project_id }}">
+  <div class="autopilot-head">
+    <div>
+      <span class="eyebrow">{{ _('EXAM AUTOPILOT') }} · {{ card.subject }}</span>
+      <h2 id="autopilotTitle-{{ card.project_id }}">{{ card.title }} — {{ _('{days} days remaining', days=card.days_left) }}</h2>
+    </div>
+    <span class="autopilot-phase {{ card.phase }}">{{ _('Final days: testing and review') if card.phase == 'final' else _('Learning phase') }}</span>
+  </div>
+  <dl class="autopilot-facts">
+    <div><dt>{{ _('Today') }}</dt><dd>{{ card.today_label }}</dd></div>
+    <div><dt>{{ _('Progress') }}</dt><dd>{{ card.progress }}% {{ _('mastery') }} · {{ _('{known} of {total} topics known', known=card.topics_known, total=card.topics_total) }}</dd></div>
+    <div><dt>{{ _('Estimated grade') }}</dt><dd><b>{{ card.grade_label }}</b> <small>{{ _('an estimate from your results, not a guarantee') }}</small></dd></div>
+    <div><dt>{{ _('Weakness') }}</dt><dd>{% if card.weakness %}{{ card.weakness }} ({{ card.weakness_knowledge }}%){% else %}{{ _('none found yet') }}{% endif %}</dd></div>
+  </dl>
+  {% if card.reasons %}<p class="autopilot-why"><span>{{ _('Why the estimate changed') }}:</span> {{ card.reasons|join(' · ') }}</p>{% endif %}
+  {% if card.coverage.total %}<p class="autopilot-coverage">{{ _('Your notes cover {percent}% of the {total} required competencies', percent=card.coverage.covered_percent, total=card.coverage.total) }}{% if card.coverage.missing %} · {{ _('{count} missing', count=card.coverage.missing) }}{% endif %}</p>{% endif %}
+  <div class="autopilot-next">
+    <p><span>{{ _('Next') }}:</span> {{ card.next_label }}</p>
+    <form method="post" action="{{ url_for('exam_autopilot_next', project_id=card.project_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="primary-button" type="submit">{{ _('Start') }} <span aria-hidden="true">→</span></button>
+    </form>
+  </div>
+</section>

@@ -239,7 +239,9 @@ SAFETY_REPORT_REASONS = frozenset({
 # ------------------------------------------------------------------------- labels
 
 DECISION_LABELS = {
-    "allow": "Published",
+    # Not "Published": the quality review still runs after an allow and may hold or
+    # reject, and the status badge beside this label shows that outcome.
+    "allow": "Passed the safety check",
     "reject": "Not published",
     "revision_required": "Changes needed",
     "review": "Waiting for a reviewer",
@@ -322,11 +324,12 @@ assert set(REPORT_REASON_LABELS) == REPORT_REASON_SET
 # Reference German wording. tests/test_i18n.py keeps the catalogue in step; this map
 # documents the intended phrasing so a translator has a fixed target.
 GERMAN_LABELS = {
-    "Published": "Veröffentlicht",
+    "Passed the safety check": "Sicherheitsprüfung bestanden",
     "Not published": "Nicht veröffentlicht",
     "Changes needed": "Änderungen erforderlich",
     "Waiting for a reviewer": "Wartet auf eine Prüfung",
     "Being checked": "Wird geprüft",
+    "Check could not run": "Prüfung konnte nicht laufen",
     "Fits the chosen subject": "Passt zum gewählten Fach",
     "Educational value": "Lernwert",
     "Insults or harassment": "Beleidigungen oder Belästigung",
@@ -341,6 +344,23 @@ GERMAN_LABELS = {
     "Suitable for the chosen level": "Für die gewählte Stufe geeignet",
     "Language quality": "Sprachliche Qualität",
 }
+
+
+# A held set whose check never ran is not "waiting for a reviewer": nobody was asked.
+UNAVAILABLE_LABEL = 'Check could not run'
+
+
+def status_label(decision: str, reason_codes) -> str:
+    """The headline for a decision, given why it was made.
+
+    Same as `decision_label` except for one case: a hold caused by the check failing is
+    labelled as such, because the author can clear it themselves by resubmitting, and
+    "Waiting for a reviewer" tells them to do nothing.
+    """
+
+    if decision in {"review", "pending"} and "MODERATION_UNAVAILABLE" in set(reason_codes or ()):
+        return UNAVAILABLE_LABEL
+    return decision_label(decision)
 
 
 def decision_label(decision: str) -> str:

@@ -4,10 +4,11 @@
 {% block content %}
 <main class="dashboard-shell" id="main-content">
   <div class="dashboard-heading">
-    <div><div class="eyebrow">{{ _('YOUR PROGRESS') }}</div><h1>{{ _('Welcome back, {username}', username=current_user.username) }}</h1><p>{{ _('Your next best learning step is ready.') }}</p></div>
+    <div><div class="eyebrow">{{ _('YOUR PROGRESS') }}</div><h1>{{ _('Welcome back, {username}', username=current_user.username) }}</h1><p>{{ _('Your next best learning step is ready.') }} <button type="button" class="text-button tour-invite" data-tour-open>🧭 {{ _('New here? Take the one-minute tour') }}</button></p></div>
     <form method="post" action="{{ url_for('practice_weak') }}"><button class="secondary-button" type="submit">{{ _('Practice weakest concepts') }} →</button></form>
   </div>
 
+  {% if resume_card %}<section class="resume-banner reveal-card"><div><span class="eyebrow">{{ _('CONTINUE WHERE YOU LEFT OFF') }}</span><h2>{{ resume_card.title }}</h2><p>{{ resume_card.subject }} · {% if resume_card.answered %}{{ _('{answered} questions answered', answered=resume_card.answered) }}{% else %}{{ _('Not started yet') }}{% endif %}</p></div><a class="primary-button" href="{{ url_for('resume_lesson', lesson_id=resume_card.lesson.id) }}">{{ _('Continue') }} <span aria-hidden="true">→</span></a></section>{% endif %}
   <section class="ln-command-center reveal-card" aria-labelledby="learningCommandTitle">
     <div class="ln-command-copy">
       <span class="eyebrow">{{ _('LEARNOVA LEARNING SPACE') }}</span>
@@ -63,6 +64,7 @@
   </section>
   {% endif %}
 
+  {% if autopilot %}{% with card=autopilot %}{% include 'components/_autopilot_card.html' %}{% endwith %}{% endif %}
   <section class="dashboard-planner-widget reveal-card">
     {% if study_planner %}{% set coach = study_planner %}
     <div class="planner-widget-heading"><div><span class="eyebrow">{{ _('AI STUDY COACH') }}</span><h2>{{ _('Today’s Study') }}</h2><p>{{ coach.plan.project.subject }} · {{ coach.plan.project.title }}</p></div><div class="mini-progress-ring" style="--progress:{{ coach.planner_metrics.readiness }}"><strong>{{ coach.planner_metrics.readiness }}%</strong><span>{{ _('ready') }}</span></div></div>

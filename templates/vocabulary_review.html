@@ -2,22 +2,44 @@
 {% block title %}{{ _('Review vocabulary') }} — Learnova{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
 {% block content %}
-<main class="vocabulary-page" id="main-content" data-vocabulary-review data-import-id="{{ vocabulary_import.id if vocabulary_import else '' }}" data-list-id="{{ vocabulary_list.id if vocabulary_list else '' }}">
-  <header class="vocabulary-hero"><div><h1>{{ _('Review vocabulary') }}</h1><p>{{ _('Confirm uncertain entries before creating flashcards.') }}</p></div><button id="bulkAcceptVocabulary" class="ghost-button" type="button">{{ _('Accept high-confidence entries') }}</button></header>
+{# Only the entries the app has a question about are shown by default. Everything the
+   deterministic checks were happy with is already confirmed server-side, and an import
+   with nothing to decide never reaches this page at all. #}
+<main class="vocabulary-page review-page" id="main-content" data-vocabulary-review
+      data-import-id="{{ vocabulary_import.id if vocabulary_import else '' }}"
+      data-list-id="{{ vocabulary_list.id if vocabulary_list else '' }}">
+  <header class="review-top">
+    <div>
+      <h1>{% if vocabulary_list %}{{ _('Edit vocabulary') }}{% else %}{{ _('Check these words') }}{% endif %}</h1>
+      <p class="review-count" id="vocabularyReviewCount"></p>
+    </div>
+    <button id="generateVocabularyCards" class="primary-button" type="button">
+      {% if vocabulary_list %}{{ _('Save') }}{% else %}{{ _('Create flashcards') }}{% endif %}</button>
+  </header>
+
   <section class="vocabulary-panel">
-    <div class="review-actions"><button id="selectAllVocabulary" type="button">{{ _('Select all') }}</button><button id="deselectAllVocabulary" type="button">{{ _('Deselect all') }}</button><button id="addVocabularyEntry" type="button">{{ _('Add entry') }}</button></div>
     <div id="vocabularyReviewRows" class="vocabulary-review-rows"></div>
-    <p id="vocabularyReviewStatus" role="status"></p>
+    <div class="review-foot">
+      <button id="addVocabularyEntry" class="ghost-button" type="button">{{ _('Add word') }}</button>
+      <button id="showAllVocabulary" class="link-button hidden" type="button"></button>
+    </div>
+    <p id="vocabularyReviewStatus" class="review-status" role="status"></p>
   </section>
-  <section class="vocabulary-panel generation-settings">
-    <h2>{{ _('Create flashcards') }}</h2>
-    <label><input type="checkbox" name="direction" value="source_to_target" checked> {{ _('Source word to translation') }}</label>
-    <label><input type="checkbox" name="direction" value="target_to_source"> {{ _('Translation to source word') }}</label>
-    <label><input type="checkbox" name="direction" value="source_to_blank"> {{ _('Example sentence with a blank') }}</label>
-    <label><input type="checkbox" name="direction" value="example_to_word"> {{ _('Example sentence to missing word') }}</label>
-    <label><input id="includeVocabularyExamples" type="checkbox" checked> {{ _('Include example sentences') }}</label>
-    <button id="generateVocabularyCards" class="primary-button" type="button">{{ _('Open cards in editor') }}</button>
-  </section>
+
+  {% if vocabulary_import %}
+  {# Four card directions and an examples switch were the first thing on the old page.
+     One direction plus examples is what almost everyone wants, so the rest folds away. #}
+  <details class="vocabulary-panel card-options">
+    <summary>{{ _('Card options') }}</summary>
+    <div class="generation-settings">
+      <label><input type="checkbox" name="direction" value="source_to_target" checked> {{ _('Source word to translation') }}</label>
+      <label><input type="checkbox" name="direction" value="target_to_source"> {{ _('Translation to source word') }}</label>
+      <label><input type="checkbox" name="direction" value="source_to_blank"> {{ _('Example sentence with a blank') }}</label>
+      <label><input type="checkbox" name="direction" value="example_to_word"> {{ _('Example sentence to missing word') }}</label>
+      <label><input id="includeVocabularyExamples" type="checkbox" checked> {{ _('Include example sentences') }}</label>
+    </div>
+  </details>
+  {% endif %}
 </main>
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ url_for('static', filename='js/vocabulary.js') }}"></script>{% endblock %}

@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -167,3 +168,81 @@ class VocabularyWorkflowTests(unittest.TestCase):
         page = self.client.get("/vocabulary")
         self.assertIn("Vokabeltrainer".encode(), page.data)
         self.assertIn("Vokabeln importieren".encode(), page.data)
+
+
+class ManualVocabularyEntryTests(unittest.TestCase):
+    """Typed words are stored structured, not re-parsed from a delimited line."""
+
+    def setUp(self):
+        application.app.config.update(TESTING=True, FEATURE_VOCABULARY_TRAINER=True)
+        with application.app.app_context():
+            application.db.drop_all()
+            application.db.create_all()
+        self.client = application.app.test_client()
+        self.client.post("/register", data={
+            "username": "manual", "email": "manual@example.com",
+            "password": "correct-horse-battery"})
+
+    def create(self, rows):
+        return self.client.post("/api/vocabulary/imports", data={
+            "source_kind": "manual", "source_language": "en", "target_language": "de",
+            "manual_entries": json.dumps(rows)})
+
+    def entries_for(self, rows):
+        created = self.create(rows)
+        self.assertEqual(created.status_code, 201, created.get_json())
+        import_id = created.get_json()["vocabulary_import"]["id"]
+        self.client.post(f"/api/vocabulary/imports/{import_id}/extract")
+        return self.client.get(
+            f"/api/vocabulary/imports/{import_id}").get_json()["vocabulary_import"]["entries"]
+
+    def test_an_example_sentence_containing_a_dash_survives_whole(self):
+        # parse_vocabulary_text splits on " - ", so routing typed rows through it would
+        # cut this sentence in half and drop the tail.
+        sentence = "We must protect the environment - it matters to everyone"
+        entries = self.entries_for([{"source_term": "environment",
+                                     "target_translation": "die Umwelt",
+                                     "source_example_sentence": sentence}])
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["source_example_sentence"], sentence)
+
+    def test_a_semicolon_or_pipe_in_a_sentence_also_survives(self):
+        for sentence in ("Ich lerne; du lernst auch", "A | B"):
+            entries = self.entries_for([{"source_term": "lernen",
+                                         "target_translation": "to learn",
+                                         "source_example_sentence": sentence}])
+            self.assertEqual(entries[0]["source_example_sentence"], sentence)
+
+    def test_blank_rows_are_dropped_and_the_example_is_optional(self):
+        entries = self.entries_for([
+            {"source_term": "school", "target_translation": "die Schule"},
+            {"source_term": "", "target_translation": "", "source_example_sentence": ""},
+        ])
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["source_example_sentence"], "")
+
+    def test_a_word_with_no_translation_is_refused_with_a_clear_reason(self):
+        response = self.create([{"source_term": "only a word"}])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "missing_entries")
+
+    def test_malformed_payloads_do_not_crash_the_route(self):
+        for payload in ("", "not json", "{}", "[1, 2, 3]"):
+            response = self.client.post("/api/vocabulary/imports", data={
+                "source_kind": "manual", "source_language": "en",
+                "target_language": "de", "manual_entries": payload})
+            self.assertEqual(response.status_code, 400, payload)
+
+    def test_pasted_text_still_uses_the_line_parser(self):
+        # The manual path must not change how the paste method behaves.
+        created = self.client.post("/api/vocabulary/imports", data={
+            "source_kind": "text", "source_language": "en", "target_language": "de",
+            "text": "environment | die Umwelt"})
+        self.assertEqual(created.status_code, 201)
+        import_id = created.get_json()["vocabulary_import"]["id"]
+        self.client.post(f"/api/vocabulary/imports/{import_id}/extract")
+        entries = self.client.get(
+            f"/api/vocabulary/imports/{import_id}").get_json()["vocabulary_import"]["entries"]
+        self.assertEqual(entries[0]["source_term"], "environment")
+
+

@@ -1,5 +1,6 @@
 """Pure helpers for source-grounded study projects and final exams."""
 
+import json
 import re
 from collections import Counter
 from datetime import date
@@ -8,6 +9,9 @@ from datetime import date
 ALLOWED_QUESTION_TYPES = {
     "multiple_choice", "true_false", "matching", "fill_blank",
     "short_answer", "explanation", "calculation",
+    # photo_response only: the exam renderer has no drag-and-drop control, so
+    # photo_ordering belongs to the practice surface.
+    "photo_response",
 }
 
 
@@ -84,11 +88,33 @@ def proportional_section_counts(sections, count):
     return allocation
 
 
+def _sequence(value):
+    """A submitted or expected order as a list of comparable ids."""
+    if isinstance(value, (list, tuple)):
+        items = value
+    else:
+        text = str(value or "").strip()
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                loaded = json.loads(text)
+                items = loaded if isinstance(loaded, list) else [loaded]
+            except ValueError:
+                items = re.split(r"[,;\n|]+", text)
+        else:
+            items = re.split(r"[,;\n|]+", text)
+    return [str(item).strip().casefold() for item in items if str(item).strip()]
+
+
 def deterministic_question_score(question_type, expected, answer):
     expected_text = str(expected or "").strip()
     answer_text = str(answer or "").strip()
     if not answer_text:
         return 0.0
+    # Putting things in order has one right answer, so asking a model to mark it wastes
+    # a call and introduces disagreement. Unlike matching, order matters, so this is an
+    # all-or-nothing comparison of the sequence.
+    if question_type in {"ordering", "photo_ordering"}:
+        return 100.0 if _sequence(answer) == _sequence(expected) else 0.0
     if question_type in {"multiple_choice", "true_false", "fill_blank"}:
         return 100.0 if answer_text.casefold() == expected_text.casefold() else 0.0
     if question_type == "matching":

@@ -88,7 +88,12 @@ class DocumentServiceTests(unittest.TestCase):
 
 class DocumentWorkflowTests(unittest.TestCase):
     def setUp(self):
-        application.app.config.update(TESTING=True)
+        # These tests drive the upload -> recognise -> review -> correct -> ownership
+        # workflow with a hand-built sequence of page responses. The handwriting second
+        # look adds a close-up call after any page that came back uncertain, which would
+        # consume entries from that sequence and obscure what is being tested here; it
+        # has its own end-to-end coverage in tests/test_handwriting_second_look.py.
+        application.app.config.update(TESTING=True, FEATURE_HANDWRITING_SECOND_LOOK=False)
         application.SESSIONS.clear()
         with application.app.app_context():
             application.db.drop_all()
@@ -112,7 +117,8 @@ class DocumentWorkflowTests(unittest.TestCase):
             ]),
         }, content_type="multipart/form-data")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/review", response.headers["Location"])
+        # An upload now lands on the one-tap start page; the detailed review is a link from there.
+        self.assertIn("/start", response.headers["Location"])
         with application.app.app_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject))
             assert project is not None

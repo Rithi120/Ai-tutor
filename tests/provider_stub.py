@@ -50,6 +50,19 @@ class StubRateLimit(RuntimeError):
     status_code = 429
 
 
+class StubNotFoundError(RuntimeError):
+    """A withdrawn model id: the provider answers 404. Named like openai.NotFoundError
+    so both the status and the class name route it to `model_not_found`."""
+
+    status_code = 404
+
+
+class StubBadRequestError(RuntimeError):
+    """A request the provider will not accept (a dict where it wants text): 400."""
+
+    status_code = 400
+
+
 def load_fixture(scenario: str, language: str = "en") -> dict[str, Any]:
     """Read one scenario file, falling back to English when a language has no copy."""
 
@@ -100,6 +113,10 @@ def _responder(scenario: str):
                 raise StubTimeout(message)
             if error.get("type") == "rate_limit":
                 raise StubRateLimit(message)
+            if error.get("type") == "model_not_found":
+                raise StubNotFoundError(message)
+            if error.get("type") == "bad_request":
+                raise StubBadRequestError(message)
             raise RuntimeError(message)
         output = entry.get("output_text", "")
         usage = entry.get("usage") or {}

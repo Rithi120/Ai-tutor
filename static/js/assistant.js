@@ -6,14 +6,10 @@
  * one it builds, not one it passes through.
  */
 import { escapeHtml } from "./dom.js";
+import { withRetryHint } from "./ai-limit-rules.js";
+import { renderMath } from "./math.js";
 import { t } from "./i18n.js";
 
-const MATH_DELIMITERS = [
-  { left: "$$", right: "$$", display: true },
-  { left: "\\[", right: "\\]", display: true },
-  { left: "$", right: "$", display: false },
-  { left: "\\(", right: "\\)", display: false },
-];
 
 const state = {
   conversations: [],
@@ -43,7 +39,10 @@ async function api(url, { method = "GET", body } = {}) {
   let data = {};
   try { data = await response.json(); } catch (_) { /* non-JSON */ }
   if (!response.ok || data.ok === false) {
-    throw new Error(data.error || `${t("asstRequestFailed")} (${response.status})`);
+    const error = new Error(data.error || `${t("asstRequestFailed")} (${response.status})`);
+    error.code = data.code; error.status = response.status; error.details = data.details || {};
+    error.message = withRetryHint(error.message, error);
+    throw error;
   }
   return data;
 }
@@ -129,15 +128,7 @@ function renderMarkdown(source) {
   return out.join("\n");
 }
 
-function renderMath(root) {
-  if (!root || typeof window.renderMathInElement !== "function") return;
-  try {
-    window.renderMathInElement(root, {
-      delimiters: MATH_DELIMITERS, throwOnError: false,
-      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option", "input"],
-    });
-  } catch (_) { /* a malformed formula must not take the message down */ }
-}
+
 
 function messageNode(message) {
   const article = document.createElement("article");
@@ -145,10 +136,19 @@ function messageNode(message) {
   if (message.error) article.classList.add("asst-msg-error");
   article.dataset.id = message.id;
 
+  // Who said it is carried by the shape - a bubble on the right, plain prose with a
+  // brand dot on the left - rather than by an uppercase label over every message. The
+  // name stays in the document for anyone reading with a screen reader.
   const who = document.createElement("p");
-  who.className = "asst-who";
+  who.className = "visually-hidden";
   who.textContent = message.role === "user" ? t("asstYou") : t("asstAssistant");
   article.appendChild(who);
+  if (message.role !== "user") {
+    const avatar = document.createElement("span");
+    avatar.className = "asst-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    article.appendChild(avatar);
+  }
 
   const body = document.createElement("div");
   body.className = "asst-body";
@@ -294,7 +294,8 @@ function pendingNode() {
   const article = document.createElement("article");
   article.className = "asst-msg asst-msg-assistant asst-pending";
   article.innerHTML =
-    `<p class="asst-who">${escapeHtml(t("asstAssistant"))}</p>` +
+    `<p class="visually-hidden">${escapeHtml(t("asstAssistant"))}</p>` +
+    `<span class="asst-avatar" aria-hidden="true"></span>` +
     `<div class="asst-body"><span class="asst-dots"><i></i><i></i><i></i></span></div>`;
   return article;
 }

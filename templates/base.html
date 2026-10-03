@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-pages.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css') }}">
   {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css') }}">{% endif %}
 </head>
 <body class="{{ 'authenticated-app' if current_user.is_authenticated else '' }} {% block body_class %}{% endblock %}">
@@ -39,6 +40,7 @@
   {% block footer %}{% include 'components/_footer.html' %}{% endblock %}
   {% include 'components/_loading_overlay.html' %}
   {% include 'components/_modals.html' %}
+  {% if current_user.is_authenticated %}{% include 'components/_tour.html' %}{% endif %}
   <script>
     window.LEARNOVA_LANGUAGE = {{ current_language|tojson }};
     window.LEARNOVA_CONTENT_LANGUAGE = {{ learning_content_language_code|tojson }};
@@ -47,9 +49,13 @@
   </script>
   <script type="module" src="{{ url_for('static', filename='js/core.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/navigation.js') }}"></script>
+  {% if current_user.is_authenticated %}<script type="module" src="{{ url_for('static', filename='js/tour.js') }}"></script>{% endif %}
   <script type="module" src="{{ url_for('static', filename='js/motion.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/study-planner.js') }}"></script>
+  <!-- One formula renderer for every page. KaTeX itself is fetched lazily, only once a
+       page turns out to contain a formula, so pages without mathematics pay nothing. -->
+  <script type="module" src="{{ url_for('static', filename='js/math.js') }}"></script>
   {% block scripts %}{% endblock %}
   <script type="module" src="{{ url_for('static', filename='js/speech-to-text.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/text-to-speech.js') }}"></script>

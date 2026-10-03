@@ -35,6 +35,13 @@ DIAGNOSIS_TAGS = (
     "arithmetic_or_transcription_error",
     "incomplete_reasoning",
     "guessing_or_uncertain",
+    # The words were the obstacle - a term, the phrasing, or the language itself - rather
+    # than the idea. Distinct from interpretation_error, where the question was read as a
+    # different question; here it could not be read well enough to answer.
+    "language_or_vocabulary",
+    # The idea is there in the familiar form but did not carry to this situation: the
+    # student can solve the textbook case and not the new one.
+    "transfer_or_application",
     "insufficient_evidence",
     "question_or_key_flawed",
 )
@@ -137,6 +144,8 @@ DIAGNOSIS_LABELS_EN = {
     "arithmetic_or_transcription_error": "Calculation or copying slip",
     "incomplete_reasoning": "Reasoning left unfinished",
     "guessing_or_uncertain": "Answer looks uncertain",
+    "language_or_vocabulary": "Wording or vocabulary got in the way",
+    "transfer_or_application": "Idea known, not yet applied to a new case",
     "insufficient_evidence": "Not enough to judge yet",
     "question_or_key_flawed": "Problem with the question",
 }
@@ -181,6 +190,8 @@ GERMAN_LABELS = {
     "Calculation or copying slip": "Rechen- oder Übertragungsfehler",
     "Reasoning left unfinished": "Begründung unvollständig",
     "Answer looks uncertain": "Antwort wirkt unsicher",
+    "Wording or vocabulary got in the way": "Sprache oder Fachwörter waren das Hindernis",
+    "Idea known, not yet applied to a new case": "Idee gewusst, aber noch nicht auf den neuen Fall angewendet",
     "Not enough to judge yet": "Noch nicht beurteilbar",
     "Problem with the question": "Problem mit der Frage",
     "Re-read what the question asks": "Lies noch einmal, was gefragt ist",
