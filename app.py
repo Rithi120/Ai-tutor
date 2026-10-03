@@ -1169,9 +1169,9 @@ class PublicFlashcardSet(db.Model):
     # What kind of set this is (flashcards | vocabulary) and, for vocabulary, which language
     # is on which side - so the library can filter and the reviewer judges translations in
     # the right direction instead of guessing the languages.
-    set_kind = db.Column(db.String(20), nullable=False, default="flashcards")
-    front_language = db.Column(db.String(10), nullable=False, default="")
-    back_language = db.Column(db.String(10), nullable=False, default="")
+    set_kind = db.Column(db.String(20), nullable=False, default="flashcards", server_default="flashcards")
+    front_language = db.Column(db.String(10), nullable=False, default="", server_default="")
+    back_language = db.Column(db.String(10), nullable=False, default="", server_default="")
     status = db.Column(db.String(30), nullable=False, default="pending_ai_review", index=True)
     cards_json = db.Column(db.Text, nullable=False, default="[]")
     card_count = db.Column(db.Integer, nullable=False, default=0)
