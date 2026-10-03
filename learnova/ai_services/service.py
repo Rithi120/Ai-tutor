@@ -53,6 +53,7 @@ SUPPORTED_TASK_TYPES = {
     "content_moderation",
     "assistant_chat",
     "competency_extraction",
+    "vocabulary_page_extraction",
 }
 _ACCOUNTING_LOCK = threading.Lock()
 
@@ -61,7 +62,8 @@ _ACCOUNTING_LOCK = threading.Lock()
 # is waste; a tutor reply or a generated lesson is the opposite - repeating it would be a
 # bug. Only these two are cached in live mode. (In "cached" mode everything is cached,
 # which is that mode's purpose.)
-DETERMINISTIC_TASKS = frozenset({"ocr_document_recognition", "handwriting_region_review"})
+DETERMINISTIC_TASKS = frozenset({
+    "ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction"})
 
 
 class AIGatewayError(RuntimeError):
@@ -155,6 +157,9 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     "assistant_chat": 2000,
     # One row per "Ich kann" statement; a full Kompetenzraster has 20-60 of them.
     "competency_extraction": 3500,
+    # One row per printed entry; a dense textbook page has 20-30 of them, each with an
+    # example sentence and its translation.
+    "vocabulary_page_extraction": 3000,
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
@@ -179,6 +184,7 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "content_moderation": 12000,
     "assistant_chat": 12000,
     "competency_extraction": 16000,
+    "vocabulary_page_extraction": 8000,
 }
 
 

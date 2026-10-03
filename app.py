@@ -8981,6 +8981,140 @@ def vocabulary_list_payload(item: VocabularyList, include_entries: bool = True) 
     return result
 
 
+def store_vocabulary_upload(upload: Any, idempotency_key: str) -> tuple[FlashcardImport, bytes]:
+    """Validate one photo or PDF and store it privately. Flushed, not committed.
+
+    Shared by a new import and a rescan, so both files are checked and kept the same
+    way. The file is removed again if anything after storing it fails.
+    """
+    storage_key = ""
+    try:
+        data = upload.read(app.config["MAX_CONTENT_LENGTH"] + 1)
+        validated = flashcard_imports.validate_upload(
+            data, upload.filename, upload.mimetype,
+            max_pdf_size=app.config["MAX_FLASHCARD_PDF_SIZE"],
+            max_image_size=app.config["MAX_FLASHCARD_IMAGE_SIZE"],
+            max_pdf_pages=app.config["MAX_FLASHCARD_PDF_PAGES"],
+            max_image_pixels=app.config["MAX_FLASHCARD_IMAGE_PIXELS"])
+        document_id = str(uuid.uuid4())
+        storage_key = flashcard_imports.private_storage_key(
+            current_user.id, document_id, Path(validated.sanitized_filename).suffix.lower())
+        flashcard_imports.store_private(
+            app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key, validated.data)
+        document = FlashcardImport(
+            id=document_id, owner_user_id=current_user.id,
+            source_type=validated.source_type,
+            original_filename=validated.original_filename,
+            sanitized_filename=validated.sanitized_filename,
+            detected_mime_type=validated.mime_type, file_size=len(validated.data),
+            storage_key=storage_key, sha256=validated.sha256,
+            idempotency_key=f"vocabulary:{idempotency_key}", status="uploaded",
+            page_count=validated.page_count,
+            expires_at=utcnow() + timedelta(
+                hours=app.config["FLASHCARD_IMPORT_RETENTION_HOURS"]))
+        db.session.add(document)
+        db.session.flush()
+        return document, validated.data
+    except Exception:
+        if storage_key:
+            flashcard_imports.delete_private(
+                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key)
+        raise
+
+
+def read_vocabulary_page(
+    data: bytes, page_number: int, source_language: str, target_language: str,
+) -> dict[str, Any]:
+    """One structured vision call: the page's rows as rows, no OCR text to re-guess.
+
+    A vocabulary book prints a table - word, translation, example with its translation -
+    and the reader is asked for exactly that. One call per page, against the old path's
+    OCR call plus a translation call per uncertain word. The vocabulary module owns the
+    prompt and the tidying; this function owns only the call.
+    """
+    processed = preprocess_document_image(data)
+    response = create_response(
+        task_type="vocabulary_page_extraction", language=learning_content_language(),
+        model=VISION_MODEL,
+        validation_context={"source_language": source_language, "target_language": target_language},
+        instructions=vocabulary.page_reader_instructions(
+            vocabulary.SUPPORTED_LANGUAGES[source_language],
+            vocabulary.SUPPORTED_LANGUAGES[target_language]),
+        input=[{"role": "user", "content": [
+            {"type": "input_text",
+             "text": f"Page {page_number}. Return the rows of this vocabulary page as JSON."},
+            {"type": "input_image", "image_url": flashcard_image_data_url(
+                processed.data, processed.mime_type), "detail": "high"},
+        ]}],
+        max_output_tokens=app.config["AI_VOCABULARY_PAGE_EXTRACTION_MAX_OUTPUT_TOKENS"],
+        temperature=0)
+    parsed = vocabulary.rows_to_entries(parse_json(response.output_text), page_number)
+    parsed["warnings"] = list(processed.warnings) + list(parsed["warnings"])
+    return parsed
+
+
+def read_vocabulary_page_safely(
+    data: bytes, page_number: int, source_language: str, target_language: str,
+) -> dict[str, Any]:
+    """The table reader first; line-by-line OCR only when it cannot read the page.
+
+    A student's own AI limit is raised as it is: a second call would meet the same
+    limit, and the student is owed the plain sentence about it, not "extraction failed".
+    """
+    try:
+        parsed = read_vocabulary_page(data, page_number, source_language, target_language)
+        if parsed["entries"]:
+            return parsed
+        warnings = [f"No vocabulary table was found on page {page_number}; "
+                    "its lines were read one by one."]
+    except ai_service.AIRequestLimitError:
+        raise
+    except (ai_service.AIGatewayError, ai_service.AIValidationError, ValueError) as error:
+        app.logger.info("vocabulary page %s: table reading failed (%s); reading lines instead",
+                        page_number, type(error).__name__)
+        warnings = [f"Page {page_number} could not be read as a table; "
+                    "its lines were read one by one."]
+    recognition = recognize_flashcard_import_image(data, "Languages", page_number)
+    parsed = vocabulary.parse_vocabulary_text(str(recognition["text"] or ""), page_number)
+    for entry in parsed["entries"]:
+        entry["confidence"] = min(float(entry["confidence"]), float(recognition["confidence"]))
+    # The folded examples also become sentence entries, so "sentences only" has the same
+    # material whichever reader produced the page.
+    parsed["entries"] = vocabulary.expand_examples(parsed["entries"])
+    parsed["warnings"] = warnings + list(recognition["warnings"]) + list(parsed["warnings"])
+    return parsed
+
+
+def read_vocabulary_document(
+    item: VocabularyImport, data: bytes, source_type: str,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Every page of a photo or PDF as entries: a table where the page is one, text otherwise."""
+    entries: list[dict[str, Any]] = []
+    unrecognized: list[str] = []
+    warnings: list[str] = []
+    if source_type == "image":
+        pages: list[dict[str, Any]] = [{"page_number": 1, "image": data}]
+    else:
+        pages = flashcard_imports.extract_pdf_pages(data)
+        for page in pages:
+            if not page.get("text"):
+                page["image"] = render_pdf_page(data, int(page["page_number"]) - 1)
+    for page in pages:
+        number = int(page["page_number"])
+        if page.get("image") is not None:
+            parsed = read_vocabulary_page_safely(
+                page["image"], number, item.source_language, item.target_language)
+        else:
+            parsed = vocabulary.parse_vocabulary_text(str(page.get("text") or ""), number)
+            for entry in parsed["entries"]:
+                entry["confidence"] = min(
+                    float(entry["confidence"]), float(page.get("confidence", 0.8)))
+        entries.extend(parsed["entries"])
+        unrecognized.extend(parsed["unrecognized_lines"])
+        warnings.extend(parsed.get("warnings", []))
+    return entries, unrecognized, warnings
+
+
 def vocabulary_import_payload(item: VocabularyImport) -> dict[str, Any]:
     document = db.session.get(FlashcardImport, item.flashcard_import_id) if item.flashcard_import_id else None
     return {
@@ -8995,6 +9129,7 @@ def vocabulary_import_payload(item: VocabularyImport) -> dict[str, Any]:
             url_for("flashcard_import_preview", document_id=document.id)
             if document and document.source_type == "image" else None),
         "list_id": item.vocabulary_list_id,
+        "can_rescan": item.source_kind == "file" and item.status != "generated",
     }
 
 
@@ -9049,41 +9184,11 @@ def create_vocabulary_import():
         upload = request.files.get("file")
         if not upload or not upload.filename:
             return api_error(tr("Choose a file to upload."), 400, "missing_file")
-        storage_key = ""
         try:
-            data = upload.read(app.config["MAX_CONTENT_LENGTH"] + 1)
-            validated = flashcard_imports.validate_upload(
-                data, upload.filename, upload.mimetype,
-                max_pdf_size=app.config["MAX_FLASHCARD_PDF_SIZE"],
-                max_image_size=app.config["MAX_FLASHCARD_IMAGE_SIZE"],
-                max_pdf_pages=app.config["MAX_FLASHCARD_PDF_PAGES"],
-                max_image_pixels=app.config["MAX_FLASHCARD_IMAGE_PIXELS"])
-            document_id = str(uuid.uuid4())
-            storage_key = flashcard_imports.private_storage_key(
-                current_user.id, document_id, Path(validated.sanitized_filename).suffix.lower())
-            flashcard_imports.store_private(
-                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key, validated.data)
-            document = FlashcardImport(
-                id=document_id, owner_user_id=current_user.id,
-                source_type=validated.source_type,
-                original_filename=validated.original_filename,
-                sanitized_filename=validated.sanitized_filename,
-                detected_mime_type=validated.mime_type, file_size=len(validated.data),
-                storage_key=storage_key, sha256=validated.sha256,
-                idempotency_key=f"vocabulary:{idempotency_key}", status="uploaded",
-                page_count=validated.page_count,
-                expires_at=utcnow() + timedelta(
-                    hours=app.config["FLASHCARD_IMPORT_RETENTION_HOURS"]))
-            db.session.add(document)
-            db.session.flush()
-            vocabulary_import.flashcard_import_id = document.id
+            document, _data = store_vocabulary_upload(upload, idempotency_key)
         except flashcard_imports.ImportProblem as problem:
             return import_api_problem(problem)
-        except Exception:
-            if storage_key:
-                flashcard_imports.delete_private(
-                    app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key)
-            raise
+        vocabulary_import.flashcard_import_id = document.id
     db.session.add(vocabulary_import)
     db.session.commit()
     return jsonify(
@@ -9121,39 +9226,26 @@ def extract_vocabulary_import(import_id):
             unrecognized.extend(parsed["unrecognized_lines"])
         else:
             document = db.session.get(FlashcardImport, item.flashcard_import_id)
-            if not document or document.owner_user_id != current_user.id or document.expires_at <= utcnow():
+            # SQLite hands the expiry back naive; as_utc makes the comparison hold on
+            # every database rather than only on Postgres.
+            if not document or document.owner_user_id != current_user.id or as_utc(document.expires_at) <= utcnow():
                 return api_error(tr("This vocabulary import has expired."), 404, "import_expired")
             data = flashcard_imports.read_private(
                 app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
-            if document.source_type == "image":
-                recognition = recognize_flashcard_import_image(data, "Languages", 1)
-                pages = [{"page_number": 1, "text": recognition["text"],
-                          "confidence": recognition["confidence"],
-                          "warnings": recognition["warnings"]}]
-            else:
-                pages = flashcard_imports.extract_pdf_pages(data)
-                for page in pages:
-                    if not page.get("text"):
-                        rendered = render_pdf_page(data, int(page["page_number"]) - 1)
-                        recognition = recognize_flashcard_import_image(
-                            rendered, "Languages", int(page["page_number"]))
-                        page["text"], page["confidence"] = recognition["text"], recognition["confidence"]
-                        page["warnings"] = recognition["warnings"]
-            for page in pages:
-                parsed = vocabulary.parse_vocabulary_text(
-                    str(page.get("text") or ""), int(page["page_number"]))
-                for entry in parsed["entries"]:
-                    entry["confidence"] = min(
-                        float(entry["confidence"]), float(page.get("confidence", 0.8)))
-                all_entries.extend(parsed["entries"])
-                unrecognized.extend(parsed["unrecognized_lines"])
-                warnings.extend(page.get("warnings", []))
+            page_entries, page_unrecognized, page_warnings = read_vocabulary_document(
+                item, data, document.source_type)
+            all_entries.extend(page_entries)
+            unrecognized.extend(page_unrecognized)
+            warnings.extend(page_warnings)
         item.entries_json = json.dumps(all_entries, ensure_ascii=False)
         item.unrecognized_json = json.dumps(unrecognized, ensure_ascii=False)
         item.warnings_json = json.dumps(list(dict.fromkeys(warnings)), ensure_ascii=False)
         item.status = "ready_for_validation"
         db.session.commit()
         return jsonify(ok=True, vocabulary_import=vocabulary_import_payload(item))
+    except ai_service.AIRequestLimitError as error:
+        db.session.rollback()
+        return ai_failure_response(error)
     except (ValueError, OSError, ai_service.AIGatewayError, ai_service.AIValidationError):
         db.session.rollback()
         return api_error(tr("Vocabulary extraction failed safely. You can retry."), 422, "extraction_failed")
@@ -9191,30 +9283,31 @@ def update_vocabulary_import_entries(import_id):
     return jsonify(ok=True, entries=cleaned)
 
 
-@app.post("/api/vocabulary/imports/<import_id>/validate")
-@limiter.limit("10 per minute")
-@login_required
-@require_feature("FEATURE_VOCABULARY_TRAINER")
-def validate_vocabulary_import(import_id):
-    item = owned_vocabulary_import(import_id)
-    if not item:
-        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+def validate_vocabulary_entries(
+    item: VocabularyImport, entries: list[dict[str, Any]], *, ai_validation: bool,
+) -> dict[str, Any]:
+    """Deterministic checks, an optional second opinion, then confirm what needs none.
+
+    Writes the result onto the import without committing. Shared by the validate route
+    and by a rescan, so both leave the import in the same state.
+    """
     seen: set[tuple[str, str]] = set()
     validated = [
         vocabulary.validate_entry(entry, item.source_language, item.target_language, seen)
-        for entry in json_value(item.entries_json, [])
+        for entry in entries
     ]
-    payload = request.get_json(silent=True) or {}
     # Typed words have no source document behind them, so there is nothing for a
     # translation provider to arbitrate: the student already knows what they meant. The
     # deterministic checks above still run - they catch a blank half or a duplicate.
     typed_by_hand = item.source_kind == "manual"
+    # Rows read confidently from a textbook table, and sentences, are never sent: the
+    # reasons are with vocabulary.wants_second_opinion.
     uncertain = [] if typed_by_hand else [
         entry for entry in validated
         if entry["status"] in {"likely_valid", "needs_review", "translation_mismatch"}
-        and entry["source_term"]
+        and entry["source_term"] and vocabulary.wants_second_opinion(entry)
     ]
-    if uncertain and bool(payload.get("ai_validation", app.config.get("AI_MODE") == "live")):
+    if uncertain and ai_validation:
         try:
             texts = [entry["source_term"] for entry in uncertain]
             response = create_response(
@@ -9248,12 +9341,83 @@ def validate_vocabulary_import(import_id):
     plan = vocabulary.autoconfirm(validated, typed_by_hand=typed_by_hand)
     item.entries_json = json.dumps(validated, ensure_ascii=False)
     item.status = "ready_for_review"
+    return plan
+
+
+@app.post("/api/vocabulary/imports/<import_id>/validate")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def validate_vocabulary_import(import_id):
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    payload = request.get_json(silent=True) or {}
+    plan = validate_vocabulary_entries(
+        item, json_value(item.entries_json, []),
+        ai_validation=bool(payload.get("ai_validation", app.config.get("AI_MODE") == "live")))
     db.session.commit()
     return jsonify(
         ok=True, vocabulary_import=vocabulary_import_payload(item),
         review_needed=plan["review_needed"], flagged_count=plan["flagged_count"],
         entry_count=plan["total"],
         review_url=url_for("vocabulary_import_review_page", import_id=item.id))
+
+
+@app.post("/api/vocabulary/imports/<import_id>/rescan")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def rescan_vocabulary_import(import_id):
+    """Read a new photo of the same page and fold it into the rows the student has.
+
+    Typing a missed word is the quick fix; a rescan is for a photo that was bad all
+    over. Settled rows stay, open rows are replaced where the new reading has them, and
+    new finds are added, so nothing the student already did is lost. The second
+    opinion is not asked for here: the student is looking at the page.
+    """
+    item = owned_vocabulary_import(import_id)
+    if not item:
+        return api_error(tr("This vocabulary import could not be found."), 404, "import_not_found")
+    if item.source_kind != "file":
+        return api_error(tr("Only a photo or PDF import can be rescanned."), 400, "rescan_not_possible")
+    if item.status == "generated":
+        return api_error(tr("These cards have already been created."), 409, "import_finished")
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return api_error(tr("Choose a file to upload."), 400, "missing_file")
+    previous = (
+        db.session.get(FlashcardImport, item.flashcard_import_id)
+        if item.flashcard_import_id else None)
+    stored_key = ""
+    try:
+        document, data = store_vocabulary_upload(upload, str(uuid.uuid4()))
+        stored_key = document.storage_key
+        fresh, unrecognized, warnings = read_vocabulary_document(item, data, document.source_type)
+        merged = vocabulary.merge_rescan(json_value(item.entries_json, []), fresh)
+        item.flashcard_import_id = document.id
+        item.unrecognized_json = json.dumps(unrecognized, ensure_ascii=False)
+        item.warnings_json = json.dumps(list(dict.fromkeys(warnings)), ensure_ascii=False)
+        plan = validate_vocabulary_entries(item, merged["entries"], ai_validation=False)
+        if previous is not None:
+            flashcard_imports.delete_private(
+                app.config["FLASHCARD_IMPORT_STORAGE_DIR"], previous.storage_key)
+            db.session.delete(previous)
+        db.session.commit()
+    except flashcard_imports.ImportProblem as problem:
+        db.session.rollback()
+        return import_api_problem(problem)
+    except (ValueError, OSError, ai_service.AIGatewayError, ai_service.AIValidationError) as error:
+        db.session.rollback()
+        if stored_key:
+            flashcard_imports.delete_private(app.config["FLASHCARD_IMPORT_STORAGE_DIR"], stored_key)
+        if isinstance(error, ai_service.AIRequestLimitError):
+            return ai_failure_response(error)
+        return api_error(tr("Vocabulary extraction failed safely. You can retry."), 422, "extraction_failed")
+    return jsonify(
+        ok=True, vocabulary_import=vocabulary_import_payload(item),
+        review_needed=plan["review_needed"], flagged_count=plan["flagged_count"],
+        entry_count=plan["total"], replaced=merged["replaced"], added=merged["added"])
 
 
 @app.post("/api/vocabulary/imports/<import_id>/example")

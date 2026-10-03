@@ -287,14 +287,44 @@ async function saveReview() {
     });
   }
 }
+function showPagePhoto(imported) {
+  const photo = document.querySelector("#vocabularyPhoto");
+  if (!photo) return;
+  const url = imported?.preview_url;
+  photo.hidden = !url;
+  if (url) photo.querySelector("img").src = url;
+}
+
+function adoptEntries(entries) {
+  reviewEntries = entries;
+  reviewEntries.filter(isFlagged).forEach(item => askedAbout.add(item));
+  renderReview();
+}
+
 async function initReview() {
   const id = reviewPage.dataset.importId;
   const data = await api(id
     ? `/api/vocabulary/imports/${id}`
     : `/api/vocabulary/lists/${reviewPage.dataset.listId}`);
-  reviewEntries = id ? data.vocabulary_import.entries : data.vocabulary_list.entries;
-  reviewEntries.filter(isFlagged).forEach(item => askedAbout.add(item));
-  renderReview();
+  if (id) showPagePhoto(data.vocabulary_import);
+  adoptEntries(id ? data.vocabulary_import.entries : data.vocabulary_list.entries);
+}
+
+// ---- Rescan: a new photo of the same page, folded into what is already here ---------
+// Typing a missed word is the quick fix. A rescan is for a photo that was bad all over:
+// the student's own edits are saved first, the server replaces only the rows that are
+// still open, and anything the new reading found that the first missed is added.
+async function rescanPage(file) {
+  const id = reviewPage.dataset.importId;
+  const status = document.querySelector("#vocabularyReviewStatus");
+  await saveReview();
+  status.textContent = t("vocabularyRescanning");
+  const body = new FormData();
+  body.append("file", file);
+  const result = await api(`/api/vocabulary/imports/${id}/rescan`, { method: "POST", body });
+  showPagePhoto(result.vocabulary_import);
+  adoptEntries(result.vocabulary_import.entries);
+  status.textContent = t("vocabularyRescanned", { replaced: result.replaced, added: result.added });
 }
 if (reviewPage) {
   initReview().catch(error => toast(error.message, "error"));
@@ -368,6 +398,19 @@ if (reviewPage) {
   document.querySelector("#showAllVocabulary").addEventListener("click", () => {
     showAllEntries = !showAllEntries;
     renderReview();
+  });
+  document.querySelector("#vocabularyRescanFile")?.addEventListener("change", async event => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      await rescanPage(file);
+    } catch (error) {
+      document.querySelector("#vocabularyReviewStatus").textContent = "";
+      toast(error.message, "error");
+    } finally {
+      input.value = "";
+    }
   });
   document.querySelector("#addVocabularyEntry").addEventListener("click", () => {
     const fresh = {

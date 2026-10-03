@@ -624,6 +624,35 @@
       ]
     }
   },
+  "vocabulary_page_extraction": {
+    "output_text": {
+      "rows": [
+        {
+          "term": "à travers",
+          "phonetic": "atʁavɛʁ",
+          "translation": "durch",
+          "examples": [
+            {
+              "sentence": "Il marche à travers le village.",
+              "translation": "Er geht durch das Dorf."
+            }
+          ],
+          "note": "",
+          "confidence": 0.95
+        },
+        {
+          "term": "la boulangerie",
+          "phonetic": "bulɑ̃ʒʁi",
+          "translation": "die Bäckerei",
+          "examples": [],
+          "note": "",
+          "confidence": 0.9
+        }
+      ],
+      "source_language": "fr",
+      "target_language": "de"
+    }
+  },
   "_meta": {
     "prompt_versions": {
       "lesson_generation": "lesson_generation:v3",
@@ -646,7 +675,8 @@
       "assistant_chat": "assistant_chat:v1",
       "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
       "handwriting_region_review": "handwriting_region_review:v1",
-      "competency_extraction": "competency_extraction:v1"
+      "competency_extraction": "competency_extraction:v1",
+      "vocabulary_page_extraction": "vocabulary_page_extraction:v1"
     }
   }
 }

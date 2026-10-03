@@ -1083,6 +1083,8 @@ FRONTEND_MESSAGES = {
     "vocabularyKind_phrase": "Phrase",
     "vocabularyKind_sentence": "Sentence",
     "vocabularyNothingInScope": "Nothing to practise in that selection.",
+    "vocabularyRescanning": "Reading the page again…",
+    "vocabularyRescanned": "{replaced} words replaced, {added} added.",
     "fcPublish": "Publish",
     "fcPublishChanges": "Publish changes",
     "fcUnpublish": "Unpublish",
@@ -1807,6 +1809,18 @@ GERMAN.update({
     "Sentences": "Sätze",
     "Both": "Beides",
     "What do you want to learn?": "Was möchtest du lernen?",
+})
+
+# Textbook pages: read as a table in one call; a missed word is typed in or the page is
+# photographed again, and the new reading replaces only the rows still open.
+GERMAN.update({
+    "Rescan page": "Seite neu scannen",
+    "Show the page photo": "Foto der Seite anzeigen",
+    "The scanned vocabulary page": "Die gescannte Vokabelseite",
+    "Only a photo or PDF import can be rescanned.": "Nur ein Foto- oder PDF-Import kann neu gescannt werden.",
+    "These cards have already been created.": "Diese Karten wurden bereits erstellt.",
+    "Reading the page again…": "Die Seite wird noch einmal gelesen…",
+    "{replaced} words replaced, {added} added.": "{replaced} Wörter ersetzt, {added} hinzugefügt.",
 })
 
 REQUIRED_KEYS = frozenset(GERMAN.keys())

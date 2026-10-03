@@ -75,6 +75,14 @@
 .review-origin { color: var(--ln-muted); }
 
 .review-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; margin-top: .9rem; }
+.review-foot-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* A file input dressed as the button beside "Add word": on a phone the tap opens the
+   camera or the gallery, which is the whole point of a rescan. */
+.rescan-button { position: relative; cursor: pointer; }
+.visually-hidden-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.review-photo { margin-top: 1rem; }
+.review-photo > summary { font-weight: 800; cursor: pointer; }
+.review-photo img { display: block; max-width: 100%; height: auto; margin-top: .75rem; border-radius: var(--ln-radius-md, 14px); border: 1px solid var(--ln-line); }
 .link-button { border: 0; background: none; padding: 0; color: var(--ln-violet); font: inherit; text-decoration: underline; cursor: pointer; }
 
 /* Card directions used to be the loudest panel on the page. One direction plus examples

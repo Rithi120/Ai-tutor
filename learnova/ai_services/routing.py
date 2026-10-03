@@ -59,6 +59,7 @@ TASK_TIERS: dict[str, Tier] = {
     "mistake_analysis": Tier.strong,
     "ocr_document_recognition": Tier.vision,
     "handwriting_region_review": Tier.vision,
+    "vocabulary_page_extraction": Tier.vision,
 }
 
 # Which premium slot a task may draw on, if its signals justify it.

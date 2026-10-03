@@ -240,6 +240,8 @@ def configure_app(app, environment: str | None = None) -> str:
         # empty") and rejects readable pages. 4000 fits reasoning + JSON within Groq's
         # free-tier per-request TPM (image input ≈ 2k tokens).
         "OCR_DOCUMENT_RECOGNITION": 4000, "HANDWRITING_REGION_REVIEW": 900,
+        # A whole textbook page as rows (word, translation, examples) in one call.
+        "VOCABULARY_PAGE_EXTRACTION": 3000,
         "ADAPTIVE_PRACTICE": 2200,
         # Grades every open exam answer in one call, with partial credit; the call site
         # asks for 5000 and was being cut to 600, i.e. a few words per answer.
@@ -258,6 +260,7 @@ def configure_app(app, environment: str | None = None) -> str:
         "LESSON_GENERATION": 9000, "QUIZ_GENERATION": 6000,
         "PROJECT_SECTION_GENERATION": 16000, "FINAL_EXAM_GENERATION": 20000,
         "OCR_DOCUMENT_RECOGNITION": 8000, "HANDWRITING_REGION_REVIEW": 6000,
+        "VOCABULARY_PAGE_EXTRACTION": 8000,
         "ADAPTIVE_PRACTICE": 6000,
         "FINAL_EXAM_EVALUATION": 8000, "FLASHCARD_GENERATION": 10000,
         "FLASHCARD_BACK_SUGGESTION": 800,

@@ -339,6 +339,13 @@ def validate_entry(
     # whose columns slipped, or of a line split on a dash inside a sentence. It is not
     # something to guess at, so it goes to the student.
     kind = text_kind(source)
+    # A row read from a textbook table knows its kind from the column it stood in: the
+    # examples column holds sentences even when one is as short as "Il pleut.", and the
+    # word column never holds one. So does a sentence that was folded out of an entry's
+    # example box. There the column beats the heuristic.
+    if (entry.get("origin") == TEXTBOOK_ORIGIN or entry.get("example_of")) \
+            and entry.get("entry_kind") in ENTRY_KINDS:
+        kind = str(entry["entry_kind"])
     if status in {"valid", "likely_valid"} and sides_disagree(
             {"source_term": source, "target_translation": target}):
         status = "needs_review"
@@ -434,6 +441,234 @@ def autoconfirm(entries: list[dict[str, Any]], *, typed_by_hand: bool) -> dict[s
         # "is this still open?" should never have to distinguish False from absent.
         entry["user_confirmed"] = bool(entry.get("user_confirmed")) or index not in flagged
     return plan
+
+
+# ---- A textbook page, read as the table it is -----------------------------------------
+#
+# Vocabulary books print a table: the word with its pronunciation in brackets, the
+# translation, and an example sentence with the sentence's own translation beneath it.
+# Reading such a page as a stream of text and re-guessing which line is which costs an
+# OCR call plus a translation call per uncertain word, and still gets the columns wrong
+# whenever a sentence wraps. One structured vision call per page returns the rows as
+# rows. The code below only tidies them; nothing here needs a second provider call.
+TEXTBOOK_ORIGIN = "textbook_page"
+_PHONETIC_BRACKETS = re.compile(r"\s*\[([^\]]*)\]")
+
+
+def page_reader_instructions(source_name: str, target_name: str) -> str:
+    """The one prompt the page reader gets, with the two languages filled in."""
+
+    return "\n".join([
+        "You are reading one page of a school vocabulary book. The words are in "
+        f"{source_name}; the translations are in {target_name}.",
+        "Each vocabulary entry is one row with up to three columns:",
+        f"- left: the word or phrase in {source_name}, often followed by its pronunciation "
+        "in square brackets;",
+        f"- middle: the {target_name} translation;",
+        f"- right (often shaded): one or more example sentences in {source_name}, each with "
+        f"its {target_name} translation beneath it.",
+        "Return one row per entry in reading order. Put the pronunciation in \"phonetic\", "
+        "never in \"term\".",
+        "Example sentences belong to the row they are printed in. Pair each sentence with "
+        "its own translation.",
+        "Ignore headings, unit labels, page numbers, pictures and decoration. A grammar or "
+        "usage box is not an entry: put its text in \"note\" of the row it belongs to, or "
+        "leave it out.",
+        "Copy spelling, accents, articles and punctuation exactly. If a cell is unreadable, "
+        "leave it \"\" and lower \"confidence\". Never guess or invent a word or a translation.",
+        "Return JSON only.",
+    ])
+
+
+def _clamp_confidence(value: Any, default: float = 0.5) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def split_phonetic(term: Any) -> tuple[str, str]:
+    """Separate "à travers [atʁavɛʁ]" into the term and its pronunciation."""
+
+    text = clean_text(term, 300)
+    found = _PHONETIC_BRACKETS.findall(text)
+    return clean_text(_PHONETIC_BRACKETS.sub("", text), 300), clean_text(" ".join(found), 120)
+
+
+def has_checkable_stem(term: Any) -> bool:
+    """Whether `illustrates` can say anything about this term at all."""
+
+    return any(len(_fold(word).strip(".,;:!?")) >= 4 for word in headword(term).split())
+
+
+def sentence_entry(parent: dict[str, Any], sentence: Any, translation: Any) -> dict[str, Any]:
+    """An entry of its own for one translated example: what "sentences only" practises."""
+
+    return {
+        "source_term": clean_text(sentence, 300), "target_translation": clean_text(translation, 500),
+        "alternatives": [], "source_example_sentence": "", "target_example_translation": "",
+        "example_of": clean_text(parent.get("source_term"), 300),
+        "page_number": parent.get("page_number"), "line_number": parent.get("line_number"),
+        "section": parent.get("section", ""), "confidence": parent.get("confidence", 0.5),
+        "warnings": [], "status": "needs_review", "entry_kind": "sentence",
+        "origin": parent.get("origin", ""), "included": True,
+    }
+
+
+def expand_examples(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every translated example an entry of its own, right after its word.
+
+    `attach_examples` puts a scanned sentence into the example box of the word above
+    it, which is where a flashcard wants it. A student who chose "sentences only" wants
+    that same sentence as a thing to practise, and the practice filter works on entries,
+    so the sentence is also kept as one. Only a translated example qualifies: without a
+    translation there is nothing to check an answer against.
+    """
+
+    result: list[dict[str, Any]] = []
+    for entry in entries:
+        result.append(entry)
+        sentence = clean_text(entry.get("source_example_sentence"), 1000)
+        translation = clean_text(entry.get("target_example_translation"), 1000)
+        if sentence and translation and entry.get("entry_kind") != "sentence":
+            result.append(sentence_entry(entry, sentence, translation))
+    return result
+
+
+def rows_to_entries(page: Any, page_number: int = 1) -> dict[str, Any]:
+    """Turn the rows the page reader returned into import entries.
+
+    Each row becomes one entry for the word, with its first example attached, and every
+    example that has a translation also becomes a sentence entry of its own. Nothing is
+    dropped: a row whose word could not be read arrives as an entry with a blank side,
+    which the review page asks the student to type in or rescan.
+
+    The kind comes from the column, not from the heuristic: the word column never holds
+    a sentence (a fixed expression such as "Comment ça va ?" is a phrase you learn), and
+    the examples column holds nothing else.
+    """
+
+    entries: list[dict[str, Any]] = []
+    rows = page.get("rows") if isinstance(page, dict) else None
+    for index, raw in enumerate(rows if isinstance(rows, list) else [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        term, phonetic = split_phonetic(raw.get("term"))
+        phonetic = clean_text(raw.get("phonetic"), 120) or phonetic
+        translation = clean_text(raw.get("translation"), 500)
+        if not term and not translation:
+            continue
+        examples: list[tuple[str, str]] = []
+        listed = raw.get("examples")
+        for example in listed if isinstance(listed, list) else []:
+            if not isinstance(example, dict):
+                continue
+            sentence = clean_text(example.get("sentence"), 1000)
+            if sentence:
+                examples.append((sentence, clean_text(example.get("translation"), 1000)))
+        kind = text_kind(term) if term else "word"
+        entry = {
+            "source_term": term, "target_translation": translation, "alternatives": [],
+            "phonetic": phonetic, "notes": clean_text(raw.get("note"), 2000),
+            "source_example_sentence": examples[0][0] if examples else "",
+            "target_example_translation": examples[0][1] if examples else "",
+            "page_number": page_number, "line_number": index, "section": "",
+            "confidence": _clamp_confidence(raw.get("confidence")), "warnings": [],
+            "status": "needs_review", "entry_kind": "phrase" if kind == "sentence" else kind,
+            "origin": TEXTBOOK_ORIGIN, "included": True,
+        }
+        entries.append(entry)
+        entries.extend(
+            sentence_entry(entry, sentence, translation)
+            for sentence, translation in examples if translation)
+    _flag_misplaced_examples(entries)
+    return {"entries": entries, "unrecognized_lines": [], "warnings": []}
+
+
+def _flag_misplaced_examples(entries: list[dict[str, Any]]) -> None:
+    """Lower the confidence of a word whose example visibly belongs to a neighbour.
+
+    The check is deliberately narrow. An example often fails to contain its own word
+    (irregular verbs: "aller" / "Je vais"), so merely failing to match is no evidence.
+    Containing *another* row's headword while not containing this one is.
+    """
+
+    words = [entry for entry in entries if entry.get("entry_kind") != "sentence"
+             and has_checkable_stem(entry.get("source_term"))]
+    for entry in words:
+        example = entry.get("source_example_sentence")
+        if not example or illustrates(example, entry["source_term"]):
+            continue
+        if any(other is not entry and illustrates(example, other["source_term"]) for other in words):
+            entry["confidence"] = min(float(entry["confidence"]), CONFIDENT_ENOUGH - 0.05)
+            entry["warnings"] = list(entry.get("warnings", [])) + [
+                "The example sentence may belong to a neighbouring word."]
+
+
+def wants_second_opinion(entry: dict[str, Any]) -> bool:
+    """Whether a translation provider should be asked about this entry at all.
+
+    Never for a sentence: a sentence has many right translations, so a second opinion
+    would flag good rows and cost a call doing it. Never for a row read confidently from
+    a textbook table: the translation was printed next to the word, there is nothing to
+    arbitrate, and asking would turn one call per page into one per word.
+    """
+
+    kind = entry.get("entry_kind") if entry.get("entry_kind") in ENTRY_KINDS else text_kind(entry.get("source_term"))
+    if kind == "sentence":
+        return False
+    if entry.get("origin") != TEXTBOOK_ORIGIN:
+        return True
+    try:
+        return float(entry.get("confidence") or 0) < CONFIDENT_ENOUGH
+    except (TypeError, ValueError):
+        return True
+
+
+def _complete(entry: dict[str, Any]) -> bool:
+    return bool(clean_text(entry.get("source_term")) and clean_text(entry.get("target_translation")))
+
+
+def merge_rescan(current: list[dict[str, Any]], fresh: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fold a second reading of the same page into what the student already has.
+
+    Rows the student has settled - confirmed, typed or edited - are kept exactly as they
+    are, in place. An open row is replaced when the new reading has a complete row for
+    the same word, or for the same translation when it was the word that could not be
+    read. Whatever the new reading found that the first missed is added at the end.
+    """
+
+    usable = [entry for entry in fresh if _complete(entry)]
+    by_term = {normalize_answer(entry["source_term"]): entry for entry in usable}
+    by_translation = {normalize_answer(entry["target_translation"]): entry for entry in usable}
+    used: set[int] = set()
+    merged: list[dict[str, Any]] = []
+    replaced = 0
+    for entry in current:
+        match = None
+        if not entry.get("user_confirmed"):
+            if clean_text(entry.get("source_term")):
+                match = by_term.get(normalize_answer(entry["source_term"]))
+            if match is None and clean_text(entry.get("target_translation")):
+                match = by_translation.get(normalize_answer(entry["target_translation"]))
+        if match is not None and id(match) not in used:
+            used.add(id(match))
+            merged.append(match)
+            replaced += 1
+        else:
+            merged.append(entry)
+    # A word the student already has is not added again, even with a different
+    # translation: that would be a second opinion forced into the list as a duplicate.
+    terms = {normalize_answer(entry.get("source_term")) for entry in merged}
+    added = 0
+    for entry in usable:
+        term = normalize_answer(entry["source_term"])
+        if id(entry) in used or term in terms:
+            continue
+        terms.add(term)
+        merged.append(entry)
+        added += 1
+    return {"entries": merged, "replaced": replaced, "added": added}
 
 
 def check_answer(

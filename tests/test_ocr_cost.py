@@ -265,8 +265,10 @@ class DeterministicCachingTests(unittest.TestCase):
             self.assertEqual(self._call("assistant_chat", "Hallo!"), 1)
 
     def test_only_deterministic_tasks_are_cached(self):
+        # The vocabulary page reader joined the set for the same reason: the same page
+        # read twice must give the same rows, so paying twice for it is waste.
         self.assertEqual(ai_service.DETERMINISTIC_TASKS,
-                         {"ocr_document_recognition", "handwriting_region_review"})
+                         {"ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction"})
 
     def _age_every_cache_entry(self, days):
         import json

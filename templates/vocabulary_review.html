@@ -20,11 +20,29 @@
   <section class="vocabulary-panel">
     <div id="vocabularyReviewRows" class="vocabulary-review-rows"></div>
     <div class="review-foot">
-      <button id="addVocabularyEntry" class="ghost-button" type="button">{{ _('Add word') }}</button>
+      <div class="review-foot-actions">
+        <button id="addVocabularyEntry" class="ghost-button" type="button">{{ _('Add word') }}</button>
+        {% if vocabulary_import and vocabulary_import.source_kind == 'file' %}
+        {# A word the reader could not make out is typed in above - or the page is
+           photographed again. The new reading replaces only the rows still open. #}
+        <label class="ghost-button rescan-button" for="vocabularyRescanFile">{{ _('Rescan page') }}
+          <input type="file" id="vocabularyRescanFile" accept="image/*,.pdf" class="visually-hidden-input"></label>
+        {% endif %}
+      </div>
       <button id="showAllVocabulary" class="link-button hidden" type="button"></button>
     </div>
     <p id="vocabularyReviewStatus" class="review-status" role="status"></p>
   </section>
+
+  {% if vocabulary_import and vocabulary_import.flashcard_import_id %}
+  {# The photo the rows were read from, one tap away, so a flagged word can be checked
+     against the page instead of against memory. Filled in by the script, which knows
+     whether this import has a picture to show. #}
+  <details class="vocabulary-panel review-photo" id="vocabularyPhoto" hidden>
+    <summary>{{ _('Show the page photo') }}</summary>
+    <img id="vocabularyPhotoImage" alt="{{ _('The scanned vocabulary page') }}" loading="lazy">
+  </details>
+  {% endif %}
 
   {% if vocabulary_import %}
   {# Four card directions and an examples switch were the first thing on the old page.

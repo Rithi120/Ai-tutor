@@ -37,6 +37,7 @@ PROMPT_VERSIONS = {
     "content_moderation": "content_moderation:v1",
     "assistant_chat": "assistant_chat:v1",
     "competency_extraction": "competency_extraction:v1",
+    "vocabulary_page_extraction": "vocabulary_page_extraction:v1",
 }
 
 # Conversational tasks return prose, so there is no JSON structure to demand or
@@ -58,6 +59,7 @@ SCHEMA_SUMMARIES = {
     "project_section_generation": '{"sections":list[{"title":str,"source_page_ids":list[int],"estimated_minutes":int,"recall_cards":list}]}',
     "adaptive_practice": '{"question":question}',
     "competency_extraction": '{"competencies":list[{"statement":str,"topic":str,"subtopic":str,"level":"basic|intermediate|advanced","importance":1..3,"source_page_ids":list[int],"coverage":"covered|partial|missing","evidence":str}]}',
+    "vocabulary_page_extraction": '{"rows":list[{"term":str,"phonetic":str,"translation":str,"examples":list[{"sentence":str,"translation":str}],"note":str,"confidence":0..1}],"source_language":str,"target_language":str}',
     "final_exam_generation": '{"questions":list[{"id":str,"section_id":int,"source_page_ids":list[int],"difficulty":"easy|medium|hard","question_type":enum,"prompt":str,"expected_answer":value}]}',
     "final_exam_evaluation": '{"results":list[{"question_id":int,"score":0..100,"evaluation":str}]}',
     "flashcard_generation": '{"title":str,"cards":list[{"type":enum,"front":str,"back":str,"explanation":str,"hint":str,"tags":list[str],"difficulty":"easy|medium|hard"}]}',
@@ -113,7 +115,7 @@ def output_contract(task_type: str, language: str, context: dict[str, Any] | Non
             "The question must be answerable from its own prompt and must not repeat anything in avoid_prompts.",
             "Solve the question yourself: expected_answer must be correct and solution_steps must reach it.",
         ])
-    if task_type in {"ocr_document_recognition", "project_section_generation", "final_exam_generation", "final_exam_evaluation", "competency_extraction"}:
+    if task_type in {"ocr_document_recognition", "project_section_generation", "final_exam_generation", "final_exam_evaluation", "competency_extraction", "vocabulary_page_extraction"}:
         lines.extend([
             "Use only the supplied source material. Do not invent facts, page references, section IDs, or quotations.",
             "Every source page reference and section ID must exist in the supplied allowed identifiers.",

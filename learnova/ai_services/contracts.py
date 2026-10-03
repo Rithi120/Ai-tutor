@@ -309,6 +309,33 @@ def _competencies(data: Any, context: dict[str, Any]) -> None:
             _validate_references(row.get("source_page_ids"), allowed, f"competencies[{index}].source_page_ids")
 
 
+def _vocabulary_page(data: Any, context: dict[str, Any]) -> None:
+    """vocabulary_page_extraction: the rows of one textbook page, as the table prints them.
+
+    A row may have an unreadable side - that is how the student learns which word to
+    type in - but never two. `rows` may be empty: a page with no table is a fact the
+    caller handles by falling back to line-by-line reading, not a broken answer.
+    """
+
+    root = _dict(data, "page")
+    rows = _list(root.get("rows"), "rows")
+    for index, value in enumerate(rows):
+        row = _dict(value, f"rows[{index}]")
+        term = _text(row.get("term") or "", f"rows[{index}].term", allow_empty=True)
+        translation = _text(row.get("translation") or "", f"rows[{index}].translation", allow_empty=True)
+        if not term.strip() and not translation.strip():
+            _fail(f"rows[{index}] has neither a term nor a translation")
+        _text(row.get("phonetic") or "", f"rows[{index}].phonetic", allow_empty=True)
+        _text(row.get("note") or "", f"rows[{index}].note", allow_empty=True)
+        _number(row.get("confidence"), f"rows[{index}].confidence", 0, 1)
+        examples = _list(row.get("examples") if row.get("examples") is not None else [], f"rows[{index}].examples")
+        for position, item in enumerate(examples):
+            example = _dict(item, f"rows[{index}].examples[{position}]")
+            _text(example.get("sentence"), f"rows[{index}].examples[{position}].sentence")
+            _text(example.get("translation") or "", f"rows[{index}].examples[{position}].translation",
+                  allow_empty=True)
+
+
 def _ocr(data: Any, context: dict[str, Any]) -> None:
     root = _dict(data, "recognition")
     blocks = _list(root.get("blocks"), "blocks")
@@ -560,6 +587,7 @@ VALIDATORS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
     "flashcard_review": _flashcard_review,
     "content_moderation": _content_moderation,
     "competency_extraction": _competencies,
+    "vocabulary_page_extraction": _vocabulary_page,
 }
 TASK_SCHEMAS = {
     task_type: TaskSchema(name=f"{task_type}_schema", validator=validator)

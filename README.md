@@ -447,6 +447,25 @@ selects, the method chooser was a bare `<fieldset>`, and the dropzone showed a r
 theme tokens, so the page follows dark mode, and `tests/test_vocabulary_import_ui.py`
 pins both the arrangement and every hook the script depends on.
 
+**Textbook pages are read as the table they are.** A vocabulary book prints the word
+(with its pronunciation in brackets), the translation, and an example sentence with its
+own translation beneath. A photo or PDF page goes to one structured vision call
+(`vocabulary_page_extraction`, `GROQ_VISION_MODEL`, cached like OCR) that returns those
+rows as rows; `learnova/vocabulary/service.py::rows_to_entries` tidies them. The kind of
+each entry comes from the column it stood in, not from a heuristic: the word column gives
+words and phrases, the examples column gives sentences, and every translated example
+also becomes a sentence entry of its own, so the three practice scopes on the study page
+— *Words*, *Sentences*, *Both* — each hold exactly what they say. One call per page
+replaces the old OCR call plus a translation call per uncertain word; rows read
+confidently from the table (and sentences) are never sent for a second opinion. If the
+reader cannot make a table of the page, the lines are read one by one as before and the
+import carries a warning saying so. A word the reader could not make out arrives as a
+row with a blank side: the review page asks the student to type it, or to **rescan** the
+page — a new photo taken from the review page (`POST
+/api/vocabulary/imports/<id>/rescan`) replaces only the rows still open, keeps every
+settled or typed row in place, and adds what the first reading missed. The page photo is
+one tap away on the review page so a flagged word can be checked against the book.
+
 `/vocabulary` provides private photo/PDF/text/manual vocabulary imports using the same validated upload,
 OCR, retention, cleanup, and ownership system as flashcard imports. Students select source and target
 languages independently of the interface language, review structured word pairs and example sentences,

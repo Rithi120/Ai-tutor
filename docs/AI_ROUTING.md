@@ -46,7 +46,7 @@ a Groq model from configuration.
 | fast | `GROQ_FAST_MODEL` | tutor_chat, flashcard_back_suggestion, translation, diagnosis_verification |
 | standard | `GROQ_TUTOR_MODEL` | lesson/quiz/question/adaptive/project/exam generation, flashcard generation & review, answer_evaluation, content_moderation, assistant_chat |
 | strong | `GROQ_ANALYSIS_MODEL` | final_exam_evaluation, answer_diagnosis, mistake_analysis, assistant_chat with "think harder" |
-| vision | `GROQ_VISION_MODEL` | ocr_document_recognition, handwriting_region_review, lesson_generation from photos |
+| vision | `GROQ_VISION_MODEL` | ocr_document_recognition, handwriting_region_review, vocabulary_page_extraction, lesson_generation from photos |
 
 For one request the router produces an ordered list of **candidates**:
 
