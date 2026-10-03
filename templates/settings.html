@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "components/_language_selector.html" import language_selector with context %}
+{% from "components/_grade_selector.html" import grade_selector with context %}
 {% block title %}{{ _('Settings') }} — Learnova{% endblock %}
 {% block body_class %}account-page settings-page{% endblock %}
 {% block content %}
@@ -8,12 +9,21 @@
     <div class="eyebrow">LEARNOVA</div>
     <h1>{{ _('Settings') }}</h1>
     <form method="post" action="{{ url_for('update_language') }}">
-      <label for="language">{{ _('Language') }}</label>
+      <label for="language">{{ _('Interface language') }}</label>
       <p>{{ _('Choose the language used for the interface and AI learning content.') }}</p>
       {{ language_selector() }}
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <button class="primary-button" type="submit">{{ _('Save') }}</button>
     </form>
+    {% if current_user.is_authenticated %}
+    <form method="post" action="{{ url_for('update_grade') }}" class="settings-grade">
+      <label for="grade">{{ _('Grade / level') }}</label>
+      <p>{{ _('This helps Learnova match explanations and difficulty to your level.') }}</p>
+      {{ grade_selector(selected=current_grade, required=True) }}
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <button class="primary-button" type="submit">{{ _('Save grade') }}</button>
+    </form>
+    {% endif %}
   </section>
 </main>
 {% endblock %}

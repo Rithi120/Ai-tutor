@@ -1,0 +1,8 @@
+{% macro grade_selector(name='grade', selected='', required=True) -%}
+<select id="{{ name }}" name="{{ name }}" {{ 'required' if required }}>
+  <option value="" {{ 'selected' if not selected }} disabled {{ 'hidden' if required }}>{{ _('Select your grade') }}</option>
+  {% for choice in grade_choices %}
+  <option value="{{ choice.value }}" {{ 'selected' if selected == choice.value }}>{{ _(choice.label) }}</option>
+  {% endfor %}
+</select>
+{%- endmacro %}

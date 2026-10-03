@@ -88,7 +88,12 @@ class DocumentServiceTests(unittest.TestCase):
 
 class DocumentWorkflowTests(unittest.TestCase):
     def setUp(self):
-        application.app.config.update(TESTING=True)
+        # These tests drive the upload -> recognise -> review -> correct -> ownership
+        # workflow with a hand-built sequence of page responses. The handwriting second
+        # look adds a close-up call after any page that came back uncertain, which would
+        # consume entries from that sequence and obscure what is being tested here; it
+        # has its own end-to-end coverage in tests/test_handwriting_second_look.py.
+        application.app.config.update(TESTING=True, FEATURE_HANDWRITING_SECOND_LOOK=False)
         application.SESSIONS.clear()
         with application.app.app_context():
             application.db.drop_all()
@@ -112,7 +117,8 @@ class DocumentWorkflowTests(unittest.TestCase):
             ]),
         }, content_type="multipart/form-data")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/review", response.headers["Location"])
+        # An upload now lands on the one-tap start page; the detailed review is a link from there.
+        self.assertIn("/start", response.headers["Location"])
         with application.app.app_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject))
             assert project is not None
@@ -153,7 +159,11 @@ class DocumentWorkflowTests(unittest.TestCase):
             recognized = self.client.post(f"/projects/{project_id}/recognize")
         self.assertEqual(recognized.status_code, 302)
         review = self.client.get(f"/projects/{project_id}/review")
-        self.assertIn(b"Verify uncertain regions", review.data)
+        # The redesigned review page replaced the old "Verify uncertain regions" list
+        # with a region editor. The guarantee under test is unchanged: low-confidence
+        # regions are surfaced for the student to confirm, never silently corrected.
+        self.assertIn(b"Fix the words Learnova was unsure about", review.data)
+        self.assertIn(b"data-region-editor", review.data)
         self.assertIn("2H₂ + O₂ → 2H₂O", review.get_data(as_text=True))
         self.assertIn(b"Detected diagrams", review.data)
         with application.app.app_context():

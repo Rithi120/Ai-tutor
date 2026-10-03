@@ -76,6 +76,42 @@ def _dedupe_key(card: dict[str, Any]) -> str:
     return re.sub(r"\W+", " ", card["front"]).strip().casefold()
 
 
+SUGGESTION_STYLES = ("short", "detailed", "example")
+MAX_SUGGESTIONS = 3
+MAX_SUGGESTION_TERM = 200
+MIN_SUGGESTION_TERM = 2
+
+
+def normalize_suggestions(raw: Any, limit: int = MAX_SUGGESTIONS) -> list[dict[str, str]]:
+    """Clamp, de-duplicate and cap AI-proposed definitions for one card front.
+
+    Never trusts the model's count or its style label: a response with twenty entries,
+    an unknown style, or a definition longer than a card can hold still yields at most
+    `limit` usable suggestions. Returns [] rather than raising, because a student who
+    gets no suggestion should simply type their own answer.
+    """
+
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if not isinstance(raw, list) or limit <= 0:
+        return result
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        back = _text(item.get("back"), 2000)
+        if not back:
+            continue
+        key = re.sub(r"\W+", " ", back).strip().casefold()
+        if not key or key in seen:
+            continue
+        style = str(item.get("style") or "").strip().lower()
+        seen.add(key)
+        result.append({"back": back, "style": style if style in SUGGESTION_STYLES else "short"})
+        if len(result) >= limit:
+            break
+    return result
+
+
 def normalize_cards(raw_cards: Any, limit: int) -> list[dict[str, Any]]:
     """Normalize a list of AI cards, dropping unusable and duplicate (same-front) cards."""
 

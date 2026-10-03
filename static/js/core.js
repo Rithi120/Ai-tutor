@@ -1,5 +1,40 @@
+import { aiNoticeFrom, noticeDue } from "./ai-limit-rules.js";
+
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
 const nativeFetch = window.fetch.bind(window);
+const NOTICE_SHOWN_KEY = "learnova.aiNotice.shownAt";
+
+// "Max limit reached - using a slower AI model": one banner, bottom of the screen on a
+// phone, dismissible, and not repeated within a minute.
+function showAiNotice(notice) {
+  let shownAt = 0;
+  try { shownAt = Number(sessionStorage.getItem(NOTICE_SHOWN_KEY)) || 0; } catch { /* storage blocked */ }
+  if (!noticeDue(shownAt, Date.now())) return;
+  try { sessionStorage.setItem(NOTICE_SHOWN_KEY, String(Date.now())); } catch { /* storage blocked */ }
+  document.getElementById("aiNotice")?.remove();
+  const banner = document.createElement("div");
+  banner.id = "aiNotice";
+  banner.className = "ai-notice";
+  banner.setAttribute("role", "status");
+  const text = document.createElement("span");
+  text.textContent = `⚠️ ${notice.message}`;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.setAttribute("aria-label", "×");
+  close.textContent = "×";
+  close.addEventListener("click", () => banner.remove());
+  banner.append(text, close);
+  document.body.appendChild(banner);
+  window.setTimeout(() => banner.remove(), 12000);
+}
+
+function watchForAiNotice(response) {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) return;
+  response.clone().json().then(payload => {
+    const notice = aiNoticeFrom(payload);
+    if (notice) showAiNotice(notice);
+  }).catch(() => { /* not an object, or already consumed */ });
+}
 
 window.fetch = (input, options = {}) => {
   const requestUrl = new URL(typeof input === "string" ? input : input.url, window.location.href);
@@ -9,7 +44,10 @@ window.fetch = (input, options = {}) => {
     if (csrfToken && !headers.has("X-CSRFToken")) headers.set("X-CSRFToken", csrfToken);
     options = {...options, headers};
   }
-  return nativeFetch(input, options);
+  return nativeFetch(input, options).then(response => {
+    watchForAiNotice(response);
+    return response;
+  });
 };
 
 document.addEventListener("submit", event => {

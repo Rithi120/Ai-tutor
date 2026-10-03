@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 .venv/
 instance/*.db
+# SQLite writes these transiently during a test run.
+instance/*.db-journal
+instance/*.db-wal
+instance/*.db-shm
 instance/ai_cache/
 instance/ai_usage.jsonl
 instance/flashcard_imports/

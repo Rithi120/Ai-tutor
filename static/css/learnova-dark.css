@@ -1,0 +1,199 @@
+/* learnova-dark.css
+ * Dark-theme overrides for the legacy stylesheets (flashcards.css, auth.css,
+ * vocabulary.css, components.css, motion.css) that hardcode light colors and do
+ * not react to [data-theme]. Loaded LAST in base.html, and every rule is prefixed
+ * with :root[data-theme="dark"] so it wins on both cascade order and specificity.
+ * Colors resolve to the --ln-* tokens defined in learnova-tokens.css. */
+
+:root[data-theme="dark"] {
+  --fc-input-bg: #0c1524;      /* inputs sit clearly darker than surfaces */
+  --fc-muted-surface: #1a2438; /* sub-panels / option tiles */
+  --fc-raised-surface: #16213a;
+}
+
+/* ---- Solid card surfaces ---- */
+:root[data-theme="dark"] :is(
+  .set-card, .card-panel, .card-editor, .card-row, .study-card-face,
+  .study-summary, .cards-modal-panel, .mode-card, .preview-item,
+  .dashboard-flashcards, .import-page-review, .mode-question-card,
+  .gamification-dashboard, .progress-hero, .fc-dash-card,
+  .badge-grid article, .save-bar, .progress-grid article) {
+  background: var(--ln-surface-solid);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+/* result-item keeps its red/green left-border indicator */
+:root[data-theme="dark"] .result-item { background: var(--ln-surface-solid); color: var(--ln-ink); }
+
+/* ---- Muted sub-surfaces / option tiles ---- */
+:root[data-theme="dark"] :is(
+  .mode-options button, .match-board button, .summary-stats div,
+  .gamification-dashboard > *, .progress-hero > *, .import-steps li,
+  .detail-review, .grade, .ghost-button, .card-editor-move button,
+  .suggest-chip, .continue-button.ghost) {
+  background: var(--fc-muted-surface);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] .ghost-button:hover,
+:root[data-theme="dark"] a.ghost-button:hover { background: var(--fc-raised-surface); }
+
+/* ---- Inputs & textareas: clearly separated from surfaces ---- */
+:root[data-theme="dark"] :is(
+  .cards-toolbar input, .cards-toolbar select,
+  .field textarea, .field input, .field select,
+  .card-editor textarea, .card-editor input, .card-editor select,
+  .card-more-body textarea, .card-more-body input, .card-more-body select,
+  .import-page-review textarea) {
+  background: var(--fc-input-bg);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.field textarea, .field input, .card-editor textarea, .card-editor input)::placeholder {
+  color: var(--ln-subtle);
+}
+
+/* ---- Progress tracks ---- */
+:root[data-theme="dark"] :is(.study-progress, .fc-dash-progress) { background: rgba(190, 205, 235, .14); }
+
+/* ---- Answer / feedback / hint panels ---- */
+:root[data-theme="dark"] .mode-answer { color: var(--ln-ink); border-top-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .mode-feedback { background: rgba(110, 92, 255, .16); color: var(--ln-ink); }
+:root[data-theme="dark"] .study-hint { background: rgba(217, 149, 27, .16); color: var(--ln-ink); }
+:root[data-theme="dark"] .study-card-note, :root[data-theme="dark"] .set-meta,
+:root[data-theme="dark"] .set-stats, :root[data-theme="dark"] .cards-subtitle { color: var(--ln-muted); }
+
+/* ---- Match tiles interactive states ---- */
+:root[data-theme="dark"] .match-board button.selected { background: rgba(110, 92, 255, .3); border-color: var(--ln-violet); color: var(--ln-ink); }
+:root[data-theme="dark"] .match-board button.wrong { background: rgba(220, 38, 38, .32); border-color: #ff6f88; color: var(--ln-ink); }
+:root[data-theme="dark"] .import-steps li.active { background: rgba(59, 130, 246, .3); color: #cfe0ff; }
+:root[data-theme="dark"] .import-tabs button { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .import-tabs button[aria-selected="true"] { background: var(--ln-violet); border-color: var(--ln-violet); color: #0b1120; }
+
+/* ---- Chips that lack an explicit text colour (would inherit near-white) ---- */
+:root[data-theme="dark"] :is(.card-badge, .rating-chip, .status-badge) {
+  background: rgba(149, 136, 255, .16);
+  color: var(--ln-ink);
+}
+/* Semantic status chips: keep the light hue, force readable dark text (both themes safe here) */
+:root[data-theme="dark"] :is(
+  .status-success, .status-approved, .status-valid, .status-likely_valid,
+  .status-low_text, .status-needs_ocr, .status-failed,
+  .status-translation_mismatch, .status-likely_ocr_error,
+  .status-wrong_language, .status-missing_translation,
+  .status-rejected, .status-pending_manual_review, .status-pending_ai_review) {
+  color: #0b1220;
+}
+
+/* ---- Toast keeps its dark chrome; ensure contrast ---- */
+:root[data-theme="dark"] .toast { background: #1d2740; color: var(--ln-ink); border: 1px solid var(--ln-line-strong); }
+
+/* ================= motion.css (empty / skeleton) ================= */
+:root[data-theme="dark"] :is(.empty-state, .empty-project) { background: rgba(19, 29, 48, .6); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(.empty-state-icon, .empty-project::before) { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
+
+/* ================= components.css (concept / dashboard detail) ================= */
+:root[data-theme="dark"] .concept-stat-grid div { background: var(--ln-surface-solid); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(.mastery-history-list > div, .source-section-list a) { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .concept-detail-hero { background: linear-gradient(125deg, var(--ln-surface-solid), #182136); }
+:root[data-theme="dark"] .focus-metric { border-color: var(--ln-line-strong); }
+
+/* ================= auth.css ================= */
+:root[data-theme="dark"] .auth-body { background: var(--ln-canvas); }
+:root[data-theme="dark"] .auth-background::after { background: rgba(20, 28, 48, .5); }
+:root[data-theme="dark"] .auth-card {
+  background: rgba(19, 29, 48, .92);
+  border-color: var(--ln-line-strong);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .5);
+}
+:root[data-theme="dark"] .auth-brand { color: var(--ln-ink); }
+:root[data-theme="dark"] .auth-field { color: var(--ln-ink); }
+:root[data-theme="dark"] .auth-field:focus-within > span:first-child { color: var(--ln-violet); }
+:root[data-theme="dark"] :is(.auth-field input:not([type="checkbox"]), .auth-field select) {
+  background: var(--fc-input-bg);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.auth-field input:not([type="checkbox"]):focus-visible, .auth-field select:focus-visible) { background: #101a2c; border-color: var(--ln-violet); }
+:root[data-theme="dark"] .password-toggle { color: var(--ln-muted); }
+:root[data-theme="dark"] .password-toggle:hover, :root[data-theme="dark"] .password-toggle.is-visible { background: rgba(149, 136, 255, .16); color: var(--ln-violet); }
+:root[data-theme="dark"] .auth-card .remember { color: var(--ln-muted); }
+:root[data-theme="dark"] .auth-card-footer a { color: var(--ln-violet); }
+:root[data-theme="dark"] .auth-card .form-alert { background: rgba(216, 77, 103, .16); border-color: rgba(216, 77, 103, .3); color: #ffd7de; }
+
+/* ================= vocabulary.css ================= */
+:root[data-theme="dark"] :is(.vocabulary-panel, .vocabulary-list-card, .vocabulary-practice-card) {
+  background: var(--ln-surface-solid);
+  border-color: var(--ln-line-strong);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .35);
+}
+:root[data-theme="dark"] .upload-drop { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .review-row { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .review-more { border-top: 1px solid var(--ln-line); }
+:root[data-theme="dark"] .vocabulary-table article { border-bottom-color: var(--ln-line-strong); }
+
+/* ================= styles.css: AI-tutor home + lesson output ================= */
+:root[data-theme="dark"] :is(.study-card, .content-card, .saved-lesson, .exam-review, .today-card) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.study-card textarea, .study-card input, .subject-picker input:not([type="radio"]):not([type="checkbox"])) {
+  background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.subject-picker legend, .study-card legend, .study-card > label, .study-home legend) {
+  color: var(--ln-muted);
+}
+:root[data-theme="dark"] .subject-picker label { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .subject-picker label > span { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .subject-picker input:checked + span { background: rgba(149, 136, 255, .22); border-color: var(--ln-violet); color: var(--ln-ink); }
+:root[data-theme="dark"] .prompt-ideas button { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+/* .start-test-card baked var(--ink) into its gradient -> near-white in dark; pin a dark gradient */
+:root[data-theme="dark"] .start-test-card { background: linear-gradient(130deg, #182136, #35436b); color: #fff; }
+
+/* Projects / exam-setup form cards (these hardcode #fff in styles.css) */
+:root[data-theme="dark"] :is(.project-create-card, .material-card, .sections-card, .exam-config-card, .upload-card) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.project-create-card h2, .project-create-card label, .exam-config-card label, .document-input-options legend) {
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.project-create-card input, .exam-config-card input, #mergeForm input, .section-edit input) {
+  background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .document-input-option { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+
+/* ===== styles.css: AI-tutor lesson / question view ===== */
+/* Lesson wrapper + sidebar. In light mode .lesson is a hardcoded cream (#f9f8f4)
+   and .lesson-sidebar uses `background: var(--ink)` — a dark navy panel with white
+   text and translucent-white borders. In dark mode var(--ink) flips to near-white,
+   so the sidebar inverted to light. Keep the wrapper on the page canvas and the
+   sidebar on a dark surface — its internals are already styled for a dark panel. */
+:root[data-theme="dark"] .lesson { background: var(--ln-canvas); }
+:root[data-theme="dark"] .lesson-sidebar { background: var(--ln-surface-solid); }
+:root[data-theme="dark"] .sidebar-brand span { color: var(--ln-canvas-deep); } /* white chip keeps a dark glyph */
+:root[data-theme="dark"] :is(.lesson-top, .example-answer, .summary-card, .explanation-levels, .content-card) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+/* Answer option pills */
+:root[data-theme="dark"] .answer-option span {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .answer-option span:before { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .answer-option input:checked + span {
+  background: rgba(110, 92, 255, .22); border-color: var(--ln-violet); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .answer-control textarea {
+  background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+/* Confidence buttons */
+:root[data-theme="dark"] .response-confidence span {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .response-confidence input:checked + span {
+  background: rgba(110, 92, 255, .22); border-color: var(--ln-violet); color: var(--ln-ink);
+}
+/* Progress step chips (current/correct/wrong keep their accent colours) */
+:root[data-theme="dark"] .progress-steps span { background: var(--fc-muted-surface); color: var(--ln-muted); }
+/* Listen / playback controls row */
+:root[data-theme="dark"] :is(.listen-control, .listen-control select, .listen-control button) {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}

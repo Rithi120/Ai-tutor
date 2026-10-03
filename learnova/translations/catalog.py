@@ -4,15 +4,87 @@ English source strings are deliberately used as message identifiers so templates
 Python validation, and frontend dictionaries all share one small catalogue.
 """
 
+import json
+import logging
 from functools import lru_cache
+from pathlib import Path
 
-SUPPORTED_LANGUAGES = ("en", "de")
+_log = logging.getLogger(__name__)
+
+# Interface-language registry. `native` is the endonym shown in the selector; `rtl`
+# drives the page direction. A language becomes SELECTABLE only when it has a complete
+# catalogue (see below), so an unfinished language never shows half-English UI.
+LANGUAGES = (
+    {"code": "en", "name": "English", "native": "English", "rtl": False},
+    {"code": "de", "name": "German", "native": "Deutsch", "rtl": False},
+    {"code": "fr", "name": "French", "native": "Français", "rtl": False},
+    {"code": "es", "name": "Spanish", "native": "Español", "rtl": False},
+    {"code": "it", "name": "Italian", "native": "Italiano", "rtl": False},
+    {"code": "pt", "name": "Portuguese", "native": "Português", "rtl": False},
+    {"code": "nl", "name": "Dutch", "native": "Nederlands", "rtl": False},
+    {"code": "pl", "name": "Polish", "native": "Polski", "rtl": False},
+    {"code": "tr", "name": "Turkish", "native": "Türkçe", "rtl": False},
+    {"code": "ar", "name": "Arabic", "native": "العربية", "rtl": True},
+    {"code": "hi", "name": "Hindi", "native": "हिन्दी", "rtl": False},
+    {"code": "sv", "name": "Swedish", "native": "Svenska", "rtl": False},
+    {"code": "da", "name": "Danish", "native": "Dansk", "rtl": False},
+    {"code": "no", "name": "Norwegian", "native": "Norsk", "rtl": False},
+    {"code": "fi", "name": "Finnish", "native": "Suomi", "rtl": False},
+    {"code": "cs", "name": "Czech", "native": "Čeština", "rtl": False},
+    {"code": "sk", "name": "Slovak", "native": "Slovenčina", "rtl": False},
+    {"code": "hu", "name": "Hungarian", "native": "Magyar", "rtl": False},
+    {"code": "ro", "name": "Romanian", "native": "Română", "rtl": False},
+    {"code": "el", "name": "Greek", "native": "Ελληνικά", "rtl": False},
+    {"code": "hr", "name": "Croatian", "native": "Hrvatski", "rtl": False},
+    {"code": "sr", "name": "Serbian", "native": "Српски", "rtl": False},
+    {"code": "uk", "name": "Ukrainian", "native": "Українська", "rtl": False},
+)
+LANGUAGE_BY_CODE = {entry["code"]: entry for entry in LANGUAGES}
+RTL_LANGUAGES = frozenset(entry["code"] for entry in LANGUAGES if entry["rtl"])
+_DATA_DIR = Path(__file__).with_name("data")
 
 
 GERMAN = {
     # --- Flashcards feature (Phase 1) ---
     "Flashcards": "Karteikarten",
     "Community": "Community",
+    "Skip to main content": "Zum Hauptinhalt springen",
+    "Use dark mode": "Dunkles Design verwenden",
+    "Use light mode": "Helles Design verwenden",
+    "LEARNOVA LEARNING SPACE": "LEARNOVA LERNRAUM",
+    "Turn today’s effort into lasting knowledge.": "Mach aus deinem heutigen Einsatz dauerhaftes Wissen.",
+    "Your focus, mastery and next step—together in one calm learning view.": "Fokus, Lernstand und nächster Schritt – gemeinsam in einer ruhigen Lernansicht.",
+    "Open flashcards": "Karteikarten öffnen",
+    "Learning signals": "Lernsignale",
+    "Knowledge Pulse": "Wissenspuls",
+    "pulse": "Puls",
+    "Mastery Map": "Wissenskarte",
+    "Weak and strong topics": "Schwache und starke Themen",
+    "topics mapped": "Themen erfasst",
+    "Study Orbit": "Lernorbit",
+    "recent sets in orbit": "aktuelle Sets im Orbit",
+    "Focus Trail": "Fokuspfad",
+    "reviews ready today": "Wiederholungen heute bereit",
+    "FAST CREATOR": "SCHNELLERSTELLUNG",
+    "Write the essentials first. Everything else can wait.": "Schreibe zuerst das Wesentliche. Alles Weitere kann warten.",
+    "More": "Mehr",
+    "Description, subject and tags": "Beschreibung, Fach und Schlagwörter",
+    "Draft ready": "Entwurf bereit",
+    "Unsaved changes": "Ungespeicherte Änderungen",
+    "Ctrl/⌘ + S to save": "Strg/⌘ + S zum Speichern",
+    "LEARN TOGETHER": "GEMEINSAM LERNEN",
+    "Find thoughtful sets, save your favourites and start studying in seconds.": "Finde sorgfältige Sets, speichere deine Favoriten und lerne in wenigen Sekunden.",
+    "Community highlights": "Community-Highlights",
+    "RIGHT NOW": "GERADE ANGESAGT",
+    "View all": "Alle ansehen",
+    "STUDENT FAVOURITES": "FAVORITEN DER LERNENDEN",
+    "Top rated": "Am besten bewertet",
+    "FRESH SETS": "NEUE SETS",
+    "EXPLORE": "ENTDECKEN",
+    "All community sets": "Alle Community-Sets",
+    "Focus mode": "Fokusmodus",
+    "Next best action": "Nächster sinnvoller Schritt",
+    "Review mistakes now while the memory is still fresh.": "Wiederhole Fehler jetzt, solange die Erinnerung noch frisch ist.",
     "Your flashcards": "Deine Karteikarten",
     "Create flashcards": "Karteikarten erstellen",
     "Edit flashcards": "Karteikarten bearbeiten",
@@ -86,7 +158,6 @@ GERMAN = {
     "Create new set": "Neues Set erstellen",
     "You have no flashcards yet. Create your first set to start studying.": "Du hast noch keine Karteikarten. Erstelle dein erstes Set, um mit dem Lernen zu beginnen.",
     "Study modes": "Lernmodi",
-    "Coming soon": "Demnächst verfügbar",
     "Learn": "Lernen",
     "Test": "Test",
     "Match": "Zuordnen",
@@ -106,7 +177,44 @@ GERMAN = {
     "This flashcard set could not be found.": "Dieses Karteikarten-Set wurde nicht gefunden.",
     "Recall grades update spaced-repetition scheduling on the server. Per-session counters are not stored.":
         "Bewertungen aktualisieren die Wiederholungsplanung auf dem Server. Sitzungszähler werden nicht gespeichert.",
-    "Image and PDF sources are coming soon.": "Bild- und PDF-Quellen sind bald verfügbar.",
+    "Have images or a PDF?": "Hast du Bilder oder ein PDF?",
+    "Import from images or PDF": "Aus Bildern oder PDF importieren",
+    # Study-mode config, controls and results (were leaking English under a German UI)
+    "Card direction": "Kartenrichtung",
+    "Front to back": "Vorderseite zu Rückseite",
+    "Back to front": "Rückseite zu Vorderseite",
+    "Check answer": "Antwort prüfen",
+    "Flashcard controls": "Karteikarten-Steuerung",
+    "Previous": "Zurück",
+    "Next": "Weiter",
+    "Source": "Quelle",
+    # Progress / goals
+    "Cards": "Karten",
+    "Minutes": "Minuten",
+    "Questions": "Fragen",
+    "Goal type": "Zieltyp",
+    "Target": "Ziel",
+    "Save goal": "Ziel speichern",
+    "Goal saved.": "Ziel gespeichert.",
+    # Community library filters and sort options
+    "Community flashcards": "Community-Karteikarten",
+    "Search": "Suchen",
+    "Search title, topic, keyword…": "Titel, Thema, Stichwort suchen…",
+    "Sort": "Sortieren",
+    "Trending": "Angesagt",
+    "Most saved": "Am häufigsten gespeichert",
+    "Most studied": "Am meisten gelernt",
+    "Best overall": "Beste insgesamt",
+    "Highest AI rating": "Höchste KI-Bewertung",
+    "Highest student rating": "Höchste Schülerbewertung",
+    "Any AI rating": "Beliebige KI-Bewertung",
+    "Any student rating": "Beliebige Schülerbewertung",
+    "Any language": "Beliebige Sprache",
+    "Minimum AI rating": "Mindest-KI-Bewertung",
+    "Minimum student rating": "Mindest-Schülerbewertung",
+    "No community sets match your search yet.": "Noch keine Community-Sets entsprechen deiner Suche.",
+    "Publishing is disabled until moderation and reporting are ready.": "Die Veröffentlichung ist deaktiviert, bis Moderation und Meldefunktion bereit sind.",
+    "Your personal study tutor": "Dein persönlicher Lern-Tutor",
     "Cancel": "Abbrechen",
     "Confirm": "Bestätigen",
     "Delete this set? This cannot be undone.": "Dieses Set löschen? Das kann nicht rückgängig gemacht werden.",
@@ -245,9 +353,11 @@ GERMAN = {
     "Unpublished": "Zurückgezogen",
     "The material could not be read reliably because the AI response could not be validated. You can retry. Your saved work remains safe.": "Das Material konnte nicht zuverlässig gelesen werden, weil die KI-Antwort nicht geprüft werden konnte. Du kannst es erneut versuchen. Deine gespeicherten Inhalte bleiben sicher.",
     "AI is temporarily unavailable. You can retry. Your saved work remains safe.": "Die KI ist vorübergehend nicht verfügbar. Du kannst es erneut versuchen. Deine gespeicherten Inhalte bleiben sicher.",
+    "The AI has reached its limit until {time}. Your saved work is safe.": "Die KI hat ihr Limit bis {time} erreicht. Deine gespeicherte Arbeit ist sicher.",
+    "The AI has reached its limit right now. Please try again in a moment. Your saved work is safe.": "Die KI hat gerade ihr Limit erreicht. Bitte versuche es gleich noch einmal. Deine gespeicherte Arbeit ist sicher.",
     "The AI response could not be validated. You can retry. Your saved work remains safe.": "Die KI-Antwort konnte nicht geprüft werden. Du kannst es erneut versuchen. Deine gespeicherten Inhalte bleiben sicher.",
     "The AI response could not be validated against your material. You can retry. Your saved work remains safe.": "Die KI-Antwort konnte nicht anhand deines Materials geprüft werden. Du kannst es erneut versuchen. Deine gespeicherten Inhalte bleiben sicher.",
-    "Your AI request limit has been reached. Try again later or use your saved content.": "Dein Limit für KI-Anfragen wurde erreicht. Versuche es später erneut oder nutze deine gespeicherten Inhalte.",
+    "You have reached your limit. AI help is back at {time}. Your saved lessons, flashcards and vocabulary still work.": "Du hast dein Limit erreicht. KI-Hilfe gibt es wieder um {time}. Deine gespeicherten Lektionen, Karteikarten und Vokabeln funktionieren weiterhin.",
     "The uploaded material is too large for one AI request. Split it into smaller sections and try again. Your saved work remains safe.": "Das hochgeladene Material ist für eine einzelne KI-Anfrage zu groß. Teile es in kleinere Abschnitte und versuche es erneut. Deine gespeicherten Inhalte bleiben sicher.",
     "Generation timed out. You can retry. Your saved work remains safe.": "Die Erstellung hat zu lange gedauert. Du kannst es erneut versuchen. Deine gespeicherten Inhalte bleiben sicher.",
     "Settings": "Einstellungen",
@@ -261,6 +371,124 @@ GERMAN = {
     "More": "Mehr",
     "Account": "Konto",
     "Menu": "Menü",
+    "You have reached your limit. Please try again later. Your saved lessons, flashcards and vocabulary still work.": "Du hast dein Limit erreicht. Bitte versuche es später noch einmal. Deine gespeicherten Lektionen, Karteikarten und Vokabeln funktionieren weiterhin.",
+    # --- Finish test, set kinds, simpler publishing ---
+    "Finish test": "Test beenden",
+    "Answer at least {minimum} questions before finishing.": "Beantworte mindestens {minimum} Fragen, bevor du beendest.",
+    "This test is already finished.": "Dieser Test ist bereits beendet.",
+    "You stopped after {answered} questions. Here is what your answers so far show.": "Du hast nach {answered} Fragen aufgehört. Das zeigen deine bisherigen Antworten.",
+    "Set kind": "Art des Sets",
+    "All sets": "Alle Sets",
+    "Flashcards only": "Nur Karteikarten",
+    "Vocabulary only": "Nur Vokabeln",
+    "Details (optional)": "Details (optional)",
+    "Subject, level and language are taken from your set. Only a title and your confirmation are needed.": "Fach, Niveau und Sprache werden aus deinem Set übernommen. Nur ein Titel und deine Bestätigung sind nötig.",
+    # --- Exam autopilot (learnova/exam_prep, components/_autopilot_card.html) ---
+    "EXAM AUTOPILOT": "PRÜFUNGS-AUTOPILOT",
+    "{days} days remaining": "{days} Tage verbleibend",
+    "Final days: testing and review": "Letzte Tage: Testen und Wiederholen",
+    "Learning phase": "Lernphase",
+    "Today": "Heute",
+    "{known} of {total} topics known": "{known} von {total} Themen gewusst",
+    "Estimated grade": "Geschätzte Note",
+    "an estimate from your results, not a guarantee": "eine Schätzung aus deinen Ergebnissen, keine Garantie",
+    "Weakness": "Schwäche",
+    "none found yet": "noch keine gefunden",
+    "Why the estimate changed": "Warum sich die Schätzung geändert hat",
+    "Your notes cover {percent}% of the {total} required competencies": "Deine Notizen decken {percent} % der {total} geforderten Kompetenzen ab",
+    "{count} missing": "{count} fehlen",
+    "Start": "Start",
+    "Enter the exam date. Learnova plans the rest.": "Gib das Prüfungsdatum ein. Learnova plant den Rest.",
+    "Competencies from your material, a day-by-day path, lessons, tests until you know it, and a mock exam before the day.": "Kompetenzen aus deinem Material, ein Tag-für-Tag-Weg, Lektionen, Tests bis du es kannst und eine Probeprüfung vor dem Tag.",
+    "Learn {topic}": "{topic} lernen",
+    "Practise {topic} until you know it": "{topic} üben, bis du es kannst",
+    "Review what is due again": "Wiederholen, was fällig ist",
+    "Take a mock exam": "Eine Probeprüfung schreiben",
+    "Add material to plan from": "Material hinzufügen, aus dem geplant werden kann",
+    "{minutes}-minute lesson": "{minutes}-Minuten-Lektion",
+    "exercises": "Übungen",
+    "mastery check": "Wissenscheck",
+    "mistake diagnosis": "Fehlerdiagnose",
+    "spaced review": "verteilte Wiederholung",
+    "mock exam": "Probeprüfung",
+    "knowledge check": "Wissensstand",
+    "gap practice": "Lücken üben",
+    "{topic} rose from {before}% to {after}%": "{topic} stieg von {before} % auf {after} %",
+    "{topic} fell from {before}% to {after}%": "{topic} fiel von {before} % auf {after} %",
+    "{topic} tested for the first time: {after}%": "{topic} zum ersten Mal geprüft: {after} %",
+    "Mock exam: {score}%": "Probeprüfung: {score} %",
+    "More evidence behind the estimate": "Mehr Belege hinter der Schätzung",
+    "Less recent evidence": "Weniger aktuelle Belege",
+    "First estimate from your results so far": "Erste Schätzung aus deinen bisherigen Ergebnissen",
+    "Choose a future exam date.": "Wähle ein zukünftiges Prüfungsdatum.",
+    "Your exam preparation is planned. Learnova will tell you what to do each day.": "Deine Prüfungsvorbereitung ist geplant. Learnova sagt dir jeden Tag, was zu tun ist.",
+    "The preparation could not be planned right now. Your pages are saved.": "Die Vorbereitung konnte gerade nicht geplant werden. Deine Seiten sind gespeichert.",
+    "Add pages to this project so Learnova can plan from them.": "Füge diesem Projekt Seiten hinzu, damit Learnova daraus planen kann.",
+    "The next step could not be started right now. Your progress is saved.": "Der nächste Schritt konnte gerade nicht gestartet werden. Dein Fortschritt ist gespeichert.",
+    "Max limit reached - using a slower AI model. Answers may take a little longer.": "Maximales Limit erreicht – ein langsameres KI-Modell wird verwendet. Antworten können etwas länger dauern.",
+    "Notes": "Notizen",
+    # --- One-tap project start (templates/project_start.html) ---
+    "{count} pages saved. Learnova reads them, explains the material, then tests you - 3 to 15 questions, until you know it.": "{count} Seiten gespeichert. Learnova liest sie, erklärt den Stoff und testet dich dann – 3 bis 15 Fragen, bis du es kannst.",
+    "Reading your pages": "Deine Seiten lesen",
+    "Building your lesson": "Deine Lektion erstellen",
+    "Opening your lesson": "Deine Lektion öffnen",
+    "Check the scan first (optional)": "Scan zuerst prüfen (optional)",
+    "CONTINUE WHERE YOU LEFT OFF": "WEITERMACHEN, WO DU AUFGEHÖRT HAST",
+    "{answered} questions answered": "{answered} Fragen beantwortet",
+    "Not started yet": "Noch nicht begonnen",
+    "Continue": "Weiter",
+    "Continue lesson": "Lektion fortsetzen",
+    "Learnova explains the next section, then tests you until you know it. Your progress is saved.": "Learnova erklärt den nächsten Abschnitt und testet dich dann, bis du ihn kannst. Dein Fortschritt wird gespeichert.",
+    "None of the pages could be read. Check the scan to fix or retake them.": "Keine der Seiten konnte gelesen werden. Prüfe den Scan, um sie zu korrigieren oder neu aufzunehmen.",
+    "The lesson could not be started right now. Your pages are saved.": "Die Lektion konnte gerade nicht gestartet werden. Deine Seiten sind gespeichert.",
+    "The pages were saved, but a complete grounded section plan could not be created.": "Die Seiten wurden gespeichert, aber ein vollständiger, belegter Abschnittsplan konnte nicht erstellt werden.",
+    "Project not found": "Projekt nicht gefunden",
+    "Start lesson from these pages": "Lektion aus diesen Seiten starten",
+    "Reading page {current} of {total}…": "Seite {current} von {total} wird gelesen …",
+    "{count} page(s) could not be read - they are skipped for now": "{count} Seite(n) konnten nicht gelesen werden – sie werden vorerst übersprungen",
+    "Something went wrong. Your pages are saved - try again or check the scan.": "Etwas ist schiefgelaufen. Deine Seiten sind gespeichert – versuche es erneut oder prüfe den Scan.",
+    "Try again": "Erneut versuchen",
+    # --- Knowledge-gated tests (learnova/quizzes/mastery_gate.py) ---
+    "Between 3 and 15 questions - as many as it takes until you know every concept (80% knowledge). A wrong answer gets a diagnosis, not just a mark.": "Zwischen 3 und 15 Fragen – so viele, bis du jedes Konzept kennst (80 % Wissen). Eine falsche Antwort bekommt eine Diagnose, nicht nur ein Kreuz.",
+    "Tap Start test. It asks as many questions as you need - 3 to 15 - until you really know it.": "Tippe auf Test starten. Er stellt so viele Fragen, wie du brauchst – 3 bis 15 –, bis du es wirklich kannst.",
+    "You reached the knowledge target in every concept of this test.": "Du hast das Wissensziel in jedem Konzept dieses Tests erreicht.",
+    "That was the longest test ({maximum} questions). Still below the knowledge target: {concepts}. They continue in Today's Practice.": "Das war der längste Test ({maximum} Fragen). Noch unter dem Wissensziel: {concepts}. Sie gehen in der heutigen Übung weiter.",
+    "Test complete.": "Test abgeschlossen.",
+    "{concept}: {knowledge}% knowledge, confirmed on a harder question": "{concept}: {knowledge} % Wissen, bestätigt an einer schwereren Frage",
+    "{concept}: {knowledge}% knowledge after {attempts} questions": "{concept}: {knowledge} % Wissen nach {attempts} Fragen",
+    "Read the diagnosis under each wrong answer; the next question was chosen from it.": "Lies die Diagnose unter jeder falschen Antwort; die nächste Frage wurde daraus gewählt.",
+    "Open Today's Practice - the concepts below target are scheduled there.": "Öffne die heutige Übung – die Konzepte unter dem Ziel sind dort eingeplant.",
+    "Every concept is at the target. Come back for the scheduled review so it stays that way.": "Jedes Konzept ist am Ziel. Komm zur geplanten Wiederholung zurück, damit es so bleibt.",
+    "KNOWLEDGE CHECK": "WISSENSCHECK",
+    "What you know after this exam": "Was du nach dieser Prüfung weißt",
+    "Knowledge target: {target}% in every concept, backed by enough evidence - not the exam score.": "Wissensziel: {target} % in jedem Konzept, mit genug Belegen – nicht die Prüfungsnote.",
+    "known": "gewusst",
+    "not yet": "noch nicht",
+    "Close the gaps": "Lücken schließen",
+    "A short test on the concepts below target - 3 to 15 questions, until you know them.": "Ein kurzer Test zu den Konzepten unter dem Ziel – 3 bis 15 Fragen, bis du sie kannst.",
+    "Every concept in this exam is at the knowledge target.": "Jedes Konzept dieser Prüfung ist am Wissensziel.",
+    "of up to {max}": "von bis zu {max}",
+    "{known} of {total} concepts at {target}% knowledge": "{known} von {total} Konzepten bei {target} % Wissen",
+    "not yet tested": "noch nicht geprüft",
+    # --- First-time walkthrough (components/_tour.html, static/js/tour-rules.js) ---
+    "Tutorial": "Rundgang",
+    "Skip": "Überspringen",
+    "Welcome to Learnova": "Willkommen bei Learnova",
+    "Let's build your first lesson together. Tap where the light is - the tour moves on when you do.": "Lass uns zusammen deine erste Lektion bauen. Tippe dorthin, wo das Licht ist – der Rundgang geht weiter, sobald du es tust.",
+    "Let's go": "Los geht's",
+    "Tap the menu button first.": "Tippe zuerst auf den Menü-Button.",
+    "Tap New Lesson. This is where every lesson starts.": "Tippe auf Neue Lektion. Hier beginnt jede Lektion.",
+    "Tap a subject - whatever you want to learn today.": "Tippe auf ein Fach – was immer du heute lernen willst.",
+    "Say what to learn, or tap one of the ideas below. One line is enough.": "Sag, was du lernen willst, oder tippe auf eine der Ideen unten. Eine Zeile reicht.",
+    "Tap Build my lesson. Learnova writes an explanation and a short test for you.": "Tippe auf Lektion erstellen. Learnova schreibt dir eine Erklärung und einen kurzen Test.",
+    "Here is your lesson. Read the explanation, then scroll down.": "Hier ist deine Lektion. Lies die Erklärung und scrolle dann nach unten.",
+    "Stuck? Your tutor chat is right here, any time during a lesson.": "Hängst du fest? Dein Tutor-Chat ist genau hier – jederzeit während einer Lektion.",
+    "Tap Overview to see your progress and what is due today.": "Tippe auf Übersicht, um deinen Fortschritt zu sehen und was heute ansteht.",
+    "That is it": "Das war's",
+    "Projects, Flashcards and the Assistant are under Menu → More. Reopen this tour any time under Account → Tutorial.": "Projekte, Karteikarten und den Assistenten findest du unter Menü → Mehr. Diesen Rundgang kannst du jederzeit unter Konto → Rundgang wieder öffnen.",
+    "Finish": "Fertig",
+    "Step {current} of {total}": "Schritt {current} von {total}",
+    "New here? Take the one-minute tour": "Neu hier? Mach den Ein-Minuten-Rundgang",
     "Close navigation": "Navigation schließen",
     "Dismiss": "Schließen",
     "Welcome back, {username}": "Willkommen zurück, {username}",
@@ -352,7 +580,6 @@ GERMAN = {
     "Exceptions and special cases": "Ausnahmen und Sonderfälle",
     "READY TO PRACTICE?": "BEREIT ZUM ÜBEN?",
     "Test your understanding": "Teste dein Verständnis",
-    "Five questions will move from easy to advanced and adapt to your weak points.": "Fünf Fragen werden anspruchsvoller und passen sich deinen Schwächen an.",
     "Start test": "Test starten",
     "YOUR TURN": "DU BIST DRAN",
     "Show a hint": "Hinweis anzeigen",
@@ -401,7 +628,6 @@ GERMAN = {
     "chat messages": "Chatnachrichten",
     "RECENT MISTAKES": "LETZTE FEHLER",
     "Filters": "Filter",
-    "All subjects": "Alle Fächer",
     "All statuses": "Alle Lernstände",
     "Weak": "Schwach",
     "Learning": "Lernend",
@@ -440,7 +666,6 @@ GERMAN = {
     "Exam settings": "Prüfungseinstellungen",
     "Number of questions": "Anzahl der Fragen",
     "Time limit (minutes)": "Zeitlimit (Minuten)",
-    "Difficulty": "Schwierigkeit",
     "How confident are you?": "Wie sicher bist du dir?",
     "Low": "Niedrig",
     "High": "Hoch",
@@ -464,10 +689,6 @@ GERMAN = {
     "Keep reviewing this concept to retain it.": "Wiederhole dieses Konzept weiter, um es zu behalten.",
     "Confidence and retry values must be numbers.": "Sicherheit und Wiederholungszahl müssen Zahlen sein.",
     "Confidence must be between 0 and 100.": "Die Sicherheit muss zwischen 0 und 100 liegen.",
-    "Mixed": "Gemischt",
-    "Easy": "Leicht",
-    "Medium": "Mittel",
-    "Hard": "Schwer",
     "Included sections": "Enthaltene Abschnitte",
     "Question types": "Fragetypen",
     "Multiple choice": "Multiple Choice",
@@ -475,7 +696,6 @@ GERMAN = {
     "Matching": "Zuordnung",
     "Fill in the blank": "Lückentext",
     "Short answer": "Kurzantwort",
-    "Explanation": "Erklärung",
     "Calculation": "Berechnung",
     "Before you start": "Bevor du beginnst",
     "Generate and start exam": "Prüfung erstellen und starten",
@@ -484,7 +704,6 @@ GERMAN = {
     "Answers autosave": "Antworten werden automatisch gespeichert",
     "QUESTIONS": "FRAGEN",
     "Exam conditions": "Prüfungsbedingungen",
-    "Question": "Frage",
     "of": "von",
     "Write your answer and show every important step…": "Schreibe deine Antwort und zeige jeden wichtigen Schritt…",
     "Math and physics symbols": "Mathematik- und Physiksymbole",
@@ -561,7 +780,6 @@ GERMAN = {
     "pages accepted": "Seiten akzeptiert",
     "Page": "Seite",
     "Retake": "Neu aufnehmen",
-    "Delete": "Löschen",
     "Choose a PDF, upload images, or scan at least one page.": "Wähle eine PDF, lade Bilder hoch oder scanne mindestens eine Seite.",
     "The pages could not be uploaded.": "Die Seiten konnten nicht hochgeladen werden.",
     "Upload failed. Your camera pages remain on this screen so you can retry.": "Der Upload ist fehlgeschlagen. Deine Kameraseiten bleiben für einen neuen Versuch auf diesem Bildschirm.",
@@ -588,7 +806,6 @@ GERMAN = {
     "Learn and test": "Lernen und testen",
     "Start a study project": "Lernprojekt starten",
     "Project name": "Projektname",
-    "Subject": "Fach",
     "Exam date": "Prüfungsdatum",
     "optional": "optional",
     "Add school papers": "Schulunterlagen hinzufügen",
@@ -640,7 +857,6 @@ GERMAN = {
     "Learning sections": "Lernabschnitte",
     "Merge selected": "Ausgewählte zusammenführen",
     "Exclude": "Ausschließen",
-    "Learn": "Lernen",
     "Split": "Teilen",
     "EXAM HISTORY": "PRÜFUNGSVERLAUF",
     "Final exams": "Abschlussprüfungen",
@@ -719,6 +935,19 @@ GERMAN = {
 
 
 FRONTEND_MESSAGES = {
+    # --- Adaptive diagnostics panel ---
+    "dxWhy": "Why this happened",
+    "dxShows": "What your answer shows",
+    "dxFromAnswer": "From your answer",
+    "dxConcepts": "Concepts checked",
+    "dxPrerequisites": "Earlier skills to revisit",
+    "dxChecked": "What was checked",
+    "dxNextStep": "Next step",
+    "dxConfidence": "How sure this is",
+    "dxInsufficient": "Not enough to diagnose yet",
+    "dxShowWorking": "Show your working next time so the cause can be identified.",
+    "dxLoading": "Loading the details…",
+    "dxLoadFailed": "The details could not be loaded.",
     # --- Flashcards feature (Phase 1) ---
     "fcAddCard": "Add card",
     "fcSaveSet": "Save set",
@@ -778,8 +1007,28 @@ FRONTEND_MESSAGES = {
     "fcExtractNeedsOcr": "Needs OCR",
     "fcExtractFailed": "Extraction failed",
     "fcNoHint": "No hint is available.",
+    # --- One-word card creation: AI suggests the definition, the student taps one ---
+    # Row menu: these reuse English source strings the German catalogue already has.
+    # Lesson media card headings. These were hardcoded English/German in app.js, so
+    # French, Spanish and Arabic students saw English.
+    "photoFromYourPage": "Picture from your page",
+    "exploreMore": "Explore more",
+    "watchAndSee": "Watch and see",
+    "fcCardActions": "Card actions",
+    "fcMoveUp": "Move up",
+    "fcMoveDown": "Move down",
+    "fcRegenerate": "Regenerate",
+    "fcSuggestions": "Suggestions",
+    "fcSuggestDefinition": "Suggest a definition",
+    "fcSuggestThinking": "Finding definitions…",
+    "fcSuggestNone": "No suggestions for this term",
+    "fcSuggestUse": "Use this definition",
+    "fcSuggestDismiss": "Hide suggestions",
+    "fcSuggestPaused": "Suggestions paused — daily AI limit reached",
     "fcCorrect": "Correct",
     "fcIncorrect": "Incorrect",
+    "fcTrue": "True",
+    "fcFalse": "False",
     "fcCorrectAnswer": "Correct answer",
     "fcXpEarned": "XP earned",
     "fcScore": "Score",
@@ -795,6 +1044,7 @@ FRONTEND_MESSAGES = {
     "vocabularyExtracting": "Recognizing vocabulary entries…",
     "vocabularyValidating": "Checking words and translations…",
     "vocabularySuggested": "Suggested correction",
+    "vocabularyChangeFile": "Change file",
     "vocabularyAcceptSuggestion": "Accept suggestion",
     "vocabularyKeepOriginal": "Keep original",
     "vocabularyInclude": "Include",
@@ -820,6 +1070,21 @@ FRONTEND_MESSAGES = {
     "vocabularyStatus_duplicate": "Duplicate",
     "vocabularyStatus_missing_translation": "Missing translation",
     "vocabularyStatus_unrecognized": "Unrecognized",
+    "vocabularyBuildingCards": "Building your cards…",
+    "vocabularyMore": "More",
+    "vocabularyLooksRight": "Looks right",
+    "vocabularyNeedALook": "{flagged} of {total} words need a look",
+    "vocabularyWordCount": "{total} words",
+    "vocabularyShowAll": "Show all {total}",
+    "vocabularyShowOnlyFlagged": "Show only the ones to check",
+    "vocabularyFillBothBoxes": "Fill in both the word and its translation, or clear the row.",
+    "vocabularyType": "Type",
+    "vocabularyKind_word": "Word",
+    "vocabularyKind_phrase": "Phrase",
+    "vocabularyKind_sentence": "Sentence",
+    "vocabularyNothingInScope": "Nothing to practise in that selection.",
+    "vocabularyRescanning": "Reading the page again…",
+    "vocabularyRescanned": "{replaced} words replaced, {added} added.",
     "fcPublish": "Publish",
     "fcPublishChanges": "Publish changes",
     "fcUnpublish": "Unpublish",
@@ -838,6 +1103,19 @@ FRONTEND_MESSAGES = {
     "fcStatusDraft": "Draft",
     "fcStatusPrivate": "Private",
     "fcStatusPublic": "Public",
+    "fcStatusPendingModeration": "Being checked",
+    "asstYou": "You",
+    "asstAssistant": "Assistant",
+    "asstCopy": "Copy",
+    "asstCopied": "Copied.",
+    "asstCopyFailed": "Could not copy.",
+    "asstRequestFailed": "Request failed",
+    "asstRenamePrompt": "Name this conversation",
+    "asstDeleteConfirm": "Delete this conversation? This cannot be undone.",
+    "asstArchive": "Archive",
+    "asstUnarchive": "Unarchive",
+    "asstNoModelYet": "No reply yet",
+    "asstContextTrimmed": "{count} earlier message(s) were not sent",
     "fcStatusPendingAi": "Pending AI review",
     "fcStatusChangesRequested": "Changes requested",
     "fcStatusPendingManual": "Pending manual review",
@@ -888,7 +1166,7 @@ FRONTEND_MESSAGES = {
     "exceptions": "Exceptions and special cases",
     "readyTest": "READY TO PRACTICE?",
     "testTitle": "Test your understanding",
-    "testCopy": "Five questions will move from easy to advanced and adapt to your weak points.",
+    "testCopy": "Between 3 and 15 questions - as many as it takes until you know every concept (80% knowledge). A wrong answer gets a diagnosis, not just a mark.",
     "startTest": "Start test",
     "yourTurn": "YOUR TURN",
     "showHint": "Show a hint",
@@ -992,6 +1270,35 @@ FRONTEND_MESSAGES = {
     "playbackResumed": "Playback resumed.",
     "playbackStopped": "Playback stopped.",
     "playbackFinished": "Playback finished.",
+    # --- First-time walkthrough ---
+    "tourWelcomeTitle": "Welcome to Learnova",
+    "tourWelcomeText": "Let's build your first lesson together. Tap where the light is - the tour moves on when you do.",
+    "tourLetsGo": "Let's go",
+    "tourOpenMenu": "Tap the menu button first.",
+    "tourGoNewLesson": "Tap New Lesson. This is where every lesson starts.",
+    "tourSubject": "Tap a subject - whatever you want to learn today.",
+    "tourGoal": "Say what to learn, or tap one of the ideas below. One line is enough.",
+    "tourBuild": "Tap Build my lesson. Learnova writes an explanation and a short test for you.",
+    "tourLesson": "Here is your lesson. Read the explanation, then scroll down.",
+    "tourStartTest": "Tap Start test. It asks as many questions as you need - 3 to 15 - until you really know it.",
+    "tourChat": "Stuck? Your tutor chat is right here, any time during a lesson.",
+    "tourGoOverview": "Tap Overview to see your progress and what is due today.",
+    "tourDoneTitle": "That is it",
+    "tourDoneText": "Projects, Flashcards and the Assistant are under Menu → More. Reopen this tour any time under Account → Tutorial.",
+    "tourFinish": "Finish",
+    "tourStepOf": "Step {current} of {total}",
+    # --- Knowledge-gated tests ---
+    "upToQuestions": "of up to {max}",
+    "conceptsAtTarget": "{known} of {total} concepts at {target}% knowledge",
+    "knowledgeKnown": "known",
+    "knowledgeLearning": "learning",
+    "knowledgeUntested": "not yet tested",
+    # --- One-tap project start ---
+    "startReadingPage": "Reading page {current} of {total}…",
+    "startPagesUnreadable": "{count} page(s) could not be read - they are skipped for now",
+    "startFailed": "Something went wrong. Your pages are saved - try again or check the scan.",
+    "startTryAgain": "Try again",
+    "finishTest": "Finish test",
 }
 
 GERMAN.update({
@@ -1195,6 +1502,22 @@ GERMAN.update({
     "Mistake Fixer": "Fehlerverbesserer", "Correct five previous mistakes.": "Korrigiere fünf frühere Fehler.",
     "Fast Matcher": "Schneller Zuordner", "Complete Match accurately in under two minutes.": "Schließe Zuordnen in unter zwei Minuten genau ab.",
     "No hint is available.": "Kein Hinweis verfügbar.",
+    "Suggestions": "Vorschläge",
+    "Card actions": "Kartenaktionen",
+    "Explore more": "Mehr entdecken",
+    "Picture from your page": "Bild von deiner Seite",
+    "Watch and see": "Videos und Bilder",
+    "Regenerate": "Neu generieren",
+    "Options": "Optionen",
+    "Suggest a definition": "Definition vorschlagen",
+    "Finding definitions…": "Definitionen werden gesucht…",
+    "No suggestions for this term": "Keine Vorschläge für diesen Begriff",
+    "Use this definition": "Diese Definition übernehmen",
+    "Hide suggestions": "Vorschläge ausblenden",
+    "Suggestions paused — daily AI limit reached": "Vorschläge pausiert – KI-Limit erreicht",
+    "Suggest definitions automatically": "Definitionen automatisch vorschlagen",
+    "Type a term first, then Learnova can suggest a definition.": "Gib zuerst einen Begriff ein, dann kann Learnova eine Definition vorschlagen.",
+    "That is too long for one card. Use Generate with AI instead.": "Das ist zu lang für eine Karte. Nutze stattdessen „Mit KI erstellen“.",
     "Correct": "Richtig", "Incorrect": "Falsch", "Correct answer": "Richtige Antwort",
     "XP earned": "Verdiente XP", "Score": "Punktzahl", "Accuracy": "Genauigkeit",
     "Study time": "Lernzeit", "Your answer": "Deine Antwort",
@@ -1212,7 +1535,23 @@ GERMAN.update({
     "Your uploaded schoolbook pages remain private and expire automatically.": "Deine hochgeladenen Schulbuchseiten bleiben privat und laufen automatisch ab.",
     "Source language": "Ausgangssprache", "Target language": "Zielsprache",
     "List title": "Titel der Liste", "Input method": "Eingabemethode",
+    "French": "Französisch",
+    "Spanish": "Spanisch",
+    "Italian": "Italienisch",
+    "Portuguese": "Portugiesisch",
+    "Dutch": "Niederländisch",
+    "Arabic": "Arabisch",
+    "Add word": "Wort hinzufügen",
+    "Add at least one word and its translation.": "Füge mindestens ein Wort mit Übersetzung hinzu.",
+    "Type the words yourself right here.": "Tippe die Wörter direkt hier ein.",
     "Photo or PDF": "Foto oder PDF", "Paste vocabulary text": "Vokabeltext einfügen",
+    "How do you want to add words?": "Wie möchtest du Wörter hinzufügen?",
+    "Snap a schoolbook page or upload a PDF.": "Fotografiere eine Schulbuchseite oder lade ein PDF hoch.",
+    "Paste a list — one word pair per line.": "Füge eine Liste ein – ein Wortpaar pro Zeile.",
+    "Type the words yourself on the next screen.": "Tippe die Wörter auf der nächsten Seite selbst ein.",
+    "Tap to choose a photo or PDF": "Tippe, um ein Foto oder PDF auszuwählen",
+    "JPG, PNG, WebP or PDF": "JPG, PNG, WebP oder PDF",
+    "Change file": "Datei ändern",
     "Manual entry": "Manuelle Eingabe", "Choose photo or PDF": "Foto oder PDF auswählen",
     "Vocabulary text": "Vokabeltext", "Upload and extract": "Hochladen und erkennen",
     "Review vocabulary": "Vokabeln prüfen",
@@ -1273,11 +1612,302 @@ GERMAN.update({
 })
 
 
+# Grade labels are ordinary translatable strings (English source string as the key),
+# so English shows the label itself and other locales translate it like everything else.
+GERMAN.update({f"Grade {n}": f"Klasse {n}" for n in range(1, 14)})
+GERMAN.update({
+    "University": "Universität",
+    "Vocational training": "Berufsausbildung",
+    "Not set": "Nicht festgelegt",
+    "Select your grade": "Wähle deine Klassenstufe",
+    "What grade are you in?": "In welcher Klassenstufe bist du?",
+    "This helps Learnova match explanations and difficulty to your level.":
+        "So passt Learnova Erklärungen und Schwierigkeit an dein Niveau an.",
+    "Grade / level": "Klassenstufe / Niveau",
+    "Save grade": "Klassenstufe speichern",
+    "Your grade was saved.": "Deine Klassenstufe wurde gespeichert.",
+    "Please choose your grade.": "Bitte wähle deine Klassenstufe.",
+    "Interface language": "Anzeigesprache",
+    "Skip for now": "Vorerst überspringen",
+    "True": "Wahr",
+    "False": "Falsch",
+    "Mistake Intelligence": "Fehleranalyse",
+    "How your understanding is developing, with evidence.": "Wie sich dein Verständnis entwickelt – mit Belegen.",
+    "No mistakes analyzed yet.": "Noch keine Fehler analysiert.",
+    "Answer some questions and your learning patterns will appear here.":
+        "Beantworte einige Fragen, dann erscheinen hier deine Lernmuster.",
+    "Recommended next action": "Empfohlener nächster Schritt",
+    "Try this": "Versuche dies",
+    "Prerequisites to review": "Grundlagen zum Wiederholen",
+    "Strongest topics": "Stärkste Themen",
+    "Not enough data yet.": "Noch nicht genug Daten.",
+    "Repeated misconceptions": "Wiederkehrende Fehlvorstellungen",
+    "seen {n} times": "{n}-mal aufgetreten",
+    "Resolved": "Behoben",
+    "Resolved mistakes": "Behobene Fehler",
+})
+
+# --- Adaptive diagnostics (learnova.diagnostics): taxonomy labels and panel copy ---
+GERMAN.update({
+    "Partly correct": "Teilweise richtig",
+    "Misunderstood concept": "Konzept missverstanden",
+    "Wording or vocabulary got in the way": "Sprache oder Fachwörter waren das Hindernis",
+    "Idea known, not yet applied to a new case": "Idee gewusst, aber noch nicht auf den neuen Fall angewendet",
+    "Procedure applied incorrectly": "Verfahren falsch angewendet",
+    "Missing earlier skill": "Fehlende Vorkenntnis",
+    "Question read differently": "Frage anders gelesen",
+    "Calculation or copying slip": "Rechen- oder Übertragungsfehler",
+    "Reasoning left unfinished": "Begründung unvollständig",
+    "Answer looks uncertain": "Antwort wirkt unsicher",
+    "Not enough to judge yet": "Noch nicht beurteilbar",
+    "Problem with the question": "Problem mit der Frage",
+    "Re-read what the question asks": "Lies noch einmal, was gefragt ist",
+    "Answer one short check question": "Beantworte eine kurze Prüffrage",
+    "Revisit the earlier skill first": "Wiederhole zuerst die Vorkenntnis",
+    "Practise this exact step": "Übe genau diesen Schritt",
+    "Study a worked example, then practise": "Lies ein Beispiel, dann übe",
+    "Compare the two competing ideas": "Vergleiche die beiden Vorstellungen",
+    "Recall this again after a break": "Rufe es nach einer Pause erneut ab",
+    "Apply this in a new situation": "Wende es in einer neuen Situation an",
+    "Move on to a harder question": "Weiter mit einer schwereren Frage",
+    "Stay at this level": "Bleib auf diesem Niveau",
+    "Step back to an easier question": "Zurück zu einer leichteren Frage",
+    "Ask a teacher to look at this": "Lass das eine Lehrkraft ansehen",
+    "Why this happened": "Warum das passiert ist",
+    "What your answer shows": "Was deine Antwort zeigt",
+    "From your answer": "Aus deiner Antwort",
+    "Concepts checked": "Geprüfte Konzepte",
+    "Earlier skills to revisit": "Vorkenntnisse zum Wiederholen",
+    "What was checked": "Was geprüft wurde",
+    "Next step": "Nächster Schritt",
+    "How sure this is": "Wie sicher das ist",
+    "Not enough to diagnose yet": "Noch zu wenig für eine Diagnose",
+    "Show your working next time so the cause can be identified.": "Zeige beim nächsten Mal deinen Rechenweg, damit die Ursache erkennbar wird.",
+    "Loading the details…": "Details werden geladen…",
+    "The details could not be loaded.": "Die Details konnten nicht geladen werden.",
+    "That attempt was not found.": "Dieser Versuch wurde nicht gefunden.",
+    "The detailed diagnosis is temporarily unavailable; your score still applies.": "Die ausführliche Diagnose ist vorübergehend nicht verfügbar; deine Bewertung gilt weiterhin.",
+    "The detailed diagnosis could not be read this time.": "Die ausführliche Diagnose konnte diesmal nicht gelesen werden.",
+    "Not assessed enough yet": "Noch nicht ausreichend geprüft",
+    "Needs more evidence": "Braucht mehr Belege",
+    "Foundations to rebuild first": "Grundlagen, die zuerst dran sind",
+    "before": "vor",
+    "Why your mastery changed": "Warum sich dein Lernstand geändert hat",
+    "Publishing is turned off for this deployment.": "Die Veröffentlichung ist für diese Installation deaktiviert.",
+    "Copy": "Kopieren",
+    "Copied.": "Kopiert.",
+    "Could not copy.": "Konnte nicht kopiert werden.",
+    "Request failed": "Anfrage fehlgeschlagen",
+    "Name this conversation": "Diese Unterhaltung benennen",
+    "Delete this conversation? This cannot be undone.": "Diese Unterhaltung löschen? Das lässt sich nicht rückgängig machen.",
+    "Unarchive": "Aus dem Archiv holen",
+    "No reply yet": "Noch keine Antwort",
+    "{count} earlier message(s) were not sent": "{count} frühere Nachricht(en) wurden nicht mitgesendet",
+    "Assistant": "Assistent",
+    "New chat": "Neuer Chat",
+    "Conversations": "Unterhaltungen",
+    "Conversation": "Unterhaltung",
+    "Search conversations": "Unterhaltungen durchsuchen",
+    "No conversations yet.": "Noch keine Unterhaltungen.",
+    "Show archived": "Archivierte anzeigen",
+    "Assistant style": "Assistenz-Stil",
+    "Rename": "Umbenennen",
+    "Archive": "Archivieren",
+    "Ask anything": "Frag einfach",
+    "A direct line to the assistant — no lesson needed. Pick a style above to change how it answers.": "Eine direkte Leitung zum Assistenten – ganz ohne Lektion. Wähle oben einen Stil, um die Antwortweise zu ändern.",
+    "Explain the chain rule with a worked example": "Erkläre die Kettenregel mit einem gerechneten Beispiel",
+    "What is the evidence for and against this claim?": "Welche Belege sprechen für und gegen diese Behauptung?",
+    "Help me plan revision for an exam in three weeks": "Hilf mir, die Wiederholung für eine Prüfung in drei Wochen zu planen",
+    "Your message": "Deine Nachricht",
+    "Send a message…": "Nachricht senden …",
+    "Think harder": "Gründlicher denken",
+    "Use the stronger model. Slower, better on hard questions.": "Das stärkere Modell verwenden. Langsamer, aber besser bei schweren Fragen.",
+    "The assistant can be wrong. Check anything that matters.": "Der Assistent kann sich irren. Prüfe alles, worauf es ankommt.",
+    "This conversation could not be found.": "Diese Unterhaltung wurde nicht gefunden.",
+    "Write a message first.": "Schreibe zuerst eine Nachricht.",
+    "Give the conversation a name.": "Gib der Unterhaltung einen Namen.",
+    "This conversation is full. Start a new one to continue.": "Diese Unterhaltung ist voll. Starte eine neue, um fortzufahren.",
+    "You have reached the maximum number of conversations. Archive or delete one first.": "Du hast die maximale Anzahl an Unterhaltungen erreicht. Archiviere oder lösche zuerst eine.",
+    "The assistant returned an empty reply. You can retry.": "Der Assistent hat eine leere Antwort zurückgegeben. Du kannst es erneut versuchen.",
+    "General": "Allgemein",
+    "Everyday questions, explanations and drafting.": "Alltagsfragen, Erklärungen und Entwürfe.",
+    "Research": "Recherche",
+    "Careful answers that separate evidence from inference.": "Sorgfältige Antworten, die Belege von Schlussfolgerungen trennen.",
+    "Study coach": "Lerncoach",
+    "Works through problems with you instead of handing over answers.": "Arbeitet Aufgaben mit dir durch, statt Lösungen zu verraten.",
+    "Plain explanation": "Einfache Erklärung",
+    "Explains one thing thoroughly, from the ground up.": "Erklärt eine Sache gründlich und von Grund auf.",
+    "You have sent a lot of reports today. Please try again tomorrow.": "Du hast heute viele Meldungen gesendet. Bitte versuche es morgen erneut.",
+    "Please split this set into smaller parts before publishing it.": "Bitte teile dieses Set in kleinere Teile auf, bevor du es veröffentlichst.",
+    # Community moderation (learnova.moderation).
+    "Your set passed the safety check.": "Dein Set hat die Sicherheitsprüfung bestanden.",
+    "Your set is being checked and will appear once the check is complete.": "Dein Set wird geprüft und erscheint, sobald die Prüfung abgeschlossen ist.",
+    "Please review and update your set before publishing it again.": "Bitte überarbeite dein Set, bevor du es erneut veröffentlichst.",
+    "Please update your set before publishing it again: {reasons}.": "Bitte überarbeite dein Set, bevor du es erneut veröffentlichst: {reasons}.",
+    "Your set could not be published to the community library.": "Dein Set konnte nicht in der Community-Bibliothek veröffentlicht werden.",
+    "Your set could not be published: {reasons}.": "Dein Set konnte nicht veröffentlicht werden: {reasons}.",
+    "Choose a reason for your report.": "Wähle einen Grund für deine Meldung.",
+    "You cannot report your own flashcard set.": "Du kannst dein eigenes Karteikarten-Set nicht melden.",
+    "Choose a moderation decision.": "Wähle eine Moderationsentscheidung.",
+    "This content changed after it was checked. Ask for it to be checked again.": "Dieser Inhalt hat sich nach der Prüfung geändert. Lass ihn erneut prüfen.",
+    "Insulting or hurtful language about a person or group": "Beleidigende oder verletzende Sprache über eine Person oder Gruppe",
+    "Content that attacks a person or group": "Inhalt, der eine Person oder Gruppe angreift",
+    "Threatening or violent content": "Bedrohlicher oder gewaltsamer Inhalt",
+    "Sexual content involving or directed at minors": "Sexueller Inhalt, der Minderjährige betrifft oder an sie gerichtet ist",
+    "Sexual content that is not part of the lesson": "Sexueller Inhalt, der nicht zum Lernstoff gehört",
+    "Content that could lead to harm": "Inhalt, der zu Schaden führen könnte",
+    "Personal information about a real person": "Persönliche Daten einer realen Person",
+    "Content that does not match the chosen subject": "Inhalt, der nicht zum gewählten Fach passt",
+    "Not enough educational content to publish": "Zu wenig Lerninhalt für eine Veröffentlichung",
+    "Not suitable for the chosen level": "Für die gewählte Stufe nicht geeignet",
+    "Unclear wording or formatting": "Unklare Formulierung oder Formatierung",
+    "Statements that may be inaccurate or misleading": "Aussagen, die ungenau oder irreführend sein könnten",
+    "The content changed after it was checked": "Der Inhalt hat sich nach der Prüfung geändert",
+    "A reviewer will look at this": "Eine Prüferin oder ein Prüfer sieht sich das an",
+    "Published": "Veröffentlicht",
+    "Passed the safety check": "Sicherheitsprüfung bestanden",
+    "Not published": "Nicht veröffentlicht",
+    "Changes needed": "Änderungen erforderlich",
+    "Waiting for a reviewer": "Wartet auf eine Prüfung",
+    "Being checked": "Wird geprüft",
+    "Check could not run": "Prüfung konnte nicht laufen",
+    "The automatic check could not run, so your set is held unpublished. Try publishing it again.": "Die automatische Prüfung konnte nicht laufen, daher bleibt dein Set unveröffentlicht. Versuche es noch einmal zu veröffentlichen.",
+    "Report this set": "Dieses Set melden",
+    "Thanks — our team will look at this.": "Danke — unser Team sieht sich das an.",
+    "Why are you reporting this?": "Warum meldest du das?",
+})
+
+
+# The canonical set of interface strings a language must cover to be considered complete.
+# German is the reference translated locale; every offered language must cover the same
+# keys so no English ever leaks into a non-English interface.
+# Vocabulary review: only the entries with an open question are shown, so the page
+# needs to be able to say how many that is.
+GERMAN.update({
+    "Building your cards…": "Deine Karten werden erstellt…",
+    "More": "Mehr",
+    "Looks right": "Sieht richtig aus",
+    "{flagged} of {total} words need a look": "{flagged} von {total} Wörtern brauchen einen Blick",
+    "{total} words": "{total} Wörter",
+    "Show all {total}": "Alle {total} anzeigen",
+    "Show only the ones to check": "Nur die zu prüfenden anzeigen",
+    "Fill in both the word and its translation, or clear the row.": "Trage Wort und Übersetzung ein oder leere die Zeile.",
+    "Check these words": "Diese Wörter prüfen",
+    "Edit vocabulary": "Vokabeln bearbeiten",
+    "Card options": "Kartenoptionen",
+})
+
+# Word, phrase or sentence: the scanner labels every entry, and practice can be
+# narrowed to one of them.
+GERMAN.update({
+    "Type": "Art",
+    "Word": "Wort",
+    "Phrase": "Wendung",
+    "Sentence": "Satz",
+    "Nothing to practise in that selection.": "In dieser Auswahl gibt es nichts zu üben.",
+    "Words": "Wörter",
+    "Sentences": "Sätze",
+    "Both": "Beides",
+    "What do you want to learn?": "Was möchtest du lernen?",
+})
+
+# Textbook pages: read as a table in one call; a missed word is typed in or the page is
+# photographed again, and the new reading replaces only the rows still open.
+GERMAN.update({
+    "Rescan page": "Seite neu scannen",
+    "Show the page photo": "Foto der Seite anzeigen",
+    "The scanned vocabulary page": "Die gescannte Vokabelseite",
+    "Only a photo or PDF import can be rescanned.": "Nur ein Foto- oder PDF-Import kann neu gescannt werden.",
+    "These cards have already been created.": "Diese Karten wurden bereits erstellt.",
+    "Reading the page again…": "Die Seite wird noch einmal gelesen…",
+    "{replaced} words replaced, {added} added.": "{replaced} Wörter ersetzt, {added} hinzugefügt.",
+})
+
+REQUIRED_KEYS = frozenset(GERMAN.keys())
+
+
+def _load_catalog(code: str) -> dict[str, str] | None:
+    """Load one locale file, or None when it is absent or unusable.
+
+    A missing file is ordinary: most registered languages have no translation yet. A file
+    that exists but cannot be read is not ordinary - it silently removes a language that
+    someone believed was shipping - so it is logged. Loading still returns None rather
+    than raising, because one broken locale must not stop the application from starting.
+    """
+
+    path = _DATA_DIR / f"{code}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        _log.warning(
+            "Translation catalogue for %r could not be read (%s); the language will not "
+            "be selectable.", code, error)
+        return None
+    if not isinstance(data, dict):
+        _log.warning(
+            "Translation catalogue for %r is not a JSON object; the language will not be "
+            "selectable.", code)
+        return None
+    return {str(key): str(value) for key, value in data.items()}
+
+
+# Build the catalogue map. German is inlined; every other non-English locale is loaded
+# from learnova/translations/data/<code>.json (generated). English is the base (no dict).
+CATALOGS: dict[str, dict[str, str]] = {"de": dict(GERMAN)}
+for _entry in LANGUAGES:
+    _code = _entry["code"]
+    if _code in ("en", "de"):
+        continue
+    _loaded = _load_catalog(_code)
+    if _loaded is not None:
+        CATALOGS[_code] = _loaded
+
+# A language is enabled when it is English (the base) or its catalogue covers every
+# required key. This guarantees selectable languages never fall back to English.
+_ENABLED = ["en"]
+for _entry in LANGUAGES:
+    _code = _entry["code"]
+    if _code == "en":
+        continue
+    if REQUIRED_KEYS.issubset(CATALOGS.get(_code, {}).keys()):
+        _ENABLED.append(_code)
+SUPPORTED_LANGUAGES = tuple(_ENABLED)
+
+
+def is_rtl(language: str) -> bool:
+    return language in RTL_LANGUAGES
+
+
+def language_direction(language: str) -> str:
+    return "rtl" if is_rtl(language) else "ltr"
+
+
+def language_native_name(language: str) -> str:
+    entry = LANGUAGE_BY_CODE.get(language)
+    return entry["native"] if entry else language
+
+
+def language_english_name(language: str) -> str:
+    entry = LANGUAGE_BY_CODE.get(language)
+    return entry["name"] if entry else language
+
+
+def language_options() -> list[dict[str, str | bool]]:
+    """Selectable languages (complete catalogues only), in registry order, for the UI."""
+    return [
+        {"code": entry["code"], "native": entry["native"], "name": entry["name"], "rtl": entry["rtl"]}
+        for entry in LANGUAGES if entry["code"] in SUPPORTED_LANGUAGES
+    ]
+
+
 def translate(message: str, language: str = "en", **values) -> str:
-    translated = GERMAN.get(message, message) if language == "de" else message
+    catalog = CATALOGS.get(language)
+    translated = catalog.get(message, message) if catalog else message
     return translated.format(**values) if values else translated
 
 
-@lru_cache(maxsize=len(SUPPORTED_LANGUAGES))
+@lru_cache(maxsize=len(LANGUAGES))
 def frontend_catalog(language: str) -> dict[str, str]:
     return {key: translate(message, language) for key, message in FRONTEND_MESSAGES.items()}

@@ -1,0 +1,229 @@
+/* learnova-content.css — educational content typography + KaTeX/math containment.
+ * Prevents the "formula/text far too large, overflowing the card/viewport" problem:
+ * math never scales with a large container font, display math scrolls instead of
+ * overflowing, and long content wraps sensibly. Works in light and dark. */
+
+/* Every formula the global renderer (static/js/math.js) produces is wrapped in .ln-math,
+ * which carries its LaTeX source in data-ln-math so the original is always recoverable.
+ * Colour is deliberately left to inherit: that is what makes formulas follow dark mode
+ * without a single dark-specific rule, since KaTeX draws fraction bars, roots and boxes
+ * with currentColor. */
+.ln-math { display: inline; color: inherit; }
+.ln-math-display { display: block; }
+/* If KaTeX cannot be reached at all, the span holds the untouched source instead of an
+   empty gap - unrendered but readable, and still copyable. */
+.ln-math:not(:has(.katex)) { font-family: var(--ln-font-body, monospace); opacity: .85; }
+
+/* Math sizing: keep formulas readable but never enormous, relative to text. */
+.katex { font-size: 1.05em; line-height: 1.25; }
+.katex-display { margin: .55em 0; padding-bottom: 2px; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+.katex-display > .katex { white-space: nowrap; }               /* wide formulas scroll, not overflow */
+
+/* Inside large-font prompts/cards, cap the formula scale so a single symbol can't
+   render on an enormous line. */
+.mode-prompt .katex, .study-card-text .katex, .mode-answer .katex,
+.result-item .katex, .mode-feedback .katex { font-size: 1.1em; }
+
+/* Calmer prompt size (was up to 2rem, which blew up with a formula inside). */
+.mode-prompt { font-size: clamp(1.1rem, 2.2vw, 1.55rem); }
+
+/* Reusable educational-content container with sensible maximum sizes. */
+.edu-content { max-width: 72ch; font-size: clamp(0.95rem, 0.6rem + 0.9vw, 1.1rem); line-height: 1.65; overflow-wrap: anywhere; }
+.edu-content :is(h1, h2, h3, h4) { font-size: clamp(1.1rem, 1.4vw + 0.6rem, 1.4rem); line-height: 1.3; margin: 1em 0 .4em; }
+.edu-content :is(p, li) { margin: .5em 0; }
+.edu-content :is(img, table, pre) { max-width: 100%; }
+.edu-content pre { overflow-x: auto; }
+
+/* Any surface that renders student/AI content must contain overflow. */
+.mode-question-card, .study-card-face, .study-summary, .set-card, .card-panel,
+.mode-answer, .mode-feedback, .result-item, .recognized-editor { overflow-wrap: anywhere; }
+.mode-answer, .mode-feedback { overflow-x: auto; }
+
+/* ---- Mistake Intelligence page (calm, no gradients) ---- */
+.mistake-intel .intel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.mistake-intel h2 { font-size: 1.1rem; margin: 0 0 .6rem; }
+.intel-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .35rem; }
+.intel-list li { display: flex; justify-content: space-between; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid var(--ln-line); }
+.intel-score { font-weight: 700; }
+.intel-score.good { color: var(--ln-success); }
+.intel-score.weak { color: var(--ln-danger); }
+.intel-next { border-left: 3px solid var(--ln-violet); }
+.intel-concept { font-weight: 700; margin: .2rem 0; }
+.intel-cluster-list, .intel-mistakes { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .7rem; }
+.intel-cluster, .intel-mistakes > li { padding: .7rem .8rem; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md, 12px); }
+.intel-cluster.resolved { opacity: .7; }
+.intel-cluster-head, .intel-mistake-head { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+.intel-cat { font-weight: 700; text-transform: capitalize; color: var(--ln-violet); }
+.intel-count, .intel-conf { font-size: .8rem; color: var(--ln-muted); }
+.intel-tags, .intel-prereq, .intel-nextq { font-size: .85rem; color: var(--ln-muted); margin: .3rem 0 0; }
+.intel-advice { color: var(--ln-ink); }
+.intel-badge.ok { display: inline-block; margin-top: .4rem; padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; background: color-mix(in srgb, var(--ln-success) 18%, transparent); color: var(--ln-success); }
+/* Evidence-based diagnostics: quoted evidence and the "not enough to say yet" state. */
+.intel-evidence { list-style: none; padding: 0; margin: .35rem 0 0; display: flex; flex-direction: column; gap: .2rem; }
+.intel-evidence li { padding-inline-start: .7rem; border-inline-start: 2px solid var(--ln-line-strong); color: var(--ln-muted); font-size: .85rem; font-style: italic; overflow-wrap: anywhere; }
+.intel-provisional { display: inline-block; margin: .3rem 0 0; color: var(--ln-muted); font-size: .78rem; font-style: italic; font-weight: 500; }
+.intel-list small { color: var(--ln-subtle); font-weight: 400; }
+/* Explainable mastery: why one answer moved the score, shown under the entry. */
+.history-reason { display: block; margin-top: .2rem; color: var(--ln-subtle); font-size: .78rem; font-style: italic; }
+@media (max-width: 600px) { .mistake-intel .intel-grid { grid-template-columns: 1fr; } }
+
+/* ---- Gamification / XP header ----
+ * This widget renders on the dashboard, which does NOT load flashcards.css, so its
+ * styles must be global. Theme-aware (semantic tokens) so it works in light and dark. */
+.gamification-dashboard {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .8rem;
+  padding: 1rem; border-radius: var(--ln-radius-lg, 18px);
+  background: var(--ln-surface-solid); border: 1px solid var(--ln-line);
+}
+.gamification-dashboard > * {
+  display: grid; gap: .3rem; align-content: start; padding: .75rem .85rem;
+  border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md, 12px);
+  background: var(--ln-canvas-deep); color: var(--ln-ink); text-decoration: none;
+  transition: border-color var(--motion-fast, .15s);
+}
+.gamification-dashboard a:hover { border-color: color-mix(in srgb, var(--ln-violet) 40%, var(--ln-line)); }
+.gamification-dashboard span { font-size: .78rem; color: var(--ln-muted); }
+.gamification-dashboard strong { font-size: 1.3rem; line-height: 1.1; }
+.gamification-dashboard small { font-size: .76rem; color: var(--ln-muted); }
+.gamification-dashboard progress { width: 100%; margin-top: .3rem; }
+@media (max-width: 760px) { .gamification-dashboard { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 430px) { .gamification-dashboard { grid-template-columns: 1fr; } }
+
+/* ---- Dashboard widget action buttons + heading layout ----
+ * .continue-button, .continue-button.ghost and .fc-dash-head-actions are defined in
+ * flashcards.css, which the dashboard does NOT load, and the base .continue-button in
+ * styles.css was a green 78px metric-box (it shares a rule with .learning-overview>div).
+ * Result: every widget button rendered as a tall GREEN block that clashed with the
+ * violet .primary-button and overflowed the card corner. These globally-loaded rules
+ * (this sheet loads after styles.css AND flashcards.css) make .continue-button a normal
+ * violet action button that matches .primary-button, with a violet-tinted ghost variant
+ * for secondary actions, and lay the heading actions out compactly. */
+.notebook-heading { flex-wrap: wrap; }
+.fc-dash-head-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.continue-button {
+  display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: 0 20px; border: 1px solid transparent; border-radius: 13px;
+  background: var(--ln-violet); color: #fff; font-weight: 800; text-decoration: none; white-space: nowrap;
+}
+.continue-button:hover { background: var(--ln-violet-deep); }
+.continue-button.ghost {
+  background: color-mix(in srgb, var(--ln-violet) 12%, var(--ln-surface-solid));
+  border-color: color-mix(in srgb, var(--ln-violet) 28%, transparent);
+  color: var(--ln-violet-deep);
+}
+/* Inside the learning-overview row the button is a grid cell that must match the
+   78px metric boxes beside it — keep it tall there only (background stays violet). */
+.learning-overview .continue-button { min-height: 78px; border-radius: 16px; flex-direction: column; gap: 2px; }
+
+/* ---- Dashboard flashcard + vocabulary widgets ----
+ * Same trap as the gamification header above: .dashboard-flashcards and every
+ * .fc-dash-* class are laid out in flashcards.css, which the dashboard does NOT
+ * load. Unstyled, the panel kept its border but lost its padding, so the heading
+ * and stats ran flush to the edge, and the stat row lost its flex: "New words"
+ * and its number collapsed onto one line and every stat stacked. A grid rather
+ * than the original flex row, because long German labels ("Gemeisterte Wörter")
+ * must be allowed to reflow instead of pushing the row past the card. */
+.dashboard-flashcards { margin-bottom: 18px; padding: clamp(14px, 2.5vw, 22px); }
+.dashboard-flashcards .notebook-heading { margin-bottom: 14px; }
+.fc-dash-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: .75rem 1.5rem; margin: .8rem 0 1rem;
+}
+.fc-dash-stats > div { min-width: 0; }
+.fc-dash-stats span { display: block; color: var(--ln-muted); font-size: .8rem; overflow-wrap: anywhere; }
+.fc-dash-stats strong { font-size: 1.3rem; line-height: 1.2; }
+.fc-dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .8rem; }
+/* The left padding clears the 4px ::before accent bar .fc-dash-card inherits from
+   the shared card rule in learnova-layouts.css. */
+.fc-dash-card { display: flex; flex-direction: column; gap: .35rem; padding: .8rem 1rem .8rem calc(1rem + 4px); color: inherit; text-decoration: none; }
+.fc-dash-progress { display: block; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--ln-violet) 14%, transparent); overflow: hidden; }
+.fc-dash-progress i { display: block; height: 100%; background: var(--ln-gradient-brand); }
+/* Scoped to the dashboard: on the library pages flashcards.css already sizes these. */
+.dashboard-flashcards .cards-empty { margin: 0; padding: 2rem 1rem; }
+.dashboard-flashcards .set-meta, .dashboard-flashcards .set-stats { margin: 0; font-size: .8rem; }
+
+/* ---- Handwriting "fix the uncertain words" region editor (recognition review) ----
+ * Draws each low-confidence OCR region as a numbered, tappable box over the page image
+ * (positioned by its normalized bbox), and a tap opens an on-the-spot editor so the
+ * student types what the word really says. Nothing is auto-applied. Theme-aware and
+ * mobile-first; the boxes align because the image is rendered at its natural aspect. */
+.region-editor { margin: 0 clamp(12px, 3vw, 20px) 18px; padding: clamp(14px, 2.5vw, 20px); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-lg, 16px); background: var(--ln-surface); }
+.region-editor-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.region-editor-head h3 { margin: 0 0 3px; font-size: 1.05rem; }
+.region-editor-head p { margin: 0; max-width: 60ch; font-size: .82rem; color: var(--ln-muted); }
+.region-progress { flex: 0 0 auto; padding: 6px 12px; border: 1px solid var(--ln-line); border-radius: 999px; background: var(--ln-surface-solid); color: var(--ln-muted); font-size: .78rem; font-weight: 800; white-space: nowrap; }
+.region-progress b { color: var(--ln-violet); }
+.region-progress.complete { border-color: color-mix(in srgb, var(--ln-success) 45%, transparent); background: color-mix(in srgb, var(--ln-success) 14%, transparent); color: var(--ln-success); }
+.region-progress.complete b { color: var(--ln-success); }
+
+.region-canvas-wrap { margin: 14px 0 6px; text-align: center; }
+.region-canvas { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.region-image { display: block; width: auto; max-width: 100%; max-height: 72vh; border: 1px solid var(--ln-line); border-radius: 12px; background: color-mix(in srgb, var(--ln-ink) 6%, transparent); }
+.region-overlay { position: absolute; inset: 0; pointer-events: none; }
+.region-box { position: absolute; box-sizing: border-box; min-width: 30px; min-height: 30px; margin: 0; padding: 0; border: 2px solid; border-radius: 8px; background: transparent; cursor: pointer; pointer-events: auto; transition: transform var(--motion-fast, .15s), box-shadow var(--motion-fast, .15s); }
+.region-box:hover, .region-box:focus-visible { transform: scale(1.04); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 35%, transparent); z-index: 3; }
+.region-box-num { position: absolute; top: -11px; left: -11px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; font: 800 12px/1 var(--ln-font-body, sans-serif); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.region-box.confidence-review { border-color: #e0a63a; background: rgba(224, 166, 58, .18); }
+.region-box.confidence-review .region-box-num { background: #d0902a; }
+.region-box.confidence-unclear { border-color: #e0654f; background: rgba(224, 101, 79, .2); animation: region-pulse 1.9s ease-in-out infinite; }
+.region-box.confidence-unclear .region-box-num { background: #d24b34; }
+.region-box.active { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 45%, transparent); z-index: 4; }
+.region-box.resolved { border-color: var(--ln-success); background: color-mix(in srgb, var(--ln-success) 20%, transparent); animation: none; }
+.region-box.resolved .region-box-num { background: var(--ln-success); }
+.region-box.resolved .region-box-num::after { content: "✓"; }
+.region-box.resolved .region-box-num span { display: none; }
+@keyframes region-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(224, 101, 79, .5); } 50% { box-shadow: 0 0 0 6px rgba(224, 101, 79, 0); } }
+.region-hint { margin: 6px 0 0; font-size: .78rem; color: var(--ln-muted); }
+
+.region-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.region-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--ln-line); border-radius: 12px; background: var(--ln-surface-solid); scroll-margin-top: 90px; }
+.region-card.active { border-color: var(--ln-violet); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 18%, transparent); }
+.region-card.resolved { border-color: color-mix(in srgb, var(--ln-success) 45%, var(--ln-line)); }
+.region-card-head { display: flex; align-items: center; gap: 8px; font-size: .74rem; color: var(--ln-muted); text-transform: capitalize; }
+.region-index { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; background: var(--ln-violet); color: #fff; font-weight: 800; font-size: .72rem; }
+.region-card.resolved .region-index { background: var(--ln-success); }
+.region-crossed { color: #d24b34; }
+.region-crop { width: 100%; height: 92px; border: 1px solid var(--ln-line); border-radius: 8px; object-fit: contain; background: color-mix(in srgb, var(--ln-ink) 6%, transparent); }
+.region-field-label { display: grid; gap: 4px; font-size: .74rem; font-weight: 800; color: var(--ln-muted); }
+.region-editor textarea, .region-popover textarea { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--ln-line-strong); border-radius: 9px; background: var(--ln-surface); color: var(--ln-ink); font: 500 .9rem/1.5 var(--ln-font-body, sans-serif); resize: vertical; }
+.region-card-flags { display: flex; flex-wrap: wrap; gap: 10px; font-size: .74rem; color: var(--ln-muted); }
+.region-editor .suggested-correction { margin: 0; font-size: .78rem; color: var(--ln-muted); }
+.region-editor .suggested-correction b { color: var(--ln-ink); }
+
+/* On-the-spot popover editor (bottom sheet on phones) */
+.region-popover-backdrop { position: fixed; inset: 0; z-index: 119; background: rgba(8, 14, 26, .45); border: 0; display: none; }
+.region-popover-backdrop.open { display: block; }
+.region-popover { position: fixed; z-index: 120; display: none; width: min(340px, 92vw); padding: 14px; border: 1px solid var(--ln-line); border-radius: 14px; background: var(--ln-surface-raised, var(--ln-surface-solid)); box-shadow: var(--ln-shadow-md, 0 20px 50px rgba(8,14,26,.35)); }
+.region-popover.open { display: grid; gap: 10px; }
+.region-popover-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.region-popover-title { font-weight: 800; font-size: .9rem; }
+.region-popover-close { width: 30px; height: 30px; border: 1px solid var(--ln-line); border-radius: 8px; background: var(--ln-surface-solid); color: var(--ln-ink); font-size: 16px; line-height: 1; cursor: pointer; }
+.region-popover-crop { width: 100%; height: 96px; border: 1px solid var(--ln-line); border-radius: 8px; object-fit: contain; background: color-mix(in srgb, var(--ln-ink) 6%, transparent); }
+.region-popover-suggest { margin: 0; font-size: .78rem; color: var(--ln-muted); }
+.region-popover-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.region-popover-actions button { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--ln-line-strong); background: var(--ln-surface-solid); color: var(--ln-ink); font-weight: 750; cursor: pointer; }
+.region-popover-actions .region-nav { flex: 0 0 auto; padding: 0 12px; }
+.region-popover-actions .region-accept { flex: 1; border-color: transparent; background: color-mix(in srgb, var(--ln-success) 20%, var(--ln-surface-solid)); color: var(--ln-success); }
+.region-popover-actions .region-done { flex: 1; border-color: transparent; background: var(--ln-violet); color: #fff; }
+@media (max-width: 719px) {
+  .region-cards { grid-template-columns: 1fr; }
+  .region-popover.open.as-sheet { left: 0; right: 0; bottom: 0; top: auto !important; width: 100%; border-radius: 16px 16px 0 0; animation: region-sheet-up .18s ease; }
+}
+@keyframes region-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .region-box, .region-popover.as-sheet { animation: none !important; }
+}
+
+/* ---- Exercises built on the student's own scanned diagrams ----
+ * The picture is part of the question, so it gets real size on a phone and the ordering
+ * tiles stay big enough to drag. Cropped regions vary wildly in shape, so height is
+ * capped rather than fixed and the image is contained, never stretched. */
+.question-media { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
+.question-photo { margin: 0; }
+.question-photo img { max-width: min(100%, 460px); max-height: 46vh; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface); object-fit: contain; }
+.ordering-photos .ordering-photo { align-items: center; gap: 10px; }
+.ordering-photos img { max-width: 160px; max-height: 110px; border-radius: 10px; object-fit: contain; background: var(--ln-surface); }
+@media (max-width: 620px) {
+  .question-photo img { max-height: 38vh; }
+  .ordering-photos img { max-width: 104px; max-height: 76px; }
+}

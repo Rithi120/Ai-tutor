@@ -1,20 +1,4 @@
 {
-  "_meta": {
-    "prompt_versions": {
-      "lesson_generation": "lesson_generation:v3",
-      "quiz_generation": "quiz_generation:v2",
-      "answer_evaluation": "answer_evaluation:v3",
-      "tutor_chat": "tutor_chat:v2",
-      "translation": "translation:v2",
-      "ocr_document_recognition": "ocr_document_recognition:v2",
-      "project_section_generation": "project_section_generation:v3",
-      "adaptive_practice": "adaptive_practice:v3",
-      "final_exam_generation": "final_exam_generation:v3",
-      "final_exam_evaluation": "final_exam_evaluation:v2",
-      "flashcard_generation": "flashcard_generation:v1",
-      "flashcard_review": "flashcard_review:v1"
-    }
-  },
   "lesson_generation": {
     "output_text": {
       "lesson_title": "Mock fractions lesson",
@@ -175,10 +159,65 @@
           "important_candidate": true,
           "teacher_highlight_candidate": false,
           "nearby_text": ""
+        },
+        {
+          "type": "handwriting",
+          "content": "the mitochondria is the powerhaus of the cell",
+          "bbox": [
+            0.08,
+            0.32,
+            0.9,
+            0.46
+          ],
+          "confidence": 0.52,
+          "crossed_out": false,
+          "important_candidate": false,
+          "teacher_highlight_candidate": false,
+          "nearby_text": "",
+          "suggested_correction": "the mitochondria is the powerhouse of the cell"
+        },
+        {
+          "type": "handwriting",
+          "content": "photosynthesis",
+          "bbox": [
+            0.1,
+            0.52,
+            0.52,
+            0.62
+          ],
+          "confidence": 0.36,
+          "crossed_out": false,
+          "important_candidate": false,
+          "teacher_highlight_candidate": false,
+          "nearby_text": ""
         }
       ],
       "detected_page_number": "1",
       "warning": ""
+    }
+  },
+  "handwriting_region_review": {
+    "output_text": {
+      "regions": [
+        {
+          "index": 1,
+          "content": "Photosynthesis",
+          "confidence": 0.91,
+          "illegible": false
+        },
+        {
+          "index": 2,
+          "content": "chloroplast",
+          "confidence": 0.86,
+          "illegible": false
+        },
+        {
+          "index": 3,
+          "content": "",
+          "confidence": 0.1,
+          "illegible": true
+        }
+      ]
     }
   },
   "project_section_generation": {
@@ -333,6 +372,24 @@
       ]
     }
   },
+  "flashcard_back_suggestion": {
+    "output_text": {
+      "suggestions": [
+        {
+          "back": "The process by which plants use sunlight to turn carbon dioxide and water into sugar and oxygen.",
+          "style": "short"
+        },
+        {
+          "back": "Photosynthesis happens in the chloroplasts. Chlorophyll absorbs light energy, which powers a reaction between carbon dioxide from the air and water from the roots, producing glucose for the plant and releasing oxygen.",
+          "style": "detailed"
+        },
+        {
+          "back": "6 CO2 + 6 H2O + light -> C6H12O6 + 6 O2",
+          "style": "example"
+        }
+      ]
+    }
+  },
   "flashcard_review": {
     "output_text": {
       "overallScore": 4.4,
@@ -354,6 +411,272 @@
       ],
       "flaggedCards": [],
       "safetyFlags": []
+    }
+  },
+  "mistake_analysis": {
+    "output_text": {
+      "verdict": "partially_correct",
+      "score_fraction": 0.5,
+      "confidence": 0.85,
+      "question_intent": "Solve a two-step linear equation for x.",
+      "student_approach": "Set the equation up correctly but mishandled a sign when isolating x.",
+      "correct_parts": [
+        "Correctly chose to undo the addition first."
+      ],
+      "mistake_categories": [
+        "sign_error"
+      ],
+      "root_cause": "Dropped the negative sign when moving a term across the equals sign.",
+      "likely_student_thought": "Thought moving +3 keeps its sign the same.",
+      "exact_error_step": "Wrote 2x = 11 + 3 instead of 2x = 11 - 3.",
+      "correct_reasoning": [
+        "Subtract 3 from both sides: 2x = 8.",
+        "Divide by 2: x = 4."
+      ],
+      "final_answer": "x = 4",
+      "improvement_advice": "When you move a term across the equals sign, flip its sign, and write that step out explicitly.",
+      "prerequisites_to_review": [
+        "Adding and subtracting signed integers."
+      ],
+      "next_question": {
+        "question": "Solve 3x - 5 = 7.",
+        "purpose": "Check sign handling when isolating x.",
+        "difficulty_change": "same"
+      },
+      "should_create_mistake_record": true,
+      "should_reduce_mastery": true,
+      "analysis_limitations": []
+    }
+  },
+  "answer_diagnosis": {
+    "output_text": {
+      "analysis_version": "diagnosis:v2",
+      "correctness_status": "partially_correct",
+      "score": {
+        "points": 0.5,
+        "max_points": 1.0,
+        "rubric_evidence": [
+          {
+            "criterion": "Chose to undo the addition first",
+            "met": true,
+            "evidence_ids": [
+              "e2"
+            ]
+          },
+          {
+            "criterion": "Kept the sign correct when moving the term",
+            "met": false,
+            "evidence_ids": [
+              "e3"
+            ]
+          }
+        ]
+      },
+      "concepts_assessed": [
+        "Two-step linear equations"
+      ],
+      "primary_diagnosis": {
+        "tag": "arithmetic_or_transcription_error",
+        "statement": "The term moved across the equals sign kept its original sign.",
+        "evidence_ids": [
+          "e3"
+        ]
+      },
+      "secondary_diagnoses": [],
+      "evidence": [
+        {
+          "id": "e1",
+          "source": "question",
+          "quote": "Solve 2x + 3 = 11."
+        },
+        {
+          "id": "e2",
+          "source": "student_answer",
+          "quote": "first remove the 3"
+        },
+        {
+          "id": "e3",
+          "source": "student_answer",
+          "quote": "2x = 11 + 3"
+        }
+      ],
+      "misconception_description": "",
+      "prerequisite_gaps": [],
+      "missing_evidence": false,
+      "missing_evidence_reason": "",
+      "confidence": {
+        "value": 0.85,
+        "basis": "The written step shows the sign directly."
+      },
+      "recommended_intervention": "practice_similar",
+      "candidate_question_constraints": {
+        "concept": "Two-step linear equations",
+        "prerequisite_focus": "",
+        "difficulty": 2,
+        "cognitive_demand": "apply",
+        "question_type": "short_answer",
+        "target_misconception": "",
+        "purpose": "Check sign handling when isolating x."
+      },
+      "student_facing_explanation": "You picked the right first step. When 3 moves across the equals sign it becomes minus 3, so the line should read 2x = 11 - 3, giving x = 4.",
+      "internal_diagnostic_summary": "Correct method, sign flipped on transposition. One slip, not a conceptual gap."
+    }
+  },
+  "diagnosis_verification": {
+    "output_text": {
+      "agrees": true,
+      "reason": "The quoted step supports the stated cause.",
+      "better_tag": ""
+    }
+  },
+  "question_generation": {
+    "output_text": {
+      "question": {
+        "id": "q1",
+        "subject": "Mathematics",
+        "concept": "Two-step linear equations",
+        "prerequisites": [
+          "Adding and subtracting signed integers"
+        ],
+        "difficulty": 2,
+        "cognitive_demand": "apply",
+        "type": "short_answer",
+        "prompt": "Solve for x and write the subtraction step out: 3x + 5 = 20.",
+        "hint": "Undo the addition before the multiplication.",
+        "options": [],
+        "expected_answer": "5",
+        "solution_steps": [
+          "Subtract 5 from both sides: 3x = 15.",
+          "Divide both sides by 3: x = 5."
+        ],
+        "rubric": [
+          {
+            "criterion": "Subtraction step written with the correct sign",
+            "points": 1
+          },
+          {
+            "criterion": "Correct final value",
+            "points": 1
+          }
+        ],
+        "target_misconception": "",
+        "diagnostic_purpose": "Check sign handling when isolating x."
+      }
+    }
+  },
+  "content_moderation": {
+    "output_text": {
+      "recommendation": "allow",
+      "dimensions": {
+        "subject_relevance": "pass",
+        "educational_value": "pass",
+        "harassment_or_insult": "pass",
+        "hate_or_targeted_abuse": "pass",
+        "threats_or_violence": "pass",
+        "sexual_safety": "pass",
+        "sexual_content_context": "not_applicable",
+        "self_harm_or_dangerous_content": "pass",
+        "privacy_or_personal_information": "pass",
+        "deception_or_manipulation": "pass",
+        "obfuscation_risk": "pass",
+        "age_appropriateness": "pass",
+        "language_quality": "pass"
+      },
+      "confidence": 0.94,
+      "evidence_sufficiency": "sufficient",
+      "reason_codes": [],
+      "quotes": [],
+      "evidence_summary": "Factual subject content that matches the stated subject; no safety concern found.",
+      "suggested_revision": null,
+      "requires_review": false
+    }
+  },
+  "assistant_chat": {
+    "output_text": "The derivative of x squared is 2x. By the power rule you bring the exponent down as a coefficient and reduce it by one, so x^2 becomes 2 times x^1."
+  },
+  "competency_extraction": {
+    "output_text": {
+      "competencies": [
+        {
+          "statement": "I can solve quadratic equations with the quadratic formula.",
+          "topic": "Quadratic equations",
+          "subtopic": "Quadratic formula",
+          "level": "intermediate",
+          "importance": 3,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "covered",
+          "evidence": "x = (-b ± √(b²-4ac)) / 2a"
+        },
+        {
+          "statement": "I can explain when a quadratic equation has no real solution.",
+          "topic": "Quadratic equations",
+          "subtopic": "Discriminant",
+          "level": "advanced",
+          "importance": 2,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "missing",
+          "evidence": ""
+        }
+      ]
+    }
+  },
+  "vocabulary_page_extraction": {
+    "output_text": {
+      "rows": [
+        {
+          "term": "à travers",
+          "phonetic": "atʁavɛʁ",
+          "translation": "durch",
+          "examples": [
+            {
+              "sentence": "Il marche à travers le village.",
+              "translation": "Er geht durch das Dorf."
+            }
+          ],
+          "note": "",
+          "confidence": 0.95
+        },
+        {
+          "term": "la boulangerie",
+          "phonetic": "bulɑ̃ʒʁi",
+          "translation": "die Bäckerei",
+          "examples": [],
+          "note": "",
+          "confidence": 0.9
+        }
+      ],
+      "source_language": "fr",
+      "target_language": "de"
+    }
+  },
+  "_meta": {
+    "prompt_versions": {
+      "lesson_generation": "lesson_generation:v3",
+      "quiz_generation": "quiz_generation:v2",
+      "answer_evaluation": "answer_evaluation:v3",
+      "mistake_analysis": "mistake_analysis:v1",
+      "answer_diagnosis": "answer_diagnosis:v2",
+      "diagnosis_verification": "diagnosis_verification:v1",
+      "question_generation": "question_generation:v1",
+      "tutor_chat": "tutor_chat:v2",
+      "translation": "translation:v2",
+      "ocr_document_recognition": "ocr_document_recognition:v2",
+      "project_section_generation": "project_section_generation:v3",
+      "adaptive_practice": "adaptive_practice:v3",
+      "final_exam_generation": "final_exam_generation:v3",
+      "final_exam_evaluation": "final_exam_evaluation:v2",
+      "flashcard_generation": "flashcard_generation:v1",
+      "flashcard_review": "flashcard_review:v1",
+      "content_moderation": "content_moderation:v1",
+      "assistant_chat": "assistant_chat:v1",
+      "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
+      "handwriting_region_review": "handwriting_region_review:v1",
+      "competency_extraction": "competency_extraction:v1",
+      "vocabulary_page_extraction": "vocabulary_page_extraction:v1"
     }
   }
 }

@@ -1,9 +1,16 @@
+"""Gateway behaviour: caching, provider permission, accounting, and failure mapping.
+
+There is no mock AI mode. Tests that need the gateway to produce a response patch
+`service._provider_response`, which is the single place a real network call is made, and
+replay the sample responses in `tests/fixtures/ai/` through it.
+"""
+
 import json
 import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from flask import Flask
@@ -11,6 +18,7 @@ from flask import Flask
 import app as application
 from learnova.ai_services import service
 from learnova.config import configure_app
+from tests.provider_stub import StubResponse, stub_provider
 
 
 class ProviderUsage:
@@ -27,19 +35,18 @@ class ProviderResponse:
 
 class AIGatewayTests(unittest.TestCase):
     def setUp(self):
+        service._RECENT_RESULTS.clear()
+        service._RESERVATIONS.clear()
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
         self.original_config = dict(application.app.config)
         application.app.config.update(
             TESTING=False,
             ENV_NAME="development",
-            AI_MODE="mock",
-            AI_MOCK_SCENARIO="valid",
-            AI_MOCK_LATENCY_MS=0,
+            AI_MODE="live",
             AI_CACHE_DIR=str(root / "cache"),
             AI_USAGE_PATH=str(root / "usage.jsonl"),
-            AI_FIXTURE_DIR=str(Path(application.app.root_path) / "tests" / "fixtures" / "ai"),
-            ALLOW_LIVE_AI=False,
+            ALLOW_LIVE_AI=True,
             RUN_LIVE_AI_TEST=False,
             AI_INPUT_COST_PER_MILLION=1.0,
             AI_OUTPUT_COST_PER_MILLION=2.0,
@@ -54,7 +61,7 @@ class AIGatewayTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def request(self, **overrides):
-        values = {
+        values: dict[str, Any] = {
             "task_type": "tutor_chat",
             "language": "English",
             "prompt_version": "test-v1",
@@ -65,84 +72,88 @@ class AIGatewayTests(unittest.TestCase):
         values.update(overrides)
         return service.create_response(**values)
 
-    def test_mock_is_deterministic_and_never_calls_provider(self):
-        with patch.object(service, "_provider_response") as provider:
-            first = self.request()
-            second = self.request()
-        self.assertEqual(first.output_text, second.output_text)
-        self.assertIn("multiplier", first.output_text)
-        provider.assert_not_called()
+    # ------------------------------------------------------------------ sample corpus
 
-    def test_english_and_german_valid_fixtures_cover_every_task(self):
+    def test_english_and_german_samples_cover_every_task(self):
+        """Every supported task has a schema-valid sample in both content languages."""
         for language in ("English", "German"):
             for task_type in sorted(service.SUPPORTED_TASK_TYPES):
-                response = self.request(task_type=task_type, language=language)
-                self.assertTrue(response.output_text)
+                with stub_provider("valid"):
+                    response = self.request(task_type=task_type, language=language)
+                self.assertTrue(response.output_text, f"{task_type}/{language}")
+                self.assertEqual(response.validation, "valid")
 
-    def test_valid_fixtures_adapt_to_structural_request_context(self):
-        lesson = service.parse_json(self.request(
-            task_type="adaptive_practice",
-            fixture_context={
-                "lesson": True, "subject": "Physics", "concept": "Acceleration",
-            },
-        ).output_text)
-        self.assertEqual(lesson["concepts"][0]["name"], "Acceleration")
-        self.assertIn("question", lesson)
-
-        translated = service.parse_json(self.request(
-            task_type="translation",
-            fixture_context={"texts": ["one", "two", "three"]},
-        ).output_text)
-        self.assertEqual(translated["translations"], ["one", "two", "three"])
-
-        exam = service.parse_json(self.request(
-            task_type="final_exam_generation",
-            fixture_context={
-                "question_count": 5,
-                "section_allocation": {"11": 3, "12": 2},
-                "difficulty_distribution": {"easy": 2, "medium": 2, "hard": 1},
-                "question_types": ["short_answer", "true_false"],
-                "source_page_ids": {"11": [101], "12": [102]},
-                "supporting_text": {"11": "source eleven", "12": "source twelve"},
-            },
-        ).output_text)["questions"]
-        self.assertEqual(len(exam), 5)
-        self.assertEqual([item["section_id"] for item in exam].count(11), 3)
-        self.assertEqual([item["difficulty"] for item in exam].count("hard"), 1)
-        self.assertTrue(all(item["source_page_ids"] for item in exam))
-
-    def test_failure_fixtures_and_optional_latency(self):
-        application.app.config["AI_MOCK_SCENARIO"] = "malformed_json"
-        with self.assertRaises(service.AIValidationError) as malformed:
-            self.request(task_type="answer_evaluation")
+    def test_validation_failures_map_to_stable_categories(self):
+        with stub_provider("malformed_json"):
+            with self.assertRaises(service.AIValidationError) as malformed:
+                self.request(task_type="answer_evaluation")
         self.assertEqual(malformed.exception.category, "invalid_json")
-        application.app.config["AI_MOCK_SCENARIO"] = "empty_response"
-        with self.assertRaises(service.AIValidationError):
-            self.request()
-        application.app.config["AI_MOCK_SCENARIO"] = "missing_required_fields"
-        with self.assertRaises(service.AIValidationError):
-            self.request(task_type="answer_evaluation")
-        application.app.config["AI_MOCK_SCENARIO"] = "timeout"
-        with self.assertRaises(service.AIMockTimeout):
-            self.request()
-        application.app.config["AI_MOCK_SCENARIO"] = "rate_limit"
-        with self.assertRaises(service.AIMockRateLimit):
-            self.request()
-        application.app.config.update(AI_MOCK_SCENARIO="valid", AI_MOCK_LATENCY_MS=15)
-        started = time.perf_counter()
-        self.request()
-        self.assertGreaterEqual(time.perf_counter() - started, 0.01)
+        with stub_provider("empty_response"):
+            with self.assertRaises(service.AIValidationError):
+                self.request()
+        with stub_provider("missing_required_fields"):
+            with self.assertRaises(service.AIValidationError):
+                self.request(task_type="answer_evaluation")
 
-    def test_special_failure_fixtures_are_available_in_both_languages(self):
+    def test_provider_timeout_and_rate_limit_are_categorized_safely(self):
+        """A real provider failure must surface as a safe category, not a raw payload."""
+        with stub_provider("timeout"):
+            with self.assertRaises(service.AIProviderError) as timeout:
+                self.request()
+        self.assertEqual(timeout.exception.category, "provider_timeout")
+        self.assertNotIn("Simulated", timeout.exception.safe_summary)
+        with stub_provider("rate_limit"):
+            with self.assertRaises(service.AIProviderError) as limited:
+                self.request(input="a different question")
+        self.assertEqual(limited.exception.category, "provider_rate_limit")
+
+    def test_a_withdrawn_model_and_a_rejected_request_are_named_not_hidden(self):
+        """A 404 for a retired model id spent three months filed under
+        'internal_application_error', which reads as an application bug and sent every
+        community submission into a review queue nobody could clear. The provider says
+        exactly what is wrong; the category has to say it too."""
+        with stub_provider("model_not_found"):
+            with self.assertRaises(service.AIProviderError) as missing:
+                self.request(input="a question for a retired model")
+        self.assertEqual(missing.exception.category, "model_not_found")
+        self.assertNotIn("retired-model", missing.exception.safe_summary)
+        with stub_provider("bad_request"):
+            with self.assertRaises(service.AIProviderError) as rejected:
+                self.request(input="a question the provider rejects")
+        self.assertEqual(rejected.exception.category, "invalid_request")
+        self.assertNotIn("Simulated", rejected.exception.safe_summary)
+
+    def test_a_dict_input_reaches_the_provider_as_text(self):
+        """`input={"texts": [...]}` is this application's shorthand for structured data.
+        The Responses API takes a string or a message list, so the raw dict was rejected
+        on every translation call. The gateway serialises it once, centrally."""
+        # Patched directly rather than through a fixture scenario: the point is what the
+        # provider *received*, and the reply only has to validate for two inputs.
+        reply = StubResponse(json.dumps({"translations": ["Haus", "Baum"]}))
+        with patch.object(service, "_provider_response", return_value=reply) as provider:
+            service.create_response(
+                task_type="translation", language="German", model="stub-model",
+                instructions="Translate each term.",
+                input={"texts": ["house", "tree"]},
+                validation_context={"texts": ["house", "tree"]},
+                max_output_tokens=100)
+        sent = provider.call_args.kwargs["input"]
+        self.assertIsInstance(sent, str)
+        self.assertEqual(json.loads(sent), {"texts": ["house", "tree"]})
+
+    def test_broken_samples_are_rejected_in_both_languages(self):
         for language in ("English", "German"):
             for scenario, task_type, context in (
                 ("duplicate_questions", "quiz_generation", {}),
                 ("invalid_source_references", "project_section_generation", {"source_page_ids": [1]}),
                 ("incorrect_exam_question_count", "final_exam_generation", {"question_count": 2}),
             ):
-                application.app.config["AI_MOCK_SCENARIO"] = scenario
-                with self.assertRaises(service.AIValidationError):
-                    self.request(language=language, task_type=task_type, validation_context=context)
+                with stub_provider(scenario):
+                    with self.assertRaises(service.AIValidationError, msg=f"{scenario}/{language}"):
+                        self.request(language=language, task_type=task_type,
+                                     validation_context=context)
+
+    # ------------------------------------------------------------------------ caching
 
     def test_cached_mode_hits_provider_once_and_partitions_private_users(self):
         application.app.config.update(AI_MODE="cached", ALLOW_LIVE_AI=True)
@@ -168,11 +179,23 @@ class AIGatewayTests(unittest.TestCase):
                     self.request(input=f"unique-{mode}")
                 provider.assert_not_called()
 
+    def test_unsupported_mode_is_rejected(self):
+        """The retired mock mode must not be reachable through configuration either."""
+        application.app.config["AI_MODE"] = "mock"
+        with patch.object(service, "_provider_response") as provider:
+            with self.assertRaises(service.AIConfigurationError):
+                self.request()
+            provider.assert_not_called()
+
+    # ------------------------------------------------------------------- accounting
+
     def test_accounting_is_sanitized_and_hashes_are_normalized(self):
         secret_text = "PRIVATE-UPLOAD-CONTENT"
         api_key = "secret-api-key"
         application.app.config["GROQ_API_KEY"] = api_key
-        self.request(input=secret_text)
+        with patch.object(service, "_provider_response",
+                          return_value=StubResponse("a plain chat reply")):
+            self.request(input=secret_text)
         usage_text = Path(application.app.config["AI_USAGE_PATH"]).read_text(encoding="utf-8")
         self.assertNotIn(secret_text, usage_text)
         self.assertNotIn(api_key, usage_text)
@@ -195,30 +218,60 @@ class AIGatewayTests(unittest.TestCase):
     def test_provider_boundary_is_centralized(self):
         root = Path(application.app.root_path)
         offenders = []
+        markers = ("from openai import", "from anthropic import", ".responses.create(",
+                   ".chat.completions.create(", ".messages.create(")
         for path in [root / "app.py", *sorted((root / "learnova").rglob("*.py"))]:
             if path == root / "learnova" / "ai_services" / "service.py":
                 continue
             text = path.read_text(encoding="utf-8")
-            if "from openai import" in text or ".responses.create(" in text:
+            if any(marker in text for marker in markers):
                 offenders.append(str(path.relative_to(root)))
         self.assertEqual(offenders, [])
+        # And the translation module stays SDK-free, so every shape is testable without a key.
+        adapters = (root / "learnova" / "ai_services" / "adapters.py").read_text(encoding="utf-8")
+        for marker in ("import openai", "import anthropic", "from flask"):
+            self.assertNotIn(marker, adapters)
 
     def test_development_badge_reflects_mode_and_is_hidden_in_production(self):
         client = application.app.test_client()
-        for mode, label in (("mock", b"Mock AI"), ("cached", b"Cached AI"), ("live", b"Live AI")):
+        for mode, label in (("cached", b"Cached AI"), ("live", b"Live AI")):
             application.app.config.update(ENV_NAME="development", AI_MODE=mode)
             self.assertIn(label, client.get("/login").data)
         application.app.config.update(ENV_NAME="production", AI_MODE="live")
         self.assertNotIn(b"Development AI mode", client.get("/login").data)
+        self.assertNotIn(b"Mock AI", client.get("/login").data)
 
 
 class AIConfigurationTests(unittest.TestCase):
-    def test_testing_defaults_to_mock_and_production_requires_explicit_live(self):
+    def test_non_production_defaults_to_cached(self):
         with patch.dict(os.environ, {"APP_ENV": "testing", "AI_MODE": ""}, clear=False):
             test_app = Flask("test-ai-config", instance_path=tempfile.mkdtemp())
             configure_app(test_app, "testing")
-            self.assertEqual(test_app.config["AI_MODE"], "mock")
-        with patch.dict(os.environ, {"APP_ENV": "production", "AI_MODE": "mock", "SECRET_KEY": "x"}, clear=False):
+            self.assertEqual(test_app.config["AI_MODE"], "cached")
+
+    def test_production_requires_explicit_live(self):
+        with patch.dict(os.environ, {"APP_ENV": "production", "AI_MODE": "cached",
+                                     "SECRET_KEY": "x"}, clear=False):
             production_app = Flask("production-ai-config", instance_path=tempfile.mkdtemp())
             with self.assertRaisesRegex(RuntimeError, "AI_MODE=live"):
                 configure_app(production_app, "production")
+
+    def test_mock_mode_is_no_longer_configurable(self):
+        with patch.dict(os.environ, {"APP_ENV": "development", "AI_MODE": "mock"}, clear=False):
+            stale_app = Flask("stale-ai-config", instance_path=tempfile.mkdtemp())
+            with self.assertRaisesRegex(RuntimeError, "AI_MODE must be cached or live"):
+                configure_app(stale_app, "development")
+
+    def test_retired_mock_settings_are_gone(self):
+        with patch.dict(os.environ, {"APP_ENV": "development", "AI_MODE": "cached"}, clear=False):
+            fresh = Flask("fresh-ai-config", instance_path=tempfile.mkdtemp())
+            configure_app(fresh, "development")
+        for retired in ("AI_MOCK_SCENARIO", "AI_MOCK_LATENCY_MS", "AI_FIXTURE_DIR"):
+            self.assertNotIn(retired, fresh.config)
+        self.assertFalse(hasattr(service, "_mock_response"))
+        self.assertFalse(hasattr(service, "AIMockTimeout"))
+        self.assertEqual(service.AI_MODES, {"cached", "live"})
+
+
+if __name__ == "__main__":
+    unittest.main()

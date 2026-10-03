@@ -1,20 +1,4 @@
 {
-  "_meta": {
-    "prompt_versions": {
-      "lesson_generation": "lesson_generation:v3",
-      "quiz_generation": "quiz_generation:v2",
-      "answer_evaluation": "answer_evaluation:v3",
-      "tutor_chat": "tutor_chat:v2",
-      "translation": "translation:v2",
-      "ocr_document_recognition": "ocr_document_recognition:v2",
-      "project_section_generation": "project_section_generation:v3",
-      "adaptive_practice": "adaptive_practice:v3",
-      "final_exam_generation": "final_exam_generation:v3",
-      "final_exam_evaluation": "final_exam_evaluation:v2",
-      "flashcard_generation": "flashcard_generation:v1",
-      "flashcard_review": "flashcard_review:v1"
-    }
-  },
   "lesson_generation": {
     "output_text": {
       "lesson_title": "Mock-Lektion zu gleichwertigen Brüchen",
@@ -175,10 +159,65 @@
           "important_candidate": true,
           "teacher_highlight_candidate": false,
           "nearby_text": ""
+        },
+        {
+          "type": "handwriting",
+          "content": "Die Mitochondrien sind das Kraftwek der Zelle",
+          "bbox": [
+            0.08,
+            0.32,
+            0.9,
+            0.46
+          ],
+          "confidence": 0.52,
+          "crossed_out": false,
+          "important_candidate": false,
+          "teacher_highlight_candidate": false,
+          "nearby_text": "",
+          "suggested_correction": "Die Mitochondrien sind das Kraftwerk der Zelle"
+        },
+        {
+          "type": "handwriting",
+          "content": "Photosynthese",
+          "bbox": [
+            0.1,
+            0.52,
+            0.52,
+            0.62
+          ],
+          "confidence": 0.36,
+          "crossed_out": false,
+          "important_candidate": false,
+          "teacher_highlight_candidate": false,
+          "nearby_text": ""
         }
       ],
       "detected_page_number": "1",
       "warning": ""
+    }
+  },
+  "handwriting_region_review": {
+    "output_text": {
+      "regions": [
+        {
+          "index": 1,
+          "content": "Photosynthese",
+          "confidence": 0.91,
+          "illegible": false
+        },
+        {
+          "index": 2,
+          "content": "Chloroplast",
+          "confidence": 0.86,
+          "illegible": false
+        },
+        {
+          "index": 3,
+          "content": "",
+          "confidence": 0.1,
+          "illegible": true
+        }
+      ]
     }
   },
   "project_section_generation": {
@@ -333,6 +372,24 @@
       ]
     }
   },
+  "flashcard_back_suggestion": {
+    "output_text": {
+      "suggestions": [
+        {
+          "back": "Der Vorgang, bei dem Pflanzen mit Sonnenlicht aus Kohlendioxid und Wasser Zucker und Sauerstoff herstellen.",
+          "style": "short"
+        },
+        {
+          "back": "Die Photosynthese laeuft in den Chloroplasten ab. Chlorophyll nimmt Lichtenergie auf, die eine Reaktion zwischen Kohlendioxid aus der Luft und Wasser aus den Wurzeln antreibt. Dabei entsteht Traubenzucker und Sauerstoff wird frei.",
+          "style": "detailed"
+        },
+        {
+          "back": "6 CO2 + 6 H2O + Licht -> C6H12O6 + 6 O2",
+          "style": "example"
+        }
+      ]
+    }
+  },
   "flashcard_review": {
     "output_text": {
       "overallScore": 4.4,
@@ -354,6 +411,272 @@
       ],
       "flaggedCards": [],
       "safetyFlags": []
+    }
+  },
+  "mistake_analysis": {
+    "output_text": {
+      "verdict": "partially_correct",
+      "score_fraction": 0.5,
+      "confidence": 0.85,
+      "question_intent": "Eine zweistufige lineare Gleichung nach x lösen.",
+      "student_approach": "Die Gleichung richtig aufgestellt, aber beim Isolieren von x ein Vorzeichen falsch behandelt.",
+      "correct_parts": [
+        "Hat richtig zuerst die Addition rückgängig gemacht."
+      ],
+      "mistake_categories": [
+        "sign_error"
+      ],
+      "root_cause": "Das negative Vorzeichen beim Umstellen eines Terms über das Gleichheitszeichen verloren.",
+      "likely_student_thought": "Dachte, dass +3 beim Umstellen sein Vorzeichen behält.",
+      "exact_error_step": "Schrieb 2x = 11 + 3 statt 2x = 11 - 3.",
+      "correct_reasoning": [
+        "Subtrahiere 3 auf beiden Seiten: 2x = 8.",
+        "Teile durch 2: x = 4."
+      ],
+      "final_answer": "x = 4",
+      "improvement_advice": "Wenn du einen Term über das Gleichheitszeichen bringst, drehe sein Vorzeichen um und schreibe diesen Schritt ausdrücklich hin.",
+      "prerequisites_to_review": [
+        "Addieren und Subtrahieren von Zahlen mit Vorzeichen."
+      ],
+      "next_question": {
+        "question": "Löse 3x - 5 = 7.",
+        "purpose": "Vorzeichenbehandlung beim Isolieren von x prüfen.",
+        "difficulty_change": "same"
+      },
+      "should_create_mistake_record": true,
+      "should_reduce_mastery": true,
+      "analysis_limitations": []
+    }
+  },
+  "answer_diagnosis": {
+    "output_text": {
+      "analysis_version": "diagnosis:v2",
+      "correctness_status": "partially_correct",
+      "score": {
+        "points": 0.5,
+        "max_points": 1.0,
+        "rubric_evidence": [
+          {
+            "criterion": "Zuerst die Addition rückgängig gemacht",
+            "met": true,
+            "evidence_ids": [
+              "e2"
+            ]
+          },
+          {
+            "criterion": "Vorzeichen beim Umstellen beibehalten",
+            "met": false,
+            "evidence_ids": [
+              "e3"
+            ]
+          }
+        ]
+      },
+      "concepts_assessed": [
+        "Lineare Gleichungen in zwei Schritten"
+      ],
+      "primary_diagnosis": {
+        "tag": "arithmetic_or_transcription_error",
+        "statement": "Der Term behielt beim Wechsel über das Gleichheitszeichen sein Vorzeichen.",
+        "evidence_ids": [
+          "e3"
+        ]
+      },
+      "secondary_diagnoses": [],
+      "evidence": [
+        {
+          "id": "e1",
+          "source": "question",
+          "quote": "Löse 2x + 3 = 11."
+        },
+        {
+          "id": "e2",
+          "source": "student_answer",
+          "quote": "zuerst die 3 entfernen"
+        },
+        {
+          "id": "e3",
+          "source": "student_answer",
+          "quote": "2x = 11 + 3"
+        }
+      ],
+      "misconception_description": "",
+      "prerequisite_gaps": [],
+      "missing_evidence": false,
+      "missing_evidence_reason": "",
+      "confidence": {
+        "value": 0.85,
+        "basis": "Der notierte Schritt zeigt das Vorzeichen direkt."
+      },
+      "recommended_intervention": "practice_similar",
+      "candidate_question_constraints": {
+        "concept": "Lineare Gleichungen in zwei Schritten",
+        "prerequisite_focus": "",
+        "difficulty": 2,
+        "cognitive_demand": "apply",
+        "question_type": "short_answer",
+        "target_misconception": "",
+        "purpose": "Vorzeichen beim Isolieren von x prüfen."
+      },
+      "student_facing_explanation": "Der erste Schritt war richtig. Beim Wechsel über das Gleichheitszeichen wird aus +3 ein -3, also 2x = 11 - 3 und damit x = 4.",
+      "internal_diagnostic_summary": "Richtige Methode, Vorzeichenfehler beim Umstellen. Ein Ausrutscher, keine Verständnislücke."
+    }
+  },
+  "diagnosis_verification": {
+    "output_text": {
+      "agrees": true,
+      "reason": "Der zitierte Schritt stützt die genannte Ursache.",
+      "better_tag": ""
+    }
+  },
+  "question_generation": {
+    "output_text": {
+      "question": {
+        "id": "q1",
+        "subject": "Mathematik",
+        "concept": "Lineare Gleichungen in zwei Schritten",
+        "prerequisites": [
+          "Addieren und Subtrahieren ganzer Zahlen"
+        ],
+        "difficulty": 2,
+        "cognitive_demand": "apply",
+        "type": "short_answer",
+        "prompt": "Löse nach x und schreibe den Subtraktionsschritt auf: 3x + 5 = 20.",
+        "hint": "Mache zuerst die Addition rückgängig.",
+        "options": [],
+        "expected_answer": "5",
+        "solution_steps": [
+          "Subtrahiere 5 auf beiden Seiten: 3x = 15.",
+          "Teile beide Seiten durch 3: x = 5."
+        ],
+        "rubric": [
+          {
+            "criterion": "Subtraktionsschritt mit korrektem Vorzeichen",
+            "points": 1
+          },
+          {
+            "criterion": "Richtiger Endwert",
+            "points": 1
+          }
+        ],
+        "target_misconception": "",
+        "diagnostic_purpose": "Vorzeichen beim Isolieren von x prüfen."
+      }
+    }
+  },
+  "content_moderation": {
+    "output_text": {
+      "recommendation": "allow",
+      "dimensions": {
+        "subject_relevance": "pass",
+        "educational_value": "pass",
+        "harassment_or_insult": "pass",
+        "hate_or_targeted_abuse": "pass",
+        "threats_or_violence": "pass",
+        "sexual_safety": "pass",
+        "sexual_content_context": "not_applicable",
+        "self_harm_or_dangerous_content": "pass",
+        "privacy_or_personal_information": "pass",
+        "deception_or_manipulation": "pass",
+        "obfuscation_risk": "pass",
+        "age_appropriateness": "pass",
+        "language_quality": "pass"
+      },
+      "confidence": 0.94,
+      "evidence_sufficiency": "sufficient",
+      "reason_codes": [],
+      "quotes": [],
+      "evidence_summary": "Sachlicher Fachinhalt, der zum angegebenen Fach passt; kein Sicherheitsproblem gefunden.",
+      "suggested_revision": null,
+      "requires_review": false
+    }
+  },
+  "assistant_chat": {
+    "output_text": "Die Ableitung von x hoch zwei ist 2x. Nach der Potenzregel ziehst du den Exponenten als Faktor nach vorn und verringerst ihn um eins."
+  },
+  "competency_extraction": {
+    "output_text": {
+      "competencies": [
+        {
+          "statement": "Ich kann quadratische Gleichungen mit der Mitternachtsformel lösen.",
+          "topic": "Quadratische Gleichungen",
+          "subtopic": "Mitternachtsformel",
+          "level": "intermediate",
+          "importance": 3,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "covered",
+          "evidence": "x = (-b ± √(b²-4ac)) / 2a"
+        },
+        {
+          "statement": "Ich kann erklären, wann eine quadratische Gleichung keine reelle Lösung hat.",
+          "topic": "Quadratische Gleichungen",
+          "subtopic": "Diskriminante",
+          "level": "advanced",
+          "importance": 2,
+          "source_page_ids": [
+            1
+          ],
+          "coverage": "missing",
+          "evidence": ""
+        }
+      ]
+    }
+  },
+  "vocabulary_page_extraction": {
+    "output_text": {
+      "rows": [
+        {
+          "term": "à travers",
+          "phonetic": "atʁavɛʁ",
+          "translation": "durch",
+          "examples": [
+            {
+              "sentence": "Il marche à travers le village.",
+              "translation": "Er geht durch das Dorf."
+            }
+          ],
+          "note": "",
+          "confidence": 0.95
+        },
+        {
+          "term": "la boulangerie",
+          "phonetic": "bulɑ̃ʒʁi",
+          "translation": "die Bäckerei",
+          "examples": [],
+          "note": "",
+          "confidence": 0.9
+        }
+      ],
+      "source_language": "fr",
+      "target_language": "de"
+    }
+  },
+  "_meta": {
+    "prompt_versions": {
+      "lesson_generation": "lesson_generation:v3",
+      "quiz_generation": "quiz_generation:v2",
+      "answer_evaluation": "answer_evaluation:v3",
+      "mistake_analysis": "mistake_analysis:v1",
+      "answer_diagnosis": "answer_diagnosis:v2",
+      "diagnosis_verification": "diagnosis_verification:v1",
+      "question_generation": "question_generation:v1",
+      "tutor_chat": "tutor_chat:v2",
+      "translation": "translation:v2",
+      "ocr_document_recognition": "ocr_document_recognition:v2",
+      "project_section_generation": "project_section_generation:v3",
+      "adaptive_practice": "adaptive_practice:v3",
+      "final_exam_generation": "final_exam_generation:v3",
+      "final_exam_evaluation": "final_exam_evaluation:v2",
+      "flashcard_generation": "flashcard_generation:v1",
+      "flashcard_review": "flashcard_review:v1",
+      "content_moderation": "content_moderation:v1",
+      "assistant_chat": "assistant_chat:v1",
+      "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
+      "handwriting_region_review": "handwriting_region_review:v1",
+      "competency_extraction": "competency_extraction:v1",
+      "vocabulary_page_extraction": "vocabulary_page_extraction:v1"
     }
   }
 }

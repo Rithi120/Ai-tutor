@@ -382,7 +382,7 @@ class ReliabilityTests(unittest.TestCase):
         adaptive_session_id = started.headers["Location"].split("session_id=", 1)[1]
         self.assertGreaterEqual(application.SESSIONS[adaptive_session_id]["test_total"], 5)
         self.assertLessEqual(application.SESSIONS[adaptive_session_id]["test_total"], 10)
-        application.SESSIONS[adaptive_session_id]["test_total"] = 1
+        application.SESSIONS[adaptive_session_id]["max_questions"] = 1   # end after one answer
         with patch.object(application, "create_response", return_value=FakeResponse(correct_result)):
             completed = self.client.post(
                 "/api/answer", json={"session_id": adaptive_session_id, "answer": "a"}

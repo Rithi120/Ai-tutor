@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Moderation queue — Learnova{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+{% endblock %}
+{% block content %}
+{#
+  Reviewer-only. Reached through /internal/moderation, which is gated on the
+  COMMUNITY_MODERATORS allowlist and returns 404 to everyone else, so the page is never
+  advertised. Everything here is the full reviewer view: the per-dimension statuses, the
+  raw-character measurements and the quoted spans are all shown, because a reviewer
+  cannot check a decision they cannot see.
+#}
+<main class="page-shell" id="main-content" aria-labelledby="modTitle">
+  <div id="modToast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <section class="dashboard-hero">
+    <p class="eyebrow">Internal · reviewer access</p>
+    <h1 id="modTitle">Moderation queue</h1>
+    <p>Content held for a human decision. Nothing listed here is publicly visible.</p>
+  </section>
+
+  <div id="modLoading" class="cards-skeleton" aria-hidden="true"><i></i><i></i></div>
+  <div id="modEmpty" class="cards-empty hidden"><p>Nothing is waiting for review.</p></div>
+  <div id="modQueue" class="mod-queue" aria-live="polite"></div>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script type="module" src="{{ url_for('static', filename='js/moderation-queue.js') }}"></script>
+{% endblock %}

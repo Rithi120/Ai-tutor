@@ -12,23 +12,46 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .prompts import STRUCTURED_TASKS
+
 
 FAILURE_CATEGORIES = {
     "provider_timeout", "provider_rate_limit", "invalid_json", "schema_validation",
     "source_reference_validation", "unsupported_language", "token_limit_exceeded",
     "request_limit_reached", "network_failure", "authentication_failure",
     "internal_application_error",
+    # A withdrawn model id, a request the provider will not accept, an overloaded or
+    # failing provider, a provider that declined to answer, and a spent site budget.
+    "model_not_found", "invalid_request", "provider_overloaded", "provider_unavailable",
+    "provider_refusal", "budget_exhausted", "provider_quota_exhausted",
 }
 QUESTION_TYPES = {
     "multiple_choice", "checkboxes", "dropdown", "ordering", "text", "true_false",
     "matching", "fill_blank", "short_answer", "explanation", "calculation",
+    # Exercises built on a picture the student can actually see. A question of either
+    # type is only accepted with verified media attached (learnova/projects/media.py),
+    # so neither can produce "describe the diagram" with no diagram.
+    "photo_response", "photo_ordering",
 }
+# The types whose pictures are part of the question rather than decoration.
+PHOTO_QUESTION_TYPES = {"photo_response", "photo_ordering"}
 DIFFICULTY_WORDS = {"easy", "medium", "hard"}
 SKILL_STATUSES = {"needs_practice", "developing", "mastered", "weak", "learning", "strong"}
-BLOCK_TYPES = {
-    "printed_text", "handwriting", "heading", "formula", "diagram", "table", "list",
-    "annotation", "unknown",
-}
+# The block types a recognition response may use. This is the single definition:
+# learnova/ocr/service.py imports it, and the OCR prompt is built from it, so the thing
+# the model is asked for and the thing this validator accepts cannot drift apart.
+#
+# They did drift, and it was the most expensive bug in the app. The prompt tells the model
+# to mark illegible fragments "uncertain" and to mark "crossed_out" writing; this list had
+# neither, and carried "list" and "unknown" that nothing ever produced. So the model
+# followed its instructions, one block failed the check, the whole page was rejected, and
+# the gateway paid for a corrective retry. On handwriting that is most pages: measured in
+# instance/ai_usage.jsonl, two of five real OCR calls failed this way and burned 59% of
+# all OCR output tokens for zero characters.
+BLOCK_TYPES = frozenset({
+    "printed_text", "handwriting", "formula", "table", "diagram",
+    "heading", "annotation", "uncertain", "crossed_out",
+})
 
 
 @dataclass(frozen=True)
@@ -260,14 +283,73 @@ def _project(data: Any, context: dict[str, Any]) -> None:
             _fail(f"sections[{index}].estimated_minutes is invalid")
 
 
+def _competencies(data: Any, context: dict[str, Any]) -> None:
+    """competency_extraction: rows read from a Kompetenzraster, each pointing at pages.
+
+    The vocabulary is fixed so the planner can rely on it; a covered/partial claim must
+    quote evidence (the app then checks the quote really appears in the notes).
+    """
+
+    rows = _list(_dict(data, "competencies").get("competencies"), "competencies", nonempty=True)
+    allowed = _ids(context, "source_page_ids")
+    for index, value in enumerate(rows):
+        row = _dict(value, f"competencies[{index}]")
+        _text(row.get("statement"), f"competencies[{index}].statement")
+        _text(row.get("topic"), f"competencies[{index}].topic")
+        if str(row.get("level") or "") not in {"basic", "intermediate", "advanced"}:
+            _fail(f"competencies[{index}].level is unsupported")
+        importance = row.get("importance")
+        if isinstance(importance, bool) or not isinstance(importance, int) or not 1 <= importance <= 3:
+            _fail(f"competencies[{index}].importance must be 1, 2 or 3")
+        coverage = str(row.get("coverage") or "")
+        if coverage not in {"covered", "partial", "missing"}:
+            _fail(f"competencies[{index}].coverage is unsupported")
+        _text(row.get("evidence"), f"competencies[{index}].evidence", allow_empty=coverage == "missing")
+        if allowed:
+            _validate_references(row.get("source_page_ids"), allowed, f"competencies[{index}].source_page_ids")
+
+
+def _vocabulary_page(data: Any, context: dict[str, Any]) -> None:
+    """vocabulary_page_extraction: the rows of one textbook page, as the table prints them.
+
+    A row may have an unreadable side - that is how the student learns which word to
+    type in - but never two. `rows` may be empty: a page with no table is a fact the
+    caller handles by falling back to line-by-line reading, not a broken answer.
+    """
+
+    root = _dict(data, "page")
+    rows = _list(root.get("rows"), "rows")
+    for index, value in enumerate(rows):
+        row = _dict(value, f"rows[{index}]")
+        term = _text(row.get("term") or "", f"rows[{index}].term", allow_empty=True)
+        translation = _text(row.get("translation") or "", f"rows[{index}].translation", allow_empty=True)
+        if not term.strip() and not translation.strip():
+            _fail(f"rows[{index}] has neither a term nor a translation")
+        _text(row.get("phonetic") or "", f"rows[{index}].phonetic", allow_empty=True)
+        _text(row.get("note") or "", f"rows[{index}].note", allow_empty=True)
+        _number(row.get("confidence"), f"rows[{index}].confidence", 0, 1)
+        examples = _list(row.get("examples") if row.get("examples") is not None else [], f"rows[{index}].examples")
+        for position, item in enumerate(examples):
+            example = _dict(item, f"rows[{index}].examples[{position}]")
+            _text(example.get("sentence"), f"rows[{index}].examples[{position}].sentence")
+            _text(example.get("translation") or "", f"rows[{index}].examples[{position}].translation",
+                  allow_empty=True)
+
+
 def _ocr(data: Any, context: dict[str, Any]) -> None:
     root = _dict(data, "recognition")
     blocks = _list(root.get("blocks"), "blocks")
     for index, value in enumerate(blocks):
         block = _dict(value, f"blocks[{index}]")
-        if _text(block.get("type"), f"blocks[{index}].type") not in BLOCK_TYPES:
+        block_type = _text(block.get("type"), f"blocks[{index}].type")
+        if block_type not in BLOCK_TYPES:
             _fail(f"blocks[{index}].type is unsupported")
-        _text(block.get("content"), f"blocks[{index}].content")
+        # A diagram often has no readable caption, and normalize_recognition keeps such a
+        # block on purpose (ocr/service.py: `if not content and block_type != "diagram"`).
+        # Demanding text here rejected a whole page the app would have accepted, and paid
+        # for a retry to be told the same thing again.
+        _text(block.get("content"), f"blocks[{index}].content",
+              allow_empty=block_type == "diagram")
         _number(block.get("confidence"), f"blocks[{index}].confidence", 0, 1)
         bbox = _list(block.get("bbox"), f"blocks[{index}].bbox")
         if len(bbox) != 4:
@@ -379,6 +461,30 @@ def _flashcards(data: Any, context: dict[str, Any]) -> None:
         _fail("no flashcard has both a front and a back")
 
 
+def _region_review(data: Any, context: dict[str, Any]) -> None:
+    # Lenient like the page recogniser: normalize_region_review drops entries with an
+    # unusable index, and a fragment the model honestly marks illegible is a valid answer,
+    # so the response only has to be a list of objects carrying an index.
+    root = _dict(data, "region review")
+    regions = _list(root.get("regions"), "regions", nonempty=True)
+    if not any(isinstance(item, dict) and item.get("index") is not None for item in regions):
+        _fail("no region carries an index")
+
+
+def _flashcard_suggestions(data: Any, context: dict[str, Any]) -> None:
+    # Same leniency as _flashcards: normalize_suggestions drops weak entries, so one
+    # usable definition is enough. The model's count and style label are never trusted.
+    root = _dict(data, "definition suggestions")
+    items = _list(root.get("suggestions"), "suggestions", nonempty=True)
+    usable = sum(
+        1 for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get("back"), str) and item["back"].strip()
+    )
+    if usable == 0:
+        _fail("no suggestion has a definition")
+
+
 def _flashcard_review(data: Any, context: dict[str, Any]) -> None:
     root = _dict(data, "AI review")
     fields = ("overallScore", "accuracyScore", "clarityScore", "usefulnessScore",
@@ -393,6 +499,71 @@ def _flashcard_review(data: Any, context: dict[str, Any]) -> None:
     _text(root.get("summary"), "summary")
 
 
+def _mistake_analysis(data: Any, context: dict[str, Any]) -> None:
+    from learnova.analysis.service import AnalysisSchemaError, validate_analysis
+    try:
+        validate_analysis(data)
+    except AnalysisSchemaError as error:
+        _fail(f"analysis schema: {error}")
+
+
+def _answer_diagnosis(data: Any, context: dict[str, Any]) -> None:
+    """The evidence-linked diagnosis:v2 contract (learnova.diagnostics.schema).
+
+    Only unusable output raises here, because each rejection costs one corrective retry.
+    Claims that are merely unsupported are dropped by the normalizer and reported through
+    the result's own `validation_status`.
+    """
+
+    from learnova.diagnostics.schema import DiagnosisSchemaError, validate_diagnosis
+    try:
+        validate_diagnosis(data)
+    except DiagnosisSchemaError as error:
+        _fail(f"diagnosis schema: {error}")
+
+
+def _diagnosis_verification(data: Any, context: dict[str, Any]) -> None:
+    root = _dict(data, "verification")
+    if not isinstance(root.get("agrees"), bool):
+        _fail("verification.agrees must be a boolean")
+    if not root["agrees"]:
+        _text(root.get("reason"), "verification.reason")
+
+
+def _question_generation(data: Any, context: dict[str, Any]) -> None:
+    """Structural validation only; alignment, answerability and duplicates are checked
+    deterministically by learnova.diagnostics.question_spec once the object is parsed."""
+
+    root = _dict(data, "question generation")
+    question = _question(root.get("question", root.get("next_question")), require_subject=False)
+    for field in ("solution_steps", "rubric"):
+        if field in question:
+            _list(question.get(field), f"question.{field}")
+    recent = {
+        re.sub(r"\W+", " ", str(item)).casefold().strip()
+        for item in (context.get("avoid_prompts") or [])
+    }
+    prompt = re.sub(r"\W+", " ", question["prompt"]).casefold().strip()
+    if prompt and prompt in recent:
+        _fail("question duplicates a recently answered question")
+
+
+def _content_moderation(data: Any, context: dict[str, Any]) -> None:
+    """The context-aware moderation:v1 contract (learnova.moderation.schema).
+
+    Structural validation only. Evidence grounding - checking that a flagged safety
+    dimension quotes text that actually occurs in the submission - needs the submitted
+    content, which the gateway does not have, so it runs in `normalize_classification`
+    at the call site.
+    """
+
+    from learnova.moderation.schema import ModerationSchemaError, validate_classification
+    try:
+        validate_classification(data)
+    except ModerationSchemaError as error:
+        _fail(str(error))
+
+
 def _translation(data: Any, context: dict[str, Any]) -> None:
     values = _list(_dict(data, "translation").get("translations"), "translations")
     if context.get("texts") is not None and len(values) != len(context["texts"]):
@@ -404,10 +575,19 @@ def _translation(data: Any, context: dict[str, Any]) -> None:
 VALIDATORS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
     "lesson_generation": _lesson, "quiz_generation": _quiz,
     "answer_evaluation": _answer, "translation": _translation,
-    "ocr_document_recognition": _ocr, "project_section_generation": _project,
+    "mistake_analysis": _mistake_analysis,
+    "answer_diagnosis": _answer_diagnosis,
+    "diagnosis_verification": _diagnosis_verification,
+    "question_generation": _question_generation,
+    "ocr_document_recognition": _ocr, "handwriting_region_review": _region_review,
+    "project_section_generation": _project,
     "adaptive_practice": _adaptive, "final_exam_generation": _exam,
     "final_exam_evaluation": _exam_evaluation, "flashcard_generation": _flashcards,
+    "flashcard_back_suggestion": _flashcard_suggestions,
     "flashcard_review": _flashcard_review,
+    "content_moderation": _content_moderation,
+    "competency_extraction": _competencies,
+    "vocabulary_page_extraction": _vocabulary_page,
 }
 TASK_SCHEMAS = {
     task_type: TaskSchema(name=f"{task_type}_schema", validator=validator)
@@ -420,9 +600,18 @@ def _validate_output(task_type: str, output_text: str, prompt_version: str, cont
         raise AIValidationError("schema_validation", "response was empty")
     if len(output_text) > max_characters:
         raise AIValidationError("token_limit_exceeded", "response exceeded the configured size limit")
-    if task_type == "tutor_chat":
+    if task_type not in STRUCTURED_TASKS:
+        # Conversational tasks return prose. There is no JSON contract to parse, and
+        # attempting to parse one would reject every valid answer. `STRUCTURED_TASKS` is
+        # the single source of truth for which tasks have a contract - naming the tasks
+        # here as well is how a new conversational task gets validated as if it were JSON.
         return ValidationReport(task_type, prompt_version, True)
-    cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", output_text.strip()))
+    # Reasoning models prepend a <think>...</think> block. parse_json strips it
+    # (service.py) but this validator did not, so a reasoning model's ordinary output
+    # failed as invalid_json and bought a corrective retry that returned the same
+    # shape again. The vision model used for OCR is one of these.
+    text = re.sub(r"<think>.*?</think>", "", output_text.strip(), flags=re.DOTALL).strip()
+    cleaned = repair_latex_json(re.sub(r"^```(?:json)?\s*|\s*```$", "", text))
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as error:

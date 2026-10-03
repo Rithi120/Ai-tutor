@@ -2,7 +2,6 @@
 {% from "components/_speech_controls.html" import microphone_control, listen_control with context %}
 {% block title %}{{ _('Learnova — Your personal study tutor') }}{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 {% endblock %}
 {% block content %}
   <div class="ambient ambient-one"></div>
@@ -13,6 +12,7 @@
       <h1><span data-i18n="heroTitle">{{ _('What do you want to') }}</span> <em data-i18n="heroAccent">{{ _('learn today?') }}</em></h1>
       <p class="hero-copy" data-i18n="heroCopy">{{ _('Choose a subject and tell Learnova what you need help with. Add school material only when it is useful.') }}</p>
 
+      {% if resume_card %}<section class="resume-banner reveal-card"><div><span class="eyebrow">{{ _('CONTINUE WHERE YOU LEFT OFF') }}</span><h2>{{ resume_card.title }}</h2><p>{{ resume_card.subject }} · {% if resume_card.answered %}{{ _('{answered} questions answered', answered=resume_card.answered) }}{% else %}{{ _('Not started yet') }}{% endif %}</p></div><a class="primary-button" href="{{ url_for('resume_lesson', lesson_id=resume_card.lesson.id) }}">{{ _('Continue') }} <span aria-hidden="true">→</span></a></section>{% endif %}
       <form id="uploadForm" class="study-card">
         <fieldset class="subject-picker"><legend data-i18n="chooseSubject">{{ _('Choose a subject') }}</legend>
           <label><input type="radio" name="subject" value="Mathematics" checked><span>∑ <b data-i18n="subjectMath">{{ _('Mathematics') }}</b></span></label>
@@ -63,7 +63,7 @@
         </div>
         <div id="lessonContent">
           <div id="testProgress" class="test-progress hidden">
-            <div class="progress-copy"><strong id="progressLabel">Question 1 of 5</strong><span id="progressPercent">0%</span></div>
+            <div class="progress-copy"><strong id="progressLabel">Question 1 of 5</strong><span><button id="finishTest" class="finish-test" type="button" hidden data-i18n="finishTest">{{ _('Finish test') }}</button> <span id="progressPercent">0%</span></span></div>
             <div class="progress-track"><i id="progressFill"></i></div>
             <div id="progressSteps" class="progress-steps"></div>
           </div>
@@ -109,7 +109,7 @@
             </div>
           </article>
           <article id="startTestCard" class="start-test-card">
-            <div><span class="card-kicker" data-i18n="readyTest">{{ _('READY TO PRACTICE?') }}</span><h2 data-i18n="testTitle">{{ _('Test your understanding') }}</h2><p data-i18n="testCopy">{{ _('Five questions will move from easy to advanced and adapt to your weak points.') }}</p></div>
+            <div><span class="card-kicker" data-i18n="readyTest">{{ _('READY TO PRACTICE?') }}</span><h2 data-i18n="testTitle">{{ _('Test your understanding') }}</h2><p data-i18n="testCopy">{{ _('Between 3 and 15 questions - as many as it takes until you know every concept (80% knowledge). A wrong answer gets a diagnosis, not just a mark.') }}</p></div>
             <button id="startTest" class="primary-button" type="button"><span data-i18n="startTest">{{ _('Start test') }}</span><b>→</b></button>
           </article>
           <article id="questionCard" class="content-card question-card hidden">
@@ -119,6 +119,7 @@
                   id="difficulty"></span></div>
               <h2 id="questionPrompt"></h2>{{ listen_control('#questionPrompt', 'questionListenControl') }}<button id="hintButton" class="hint-button" data-i18n="showHint">💡 Show a
                 hint</button>
+              <div id="questionMedia" class="question-media hidden"></div>
               <p id="hint" class="hint hidden"></p>
               {{ listen_control('#hint', 'hintListenControl', true) }}
               <form id="answerForm"><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
@@ -160,8 +161,6 @@
   <div id="toast" class="toast hidden"></div>
 {% endblock %}
 {% block scripts %}
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <script id="lessonBootstrap" type="application/json">{{ bootstrap|tojson }}</script>
   <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

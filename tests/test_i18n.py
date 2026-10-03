@@ -60,16 +60,16 @@ class LanguageSystemTests(unittest.TestCase):
 
     def test_default_browser_and_onboarding_language(self):
         default = self.client.get("/login")
-        self.assertIn(b'<html lang="en">', default.data)
+        self.assertIn(b'<html lang="en" dir="ltr">', default.data)
         self.assertIn(b"Welcome back", default.data)
 
         browser_client = application.app.test_client()
         german = browser_client.get("/login", headers={"Accept-Language": "de-DE,de;q=0.9"})
-        self.assertIn(b'<html lang="de">', german.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', german.data)
         self.assertIn("Willkommen zurück".encode(), german.data)
 
         response = self.register(language="de")
-        self.assertIn(b'<html lang="de">', response.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', response.data)
         with application.app.app_context():
             user = application.db.session.scalar(
                 application.db.select(application.User).where(application.User.username == "alice")
@@ -98,7 +98,7 @@ class LanguageSystemTests(unittest.TestCase):
             data={"identifier": "alice", "password": "correct-horse-battery"},
             follow_redirects=True,
         )
-        self.assertIn(b'<html lang="de">', logged_in.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', logged_in.data)
 
         application.SESSIONS.clear()
         restarted_client = application.app.test_client()
@@ -107,7 +107,7 @@ class LanguageSystemTests(unittest.TestCase):
             data={"identifier": "alice", "password": "correct-horse-battery"},
             follow_redirects=True,
         )
-        self.assertIn(b'<html lang="de">', restarted.data)
+        self.assertIn(b'<html lang="de" dir="ltr">', restarted.data)
 
         english = restarted_client.post(
             "/settings/language",
@@ -138,7 +138,7 @@ class LanguageSystemTests(unittest.TestCase):
 
         self.register(language="de")
         rejected = self.client.post(
-            "/settings/language", data={"language": "fr"}, follow_redirects=False
+            "/settings/language", data={"language": "zz"}, follow_redirects=False
         )
         self.assertEqual(rejected.status_code, 400)
         with application.app.app_context():
@@ -198,6 +198,49 @@ class LanguageSystemTests(unittest.TestCase):
         self.assertIn("Write all student-facing content in German.", prompt)
         session_id = response.get_json()["session_id"]
         self.assertEqual(application.SESSIONS[session_id]["language"], "German")
+
+
+class CatalogueLoadingTests(unittest.TestCase):
+    """How the catalogue behaves when a locale file is missing or broken."""
+
+    def test_a_missing_locale_file_is_silent(self):
+        """Most registered languages have no file yet; that is not a fault."""
+
+        from learnova.translations import catalog
+        with self.assertNoLogs(catalog._log, level="WARNING"):
+            self.assertIsNone(catalog._load_catalog("zz"))
+
+    def test_a_broken_locale_file_is_logged_rather_than_swallowed(self):
+        """A file that exists but cannot be read silently removes a language that
+        somebody believed was shipping, so it has to say so."""
+
+        from learnova.translations import catalog
+        broken = catalog._DATA_DIR / "zz.json"
+        broken.write_text("{ this is not json", encoding="utf-8")
+        try:
+            with self.assertLogs(catalog._log, level="WARNING") as captured:
+                self.assertIsNone(catalog._load_catalog("zz"))
+            self.assertIn("zz", captured.output[0])
+            self.assertIn("not be selectable", captured.output[0])
+        finally:
+            broken.unlink()
+
+    def test_a_locale_file_that_is_not_an_object_is_logged(self):
+        from learnova.translations import catalog
+        broken = catalog._DATA_DIR / "zz.json"
+        broken.write_text('["not", "an", "object"]', encoding="utf-8")
+        try:
+            with self.assertLogs(catalog._log, level="WARNING"):
+                self.assertIsNone(catalog._load_catalog("zz"))
+        finally:
+            broken.unlink()
+
+    def test_a_complete_locale_loads(self):
+        from learnova.translations import catalog
+        loaded = catalog._load_catalog("fr")
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertTrue(catalog.REQUIRED_KEYS.issubset(loaded))
 
 
 if __name__ == "__main__":

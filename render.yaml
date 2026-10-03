@@ -24,14 +24,101 @@ services:
         value: "true"
       - key: FEATURE_COMMUNITY_PUBLISHING
         value: "true"
+      # The safety gate for everything published to the public library. configure_app
+      # forces this on in production while publishing is enabled, so the value here is a
+      # statement of intent rather than the thing keeping it on.
+      - key: FEATURE_COMMUNITY_MODERATION
+        value: "true"
+      # Reviewer allowlist for /internal/moderation. Set this before publishing is used in
+      # anger: with it empty, escalated content is held safely but nobody can clear it.
+      - key: COMMUNITY_MODERATORS
+        sync: false
+      - key: GROQ_MODERATION_MODEL
+        value: openai/gpt-oss-safeguard-20b
+      - key: GROQ_MODERATION_ESCALATION_MODEL
+        value: openai/gpt-oss-120b
+      - key: MODERATION_ESCALATION_RISK_THRESHOLD
+        value: "0.25"
+      # Calibrated on synthetic cases, not traffic. Revisit once real decisions exist.
+      - key: MODERATION_REJECT_CONFIDENCE
+        value: "0.75"
+      - key: MODERATION_REJECT_CONFIDENCE_SEVERE
+        value: "0.55"
+      - key: MODERATION_MIN_ALLOW_CONFIDENCE
+        value: "0.40"
+      - key: MODERATION_SAFETY_REPORT_THRESHOLD
+        value: "2"
+      - key: MODERATION_TOTAL_REPORT_THRESHOLD
+        value: "5"
+      - key: MODERATION_QUOTE_RETENTION_DAYS
+        value: "90"
+      - key: AI_CONTENT_MODERATION_MAX_OUTPUT_TOKENS
+        value: "900"
       - key: GROQ_API_KEY
         sync: false
+      # Direct assistant chat. Set OPENAI_API_KEY to enable "openai:" models; see
+      # docs/ASSISTANT.md for adding Anthropic.
+      - key: FEATURE_ASSISTANT_CHAT
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ASSISTANT_MODEL
+        value: openai/gpt-oss-20b
+      - key: ASSISTANT_DEEP_MODEL
+        value: openai/gpt-oss-120b
+      # Keys for the other providers; a provider with no key is never offered. Give a paid
+      # provider a budget (AI_BUDGET_<PROVIDER>_TOKENS_PER_MONTH) before routing to it.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Premium routing is off until these name a "provider:model" (see .env.example).
+      - key: AI_PREMIUM_REASONING_MODEL
+        sync: false
+      - key: AI_PREMIUM_GRADING_MODEL
+        sync: false
+      # Who may open /internal/ai-diagnostics (budgets, usage by provider). Empty hides it.
+      - key: AI_DIAGNOSTICS_ADMINS
+        sync: false
+      # A site-wide daily token ceiling is the one budget worth setting on day one.
+      - key: AI_BUDGET_GLOBAL_TOKENS_PER_DAY
+        sync: false
+      - key: ASSISTANT_CONTEXT_TOKEN_BUDGET
+        value: "8000"
+      - key: ASSISTANT_REPLY_TOKEN_RESERVE
+        value: "2000"
+      - key: AI_ASSISTANT_CHAT_MAX_OUTPUT_TOKENS
+        value: "2000"
       - key: GROQ_VISION_MODEL
-        value: meta-llama/llama-4-scout-17b-16e-instruct
+        value: qwen/qwen3.8-27b
       - key: GROQ_TUTOR_MODEL
         value: openai/gpt-oss-20b
       - key: GROQ_FAST_MODEL
-        value: llama-3.1-8b-instant
+        value: openai/gpt-oss-20b
+      # Adaptive diagnostics: the diagnosis runs on the strongest available model, the
+      # optional second opinion on the cheapest, and question generation on the tutor model.
+      - key: GROQ_ANALYSIS_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_DIAGNOSIS_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_DIAGNOSIS_VERIFY_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_QUESTION_MODEL
+        value: openai/gpt-oss-20b
+      - key: FEATURE_ADAPTIVE_DIAGNOSTICS
+        value: "true"
+      - key: FEATURE_DIAGNOSTIC_VERIFICATION
+        value: "true"
+      - key: AI_DIAGNOSIS_VERIFY_RISK_THRESHOLD
+        value: "0.6"
+      - key: AI_QUESTION_MAX_REGENERATIONS
+        value: "1"
+      - key: AI_ANSWER_DIAGNOSIS_MAX_OUTPUT_TOKENS
+        value: "2600"
+      - key: AI_DIAGNOSIS_VERIFICATION_MAX_OUTPUT_TOKENS
+        value: "300"
+      - key: AI_QUESTION_GENERATION_MAX_OUTPUT_TOKENS
+        value: "1200"
       - key: LESSON_TOKEN_LIMIT
         value: "1800"
       - key: ANSWER_TOKEN_LIMIT

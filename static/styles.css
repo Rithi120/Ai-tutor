@@ -30,7 +30,6 @@ body {
   pointer-events: none;
 }
 
-.ai-mode-mock { color: #2563eb; }
 .ai-mode-cached { color: #7c3aed; }
 .ai-mode-live { color: #b42318; border-color: rgba(180, 35, 24, .3); }
 

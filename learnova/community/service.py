@@ -15,9 +15,13 @@ from __future__ import annotations
 from typing import Any
 
 
+# "pending_moderation" and "changes_requested" were added with the safety gate: a
+# submission now waits for moderation before the quality review runs, and a fixable
+# moderation outcome is a distinct state from a rejection so the UI can offer an edit
+# instead of a dead end.
 PUBLICATION_STATES = {
-    "draft", "pending_ai_review", "pending_manual_review", "approved", "rejected",
-    "hidden", "unpublished",
+    "draft", "pending_moderation", "pending_ai_review", "pending_manual_review",
+    "approved", "changes_requested", "rejected", "hidden", "unpublished",
 }
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 AUTHOR_DISPLAY = {"username", "nickname", "anonymous"}
@@ -112,14 +116,24 @@ def ai_stars(overall_score: float) -> tuple[int, str]:
 
 
 def publication_decision(overall_score: float, safety_flags: list[str] | None = None) -> dict[str, Any]:
-    """Decide publication status from the AI score; safety/copyright/privacy always override."""
+    """Decide publication status from the AI score; safety/copyright/privacy always override.
+
+    Quality is information, safety is the gate. Safety has already been decided by the
+    moderation pass before this runs, and a safety flag from this review still rejects.
+    What the score decides is only whether the set is good enough to show at all: a
+    middling set is published with its stars and the reviewer's suggestions visible,
+    not held. The 3.0-4.0 band used to return `pending_manual_review` under the reason
+    `approved_with_suggestions` - its own name said publish - and that parked ordinary
+    three-star sets in a human queue that exists for safety doubts and, on most
+    deployments, has nobody in it.
+    """
 
     if safety_flags:
         return {"status": "rejected", "reason": "safety_violation", "correctable": False}
     if overall_score >= 4.0:
         return {"status": "approved", "reason": "auto_approved", "correctable": False}
     if overall_score >= 3.0:
-        return {"status": "pending_manual_review", "reason": "approved_with_suggestions", "correctable": True}
+        return {"status": "approved", "reason": "approved_with_suggestions", "correctable": True}
     if overall_score >= 2.0:
         return {"status": "rejected", "reason": "needs_correction", "correctable": True}
     return {"status": "rejected", "reason": "poor_quality", "correctable": False}
@@ -146,24 +160,55 @@ def _saturating(count: int, half: int = 10) -> float:
     return count / (count + half)
 
 
+# The ranking terms and what each is worth relative to the others. These are weights,
+# not a distribution that has to sum to 1: `ranking_score` normalises over whichever
+# terms it was actually given.
+RANKING_WEIGHTS = {
+    "ai_overall": 0.35,
+    "student_bayesian": 0.25,
+    "completion_rate": 0.15,
+    "helpful_votes": 0.10,
+    "save_count": 0.10,
+    "recency": 0.05,
+}
+
+
 def ranking_score(
     *,
     ai_overall: float,
     student_bayesian: float,
-    completion_rate: float = 0.0,
-    helpful_votes: int = 0,
+    completion_rate: float | None = None,
+    helpful_votes: int | None = None,
     save_count: int = 0,
     recency: float = 0.0,
     penalty: float = 0.0,
 ) -> float:
-    """Composite 0-1 ranking: 35% AI, 25% student, 15% completion, 10% helpful, 10% saves, 5% recency."""
+    """Composite 0-1 ranking, normalised over the terms actually supplied.
 
-    score = (
-        0.35 * (_clamp_score(ai_overall) / 5)
-        + 0.25 * (_clamp_score(student_bayesian) / 5)
-        + 0.15 * _clamp01(completion_rate)
-        + 0.10 * _saturating(helpful_votes)
-        + 0.10 * _saturating(save_count)
-        + 0.05 * _clamp01(recency)
-    )
+    A term left as None is not measured yet and is excluded from both the numerator and
+    the denominator, rather than contributing zero. That distinction matters: passing 0.0
+    means "measured, and it is zero", while omitting the term means "no data". Scoring an
+    unmeasured term as zero silently caps every set at the share of the formula that
+    happens to be implemented - completion and helpful votes together are a quarter of
+    the weights, so every set was being ranked out of 0.75 and presented as if out of 1.
+
+    Normalising instead means the ranking is honest today and needs no change on the day
+    completion tracking or helpful votes ship: pass the value and its weight returns.
+    """
+
+    supplied: list[tuple[str, float]] = [
+        ("ai_overall", _clamp_score(ai_overall) / 5),
+        ("student_bayesian", _clamp_score(student_bayesian) / 5),
+        ("save_count", _saturating(save_count)),
+        ("recency", _clamp01(recency)),
+    ]
+    if completion_rate is not None:
+        supplied.append(("completion_rate", _clamp01(completion_rate)))
+    if helpful_votes is not None:
+        supplied.append(("helpful_votes", _saturating(helpful_votes)))
+
+    total_weight = sum(RANKING_WEIGHTS[name] for name, _value in supplied)
+    if total_weight <= 0:
+        return 0.0
+    score = sum(RANKING_WEIGHTS[name] * value for name, value in supplied) / total_weight
     return round(max(0.0, score - max(0.0, penalty)), 4)

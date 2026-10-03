@@ -2,23 +2,88 @@
 {% block title %}{{ _('Import vocabulary') }} — Learnova{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
 {% block content %}
-<main class="vocabulary-page">
-  <header class="vocabulary-hero"><div><h1>{{ _('Import vocabulary') }}</h1><p>{{ _('Your uploaded schoolbook pages remain private and expire automatically.') }}</p></div><a class="ghost-button" href="{{ url_for('vocabulary_page') }}">{{ _('My vocabulary lists') }}</a></header>
-  <form id="vocabularyImportForm" class="vocabulary-panel">
-    <div class="field-row">
-      <label class="field">{{ _('Source language') }}<select name="source_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}">{{ _(name) }}</option>{% endfor %}</select></label>
-      <label class="field">{{ _('Target language') }}<select name="target_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}" {{ 'selected' if code == 'de' }}>{{ _(name) }}</option>{% endfor %}</select></label>
-      <label class="field">{{ _('List title') }}<input name="title" maxlength="200"></label>
+<main class="vocabulary-page vocabulary-import-page" id="main-content">
+  <header class="vocabulary-hero">
+    <div>
+      <h1>{{ _('Import vocabulary') }}</h1>
+      <p>{{ _('Your uploaded schoolbook pages remain private and expire automatically.') }}</p>
     </div>
-    <fieldset><legend>{{ _('Input method') }}</legend>
-      <label><input type="radio" name="source_kind" value="file" checked> {{ _('Photo or PDF') }}</label>
-      <label><input type="radio" name="source_kind" value="text"> {{ _('Paste vocabulary text') }}</label>
-      <label><input type="radio" name="source_kind" value="manual"> {{ _('Manual entry') }}</label>
-    </fieldset>
-    <label id="vocabularyFileField" class="upload-drop">{{ _('Choose photo or PDF') }}<input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" capture="environment"></label>
-    <label id="vocabularyTextField" class="field hidden">{{ _('Vocabulary text') }}<textarea name="text" rows="10" placeholder="environment | die Umwelt | We must protect the environment."></textarea></label>
-    <button class="primary-button" type="submit">{{ _('Upload and extract') }}</button>
-    <p id="vocabularyImportStatus" role="status"></p><p id="vocabularyImportError" class="form-error hidden" role="alert"></p>
+    <a class="ghost-button" href="{{ url_for('vocabulary_page') }}">{{ _('My vocabulary lists') }}</a>
+  </header>
+
+  <form id="vocabularyImportForm" class="vocabulary-panel import-form" novalidate>
+    <!-- Step 1: how the words arrive. Three cards, one decision. The inputs are still the
+         radios the JavaScript listens to; the card is just what the student sees. -->
+    <section class="import-step" aria-labelledby="importMethodHeading">
+      <h2 id="importMethodHeading" class="import-step-title">{{ _('How do you want to add words?') }}</h2>
+      <div class="method-cards" role="radiogroup" aria-labelledby="importMethodHeading">
+        <label class="method-card">
+          <input type="radio" name="source_kind" value="file" checked>
+          <span class="method-icon" aria-hidden="true">📷</span>
+          <span class="method-name">{{ _('Photo or PDF') }}</span>
+          <span class="method-hint">{{ _('Snap a schoolbook page or upload a PDF.') }}</span>
+        </label>
+        <label class="method-card">
+          <input type="radio" name="source_kind" value="text">
+          <span class="method-icon" aria-hidden="true">📋</span>
+          <span class="method-name">{{ _('Paste vocabulary text') }}</span>
+          <span class="method-hint">{{ _('Paste a list — one word pair per line.') }}</span>
+        </label>
+        <label class="method-card">
+          <input type="radio" name="source_kind" value="manual">
+          <span class="method-icon" aria-hidden="true">✍️</span>
+          <span class="method-name">{{ _('Manual entry') }}</span>
+          <span class="method-hint">{{ _('Type the words yourself right here.') }}</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Step 2: the material. Only the chosen method's input is shown. -->
+    <section class="import-step">
+      <label id="vocabularyFileField" class="upload-drop">
+        <input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" capture="environment">
+        <span class="upload-icon" aria-hidden="true">⬆</span>
+        <span class="upload-title" data-upload-title>{{ _('Tap to choose a photo or PDF') }}</span>
+        <span class="upload-hint" data-upload-hint>{{ _('JPG, PNG, WebP or PDF') }}</span>
+      </label>
+      <div id="vocabularyManualField" class="manual-entry hidden">
+        <div class="manual-head" aria-hidden="true">
+          <span>{{ _('Source word') }}</span><span>{{ _('Translation') }}</span><span>{{ _('Example sentence') }}</span><span></span>
+        </div>
+        <div id="vocabularyManualRows" class="manual-rows"></div>
+        <button type="button" id="addManualRow" class="ghost-button manual-add">+ {{ _('Add word') }}</button>
+        <input type="hidden" name="manual_entries" id="vocabularyManualPayload">
+      </div>
+      <label id="vocabularyTextField" class="field hidden">
+        <span class="field-label">{{ _('Vocabulary text') }}</span>
+        <textarea name="text" rows="8" placeholder="environment | die Umwelt | We must protect the environment."></textarea>
+      </label>
+    </section>
+
+    <!-- Step 3: languages and a name. Compact, because it is rarely changed. -->
+    <section class="import-step import-languages">
+      <div class="language-pair">
+        <label class="field">
+          <span class="field-label">{{ _('Source language') }}</span>
+          <select name="source_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}">{{ _(name) }}</option>{% endfor %}</select>
+        </label>
+        <span class="language-arrow" aria-hidden="true">→</span>
+        <label class="field">
+          <span class="field-label">{{ _('Target language') }}</span>
+          <select name="target_language">{% for code,name in supported_languages.items() %}<option value="{{ code }}" {{ 'selected' if code == 'de' }}>{{ _(name) }}</option>{% endfor %}</select>
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">{{ _('List title') }} <small>{{ _('optional') }}</small></span>
+        <input name="title" maxlength="200" autocomplete="off">
+      </label>
+    </section>
+
+    <div class="import-actions">
+      <button class="primary-button" type="submit">{{ _('Upload and extract') }}</button>
+      <p id="vocabularyImportStatus" class="import-status" role="status" aria-live="polite"></p>
+    </div>
+    <p id="vocabularyImportError" class="form-error hidden" role="alert"></p>
   </form>
 </main>
 {% endblock %}

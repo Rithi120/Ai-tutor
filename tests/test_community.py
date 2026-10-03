@@ -14,6 +14,7 @@ os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
 from learnova.community import service as community  # noqa: E402
+from learnova import moderation  # noqa: E402
 from learnova.config import configure_app  # noqa: E402
 
 
@@ -37,6 +38,34 @@ SET_CARDS = [
 ]
 
 
+def _moderation_allow():
+    """A clean classification, built from the live dimension list so it cannot drift."""
+
+    dimensions = {name: "pass" for name in moderation.DIMENSIONS}
+    dimensions["sexual_content_context"] = "not_applicable"
+    return {
+        "recommendation": "allow", "dimensions": dimensions, "confidence": 0.95,
+        "evidence_sufficiency": "sufficient", "reason_codes": [], "quotes": [],
+        "evidence_summary": "Factual subject content with no safety concern.",
+        "suggested_revision": None, "requires_review": False,
+    }
+
+
+def ai_responder(review_payload, moderation_payload=None):
+    """Answer each AI task with its own payload.
+
+    Publishing makes two calls now - a content_moderation classification and then the
+    flashcard_review quality pass - so a single canned response is no longer enough.
+    """
+
+    def respond(**kwargs):
+        if kwargs.get("task_type") == "content_moderation":
+            return FakeResponse(moderation_payload or _moderation_allow())
+        return FakeResponse(review_payload)
+
+    return patch.object(application, "create_response", side_effect=respond)
+
+
 class CommunityServiceTests(unittest.TestCase):
     def test_ai_stars_bands(self):
         self.assertEqual(community.ai_stars(4.7)[0], 5)
@@ -47,7 +76,11 @@ class CommunityServiceTests(unittest.TestCase):
 
     def test_publication_decision_bands_and_safety_override(self):
         self.assertEqual(community.publication_decision(4.2, [])["status"], "approved")
-        self.assertEqual(community.publication_decision(3.4, [])["status"], "pending_manual_review")
+        # A middling set is published with its suggestions showing, not parked in the
+        # human queue - that queue is for safety doubts, and quality is not one.
+        middling = community.publication_decision(3.4, [])
+        self.assertEqual((middling["status"], middling["reason"], middling["correctable"]),
+                         ("approved", "approved_with_suggestions", True))
         needs = community.publication_decision(2.5, [])
         self.assertEqual((needs["status"], needs["correctable"]), ("rejected", True))
         self.assertEqual(community.publication_decision(1.2, [])["status"], "rejected")
@@ -70,6 +103,38 @@ class CommunityServiceTests(unittest.TestCase):
         penalized = community.ranking_score(ai_overall=5, student_bayesian=5, penalty=0.3)
         unpenalized = community.ranking_score(ai_overall=5, student_bayesian=5)
         self.assertAlmostEqual(unpenalized - penalized, 0.3, places=3)
+
+    def test_ranking_normalizes_over_the_terms_actually_supplied(self):
+        """An unmeasured term is excluded, not scored as zero.
+
+        Completion and helpful votes are a quarter of the weights and neither is tracked
+        yet. Passing 0.0 for them would cap every set at 0.75 of the formula while the
+        interface presents the number as if it were out of 1.
+        """
+
+        # A set that is perfect on everything measured reaches the top of the scale.
+        perfect = community.ranking_score(
+            ai_overall=5, student_bayesian=5, save_count=1000, recency=1.0)
+        self.assertGreater(perfect, 0.95)
+
+        # Omitting a term is not the same as measuring it as zero.
+        omitted = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5)
+        measured_zero = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5, helpful_votes=0)
+        self.assertGreater(omitted, measured_zero)
+
+        # When a term does ship, supplying it restores its weight with no formula change.
+        with_votes = community.ranking_score(
+            ai_overall=4, student_bayesian=4, save_count=10, recency=0.5, helpful_votes=100)
+        self.assertGreater(with_votes, omitted)
+
+    def test_ranking_order_survives_the_normalization(self):
+        better = community.ranking_score(ai_overall=5, student_bayesian=4.5, save_count=40)
+        worse = community.ranking_score(ai_overall=3, student_bayesian=2.0, save_count=2)
+        self.assertGreater(better, worse)
+        self.assertLessEqual(better, 1.0)
+        self.assertGreaterEqual(worse, 0.0)
 
     def test_normalize_review_derives_overall_and_flags(self):
         derived = community.normalize_ai_review({"accuracyScore": 4, "clarityScore": 4, "summary": "ok"})
@@ -115,7 +180,7 @@ class CommunityApiTests(unittest.TestCase):
         return saved.get_json()["id"]
 
     def _publish(self, client, source_set_id, review_payload=REVIEW_HIGH):
-        with patch.object(application, "create_response", return_value=FakeResponse(review_payload)):
+        with ai_responder(review_payload):
             return client.post("/api/community/publish", json={
                 "source_set_id": source_set_id, "title": "Cell Biology Basics", "subject": "Biology",
                 "topic": "Cells", "grade": "8", "difficulty": "medium", "language": "en",

@@ -32,11 +32,11 @@ async function load() {
     document.querySelector("#ovTitle").textContent = set.title;
     document.querySelector("#ovMeta").textContent =
       `${set.subject} · ${t(set.difficulty) || set.difficulty}${set.grade ? " · " + (isDe ? "Klasse " : "Grade ") + set.grade : ""} · ${set.cards.length} ${set.cards.length === 1 ? t("fcCard") : t("fcCards")}`;
-    const studyHref = `/flashcards/${SET_ID}/study`;
-    const editHref = `/flashcards/${SET_ID}/edit`;
-    document.querySelector("#ovStudy").href = studyHref;
-    document.querySelector("#modeFlashcards").href = studyHref;
-    document.querySelector("#ovEdit").href = editHref;
+    // "Start learning", "Edit" and the Flashcards mode card are rendered with real
+    // hrefs by the template. They used to be href="#" and were pointed somewhere by
+    // this function, which meant that until it finished - and forever if it threw -
+    // clicking them did nothing at all, silently. A link to a URL the server already
+    // knows should never depend on a fetch succeeding.
     document.querySelector("#ovCount").textContent = set.cards.length;
     const list = document.querySelector("#ovPreview");
     list.innerHTML = set.cards.map(card => `

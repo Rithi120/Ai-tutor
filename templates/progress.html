@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Progress') }} — Learnova{% endblock %}
 {% block content %}
-<main class="dashboard-shell progress-page">
+<main class="dashboard-shell progress-page" id="main-content">
   <header class="dashboard-heading"><div><span class="eyebrow">{{ _('LEARNING PROGRESS') }}</span><h1>{{ _('Your progress') }}</h1><p>{{ _('Real activity from completed learning work.') }}</p></div></header>
   <section class="progress-hero">
     <div><span>{{ _('Level') }}</span><strong>{{ gamification.level }}</strong></div>

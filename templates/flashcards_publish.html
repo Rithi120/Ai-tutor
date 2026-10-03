@@ -4,7 +4,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
 {% endblock %}
 {% block content %}
-<main class="cards-page publish-page">
+<main class="cards-page publish-page" id="main-content">
   <header class="cards-header">
     <h1>{{ _('Publish flashcard set') }}</h1>
     <a class="ghost-button" href="/flashcards/{{ set_id }}">← {{ _('Back to library') }}</a>
@@ -15,6 +15,8 @@
   <!-- Publish form (shown when not yet published) -->
   <form id="publishForm" class="card-panel hidden" novalidate>
     <div class="field"><label for="pubTitle">{{ _('Set title') }}</label><input type="text" id="pubTitle" maxlength="200" required></div>
+    <p class="field-hint">{{ _('Subject, level and language are taken from your set. Only a title and your confirmation are needed.') }}</p>
+    <details class="publish-details"><summary>{{ _('Details (optional)') }}</summary>
     <div class="field"><label for="pubDescription">{{ _('Description') }}</label><textarea id="pubDescription" rows="3" maxlength="2000"></textarea></div>
     <div class="field-row">
       <div class="field"><label for="pubSubject">{{ _('Subject') }}</label><select id="pubSubject"></select></div>
@@ -30,6 +32,7 @@
         <select id="pubDisplay"><option value="username">{{ _('Display name') }}</option><option value="anonymous">{{ _('Anonymous') }}</option></select></div>
     </div>
     <div class="field"><label for="pubTags">{{ _('Tags') }}</label><input type="text" id="pubTags" placeholder="cells, biology"></div>
+    </details>
     <label class="checkbox-field"><input type="checkbox" id="pubConfirm"> {{ _('I confirm that I created this flashcard set or have permission to share its content.') }}</label>
     <div class="form-actions"><button type="submit" class="primary-button">{{ _('Submit for AI review') }}</button></div>
     <p id="publishError" class="form-error hidden" role="alert"></p>
@@ -42,6 +45,7 @@
       <span id="statusBadge" class="review-status"></span>
     </div>
     <p id="changedNote" class="form-error hidden"></p>
+    <div id="statusModeration" class="moderation-outcome"></div>
     <div id="statusReview"></div>
     <div class="form-actions" id="statusActions"></div>
     <p class="field-hint">{{ _('AI suggestions are never applied automatically — edit your set yourself, then resubmit.') if false else '' }}</p>

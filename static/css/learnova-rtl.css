@@ -1,0 +1,32 @@
+/* learnova-rtl.css — right-to-left refinements for Arabic (dir="rtl" on <html>).
+ * The dir attribute already flips text alignment and flex/inline flow; these rules fix
+ * the remaining physically-positioned elements and directional spacing. */
+
+[dir="rtl"] body { text-align: right; }
+
+/* Absolutely-positioned corner controls that assume a left/right edge. */
+[dir="rtl"] .star-toggle { right: auto; left: .9rem; }
+[dir="rtl"] .password-toggle { right: auto; left: 7px; }
+[dir="rtl"] .cards-modal-close { right: auto; left: .9rem; }
+[dir="rtl"] .ai-mode-badge { right: auto; left: 12px; }
+[dir="rtl"] .toast { direction: rtl; }
+
+/* Dropdowns / menus anchored to the right edge should anchor to the left in RTL. */
+[dir="rtl"] .app-dropdown-right { right: auto; left: 0; }
+
+/* Progress fills grow from the right in RTL. */
+[dir="rtl"] .study-progress-bar,
+[dir="rtl"] .fc-dash-progress i,
+[dir="rtl"] .planner-progress i { transform: scaleX(-1); }
+
+/* Keep Latin/number-only and code-like fields left-to-right for legibility. */
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="password"],
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[name="username"],
+[dir="rtl"] input[name="identifier"],
+[dir="rtl"] .mode-answer .katex,
+[dir="rtl"] code, [dir="rtl"] pre { direction: ltr; text-align: left; }
+
+/* Mirror the small directional arrows used in nav/buttons. */
+[dir="rtl"] .nav-primary-action span[aria-hidden="true"] { display: inline-block; }

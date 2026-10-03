@@ -1,2 +1,226 @@
-.vocabulary-page{max-width:1180px;margin:0 auto;padding:2rem 1rem 6rem}.vocabulary-hero{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.5rem}.vocabulary-hero h1{margin:.25rem 0;font-size:clamp(2rem,5vw,3.4rem)}.vocabulary-panel,.vocabulary-list-card{background:#fff;border:1px solid #dbe2ea;border-radius:20px;padding:1.25rem;box-shadow:0 12px 35px rgba(15,23,42,.06)}.vocabulary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}.vocabulary-list-card div,.review-actions,.row-actions,.generation-settings{display:flex;flex-wrap:wrap;gap:.65rem}.upload-drop{display:grid;place-items:center;min-height:180px;margin:1rem 0;border:2px dashed #94a3b8;border-radius:18px}.vocabulary-review-rows{display:grid;gap:1rem}.vocabulary-review-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;padding:1rem;border:1px solid #dbe2ea;border-radius:16px}.vocabulary-review-row label{display:grid;gap:.3rem}.vocabulary-review-row textarea{min-height:70px}.vocabulary-validation,.vocabulary-suggestion,.row-actions{grid-column:1/-1}.vocabulary-validation{display:flex;flex-wrap:wrap;gap:.5rem;padding:.65rem;border-radius:10px;background:#f1f5f9}.status-valid,.status-likely_valid{background:#dcfce7}.status-translation_mismatch,.status-likely_ocr_error{background:#fef3c7}.status-wrong_language,.status-missing_translation{background:#fee2e2}.generation-settings{margin-top:1rem;align-items:center}.generation-settings h2{width:100%}.vocabulary-table{display:grid;gap:.5rem}.vocabulary-table article{display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:1rem;padding:.75rem;border-bottom:1px solid #e2e8f0}.vocabulary-practice-card{max-width:720px;min-height:330px;margin:auto;padding:2rem;text-align:center;background:#fff;border:1px solid #dbe2ea;border-radius:24px}.vocabulary-practice-card h2{font-size:2rem;margin:2rem}.vocabulary-practice-card .field{text-align:left}@media(max-width:700px){.vocabulary-hero{align-items:flex-start;flex-direction:column}.vocabulary-review-row{grid-template-columns:1fr}.vocabulary-table article{grid-template-columns:1fr}.vocabulary-validation,.vocabulary-suggestion,.row-actions{grid-column:1}}
-@media(prefers-reduced-motion:reduce){.vocabulary-page *{scroll-behavior:auto!important;transition:none!important}}
+/* Vocabulary trainer pages: import, library, list, review, study.
+ *
+ * Colours come from the learnova tokens so dark mode follows for free. The import page
+ * had none of its form controls styled at all - .field and .field-row live in
+ * flashcards.css, which this page never loads - so labels sat inline against tiny
+ * browser-default selects, the input-method chooser was a bare <fieldset>, and the
+ * dropzone showed a raw "Choose file" button. Every selector the sibling pages use is
+ * kept below; the import-specific rules are grouped at the end. */
+
+.vocabulary-page { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem 6rem; }
+.vocabulary-hero { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+.vocabulary-hero h1 { margin: .25rem 0; font-size: clamp(2rem, 5vw, 3.4rem); }
+.vocabulary-hero p { margin: 0; color: var(--ln-muted); }
+
+.vocabulary-panel, .vocabulary-list-card {
+  background: var(--ln-surface); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-lg, 20px);
+  padding: 1.25rem; box-shadow: var(--ln-shadow-sm);
+}
+.vocabulary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.vocabulary-list-card div, .row-actions, .generation-settings { display: flex; flex-wrap: wrap; gap: .65rem; }
+
+/* Controls on every vocabulary page: the global sheet sets borders and focus rings but
+   no padding, which is most of why the old form looked cramped. */
+.vocabulary-page input:not([type="radio"]):not([type="checkbox"]):not([type="file"]),
+.vocabulary-page select,
+.vocabulary-page textarea { padding: .65rem .8rem; min-height: 44px; }
+.vocabulary-page textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+.vocabulary-page .field { display: grid; gap: .35rem; min-width: 0; }
+.vocabulary-page .field-label { font-size: .82rem; font-weight: 700; color: var(--ln-muted); }
+.vocabulary-page .field-label small { font-weight: 500; opacity: .75; }
+.vocabulary-page .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; }
+
+/* ---- Review page ----------------------------------------------------------------
+ * The old row put six fields, a confidence percentage, a page number, an explanation
+ * sentence and three buttons on screen for every entry - including the ones nothing was
+ * wrong with. A student only decides one thing here: is this pair right. So the default
+ * row is two boxes and an arrow, and only the entries with an open question are listed
+ * at all. Alternatives, the example sentence and the part of speech still exist, one tap
+ * away under "More". */
+.review-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+.review-top h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2.4rem); }
+.review-count { margin: .25rem 0 0; color: var(--ln-muted); font-size: .92rem; }
+.review-status { margin: .75rem 0 0; font-size: .9rem; color: var(--ln-muted); }
+.review-status:empty { display: none; }
+
+.vocabulary-review-rows { display: grid; gap: .55rem; }
+.review-row { padding: .7rem .8rem; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md, 14px); background: var(--ln-surface-solid); }
+/* A flagged row is the only thing on this page that shouts, so it is the only thing
+   that carries colour. */
+.review-row.is-flagged { border-color: color-mix(in srgb, var(--ln-amber) 55%, var(--ln-line)); background: color-mix(in srgb, var(--ln-amber) 7%, var(--ln-surface-solid)); }
+
+.review-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: .5rem; align-items: center; }
+.review-pair label { display: grid; gap: .2rem; min-width: 0; }
+.review-label { display: none; font-size: .72rem; font-weight: 700; color: var(--ln-muted); }
+.review-arrow { color: var(--ln-muted); font-size: 1.1rem; }
+.review-row-actions { display: flex; gap: .3rem; }
+.review-ok, .review-drop {
+  width: 40px; height: 44px; border: 1px solid var(--ln-line); border-radius: 12px;
+  background: var(--ln-surface-solid); color: var(--ln-muted);
+  font-size: 1.05rem; line-height: 1; cursor: pointer;
+}
+.review-ok:hover { border-color: var(--ln-success); color: var(--ln-success); }
+.review-drop:hover { border-color: color-mix(in srgb, var(--ln-danger) 45%, var(--ln-line)); color: var(--ln-danger); }
+
+.review-reason { margin: .45rem 0 0; font-size: .82rem; font-weight: 700; color: var(--ln-amber-ink, var(--ln-muted)); }
+.review-suggestion { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .45rem; font-size: .88rem; }
+.review-more { margin-top: .45rem; }
+.review-more > summary { font-size: .82rem; color: var(--ln-muted); cursor: pointer; list-style: none; }
+.review-more > summary::-webkit-details-marker { display: none; }
+.review-more > summary::before { content: "\22EF"; margin-right: .4rem; letter-spacing: .1em; }
+.review-more[open] { display: grid; gap: .5rem; padding-top: .5rem; }
+.review-more label { display: grid; gap: .25rem; }
+.review-more .review-label { display: block; }
+.review-more textarea { min-height: 70px; }
+.review-origin { color: var(--ln-muted); }
+
+.review-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; margin-top: .9rem; }
+.review-foot-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* A file input dressed as the button beside "Add word": on a phone the tap opens the
+   camera or the gallery, which is the whole point of a rescan. */
+.rescan-button { position: relative; cursor: pointer; }
+.visually-hidden-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.review-photo { margin-top: 1rem; }
+.review-photo > summary { font-weight: 800; cursor: pointer; }
+.review-photo img { display: block; max-width: 100%; height: auto; margin-top: .75rem; border-radius: var(--ln-radius-md, 14px); border: 1px solid var(--ln-line); }
+.link-button { border: 0; background: none; padding: 0; color: var(--ln-violet); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* Card directions used to be the loudest panel on the page. One direction plus examples
+   is what almost everyone wants, so the rest folds away. */
+.card-options { margin-top: 1rem; }
+.card-options > summary { font-weight: 800; cursor: pointer; }
+.generation-settings { margin-top: .9rem; align-items: center; }
+.generation-settings h2 { width: 100%; }
+
+/* Kept because entries carry a validation status the list page still colours by. */
+.status-valid, .status-likely_valid { background: color-mix(in srgb, var(--ln-success) 16%, transparent); }
+.status-translation_mismatch, .status-likely_ocr_error { background: color-mix(in srgb, var(--ln-amber) 20%, transparent); }
+.status-wrong_language, .status-missing_translation { background: color-mix(in srgb, var(--ln-danger) 14%, transparent); }
+
+/* Three big targets rather than a fourth dropdown: this is the choice a student makes
+   every time they practise, so it is worth the space. */
+.scope-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.scope-option {
+  position: relative; display: grid; gap: .1rem; padding: .7rem .8rem; text-align: center;
+  border: 2px solid var(--ln-line); border-radius: var(--ln-radius-md, 16px);
+  background: var(--ln-surface-solid); cursor: pointer;
+  transition: border-color 160ms var(--ln-ease);
+}
+.scope-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.scope-option:has(input:checked) {
+  border-color: var(--ln-violet);
+  background: color-mix(in srgb, var(--ln-violet) 8%, var(--ln-surface-solid));
+}
+.scope-option:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--ln-focus) 45%, transparent); outline-offset: 2px; }
+.scope-option.is-empty { opacity: .45; cursor: default; }
+.scope-option.is-empty input { cursor: default; }
+.scope-name { font-weight: 800; }
+.scope-option small { color: var(--ln-muted); }
+
+/* List page */
+.vocabulary-table { display: grid; gap: .5rem; }
+.vocabulary-table article { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 1rem; padding: .75rem; border-bottom: 1px solid var(--ln-line); }
+
+/* Study page */
+.vocabulary-practice-card { max-width: 720px; min-height: 330px; margin: auto; padding: 2rem; text-align: center; background: var(--ln-surface); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-xl, 24px); }
+.vocabulary-practice-card h2 { font-size: 2rem; margin: 2rem; }
+.vocabulary-practice-card .field { text-align: left; }
+
+/* ---- Import page ---------------------------------------------------------------
+ * Three steps, top to bottom: how the words arrive, the material itself, then the
+ * languages and a name. The first decision is three big cards rather than a fieldset of
+ * radio buttons, because on a phone that is the difference between a tap and a squint. */
+.import-form { display: grid; gap: 1.6rem; padding: clamp(1.1rem, 3vw, 1.8rem); }
+.import-step { display: grid; gap: .8rem; }
+.import-step-title { margin: 0; font-size: 1.05rem; font-weight: 800; }
+
+.method-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.method-card {
+  position: relative; display: grid; gap: .3rem; padding: 1rem .95rem 1.05rem;
+  border: 2px solid var(--ln-line); border-radius: var(--ln-radius-md, 16px);
+  background: var(--ln-surface-solid); cursor: pointer;
+  transition: border-color 160ms var(--ln-ease), box-shadow 160ms var(--ln-ease), transform 160ms var(--ln-ease);
+}
+.method-card:hover { border-color: color-mix(in srgb, var(--ln-violet) 40%, var(--ln-line)); transform: translateY(-1px); }
+/* The radio is what the form submits and what the script listens to. It is kept in the
+   document and focusable, just not drawn: the card draws its state instead. */
+.method-card input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.method-card:has(input:checked) { border-color: var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 8%, var(--ln-surface-solid)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 15%, transparent); }
+.method-card:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--ln-focus) 45%, transparent); outline-offset: 2px; }
+.method-icon { font-size: 1.5rem; line-height: 1; }
+.method-name { font-weight: 800; }
+.method-hint { font-size: .82rem; color: var(--ln-muted); line-height: 1.4; }
+
+/* The dropzone is one big tap target. The real file input is inside it and invisible,
+   so tapping anywhere on the zone opens the picker, and the script shows the chosen
+   filename in the title so the student can see the choice took. */
+.upload-drop {
+  position: relative; display: grid; place-items: center; gap: .3rem; min-height: 190px;
+  padding: 1.5rem; text-align: center; cursor: pointer;
+  border: 2px dashed var(--ln-line-strong); border-radius: var(--ln-radius-md, 18px);
+  background: color-mix(in srgb, var(--ln-violet) 4%, var(--ln-surface-solid));
+  transition: border-color 160ms var(--ln-ease), background 160ms var(--ln-ease);
+}
+.upload-drop:hover, .upload-drop:has(input:focus-visible), .upload-drop.is-dragover { border-color: var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 9%, var(--ln-surface-solid)); }
+.upload-drop.has-file { border-style: solid; border-color: var(--ln-success); }
+.upload-drop input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.upload-icon { font-size: 1.8rem; line-height: 1; color: var(--ln-violet); }
+.upload-title { font-weight: 800; overflow-wrap: anywhere; }
+.upload-hint { font-size: .82rem; color: var(--ln-muted); }
+
+/* Manual entry: one row per word, three real boxes instead of a delimited line. The
+   column headings carry the labels on a wide screen; each input keeps its own label for
+   screen readers and for the stacked phone layout. */
+.manual-entry { display: grid; gap: .6rem; }
+.manual-head, .manual-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: .6rem; align-items: end; }
+.manual-head { padding: 0 .1rem; font-size: .78rem; font-weight: 800; color: var(--ln-muted); }
+.manual-head span:last-child { width: 40px; }
+.manual-rows { display: grid; gap: .6rem; }
+.manual-row label { display: grid; gap: .25rem; min-width: 0; }
+.manual-label { display: none; font-size: .75rem; font-weight: 700; color: var(--ln-muted); }
+.manual-remove {
+  width: 40px; height: 44px; border: 1px solid var(--ln-line); border-radius: 12px;
+  background: var(--ln-surface-solid); color: var(--ln-muted);
+  font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.manual-remove:hover { border-color: color-mix(in srgb, var(--ln-danger) 45%, var(--ln-line)); color: var(--ln-danger); }
+.manual-add { justify-self: start; }
+.manual-row.is-incomplete input { border-color: var(--ln-danger); }
+
+.language-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .6rem; align-items: end; }
+.language-arrow { padding-bottom: .8rem; font-size: 1.2rem; color: var(--ln-muted); }
+.import-languages { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+
+.import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.import-status { margin: 0; font-size: .9rem; color: var(--ln-muted); }
+.import-status:empty { display: none; }
+
+@media (max-width: 700px) {
+  .vocabulary-hero { align-items: flex-start; flex-direction: column; }
+  .review-pair { grid-template-columns: minmax(0, 1fr) auto; }
+  .review-pair label { grid-column: 1; }
+  .review-label { display: block; }
+  .review-arrow { display: none; }
+  .review-row-actions { grid-column: 2; grid-row: 1 / span 2; align-items: center; }
+  .review-top .primary-button { width: 100%; }
+  .vocabulary-table article { grid-template-columns: 1fr; }
+  .method-cards { grid-template-columns: 1fr; }
+  .method-card { grid-template-columns: auto 1fr; grid-template-areas: "icon name" "icon hint"; column-gap: .8rem; align-items: center; }
+  .method-icon { grid-area: icon; }
+  .method-name { grid-area: name; }
+  .method-hint { grid-area: hint; }
+  .import-languages { grid-template-columns: 1fr; }
+  .scope-picker { grid-template-columns: 1fr; }
+  /* Stacked: the column headings no longer line up, so each box shows its own label. */
+  .manual-head { display: none; }
+  .manual-row { grid-template-columns: 1fr auto; gap: .5rem; padding: .75rem; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md, 14px); }
+  .manual-row label { grid-column: 1; }
+  .manual-label { display: block; }
+  .manual-remove { grid-column: 2; grid-row: 1 / span 3; height: auto; align-self: stretch; }
+  .upload-drop { min-height: 150px; }
+  .import-actions .primary-button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vocabulary-page * { scroll-behavior: auto !important; transition: none !important; }
+}

@@ -182,7 +182,7 @@ class StudyProjectIntegrationTests(unittest.TestCase):
             started = self.client.post(f"/projects/{project_id}/sections/{section_id}/test")
         session_id = started.headers["Location"].split("session_id=", 1)[1]
         self.assertIn("uploaded_source", json.dumps({"uploaded_source": application.SESSIONS[session_id]["source_context"]}))
-        application.SESSIONS[session_id]["test_total"] = 1
+        application.SESSIONS[session_id]["max_questions"] = 1   # end after one answer
         with patch.object(application, "create_response", return_value=FakeResponse(EVALUATION)):
             answered = self.client.post("/api/answer", json={"session_id": session_id, "answer": "a"})
         self.assertEqual(answered.status_code, 200, answered.get_data(as_text=True))

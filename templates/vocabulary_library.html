@@ -2,7 +2,7 @@
 {% block title %}{{ _('Vocabulary Trainer') }} — Learnova{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/vocabulary.css') }}">{% endblock %}
 {% block content %}
-<main class="vocabulary-page">
+<main class="vocabulary-page" id="main-content">
   <header class="vocabulary-hero"><div><span class="eyebrow">{{ _('LANGUAGE LEARNING') }}</span><h1>{{ _('Vocabulary Trainer') }}</h1><p>{{ _('Import, check and practise vocabulary from your own learning materials.') }}</p></div><a class="primary-button" href="{{ url_for('vocabulary_import_page') }}">{{ _('Import vocabulary') }}</a></header>
   <section class="vocabulary-grid">
     {% for item in vocabulary_lists %}

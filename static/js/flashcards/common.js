@@ -1,28 +1,16 @@
 import { escapeHtml } from "../dom.js";
 import { t, selectedLanguage } from "../i18n.js";
+import { renderMath } from "../math.js";
+import { withRetryHint } from "../ai-limit-rules.js";
 
-export { escapeHtml, t, selectedLanguage };
+// One renderer for the whole app; re-exported so existing importers are unchanged.
+export { escapeHtml, t, selectedLanguage, renderMath };
 
 export const SUBJECTS = ["Mathematics", "English", "German", "History", "Biology", "Chemistry", "Physics", "Other"];
 export const FLAGS = window.LEARNOVA_FLAGS || {};
 export const SET_ID = window.LEARNOVA_SET_ID ?? null;
 
-const MATH_DELIMITERS = [
-  { left: "$$", right: "$$", display: true },
-  { left: "\\[", right: "\\]", display: true },
-  { left: "$", right: "$", display: false },
-  { left: "\\(", right: "\\)", display: false },
-];
 
-export function renderMath(root) {
-  if (!root || typeof window.renderMathInElement !== "function") return;
-  try {
-    window.renderMathInElement(root, {
-      delimiters: MATH_DELIMITERS, throwOnError: false,
-      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option", "input"],
-    });
-  } catch (_) { /* never let a formatting glitch break the page */ }
-}
 
 export async function api(url, { method = "GET", body } = {}) {
   const options = { method, headers: {} };
@@ -41,6 +29,8 @@ export async function api(url, { method = "GET", body } = {}) {
     const error = new Error(data.error || `Request failed (${response.status})`);
     error.code = data.code;
     error.status = response.status;
+    error.details = data.details || {};
+    error.message = withRetryHint(error.message, error);
     throw error;
   }
   return data;

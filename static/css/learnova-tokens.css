@@ -1,0 +1,74 @@
+:root {
+  color-scheme: light;
+  --ln-font-display: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  --ln-font-body: "DM Sans", "Segoe UI", sans-serif;
+  --ln-canvas: #f5f7fb;
+  --ln-canvas-deep: #edf1f8;
+  --ln-surface: rgba(255, 255, 255, .82);
+  --ln-surface-solid: #fff;
+  --ln-surface-raised: rgba(255, 255, 255, .94);
+  --ln-ink: #10182b;
+  --ln-muted: #667087;
+  --ln-subtle: #8d96a9;
+  --ln-line: rgba(29, 42, 69, .11);
+  --ln-line-strong: rgba(29, 42, 69, .18);
+  --ln-violet: #6e5cff;
+  --ln-violet-deep: #4d3de0;
+  --ln-cyan: #18b9bd;
+  --ln-coral: #ff6f88;
+  --ln-lime: #8abd32;
+  --ln-amber: #d9951b;
+  --ln-danger: #d84d67;
+  --ln-success: #12866f;
+  --ln-focus: #2c6bed;
+  /* Restrained single-hue accents (rainbow gradients removed for a calm, premium look). */
+  --ln-gradient-brand: linear-gradient(135deg, #6e5cff, #4d3de0);
+  --ln-gradient-warm: linear-gradient(135deg, #d9951b, #b9760f);
+  --ln-gradient-cool: linear-gradient(135deg, #6e5cff, #4d3de0);
+  --ln-shadow-sm: 0 8px 24px rgba(20, 29, 50, .07);
+  --ln-shadow-md: 0 18px 50px rgba(20, 29, 50, .11);
+  --ln-shadow-glow: 0 22px 65px rgba(92, 76, 230, .18);
+  --ln-radius-sm: 12px;
+  --ln-radius-md: 18px;
+  --ln-radius-lg: 26px;
+  --ln-radius-xl: 34px;
+  --ln-page: min(1180px, calc(100% - 40px));
+  --ln-ease: cubic-bezier(.2, .8, .2, 1);
+  --ink: var(--ln-ink);
+  --muted: var(--ln-muted);
+  --cream: var(--ln-canvas);
+  --white: var(--ln-surface-solid);
+  --orange: var(--ln-coral);
+  --coral: var(--ln-coral);
+  --purple: var(--ln-violet);
+  --line: var(--ln-line);
+  --green: var(--ln-success);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ln-canvas: #09101d;
+  --ln-canvas-deep: #060b14;
+  --ln-surface: rgba(19, 29, 48, .78);
+  --ln-surface-solid: #121c2e;
+  --ln-surface-raised: rgba(22, 33, 54, .94);
+  --ln-ink: #f4f7ff;
+  --ln-muted: #a9b3c7;
+  --ln-subtle: #78839a;
+  --ln-line: rgba(190, 205, 235, .13);
+  --ln-line-strong: rgba(190, 205, 235, .22);
+  --ln-violet: #9588ff;
+  --ln-violet-deep: #7b6dff;
+  --ln-cyan: #3bd1d2;
+  --ln-coral: #ff8399;
+  --ln-lime: #a8d95d;
+  --ln-amber: #f2b74e;
+  --ln-danger: #ff7890;
+  --ln-success: #43d0ae;
+  --ln-focus: #77a7ff;
+  --ln-shadow-sm: 0 10px 30px rgba(0, 0, 0, .22);
+  --ln-shadow-md: 0 22px 60px rgba(0, 0, 0, .32);
+  --ln-shadow-glow: 0 24px 70px rgba(82, 65, 215, .25);
+}
+
+@media (max-width: 620px) { :root { --ln-page: min(100% - 24px, 1180px); } }
