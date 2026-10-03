@@ -500,7 +500,11 @@ is told both targets (`next_target.if_correct` / `.if_wrong`); if it spends the 
 a concept that is already known while another is open, the question is regenerated. The
 end-of-test summary is deterministic (knowledge per concept, why it stopped, what next);
 the model's summary is kept only when the maximum was reached. The browser shows a
-knowledge bar and concept chips instead of "Question 3 of 5".
+knowledge bar and concept chips instead of "Question 3 of 5", and from the minimum onwards
+a **Finish test** button (`POST /api/finish`) ends the test with the gate's honest summary of
+what the answers so far show. A slot's answer format (dropdown, ordering, …) is applied to a
+generated question only when the question actually has choices; otherwise it is a written
+answer (`coerce_question_type`).
 
 **Final exams** keep their chosen length but are judged the same way: at submission the
 lowest-scoring wrong open answers (`EXAM_DIAGNOSIS_LIMIT`, default 3 — each is a model

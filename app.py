@@ -1166,6 +1166,12 @@ class PublicFlashcardSet(db.Model):
     tags_json = db.Column(db.Text, nullable=False, default="[]")
     author_display = db.Column(db.String(20), nullable=False, default="username")
     nickname = db.Column(db.String(80), nullable=False, default="")
+    # What kind of set this is (flashcards | vocabulary) and, for vocabulary, which language
+    # is on which side - so the library can filter and the reviewer judges translations in
+    # the right direction instead of guessing the languages.
+    set_kind = db.Column(db.String(20), nullable=False, default="flashcards")
+    front_language = db.Column(db.String(10), nullable=False, default="")
+    back_language = db.Column(db.String(10), nullable=False, default="")
     status = db.Column(db.String(30), nullable=False, default="pending_ai_review", index=True)
     cards_json = db.Column(db.Text, nullable=False, default="[]")
     card_count = db.Column(db.Integer, nullable=False, default=0)
@@ -1671,6 +1677,22 @@ def ensure_database():
     """Create tables and apply idempotent upgrades for existing SQLite/Postgres data."""
     with app.app_context():
         db.create_all()
+        # Column additions on tables that later upgrade steps SELECT from must run first: the
+        # publication-version backfill below reads every public set through the ORM, which
+        # names the new columns, and a database from before they existed would fail there.
+        public_columns = {column["name"] for column in inspect(db.engine).get_columns("public_flashcard_set")}
+        if "set_kind" not in public_columns:
+            def add_public_set_kind():
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        "ALTER TABLE public_flashcard_set ADD COLUMN set_kind VARCHAR(20) NOT NULL DEFAULT 'flashcards'"))
+                    connection.execute(text(
+                        "ALTER TABLE public_flashcard_set ADD COLUMN front_language VARCHAR(10) NOT NULL DEFAULT ''"))
+                    connection.execute(text(
+                        "ALTER TABLE public_flashcard_set ADD COLUMN back_language VARCHAR(10) NOT NULL DEFAULT ''"))
+            apply_schema_migration("026_public_set_kind", add_public_set_kind)
+        else:
+            apply_schema_migration("026_public_set_kind", lambda: None)
         columns = {column["name"] for column in inspect(db.engine).get_columns("user")}
         if "username" not in columns:
             def add_username():
@@ -3112,6 +3134,30 @@ def image_data_url(upload):
     return ai_service.image_data_url(upload)
 
 
+CLOSED_QUESTION_TYPES = frozenset({"multiple_choice", "checkboxes", "dropdown", "ordering"})
+
+
+def coerce_question_type(question, requested_type):
+    """Give a generated question the slot's format - only if the question can carry it.
+
+    The slot cycle asks for a dropdown or an ordering task, but the model sometimes writes
+    a plain question with no choices. Forcing the format anyway produced an ordering task
+    with nothing to order (seen live). Without at least two choices the question is a
+    written answer, whatever the slot wanted.
+    """
+
+    options = question.get("options") if isinstance(question.get("options"), list) else []
+    if requested_type in CLOSED_QUESTION_TYPES and len(options) < 2:
+        question["type"] = "text"
+        question["options"] = []
+        if isinstance(question.get("expected_answer"), list):
+            question["expected_answer"] = ", ".join(str(value) for value in question["expected_answer"])
+    else:
+        question["type"] = requested_type
+        question["options"] = options
+    return question
+
+
 def test_range():
     """The configured question bounds and knowledge target for a new test."""
 
@@ -3218,6 +3264,9 @@ def test_summary(model_summary, decision):
     below = decision.below_target
     if decision.reached:
         overall = tr("You reached the knowledge target in every concept of this test.")
+    elif decision.reason == "student_finished":
+        overall = tr("You stopped after {answered} questions. Here is what your answers so far show.",
+                     answered=decision.answered)
     elif decision.reason == "max_questions":
         overall = tr("That was the longest test ({maximum} questions). Still below the knowledge target: {concepts}. They continue in Today's Practice.",
                      maximum=decision.maximum, concepts=", ".join(item.concept for item in below))
@@ -4030,9 +4079,8 @@ def generate_targeted_question(session, target, question_number, question_type, 
                 "concept": target["concept"],
                 "concepts": [target["concept"]],
                 "difficulty": plan.difficulty,
-                "type": question_type,
             })
-            question.setdefault("options", [])
+            coerce_question_type(question, question_type)
             question.setdefault("hint", "")
             app.logger.info(
                 "question.validated action=%s difficulty=%s attempt=%s",
@@ -4104,9 +4152,8 @@ Match the requested easy/medium/hard difficulty. Do not duplicate a recent quest
         "concept": target["concept"],
         "concepts": [target["concept"]],
         "difficulty": target["difficulty_level"],
-        "type": question_type,
     })
-    question.setdefault("options", [])
+    coerce_question_type(question, question_type)
     return question
 
 
@@ -4416,7 +4463,7 @@ def review_project_recognition(project_id):
                 project.status = "confirmed"
                 flash("Recognition review confirmed. Learnova can now build grounded sections.", "success")
                 db.session.commit()
-                return redirect(url_for("project_dashboard", project_id=project.id))
+                return redirect(url_for("project_start", project_id=project.id, auto=1))
             if action == "continue_unreviewed":
                 if not any(page.extracted_text.strip() for page in pages if not page.excluded):
                     raise ValueError("At least one included page needs recognized text.")
@@ -4426,7 +4473,7 @@ def review_project_recognition(project_id):
                 project.status = "confirmed"
                 flash("Continuing without full review. Uncertain recognition remains visibly marked.", "error")
                 db.session.commit()
-                return redirect(url_for("project_dashboard", project_id=project.id))
+                return redirect(url_for("project_start", project_id=project.id, auto=1))
             project.status = "reviewing"
             for page in pages:
                 sync_page_recognition_json(page)
@@ -5366,7 +5413,10 @@ Return JSON exactly as {{"sections":[{{"title":"...","main_topic":"...","learnin
                 if page.id in item["source_page_ids"]
             )
             if not supporting or supporting.casefold() not in section_source.casefold():
-                raise ValueError("A recall card was not supported by its referenced source pages")
+                # The model quoted something the pages do not say. That card is not kept -
+                # but one bad quote must not throw away a whole grounded section plan.
+                app.logger.info("recall card dropped: quote not in its source pages (section %r)", item["title"][:60])
+                continue
             db.session.add(RecallCard(
                 section_id=section.id, kind=str(card.get("kind", "recall"))[:40],
                 prompt=str(card["prompt"]), answer=str(card["answer"]),
@@ -7546,6 +7596,61 @@ def select_next_question(session, *, question, question_subject, decision, plan,
     return next_question, public_question
 
 
+@app.post("/api/finish")
+@limiter.limit("30 per minute")
+@login_required
+def finish_test():
+    """End the test now, at the student's request.
+
+    Allowed once the minimum has been answered. The summary is the knowledge gate's honest
+    view of what the answers so far show (reason `student_finished`): concepts at target,
+    concepts still open - which go on to Today's Practice as after any test.
+    """
+
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    session = owned_session(session_id)
+    if not session:
+        return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
+    answered = len(session["history"])
+    minimum, maximum, knowledge_target = session_question_bounds(session)
+    if answered < minimum:
+        return api_error(tr("Answer at least {minimum} questions before finishing.", minimum=minimum), 400, "finish_too_early")
+    if (session.get("knowledge_gate") or {}).get("complete"):
+        return api_error(tr("This test is already finished."), 409, "already_finished")
+    subject = str(session.get("subject") or "Other")
+    focus = session_focus(session, subject)
+    priors = session_priors(session, focus)
+    estimates = mastery_gate.estimates_for(
+        [item["concept"] for item in focus], priors, session_observations(session), target=knowledge_target)
+    decision = mastery_gate.GateDecision(
+        stop=True, reason="student_finished", answered=answered, minimum=minimum, maximum=maximum,
+        target=knowledge_target, estimates=estimates, next_concept=None, stay_on_current=False)
+    session["knowledge_gate"] = decision.as_dict()
+    lesson_record = db.session.scalar(db.select(Lesson).where(
+        Lesson.session_id == session_id, Lesson.user_id == current_user.id))
+    if lesson_record and lesson_record.section_id:
+        section = db.session.scalar(db.select(LearningSection).join(LearningProject).where(
+            LearningSection.id == lesson_record.section_id, LearningProject.user_id == current_user.id))
+        if section:
+            update_section_mastery(section, completed=True)
+    save_session_state(session_id, commit=False)
+    record_learning_event(
+        current_user.id, "quiz_completed", f"finish:{session_id}", source_type="study_session",
+        source_id=lesson_record.id if lesson_record else "", session_id=session_id, subject=subject,
+        metadata={"finished_early": True, "answered": answered},
+        xp=gamification.XP_VALUES["quiz_completed"])
+    db.session.commit()
+    average = round(sum(item["score"] for item in session["history"]) / max(1, answered))
+    mastery = mastery_snapshot(session)
+    practice_results = adaptive_session_results(session) if session.get("planned_concepts") else None
+    return jsonify(ok=True, complete=True, summary=test_summary(None, decision), progress={
+        "answered": answered, "total": session.get("test_total", maximum), "minimum": minimum,
+        "maximum": maximum, "average_score": average, "mastery": mastery,
+        "weakest_concept": mastery[0]["concept"] if mastery else None, "knowledge": decision.as_dict(),
+    }, practice_results=practice_results)
+
+
 @app.post("/api/answer")
 @limiter.limit("30 per minute")
 @login_required
@@ -7790,8 +7895,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             next_question = None      # incomplete: the gate's own generator fills in below
         if not is_final and not adaptive_plan and isinstance(next_question, dict):
             normalize_question_concept(session, next_question)
-            next_question["type"] = next_question_type
-            next_question.setdefault("options", [])
+            coerce_question_type(next_question, next_question_type)
             # Replace whatever the model claimed with only the pictures it was actually
             # offered. Everything downstream - the relaxed self-contained rule, the URLs
             # the browser loads - trusts this field, so it must be rebuilt, not filtered.
@@ -11128,6 +11232,9 @@ def run_ai_review(
         "title": publication_version.title, "subject": publication_version.subject,
         "topic": publication_version.topic, "grade": publication_version.grade,
         "difficulty": publication_version.difficulty, "language": publication_version.language,
+        "set_kind": public_set.set_kind or "flashcards",
+        "front_language": public_set.front_language or "unknown - infer from the cards",
+        "back_language": public_set.back_language or "unknown - infer from the cards",
         "cards": [{
             "type": card.get("type"), "front": card.get("front"), "back": card.get("back"),
             "explanation": card.get("explanation", ""), "options": card.get("options", []),
@@ -11138,7 +11245,7 @@ Flashcard set: {json.dumps(review_input, ensure_ascii=False)}
 
 Return JSON exactly as:
 {{"overallScore": 0-5, "accuracyScore": 0-5, "clarityScore": 0-5, "usefulnessScore": 0-5, "coverageScore": 0-5, "difficultyScore": 0-5, "originalityScore": 0-5, "confidence": "Low|Medium|High", "summary": "one or two sentences", "strengths": ["..."], "improvements": ["..."], "flaggedCards": [{{"reference": "card front or number", "issue": "what is wrong"}}], "safetyFlags": ["any of: unsafe, offensive, copyright, personal_information, spam"]}}
-All scores are 0 to 5 where 5 is best. List safetyFlags only for genuine violations. Write summary, strengths, and improvements in {publication_version.language or 'the set language'}."""
+For a vocabulary set the front side is in front_language and the back in back_language; judge every translation in that direction. When a language is unknown, infer the language pair from the cards themselves before judging - never assume English, and never call a translation wrong because you assumed the wrong language. All scores are 0 to 5 where 5 is best. List safetyFlags only for genuine violations. Write summary, strengths, and improvements in {publication_version.language or 'the set language'}."""
 
     response = create_response(
         task_type="flashcard_review",
@@ -11228,7 +11335,7 @@ def serialize_public_set(public_set: "PublicFlashcardSet", include_cards: bool =
     data = {
         "id": public_set.id, "title": public_set.title, "description": public_set.description,
         "subject": public_set.subject, "topic": public_set.topic, "grade": public_set.grade,
-        "difficulty": public_set.difficulty, "language": public_set.language,
+        "difficulty": public_set.difficulty, "language": public_set.language, "set_kind": public_set.set_kind or "flashcards",
         "tags": json_value(public_set.tags_json, []), "author": public_set_author(public_set),
         "status": public_set.status, "card_count": public_set.card_count,
         "study_count": public_set.study_count, "save_count": public_set.save_count,
@@ -11255,6 +11362,23 @@ def serialize_public_set(public_set: "PublicFlashcardSet", include_cards: bool =
 def public_snapshot(cards: list[dict[str, Any]]) -> str:
     keys = ("type", "front", "back", "explanation", "hint", "options", "tags", "difficulty")
     return json.dumps([{key: card.get(key) for key in keys} for card in cards], ensure_ascii=False)
+
+
+def describe_set_kind(source):
+    """(kind, front language, back language) of a private set about to be published.
+
+    A set exported from the vocabulary trainer is a vocabulary set and its list knows both
+    languages. Anything else is "flashcards" with no language pair claimed - the reviewer
+    is then told to infer the pair from the cards rather than assume English.
+    """
+
+    if str(source.source_kind or "") == "vocabulary":
+        reference = str(source.source_reference or "")
+        vocabulary_list = db.session.get(VocabularyList, int(reference)) if reference.isdigit() else None
+        if vocabulary_list and vocabulary_list.owner_user_id == source.user_id:
+            return "vocabulary", str(vocabulary_list.source_language or ""), str(vocabulary_list.target_language or "")
+        return "vocabulary", "", str(source.language or "")
+    return "flashcards", "", ""
 
 
 @app.post("/api/community/publish")
@@ -11297,8 +11421,10 @@ def publish_flashcard_set():
             moderation=serialize_moderation(record, override=stale),
             review=serialize_review(latest_review) if latest_review else None,
             already_published=True), 200
+    set_kind, front_language, back_language = describe_set_kind(source)
     public_set = PublicFlashcardSet(
         creator_id=current_user.id, source_set_id=source.id,
+        set_kind=set_kind, front_language=front_language, back_language=back_language,
         title=str(payload.get("title") or source.title).strip()[:200] or source.title,
         description=str(payload.get("description") or "").strip()[:2000],
         subject=str(payload.get("subject") or source.subject).strip()[:80] or "Other",
@@ -11432,6 +11558,8 @@ def community_library():
     ):
         if args.get(field):
             query = query.where(column == args.get(field))
+    if args.get("kind") in ("flashcards", "vocabulary"):
+        query = query.where(PublicFlashcardSet.set_kind == args["kind"])
     # No `teacher_verified` filter. The column exists and is serialized, but nothing
     # sets it yet - there is no teacher-verification route or review step - so filtering
     # on it could only ever return an empty library. Offering a filter that is guaranteed
@@ -11539,7 +11667,8 @@ def save_community_copy(set_id):
         public_set.save_count += 1
         update_public_ranking(public_set)
     db.session.commit()
-    return jsonify(ok=True, id=copy.id, card_count=len(cards)), 201
+    return jsonify(ok=True, id=copy.id, card_count=len(cards),
+                   redirect=url_for("flashcards_overview_page", set_id=copy.id)), 201
 
 
 @app.post("/api/community/sets/<int:set_id>/rate")

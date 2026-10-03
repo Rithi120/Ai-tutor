@@ -114,7 +114,7 @@ function cardHtml(set) {
       <p class="set-meta"><span class="subject-accent">${escapeHtml(set.subject)}</span>${set.topic ? " · " + escapeHtml(set.topic) : ""} · ${escapeHtml(set.difficulty)}${set.grade ? ` · ${tx("Grade", "Klasse")} ` + escapeHtml(set.grade) : ""}</p>
       ${excerpt ? `<p class="set-excerpt">${excerpt}</p>` : ""}
       <div class="rating-row">${aiRatingHtml(set.ai_review)}${studentRatingHtml(set.student_rating)}</div>
-      <p class="set-stats">${set.card_count} ${tx("cards", "Karten")}${set.study_count ? ` · ${set.study_count} ${tx("studied", "gelernt")}` : ""}${set.save_count ? ` · ${set.save_count} ${tx("saved", "gespeichert")}` : ""} · ${tx("by", "von")} ${escapeHtml(set.author)}</p>
+      <p class="set-stats">${set.set_kind === "vocabulary" ? `<span class="set-kind-badge">${tx("Vocabulary", "Vokabeln")}</span> · ` : ""}${set.card_count} ${tx("cards", "Karten")}${set.study_count ? ` · ${set.study_count} ${tx("studied", "gelernt")}` : ""}${set.save_count ? ` · ${set.save_count} ${tx("saved", "gespeichert")}` : ""} · ${tx("by", "von")} ${escapeHtml(set.author)}</p>
     </article>`;
 }
 
@@ -286,8 +286,10 @@ async function saveCopy(setId) {
     return;
   }
   try {
-    await api(`/api/community/sets/${setId}/save`, { method: "POST" });
+    const data = await api(`/api/community/sets/${setId}/save`, { method: "POST" });
     toast(tx("Saved to your flashcards as an independent copy.", "Als unabhängige Kopie in deinen Karteikarten gespeichert."), "success");
+    // Your copy: edit it, and every learning mode and game is there.
+    if (data.redirect) window.setTimeout(() => { window.location.href = data.redirect; }, 400);
   } catch (error) { toast(error.message, "error"); }
 }
 

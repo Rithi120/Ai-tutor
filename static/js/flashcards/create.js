@@ -1,4 +1,6 @@
 import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, SET_ID } from "./common.js";
+import { renderMath } from "../math.js";
+import { mergeGeneratedCards, needsMathPreview } from "./editor-rules.js";
 import * as suggest from "./suggest.js";
 
 let cards = [];          // [{id?, type, front, back, explanation, hint, tags[], options[], difficulty}]
@@ -109,10 +111,12 @@ function rowHtml(card, index) {
         <div class="card-field card-front-wrap">
           <textarea id="front-${index}" data-field="front" rows="1">${escapeHtml(card.front)}</textarea>
           <label class="card-field-label" for="front-${index}">${label("fcTerm")}</label>
+          ${mathPreviewHtml(card.front)}
         </div>
         <div class="card-field">
           <textarea id="back-${index}" data-field="back" rows="1">${escapeHtml(card.back)}</textarea>
           <label class="card-field-label" for="back-${index}">${label("fcDefinition")}</label>
+          ${mathPreviewHtml(card.back)}
         </div>
       </div>
       <details class="card-more">
@@ -127,6 +131,26 @@ function rowHtml(card, index) {
         </div>
       </details>
     </li>`;
+}
+
+// The editor fields hold the LaTeX source ($\sqrt{81}$) because that is what gets saved;
+// the preview underneath shows what the student will actually see on the card.
+function mathPreviewHtml(text) {
+  return needsMathPreview(text) ? `<div class="card-math-preview">${escapeHtml(text)}</div>` : "";
+}
+
+function refreshMathPreview(textarea) {
+  const wrap = textarea.closest(".card-field");
+  if (!wrap) return;
+  let preview = wrap.querySelector(".card-math-preview");
+  if (!needsMathPreview(textarea.value)) { preview?.remove(); return; }
+  if (!preview) { preview = document.createElement("div"); preview.className = "card-math-preview"; wrap.appendChild(preview); }
+  preview.textContent = textarea.value;
+  renderMath(preview);
+}
+
+function renderAllMathPreviews() {
+  document.querySelectorAll("#cardRows .card-math-preview").forEach(node => renderMath(node));
 }
 
 /* A full re-render replaces every row, which would throw away the caret the student is
@@ -189,6 +213,7 @@ function appendRows(newCards) {
   list.insertAdjacentHTML("beforeend",
     newCards.map((card, offset) => rowHtml(card, start + offset)).join(""));
   autosizeAll();
+  renderAllMathPreviews();
   updateCardCount();
 }
 
@@ -230,6 +255,7 @@ function onListInput(event) {
   const index = Number(row.dataset.index);
   cards[index][field] = field === "tags" ? event.target.value.split(",").map(s => s.trim()).filter(Boolean) : event.target.value;
   autosize(event.target);
+  if (field === "front" || field === "back") refreshMathPreview(event.target);
   if (field === "front") {
     // The term changed, so anything suggested for the old one no longer applies.
     suggest.invalidate(index);
@@ -315,7 +341,7 @@ async function generate() {
   try {
     const data = await api("/api/flashcards/generate", { method: "POST", body: params });
     genParams = params;
-    cards = cards.concat((data.cards || []).map(normalize));
+    cards = mergeGeneratedCards(cards, (data.cards || []).map(normalize));
     if (!document.querySelector("#setTitle").value && data.title) document.querySelector("#setTitle").value = data.title;
     if (data.low_quality) toast(t("fcLowQuality"), "warn");
     status.textContent = `${(data.cards || []).length} ${t("fcGenerated")}`;

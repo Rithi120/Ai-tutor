@@ -91,6 +91,10 @@ function updateProgress(questionNumber, knowledge = latestKnowledge) {
   document.querySelector("#progressLabel").textContent = `${t("question")} ${questionNumber} · ${where}`;
   document.querySelector("#progressPercent").textContent = `${percent}%`;
   document.querySelector("#progressFill").style.width = `${percent}%`;
+  // From the minimum onwards the student may end the test; the summary then says
+  // honestly what the answers so far show.
+  const finish = document.querySelector("#finishTest");
+  if (finish) finish.hidden = !(knowledge && knowledge.answered >= knowledge.minimum && !knowledge.complete);
   document.querySelector("#progressSteps").innerHTML = concepts.map(item => {
     const label = item.status === "known" ? t("knowledgeKnown") : item.status === "learning" ? `${item.knowledge}%` : t("knowledgeUntested");
     return `<span class="concept-chip ${item.status}" title="${escapeHtml(item.concept)}">${escapeHtml(item.concept)} · ${escapeHtml(label)}</span>`;
@@ -144,7 +148,13 @@ function enableSymbolKeyboard() {
   });
 }
 
+const CLOSED_TYPES = new Set(["multiple_choice", "checkboxes", "dropdown", "ordering"]);
+
 function renderQuestion(question) {
+  // The server does the same; this is the belt to its braces: no choices, no ordering task.
+  if (CLOSED_TYPES.has(question.type) && !(Array.isArray(question.options) && question.options.length >= 2)) {
+    question = { ...question, type: "text", options: [] };
+  }
   currentQuestion = question;
   hintUsed = false;
   answerRetryCount = 0;
@@ -307,6 +317,23 @@ document.querySelector("#hintButton").addEventListener("click", () => {
   document.querySelector("#hintListenControl")?.classList.toggle("hidden", hint.classList.contains("hidden"));
 });
 document.querySelector("#newLesson").addEventListener("click", () => location.reload());
+document.querySelector("#finishTest")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/finish", { method: "POST", headers: { "Content-Type": "application/json" },
+                                 body: JSON.stringify({ session_id: sessionId }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    latestKnowledge = data.progress.knowledge;
+    button.hidden = true;
+    renderSummary(data);
+  } catch (error) {
+    showError(error.message || t("answerFailed"));
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelector("#restartTest").addEventListener("click", () => location.reload());
 document.querySelector("#startTest").addEventListener("click", () => {
   document.querySelector("#startTestCard").classList.add("hidden");

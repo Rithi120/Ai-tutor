@@ -216,3 +216,8 @@
 .autopilot-start input[type="date"] { padding: 12px 14px; border: 1px solid var(--ln-line-strong); border-radius: var(--ln-radius-sm); font-size: 16px; background: var(--ln-surface-solid); color: var(--ln-ink); }
 .autopilot-start .primary-button { min-height: 48px; }
 @media (max-width: 640px) { .autopilot-next .primary-button, .autopilot-start .primary-button { width: 100%; } }
+
+/* "Finish test": available from the minimum number of questions onwards. */
+.finish-test { margin-right: 10px; padding: 4px 10px; border: 1px solid var(--ln-line-strong); border-radius: 999px; background: transparent; color: var(--ln-muted); font: 600 12px var(--ln-font-body); cursor: pointer; }
+.finish-test:hover, .finish-test:focus-visible { border-color: var(--ln-violet); color: var(--ln-violet-deep); }
+.finish-test[hidden] { display: none; }

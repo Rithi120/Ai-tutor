@@ -345,3 +345,9 @@ a.ghost-button { text-decoration: none; display: inline-block; }
 .mod-section ul { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
 .mod-content { max-height: 16rem; overflow-y: auto; border: 1px solid #ece7fb; border-radius: 10px; padding: .6rem .8rem; font-size: .85rem; background: #fbfaff; }
 .mod-stale { color: #9b1c1c; font-weight: 600; font-size: .85rem; }
+
+/* Maths preview under an editor field: the field keeps the LaTeX source, the preview shows the card. */
+.card-math-preview { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(110, 92, 255, .07); color: var(--ln-ink); font-size: 15px; line-height: 1.5; overflow-x: auto; }
+.publish-details { margin: 6px 0 10px; }
+.publish-details > summary { cursor: pointer; color: var(--ln-violet-deep); font-weight: 600; padding: 6px 0; }
+.set-kind-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(24, 185, 189, .14); color: #0f7f82; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }

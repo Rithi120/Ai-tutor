@@ -22,6 +22,8 @@
     <form id="commFilters" class="cards-toolbar community-search" role="search">
       <label class="visually-hidden" for="commSearch">{{ _('Search') }}</label>
       <input type="search" id="commSearch" name="q" placeholder="{{ _('Search title, topic, keyword…') }}" autocomplete="off">
+      <label class="visually-hidden" for="commKind">{{ _('Set kind') }}</label>
+      <select id="commKind" name="kind"><option value="">{{ _('All sets') }}</option><option value="flashcards">{{ _('Flashcards only') }}</option><option value="vocabulary">{{ _('Vocabulary only') }}</option></select>
       <label class="visually-hidden" for="commSubject">{{ _('Subject') }}</label>
       <select id="commSubject" name="subject"><option value="">{{ _('All subjects') }}</option></select>
       <label class="visually-hidden" for="commGrade">{{ _('Grade') }}</label>

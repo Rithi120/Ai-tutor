@@ -371,6 +371,17 @@ GERMAN = {
     "More": "Mehr",
     "Account": "Konto",
     "Menu": "Menü",
+    # --- Finish test, set kinds, simpler publishing ---
+    "Finish test": "Test beenden",
+    "Answer at least {minimum} questions before finishing.": "Beantworte mindestens {minimum} Fragen, bevor du beendest.",
+    "This test is already finished.": "Dieser Test ist bereits beendet.",
+    "You stopped after {answered} questions. Here is what your answers so far show.": "Du hast nach {answered} Fragen aufgehört. Das zeigen deine bisherigen Antworten.",
+    "Set kind": "Art des Sets",
+    "All sets": "Alle Sets",
+    "Flashcards only": "Nur Karteikarten",
+    "Vocabulary only": "Nur Vokabeln",
+    "Details (optional)": "Details (optional)",
+    "Subject, level and language are taken from your set. Only a title and your confirmation are needed.": "Fach, Niveau und Sprache werden aus deinem Set übernommen. Nur ein Titel und deine Bestätigung sind nötig.",
     # --- Exam autopilot (learnova/exam_prep, components/_autopilot_card.html) ---
     "EXAM AUTOPILOT": "PRÜFUNGS-AUTOPILOT",
     "{days} days remaining": "{days} Tage verbleibend",
@@ -1284,6 +1295,7 @@ FRONTEND_MESSAGES = {
     "startPagesUnreadable": "{count} page(s) could not be read - they are skipped for now",
     "startFailed": "Something went wrong. Your pages are saved - try again or check the scan.",
     "startTryAgain": "Try again",
+    "finishTest": "Finish test",
 }
 
 GERMAN.update({
