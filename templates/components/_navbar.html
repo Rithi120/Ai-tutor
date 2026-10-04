@@ -23,7 +23,7 @@
         <div id="moreMenu" class="app-dropdown" role="menu" aria-hidden="true">
           {% if feature_flags.assistant_chat %}<a role="menuitem" class="{{ 'is-active' if assistant_active }}" href="{{ url_for('assistant_page') }}" {% if assistant_active %}aria-current="page"{% endif %}>{{ _('Assistant') }}</a>{% endif %}
           {% if feature_flags.private_flashcards %}<a role="menuitem" class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %}>{{ _('Flashcards') }}</a>{% endif %}
-          {% if feature_flags.vocabulary_trainer %}<a role="menuitem" class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
+          {% if feature_flags.vocabulary_trainer %}<a role="menuitem" class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_import_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
           {% if feature_flags.community_library %}<a role="menuitem" class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %}>{{ _('Community') }}</a>{% endif %}
           {% if feature_flags.gamification_enabled %}<a role="menuitem" href="{{ url_for('progress_page') }}">{{ _('Progress') }}</a>{% endif %}
           <a role="menuitem" href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>
@@ -56,7 +56,7 @@
     <a class="{{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>
     {% if feature_flags.assistant_chat %}<a class="{{ 'is-active' if assistant_active }}" href="{{ url_for('assistant_page') }}" {% if assistant_active %}aria-current="page"{% endif %}>{{ _('Assistant') }}</a>{% endif %}
     {% if feature_flags.private_flashcards %}<a class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %}>{{ _('Flashcards') }}</a>{% endif %}
-    {% if feature_flags.vocabulary_trainer %}<a class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
+    {% if feature_flags.vocabulary_trainer %}<a class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_import_page') }}">{{ _('Vocabulary Trainer') }}</a>{% endif %}
     {% if feature_flags.community_library %}<a class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %}>{{ _('Community') }}</a>{% endif %}
     {% if feature_flags.gamification_enabled %}<a href="{{ url_for('progress_page') }}">{{ _('Progress') }}</a>{% endif %}
     <a href="{{ url_for('dashboard') }}#mistake-notebook">{{ _('Mistake Notebook') }}</a>

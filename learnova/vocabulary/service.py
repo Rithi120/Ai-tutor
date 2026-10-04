@@ -706,7 +706,10 @@ def card_variants(entry: dict[str, Any], directions: list[str], settings: dict[s
     common = {
         "type": "term_definition", "explanation": example if settings.get("include_examples") else "",
         "hint": clean_text(entry.get("part_of_speech")) if settings.get("include_hints") else "",
-        "tags": ["vocabulary", clean_text(entry.get("source_language"))],
+        # The kind rides along as a tag so a flashcard session can be narrowed to words
+        # or to sentences - what the practice page's scope picker did, now inside the set.
+        "tags": ["vocabulary", clean_text(entry.get("source_language")),
+                 str(entry.get("entry_kind")) if entry.get("entry_kind") in ENTRY_KINDS else text_kind(source)],
         "options": [], "difficulty": settings.get("difficulty", "medium"),
         "source_reference": f"Page {entry.get('source_page')}" if entry.get("source_page") else "",
     }

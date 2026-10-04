@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import re
 from typing import Any
@@ -42,6 +43,14 @@ def weakness_score(correct: int, incorrect: int, consecutive_incorrect: int, eas
     return round(min(100.0, error_rate * 65 + consecutive_incorrect * 10 + max(0, 2.5 - ease) * 20), 2)
 
 
+def card_tags(card: Any) -> list[str]:
+    try:
+        tags = json.loads(getattr(card, "tags_json", None) or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(tag) for tag in tags] if isinstance(tags, list) else []
+
+
 def select_cards(cards: list[Any], objective: str, now, limit: int) -> list[Any]:
     selected = list(cards)
     if objective == "due":
@@ -52,6 +61,12 @@ def select_cards(cards: list[Any], objective: str, now, limit: int) -> list[Any]
         selected = [card for card in selected if card.starred]
     elif objective == "new":
         selected = [card for card in selected if card.repetition_count == 0]
+    elif objective == "words":
+        # Vocabulary cards carry their kind as a tag (see vocabulary.card_variants):
+        # "words" is everything that is not a sentence, so untagged cards count as words.
+        selected = [card for card in selected if "sentence" not in card_tags(card)]
+    elif objective == "sentences":
+        selected = [card for card in selected if "sentence" in card_tags(card)]
     selected.sort(key=lambda card: (-float(card.weakness_score or 0), card.id))
     return selected[:max(1, limit)]
 

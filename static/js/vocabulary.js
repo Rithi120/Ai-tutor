@@ -3,12 +3,7 @@ import { safeUUID } from "./dom.js";
 
 const importForm = document.querySelector("#vocabularyImportForm");
 const reviewPage = document.querySelector("[data-vocabulary-review]");
-const studyPage = document.querySelector("[data-vocabulary-study]");
 let reviewEntries = [];
-let practiceItems = [];
-let practiceIndex = 0;
-let practiceStarted = 0;
-let practiceSessionId = null;
 
 function uuid() {
   return safeUUID();
@@ -86,14 +81,22 @@ if (importForm) {
   const idleTitle = uploadTitle?.textContent ?? "";
   const idleHint = uploadHint?.textContent ?? "";
 
+  // The fourth method is not an import at all: the word scanner takes the form's place.
+  const scanSection = document.querySelector("#vocabularyScanSection");
+  function showMethod(kind) {
+    document.querySelector("#vocabularyFileField").classList.toggle("hidden", kind !== "file");
+    document.querySelector("#vocabularyTextField").classList.toggle("hidden", kind !== "text");
+    manualField?.classList.toggle("hidden", kind !== "manual");
+    document.querySelectorAll(".import-only").forEach(part => part.classList.toggle("hidden", kind === "scan"));
+    scanSection?.classList.toggle("hidden", kind !== "scan");
+    // Typing starts on an empty row rather than an empty panel with a button.
+    if (kind === "manual" && !manualRows?.children.length) addManualRow();
+  }
+  showMethod(document.querySelector("[name=source_kind]:checked")?.value || "file");
+
   importForm.addEventListener("change", event => {
     if (event.target.name === "source_kind") {
-      const kind = event.target.value;
-      document.querySelector("#vocabularyFileField").classList.toggle("hidden", kind !== "file");
-      document.querySelector("#vocabularyTextField").classList.toggle("hidden", kind !== "text");
-      manualField?.classList.toggle("hidden", kind !== "manual");
-      // Typing starts on an empty row rather than an empty panel with a button.
-      if (kind === "manual" && !manualRows?.children.length) addManualRow();
+      showMethod(event.target.value);
       return;
     }
     // The real file input is invisible inside the dropzone, so the zone itself has to
@@ -438,99 +441,5 @@ if (reviewPage) {
       });
       location.href = result.creator_url;
     } catch (error) { toast(error.message, "error"); }
-  });
-}
-
-
-function speak(item) {
-  if (!("speechSynthesis" in window) || !item) return;
-  speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(item.prompt);
-  utterance.lang = item.language;
-  utterance.volume = 0.75;
-  speechSynthesis.speak(utterance);
-}
-function renderPractice() {
-  const item = practiceItems[practiceIndex];
-  if (!item) {
-    document.querySelector("#vocabularyPracticeCard").innerHTML = `<h2>${escapeHtml(t("vocabularySessionComplete"))}</h2>`;
-    return;
-  }
-  document.querySelector("#vocabularyPracticeProgress").textContent = `${practiceIndex + 1} / ${practiceItems.length}`;
-  document.querySelector("#vocabularyPrompt").textContent = item.prompt;
-  document.querySelector("#speakVocabulary").classList.toggle("hidden", !item.has_audio);
-  document.querySelector("#vocabularyAnswer").value = "";
-  document.querySelector("#vocabularyFeedback").textContent = "";
-  practiceStarted = Date.now();
-}
-if (studyPage) {
-  // The counts come from the list itself rather than a second endpoint: the entries
-  // already carry their kind, so the picker can label each option and disable the ones
-  // this list has nothing for.
-  async function labelScopeOptions() {
-    const data = await api(`/api/vocabulary/lists/${studyPage.dataset.listId}`);
-    const kinds = (data.vocabulary_list.entries || [])
-      .filter(entry => entry.included !== false)
-      .map(entry => entry.entry_kind || "word");
-    const totals = {
-      words: kinds.filter(kind => kind === "word" || kind === "phrase").length,
-      sentences: kinds.filter(kind => kind === "sentence").length,
-    };
-    totals.all = totals.words + totals.sentences;
-    for (const [scope, total] of Object.entries(totals)) {
-      const label = document.querySelector(`[data-scope-count="${scope}"]`);
-      if (label) label.textContent = String(total);
-      const radio = document.querySelector(`[name=scope][value="${scope}"]`);
-      if (!radio) continue;
-      radio.disabled = total === 0;
-      radio.closest(".scope-option")?.classList.toggle("is-empty", total === 0);
-      // Never leave the student on an option that would start an empty session.
-      if (radio.checked && total === 0) {
-        const fallback = document.querySelector("[name=scope][value=all]");
-        if (fallback && !fallback.disabled) fallback.checked = true;
-      }
-    }
-  }
-  labelScopeOptions().catch(() => { /* the picker still works; it just has no counts */ });
-
-  document.querySelector("#startVocabularyPractice").addEventListener("click", async () => {
-    const direction = document.querySelector("#vocabularyDirection").value;
-    const objective = document.querySelector("#vocabularyObjective").value;
-    const scope = document.querySelector("[name=scope]:checked")?.value || "all";
-    try {
-      const data = await api(`/api/vocabulary/lists/${studyPage.dataset.listId}/practice?direction=${encodeURIComponent(direction)}&objective=${encodeURIComponent(objective)}&scope=${encodeURIComponent(scope)}`);
-      if (!data.items.length) {
-        toast(t("vocabularyNothingInScope"), "error");
-        return;
-      }
-      practiceItems = data.items; practiceIndex = data.current_position || 0;
-      practiceSessionId = data.session_id;
-      document.querySelector("#vocabularyPracticeConfig").classList.add("hidden");
-      document.querySelector("#vocabularyPracticeCard").classList.remove("hidden");
-      renderPractice();
-    } catch (error) { toast(error.message, "error"); }
-  });
-  document.querySelector("#checkVocabularyAnswer").addEventListener("click", async () => {
-    const item = practiceItems[practiceIndex];
-    if (!item) return;
-    try {
-      const result = await api(`/api/vocabulary/lists/${studyPage.dataset.listId}/practice/${item.entry_id}/answer`, {
-        method: "POST", body: {
-          answer: document.querySelector("#vocabularyAnswer").value,
-          direction: item.direction,
-          strictness: document.querySelector("#vocabularyStrictness").value,
-          response_ms: Date.now() - practiceStarted, request_id: uuid(),
-          session_id: practiceSessionId,
-        },
-      });
-      document.querySelector("#vocabularyFeedback").textContent = result.correct
-        ? `${t("fcCorrect")} · +${result.xp_earned} XP`
-        : `${t("fcIncorrect")} · ${t("fcCorrectAnswer")}: ${result.expected}`;
-      setTimeout(() => { practiceIndex += 1; renderPractice(); }, 700);
-    } catch (error) { toast(error.message, "error"); }
-  });
-  document.querySelector("#speakVocabulary").addEventListener("click", () => speak(practiceItems[practiceIndex]));
-  document.querySelector("#vocabularyAnswer").addEventListener("keydown", event => {
-    if (event.key === "Enter") document.querySelector("#checkVocabularyAnswer").click();
   });
 }

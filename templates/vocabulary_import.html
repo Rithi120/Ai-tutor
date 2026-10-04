@@ -8,38 +8,45 @@
       <h1>{{ _('Import vocabulary') }}</h1>
       <p>{{ _('Your uploaded schoolbook pages remain private and expire automatically.') }}</p>
     </div>
-    <a class="ghost-button" href="{{ url_for('vocabulary_page') }}">{{ _('My vocabulary lists') }}</a>
+    <a class="ghost-button" href="{{ url_for('flashcards_page') }}">{{ _('My flashcards') }}</a>
   </header>
 
   <form id="vocabularyImportForm" class="vocabulary-panel import-form" novalidate>
-    <!-- Step 1: how the words arrive. Three cards, one decision. The inputs are still the
-         radios the JavaScript listens to; the card is just what the student sees. -->
+    <!-- Step 1: how the words arrive. Four cards, one decision. The inputs are still the
+         radios the JavaScript listens to; the card is just what the student sees. The
+         fourth card swaps the form for the word scanner below. -->
     <section class="import-step" aria-labelledby="importMethodHeading">
       <h2 id="importMethodHeading" class="import-step-title">{{ _('How do you want to add words?') }}</h2>
       <div class="method-cards" role="radiogroup" aria-labelledby="importMethodHeading">
         <label class="method-card">
-          <input type="radio" name="source_kind" value="file" checked>
+          <input type="radio" name="source_kind" value="file" {{ 'checked' if initial_method == 'file' }}>
           <span class="method-icon" aria-hidden="true">📷</span>
           <span class="method-name">{{ _('Photo or PDF') }}</span>
           <span class="method-hint">{{ _('Snap a schoolbook page or upload a PDF.') }}</span>
         </label>
         <label class="method-card">
-          <input type="radio" name="source_kind" value="text">
+          <input type="radio" name="source_kind" value="text" {{ 'checked' if initial_method == 'text' }}>
           <span class="method-icon" aria-hidden="true">📋</span>
           <span class="method-name">{{ _('Paste vocabulary text') }}</span>
           <span class="method-hint">{{ _('Paste a list — one word pair per line.') }}</span>
         </label>
         <label class="method-card">
-          <input type="radio" name="source_kind" value="manual">
+          <input type="radio" name="source_kind" value="manual" {{ 'checked' if initial_method == 'manual' }}>
           <span class="method-icon" aria-hidden="true">✍️</span>
           <span class="method-name">{{ _('Manual entry') }}</span>
           <span class="method-hint">{{ _('Type the words yourself right here.') }}</span>
+        </label>
+        <label class="method-card">
+          <input type="radio" name="source_kind" value="scan" {{ 'checked' if initial_method == 'scan' }}>
+          <span class="method-icon" aria-hidden="true">🔍</span>
+          <span class="method-name">{{ _('Scan a word') }}</span>
+          <span class="method-hint">{{ _('Tap a word on a page and get its meaning with its sentence.') }}</span>
         </label>
       </div>
     </section>
 
     <!-- Step 2: the material. Only the chosen method's input is shown. -->
-    <section class="import-step">
+    <section class="import-step import-only{{ ' hidden' if initial_method == 'scan' }}">
       <label id="vocabularyFileField" class="upload-drop">
         <input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" capture="environment">
         <span class="upload-icon" aria-hidden="true">⬆</span>
@@ -61,7 +68,7 @@
     </section>
 
     <!-- Step 3: languages and a name. Compact, because it is rarely changed. -->
-    <section class="import-step import-languages">
+    <section class="import-step import-languages import-only{{ ' hidden' if initial_method == 'scan' }}">
       <div class="language-pair">
         <label class="field">
           <span class="field-label">{{ _('Source language') }}</span>
@@ -79,12 +86,71 @@
       </label>
     </section>
 
-    <div class="import-actions">
+    <div class="import-actions import-only{{ ' hidden' if initial_method == 'scan' }}">
       <button class="primary-button" type="submit">{{ _('Upload and extract') }}</button>
       <p id="vocabularyImportStatus" class="import-status" role="status" aria-live="polite"></p>
     </div>
     <p id="vocabularyImportError" class="form-error hidden" role="alert"></p>
   </form>
+
+  {# The word scanner: photo -> words as chips -> one tapped word with its meaning and the
+     sentence it is in. Nothing here goes to a language model; see static/js/vocabulary-scan.js.
+     It is the fourth method above, so it shares this page instead of having its own. #}
+  <section id="vocabularyScanSection" class="scan-page{{ '' if initial_method == 'scan' else ' hidden' }}"
+           data-vocabulary-scan data-default-target="{{ default_target }}">
+    {% if not scanner_available %}
+    <div class="vocabulary-panel"><p>{{ _('The scanner is not available on this server.') }}</p></div>
+    {% else %}
+    <div class="vocabulary-panel scan-start" id="scanStart">
+      <label class="primary-button scan-camera" for="scanCamera">📷 {{ _('Take a photo') }}
+        <input id="scanCamera" type="file" accept="image/*" capture="environment" class="visually-hidden-input"></label>
+      <label class="ghost-button scan-gallery" for="scanGallery">{{ _('Choose from gallery') }}
+        <input id="scanGallery" type="file" accept="image/*" class="visually-hidden-input"></label>
+      <p id="scanStatus" class="import-status" role="status" aria-live="polite"></p>
+      <p id="scanError" class="form-error hidden" role="alert"></p>
+    </div>
+
+    <div class="vocabulary-panel scan-result hidden" id="scanResult">
+      <div class="scan-languages">
+        <label>{{ _('Book') }}
+          <select id="scanSource" aria-label="{{ _('Language of the book') }}">
+            <option value="">{{ _('Unknown') }}</option>
+            {% for code, name in supported_languages.items() %}<option value="{{ code }}">{{ _(name) }}</option>{% endfor %}
+          </select></label>
+        <span class="review-arrow" aria-hidden="true">&rarr;</span>
+        <label>{{ _('Meaning in') }}
+          <select id="scanTarget" aria-label="{{ _('Language for the meaning') }}">
+            {% for code, name in supported_languages.items() %}<option value="{{ code }}">{{ _(name) }}</option>{% endfor %}
+          </select></label>
+        <button id="scanAgain" class="link-button" type="button">{{ _('Scan another page') }}</button>
+      </div>
+      <details class="review-photo" id="scanPhoto" hidden>
+        <summary>{{ _('Show the photo') }}</summary>
+        <img id="scanPhotoImage" alt="{{ _('The scanned page') }}" loading="lazy">
+      </details>
+      <p class="scan-hint" id="scanHint">{{ _('Tap a word.') }}</p>
+      <div id="scanWords" class="scan-words"></div>
+    </div>
+
+    <div class="vocabulary-panel scan-lookup hidden" id="scanLookup">
+      <div class="scan-lookup-word">
+        <strong id="lookupWord"></strong>
+        <span class="review-arrow" aria-hidden="true">&rarr;</span>
+        <input id="lookupTranslation" class="scan-translation" autocomplete="off"
+               aria-label="{{ _('Translation') }}" placeholder="{{ _('Translation') }}">
+      </div>
+      <p id="lookupProvider" class="scan-provider"></p>
+      <p id="lookupSentence" class="scan-sentence"></p>
+      <p id="lookupSentenceTranslation" class="scan-sentence-translation"></p>
+      <div class="row-actions">
+        <button id="lookupSave" class="primary-button" type="button">{{ _('Save to my words') }}</button>
+        <button id="lookupSpeak" class="ghost-button" type="button" aria-label="{{ _('Pronounce word') }}">🔊</button>
+      </div>
+      <p id="lookupStatus" class="review-status" role="status" aria-live="polite"></p>
+    </div>
+    {% endif %}
+  </section>
 </main>
 {% endblock %}
-{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/vocabulary.js') }}"></script>{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/vocabulary.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/vocabulary-scan.js') }}"></script>{% endblock %}

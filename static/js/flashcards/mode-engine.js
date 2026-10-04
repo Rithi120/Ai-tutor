@@ -202,7 +202,19 @@ async function loadResult() {
   const data = await api(`/api/flashcards/sessions/${resultSession}`);
   state.session = data.session; $("#modeConfig").classList.add("hidden"); showSummary();
 }
+async function offerVocabularyScopes() {
+  // Words only / sentences only make sense when the set has both; cards carry their kind as a tag.
+  try {
+    const data = await api(`/api/flashcards/sets/${SET_ID}`);
+    const cards = data.set?.cards || [];
+    const sentences = cards.filter(card => (card.tags || []).includes("sentence")).length;
+    if (sentences > 0 && sentences < cards.length) {
+      document.querySelectorAll("#modeObjective [data-vocabulary-only]").forEach(option => { option.hidden = false; });
+    }
+  } catch (e) { /* the ordinary objectives still work */ }
+}
 function init() {
+  offerVocabularyScopes();
   const objective = new URLSearchParams(location.search).get("objective"); if (objective) $("#modeObjective").value = objective;
   $("#startMode").addEventListener("click", () => start(false));
   $("#continueMode").addEventListener("click", () => start(true));

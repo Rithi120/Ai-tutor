@@ -1873,6 +1873,14 @@ GERMAN.update({
     "Open the list": "Liste öffnen",
 })
 
+# The vocabulary trainer is one page (import + scanner); a list lives on its flashcard set,
+# where a session can be narrowed to words or to sentences.
+GERMAN.update({
+    "Tap a word on a page and get its meaning with its sentence.": "Tippe auf ein Wort einer Seite und bekomme seine Bedeutung mit dem Satz.",
+    "Words only": "Nur Wörter",
+    "Sentences only": "Nur Sätze",
+})
+
 REQUIRED_KEYS = frozenset(GERMAN.keys())
 
 
