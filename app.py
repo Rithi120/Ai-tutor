@@ -9134,57 +9134,97 @@ def read_vocabulary_page(
 def read_vocabulary_page_safely(
     data: bytes, page_number: int, source_language: str, target_language: str,
 ) -> dict[str, Any]:
-    """A page as entries: the table rebuilt from the local reading first, then the rest.
+    """Read a vocabulary page deterministically with local OCR only.
 
-    1. Local OCR with positions (well under a second, nothing sent anywhere), and the
-       word / translation / examples table rebuilt from where the lines sit.
-    2. Only if that finds no table: the vision model's table reader, bounded by its
-       timeout, for a server without the engine or a page laid out unusually.
-    3. Only if that fails too: the lines read one by one, from the local text when there
-       is one, else from the vision OCR.
-    A student's own AI limit is raised as it is: a second call would meet the same
-    limit, and the student is owed the plain sentence about it, not "extraction failed".
+    The scanner's critical path must not depend on an external vision model.
+    RapidOCR provides positioned text locally; vocabulary_layout reconstructs
+    the table from those positions. If the page cannot be reconstructed
+    reliably, return a warning instead of blocking on an AI provider.
     """
-    local_result = None
-    if local_ocr.available(app.config):
-        try:
-            local_result = local_ocr.recognize(data, app.config)
-        except (local_ocr.LocalOcrUnavailable, ValueError, OSError) as error:
-            app.logger.info("vocabulary page %s: local OCR failed (%s)", page_number, type(error).__name__)
-    if local_result is not None and local_result.lines:
-        rows = vocabulary_layout.table_rows(local_result.lines, source_language, target_language)
-        if len(rows) >= 2:
-            parsed = vocabulary.rows_to_entries({"rows": rows}, page_number)
-            parsed["warnings"] = list(local_result.warnings) + list(parsed["warnings"])
-            return parsed
+    if not local_ocr.available(app.config):
+        return {
+            "entries": [],
+            "unrecognized_lines": [],
+            "warnings": [
+                "Local OCR is unavailable on this server. "
+                "The vocabulary scanner could not read the page."
+            ],
+        }
+
     try:
-        parsed = read_vocabulary_page(data, page_number, source_language, target_language)
-        if parsed["entries"]:
-            return parsed
-        warnings = [f"No vocabulary table was found on page {page_number}; "
-                    "its lines were read one by one."]
-    except ai_service.AIRequestLimitError:
-        raise
-    except (ai_service.AIGatewayError, ai_service.AIValidationError, ValueError) as error:
-        app.logger.info("vocabulary page %s: table reading failed (%s); reading lines instead",
-                        page_number, type(error).__name__)
-        warnings = [f"Page {page_number} could not be read as a table; "
-                    "its lines were read one by one."]
-    if local_result is not None and local_result.lines:
-        confidences = [line.confidence for line in local_result.lines]
-        text, confidence = local_result.text, round(sum(confidences) / len(confidences), 3)
-        ocr_warnings = list(local_result.warnings)
-    else:
-        recognition = recognize_flashcard_import_image(data, "Languages", page_number)
-        text, confidence = str(recognition["text"] or ""), float(recognition["confidence"])
-        ocr_warnings = list(recognition["warnings"])
+        local_result = local_ocr.recognize(data, app.config)
+    except (local_ocr.LocalOcrUnavailable, ValueError, OSError) as error:
+        app.logger.info(
+            "vocabulary page %s: local OCR failed (%s)",
+            page_number,
+            type(error).__name__,
+        )
+        return {
+            "entries": [],
+            "unrecognized_lines": [],
+            "warnings": [
+                f"Page {page_number} could not be read by local OCR."
+            ],
+        }
+
+    if not local_result.lines:
+        return {
+            "entries": [],
+            "unrecognized_lines": [],
+            "warnings": [
+                f"No readable text was detected on page {page_number}."
+            ],
+        }
+
+    rows = vocabulary_layout.table_rows(
+        local_result.lines,
+        source_language,
+        target_language,
+    )
+
+    if rows:
+        parsed = vocabulary.rows_to_entries({"rows": rows}, page_number)
+        parsed["warnings"] = (
+            list(local_result.warnings)
+            + list(parsed.get("warnings", []))
+        )
+        return parsed
+
+    # No recognizable table: still parse the OCR text deterministically.
+    text = local_result.text.strip()
+    if not text:
+        return {
+            "entries": [],
+            "unrecognized_lines": [],
+            "warnings": list(local_result.warnings) + [
+                f"No readable vocabulary text was found on page {page_number}."
+            ],
+        }
+
     parsed = vocabulary.parse_vocabulary_text(text, page_number)
-    for entry in parsed["entries"]:
-        entry["confidence"] = min(float(entry["confidence"]), confidence)
-    # The folded examples also become sentence entries, so "sentences only" has the same
-    # material whichever reader produced the page.
+
+    confidences = [
+        float(line.confidence)
+        for line in local_result.lines
+        if line.text.strip()
+    ]
+    if confidences:
+        confidence = min(confidences)
+        for entry in parsed["entries"]:
+            entry["confidence"] = min(
+                float(entry["confidence"]),
+                confidence,
+            )
+
     parsed["entries"] = vocabulary.expand_examples(parsed["entries"])
-    parsed["warnings"] = warnings + ocr_warnings + list(parsed["warnings"])
+    parsed["warnings"] = (
+        list(local_result.warnings)
+        + [
+            f"Page {page_number} did not match a clear vocabulary table; "
+            "OCR text was parsed instead."
+        ]
+        + list(parsed.get("warnings", []))
+    )
     return parsed
 
 
