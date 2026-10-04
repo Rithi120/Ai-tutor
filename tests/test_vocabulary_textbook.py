@@ -28,6 +28,7 @@ from learnova.ai_services import service as ai_service  # noqa: E402
 from learnova.ai_services.contracts import validate_output  # noqa: E402
 from learnova.ai_services.prompts import PROMPT_VERSIONS  # noqa: E402
 from learnova.vocabulary import service  # noqa: E402
+from learnova.ocr import local as local_ocr  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = PROMPT_VERSIONS["vocabulary_page_extraction"]
@@ -242,6 +243,12 @@ def photo_bytes(shade="white"):
     return buffer.getvalue()
 
 
+def ocr_line(text, y=0.1):
+    from learnova.vocabulary import layout
+    box = (0.1, y, 0.9, y + 0.03)
+    return layout.Line(text, box, 0.98, layout.words_from_text(text, box))
+
+
 def recognition(text):
     return {"blocks": [{"type": "printed_text", "content": text, "bbox": [0.05, 0.05, 0.95, 0.35],
                         "confidence": 0.9, "crossed_out": False, "important_candidate": False,
@@ -396,11 +403,13 @@ class TextbookImportTests(unittest.TestCase):
         self.assertEqual(rescanned.get_json()["code"], "rescan_not_possible")
 
     def test_when_the_page_is_no_table_the_lines_are_read_one_by_one(self):
+        # A server without the local engine: the line-by-line fallback asks the vision model.
         import_id = self.upload()["vocabulary_import"]["id"]
-        extracted = self.extract(import_id, {
-            "vocabulary_page_extraction": ai_service.AIValidationError("schema_validation", "rows must be a list"),
-            "ocr_document_recognition": recognition("le village | das Dorf\nIl habite dans le village. | Er wohnt im Dorf."),
-        })
+        with patch.object(local_ocr, "available", return_value=False):
+            extracted = self.extract(import_id, {
+                "vocabulary_page_extraction": ai_service.AIValidationError("schema_validation", "rows must be a list"),
+                "ocr_document_recognition": recognition("le village | das Dorf\nIl habite dans le village. | Er wohnt im Dorf."),
+            })
         self.assertEqual(extracted.status_code, 200, extracted.data)
         self.assertEqual(self.calls[0], "vocabulary_page_extraction")
         self.assertIn("ocr_document_recognition", self.calls)
@@ -409,6 +418,20 @@ class TextbookImportTests(unittest.TestCase):
                          ["le village", "Il habite dans le village."])
         self.assertEqual(imported["entries"][1]["entry_kind"], "sentence")
         self.assertTrue(any("could not be read as a table" in warning for warning in imported["warnings"]))
+
+    def test_with_the_local_engine_the_fallback_reads_the_page_here_not_at_the_provider(self):
+        import_id = self.upload()["vocabulary_import"]["id"]
+        local_lines = [ocr_line("le village | das Dorf"), ocr_line("Il habite dans le village. | Er wohnt im Dorf.", 0.14)]
+        with patch.object(local_ocr, "available", return_value=True), \
+                patch.object(local_ocr, "recognize",
+                             return_value=local_ocr.LocalOcrResult(local_lines, 800, 600, "rapidocr", 9)):
+            extracted = self.extract(import_id, {
+                "vocabulary_page_extraction": ai_service.AIValidationError("schema_validation", "rows must be a list")})
+        self.assertEqual(extracted.status_code, 200, extracted.data)
+        self.assertEqual(self.calls, ["vocabulary_page_extraction"], "no second provider call")
+        imported = extracted.get_json()["vocabulary_import"]
+        self.assertEqual([entry["source_term"] for entry in imported["entries"]],
+                         ["le village", "Il habite dans le village."])
 
     def test_the_students_own_limit_is_reported_in_one_plain_sentence(self):
         import_id = self.upload()["vocabulary_import"]["id"]

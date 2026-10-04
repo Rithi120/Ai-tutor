@@ -434,6 +434,30 @@ def configure_app(app, environment: str | None = None) -> str:
             return default
         return raw.strip().lower() in {"1", "true", "yes", "on"}
 
+    # ---- The tap-a-word scanner: local OCR plus translation APIs, no language model ----
+    # LOCAL_OCR_ENGINE: auto (use RapidOCR when it is installed) | rapidocr | off.
+    app.config["LOCAL_OCR_ENGINE"] = os.getenv("LOCAL_OCR_ENGINE", "auto").strip().lower() or "auto"
+    # A dictionary hint for the multilingual model; the same model serves every Latin script.
+    app.config["LOCAL_OCR_LANGUAGE"] = os.getenv("LOCAL_OCR_LANGUAGE", "de").strip().lower() or "de"
+    # Load the models in a background thread at start-up so the first scan is not the slow one.
+    app.config["LOCAL_OCR_WARMUP"] = _feature_flag("LOCAL_OCR_WARMUP", selected != "testing")
+    # Translation providers, tried in this order; one without its credentials is skipped.
+    # MyMemory needs no key, so a fresh install can translate.
+    app.config["TRANSLATION_PROVIDERS"] = os.getenv("TRANSLATION_PROVIDERS", "deepl,libretranslate,mymemory")
+    app.config["DEEPL_API_KEY"] = os.getenv("DEEPL_API_KEY", "").strip()
+    app.config["LIBRETRANSLATE_URL"] = os.getenv("LIBRETRANSLATE_URL", "").strip()
+    app.config["LIBRETRANSLATE_API_KEY"] = os.getenv("LIBRETRANSLATE_API_KEY", "").strip()
+    app.config["MYMEMORY_EMAIL"] = os.getenv("MYMEMORY_EMAIL", "").strip()
+    for name, default in (("TRANSLATION_TIMEOUT_SECONDS", "4"),
+                          # Bounded waits for the AI providers. The SDKs default to 600 s and two
+                          # silent retries; one unreachable vision endpoint made a scan take eight
+                          # minutes. A text answer has 40 s, a page read 75 s, and no SDK retries.
+                          ("AI_PROVIDER_TIMEOUT_SECONDS", "40"), ("AI_VISION_TIMEOUT_SECONDS", "75")):
+        try:
+            app.config[name] = max(1.0, float(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a positive number") from error
+
     # Feature flags.
     is_production = selected == "production"
     app.config["FEATURE_PRIVATE_FLASHCARDS"] = _feature_flag("FEATURE_PRIVATE_FLASHCARDS", True)

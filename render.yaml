@@ -3,7 +3,9 @@ services:
     name: learnova
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    # The warm-up downloads the local OCR models at build time, so the first scan after
+    # a deploy is not the one that waits for them.
+    buildCommand: pip install -r requirements.txt && pip install --no-deps rapidocr==3.9.2 && python scripts/warm_local_ocr.py
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
     healthCheckPath: /health
     autoDeployTrigger: commit
@@ -71,6 +73,9 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      # Tap-a-word scanner translations: optional. Without a key the free MyMemory API answers.
+      - key: DEEPL_API_KEY
         sync: false
       # Premium routing is off until these name a "provider:model" (see .env.example).
       - key: AI_PREMIUM_REASONING_MODEL

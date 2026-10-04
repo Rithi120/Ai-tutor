@@ -20,13 +20,24 @@ from pathlib import Path
 from typing import Any, Callable
 
 from flask import current_app, g, has_request_context
-from anthropic import Anthropic
 from openai import OpenAI
 
 from . import adapters, budgets, routing
 from .budgets import BudgetPolicy, LimitSpec, LimitState, UsageTotals
 from .contracts import AIValidationError, repair_latex_json, validate_output
 from .prompts import PROMPT_VERSIONS, corrective_instruction, output_contract
+
+
+def Anthropic(**kwargs: Any) -> Any:  # noqa: N802 - keeps the SDK's name so tests can patch it
+    """The Anthropic client, imported on first use.
+
+    The SDK takes about two seconds to import (a very large generated type tree), which
+    was a third of the server's start-up for a provider most installs never configure.
+    """
+
+    from anthropic import Anthropic as _Anthropic  # noqa: PLC0415
+
+    return _Anthropic(**kwargs)
 
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -213,7 +224,8 @@ def _openai_compatible_call(profile: "ProviderProfile", request: dict[str, Any])
     """
 
     api_key, base_url = _client_settings(profile)
-    return OpenAI(api_key=api_key, base_url=base_url).responses.create(**request)
+    return OpenAI(api_key=api_key, base_url=base_url, max_retries=0,
+                  timeout=_request_timeout(request)).responses.create(**request)
 
 
 def _client_settings(profile: "ProviderProfile") -> tuple[str, str]:
@@ -223,6 +235,31 @@ def _client_settings(profile: "ProviderProfile") -> tuple[str, str]:
     base_url = (current_app.config.get(profile.base_url_setting)
                 if profile.base_url_setting else None) or profile.default_base_url
     return api_key, base_url
+
+
+def _request_timeout(request: dict[str, Any]) -> float:
+    """How long one provider call may take: a page read gets longer than a text answer.
+
+    The SDK defaults - 600 s and two silent retries - are how one unreachable vision
+    endpoint turned a vocabulary scan into an eight-minute failure. The gateway rotates
+    candidates and cools providers down itself, so the SDK is given nothing to retry.
+    """
+
+    vision = _carries_image(request.get("input"))
+    key = "AI_VISION_TIMEOUT_SECONDS" if vision else "AI_PROVIDER_TIMEOUT_SECONDS"
+    fallback = 75.0 if vision else 40.0
+    try:
+        return float(current_app.config.get(key) or fallback)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _carries_image(value: Any) -> bool:
+    if isinstance(value, dict):
+        return value.get("type") == "input_image" or any(_carries_image(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_carries_image(item) for item in value)
+    return False
 
 
 def _refused(result: adapters.ProviderResult) -> adapters.ProviderResult:
@@ -237,7 +274,8 @@ def _openai_responses_call(profile: "ProviderProfile", request: dict[str, Any]) 
     """OpenAI itself: the Responses API, minus what its reasoning models reject."""
 
     api_key, base_url = _client_settings(profile)
-    response = OpenAI(api_key=api_key, base_url=base_url).responses.create(
+    response = OpenAI(api_key=api_key, base_url=base_url, max_retries=0,
+                      timeout=_request_timeout(request)).responses.create(
         **adapters.openai_responses_request_from(request))
     return adapters.responses_to_canonical(response, request["model"])
 
@@ -246,7 +284,8 @@ def _openai_chat_completions_call(profile: "ProviderProfile", request: dict[str,
     """Providers whose OpenAI-compatible endpoint speaks Chat Completions only (Gemini)."""
 
     api_key, base_url = _client_settings(profile)
-    completion = OpenAI(api_key=api_key, base_url=base_url).chat.completions.create(
+    completion = OpenAI(api_key=api_key, base_url=base_url, max_retries=0,
+                        timeout=_request_timeout(request)).chat.completions.create(
         **adapters.chat_completion_request_from(request))
     return _refused(adapters.chat_completion_to_canonical(completion, request["model"]))
 
@@ -256,7 +295,8 @@ def _anthropic_messages_call(profile: "ProviderProfile", request: dict[str, Any]
     and `.status_code`, so `_failure_details` reads them without special cases."""
 
     api_key, base_url = _client_settings(profile)
-    message = Anthropic(api_key=api_key, base_url=base_url).messages.create(
+    message = Anthropic(api_key=api_key, base_url=base_url, max_retries=0,
+                        timeout=_request_timeout(request)).messages.create(
         **adapters.anthropic_request_from(request))
     return _refused(adapters.anthropic_message_to_canonical(message, request["model"]))
 

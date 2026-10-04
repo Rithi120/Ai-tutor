@@ -224,3 +224,34 @@
 @media (prefers-reduced-motion: reduce) {
   .vocabulary-page * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* ---- Scan a word -------------------------------------------------------------------
+ * Photo -> words as chips -> one tapped word with its meaning and sentence. Built for a
+ * phone held over a book: two big buttons, then a wall of tappable words, then one card. */
+.hero-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.scan-start { display: grid; gap: .75rem; justify-items: stretch; }
+.scan-camera { position: relative; min-height: 64px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; gap: .5rem; cursor: pointer; }
+.scan-gallery { position: relative; cursor: pointer; text-align: center; }
+.scan-languages { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.scan-languages select { min-height: 40px; padding: .35rem .5rem; }
+.scan-hint { margin: 0 0 .5rem; color: var(--ln-muted); font-size: .92rem; }
+.scan-words { display: flex; flex-direction: column; gap: .35rem; }
+.scan-line { display: flex; flex-wrap: wrap; gap: .3rem .25rem; }
+.scan-word { border: 1px solid var(--ln-line); background: var(--ln-surface-solid); border-radius: 999px; padding: .4rem .7rem; font: inherit; font-size: 1.02rem; line-height: 1.2; cursor: pointer; min-height: 40px; }
+.scan-word:hover, .scan-word:focus-visible { border-color: var(--ln-violet); }
+.scan-word.is-active { background: color-mix(in srgb, var(--ln-violet) 18%, var(--ln-surface-solid)); border-color: var(--ln-violet); font-weight: 700; }
+.scan-lookup { position: sticky; bottom: .75rem; margin-top: 1rem; box-shadow: var(--ln-shadow-md, 0 8px 30px rgba(0,0,0,.12)); }
+.scan-lookup-word { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: 1.25rem; }
+.scan-lookup-word strong { font-size: 1.4rem; }
+.scan-translation { flex: 1 1 10rem; font-size: 1.1rem; font-weight: 700; }
+.scan-provider { margin: .25rem 0 0; font-size: .8rem; color: var(--ln-muted); }
+.scan-provider:empty { display: none; }
+.scan-sentence { margin: .9rem 0 .2rem; font-size: 1.05rem; line-height: 1.5; }
+.scan-sentence mark { background: color-mix(in srgb, var(--ln-amber) 40%, transparent); border-radius: 4px; padding: 0 .15rem; }
+.scan-sentence-translation { margin: 0 0 .9rem; color: var(--ln-muted); line-height: 1.5; }
+.scan-sentence-translation:empty, .scan-sentence:empty { display: none; }
+@media (max-width: 640px) {
+  .vocabulary-hero { flex-direction: column; align-items: stretch; }
+  .hero-actions a { flex: 1 1 auto; text-align: center; }
+  .scan-lookup { bottom: .5rem; }
+}

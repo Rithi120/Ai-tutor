@@ -13,3 +13,17 @@ Pillow==11.3.0
 PyMuPDF==1.26.3
 numpy==2.5.1
 opencv-python-headless==5.0.0.93
+# The tap-a-word vocabulary scanner reads pages locally: no provider, no key, ~0.4 s a page.
+# RapidOCR itself is installed separately with --no-deps (see render.yaml and the README):
+# it declares the full opencv-python, which duplicates the headless build above and needs
+# libGL on a server. Its other dependencies are pinned here instead.
+onnxruntime==1.30.0
+omegaconf==2.3.1
+colorlog==6.12.0
+pyclipper==1.4.0
+shapely==2.1.2
+tqdm==4.68.4
+pyyaml==6.0.3
+six==1.17.0
+# Translation/dictionary API calls (DeepL, LibreTranslate, MyMemory); also used by RapidOCR.
+requests==2.32.3

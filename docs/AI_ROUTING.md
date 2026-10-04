@@ -123,6 +123,11 @@ Everything else is routine and never leaves Groq, however much budget there is.
   `answer_evaluation` failing validation on 7 of 21 live calls on gpt‑oss‑20b and the
   same‑model retry rescuing 0 of 7.
 - **A limit or budget error stops the request at once.** Nothing is retried around a cap.
+- **Every provider call is bounded.** Clients are built with `max_retries=0` (the gateway
+  does its own rotating and cooling down) and a `timeout` of `AI_PROVIDER_TIMEOUT_SECONDS`
+  (default 40 s) for text, `AI_VISION_TIMEOUT_SECONDS` (default 75 s) when the input
+  carries an image. The SDK defaults — 600 s and two silent retries — are how one
+  unreachable vision endpoint turned a vocabulary scan into an eight-minute failure.
 - **The hard bound** is `AI_MAX_PROVIDER_CALLS_PER_REQUEST` (default 3) provider calls per
   `create_response`, across primary, fallback and corrective. Loops above the gateway (OCR
   variants, question regeneration, moderation escalation, the diagnostics second opinion)

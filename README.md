@@ -432,6 +432,50 @@ keeps the individual `FEATURE_FLASHCARD_*_MODE` / `FEATURE_FLASHCARD_*_GAME` fla
 for the complete flag list. `GAMIFICATION_MIN_DAILY_EVENTS` controls how many meaningful events qualify a day
 for streak credit.
 
+### Scan a word (no language model)
+
+`/vocabulary/scan` is the fast path for a student with a book open: **photo → tap a word →
+word, meaning, the sentence it is in, the sentence's meaning → save**. Nothing on this
+path goes to a language model, and the whole flow is deterministic:
+
+1. **OCR on the server**, `learnova/ocr/local.py`: RapidOCR (PaddleOCR's PP-OCR models on
+   ONNX Runtime, pip-installed, no key) reads a page in about 0.4 s on a laptop CPU and
+   returns every line and every word with its box. The models are downloaded once;
+   `scripts/warm_local_ocr.py` does that at build time and a background thread at
+   start-up (`LOCAL_OCR_WARMUP`), so the first scan is not the slow one. Install it with
+   `pip install -r requirements.txt && pip install --no-deps rapidocr==3.9.2` — the
+   `--no-deps` because RapidOCR declares the full OpenCV, which would sit beside the
+   headless build the project uses and needs libGL on a server; its other dependencies
+   are pinned in `requirements.txt`. Without the engine the scanner page says so.
+2. **Language** from function words, `learnova/vocabulary/language.py` — "le, la, est,
+   dans" against "der, die, und, nicht" — with a few exclusive letters (ß, ñ, œ, ã) as
+   extra weight. A dead heat is reported as unknown and the student picks the language.
+3. **The sentence** from the line geometry, `learnova/vocabulary/layout.py`: lines are
+   grouped into blocks by vertical gap and horizontal overlap, columns are read left then
+   right, hyphenation at a line break is mended, and the sentence containing the tapped
+   word is cut on `. ! ?` followed by a capital (abbreviations such as "z. B." excepted).
+4. **Meaning** from a translation API, `learnova/vocabulary/translate.py`: DeepL
+   (`DEEPL_API_KEY`), LibreTranslate (`LIBRETRANSLATE_URL`) or the keyless MyMemory API,
+   tried in `TRANSLATION_PROVIDERS` order with a 4 s timeout each, the word and its
+   sentence fetched together. Every answer lands in `translation_cache` (shared by all
+   students) and an in-process cache, so a word costs one call ever. A provider outage
+   degrades one field of the answer — the translation box is editable, so the student
+   types the meaning and still saves the word — never the scan.
+
+The target language comes from the student's profile (unless the book is in it, then the
+pair they used most recently), the saved words go to a running "Scanned words FR → DE"
+list per pair, and the photo is kept with the same retention and cleanup as every other
+upload. Fallback on a server without the engine: the page says so (503 on the API), and
+the textbook-table import above falls back to the vision model's table reader.
+
+**Why it was rebuilt.** The usage ledger for the night of 3 October shows every scan going
+to Groq's vision endpoint and every call failing with `network_failure` after 98–374 s:
+the SDK's default 600 s timeout and two silent retries, then the OCR fallback meeting the
+same outage. Each photo waited three to eight minutes and ended in "extraction failed".
+Provider clients are now built with `max_retries=0` and a bounded `timeout`
+(`AI_PROVIDER_TIMEOUT_SECONDS` 40 s for text, `AI_VISION_TIMEOUT_SECONDS` 75 s for a
+page), and the basic scanner no longer depends on a provider at all.
+
 ### Vocabulary Trainer
 
 The import page at `/vocabulary/import` asks one question first — *how do you want to add
@@ -449,17 +493,28 @@ pins both the arrangement and every hook the script depends on.
 
 **Textbook pages are read as the table they are.** A vocabulary book prints the word
 (with its pronunciation in brackets), the translation, and an example sentence with its
-own translation beneath. A photo or PDF page goes to one structured vision call
-(`vocabulary_page_extraction`, `GROQ_VISION_MODEL`, cached like OCR) that returns those
-rows as rows; `learnova/vocabulary/service.py::rows_to_entries` tidies them. The kind of
+own translation beneath. A photo or PDF page is read **on the server first**: the local
+engine (`learnova/ocr/local.py`, see *Scan a word* below) returns every line with its
+position in about two to five seconds, a page photographed sideways is turned upright,
+and `learnova/vocabulary/layout.py::table_rows` rebuilds the table from where the lines
+sit — columns from where lines start, rows from where the words start, and in the
+examples column a source-language line opens a sentence while the target-language lines
+beneath are its translation (so a translation that runs on past the next word stays with
+its sentence). Unit labels, page numbers, "englisch:" hints and the sliver of the next
+page are not rows; a remark such as "protéger wird konjugiert wie manger." becomes the
+row's note. No model is involved, and the same photo always gives the same rows
+(`tests/fixtures/vocabulary_page_m1_lines.json` is a real reading of such a page, and
+`tests/test_vocabulary_table.py` pins every pair on it). Only when no table can be
+rebuilt does the page go to one structured vision call (`vocabulary_page_extraction`,
+`GROQ_VISION_MODEL`, bounded by `AI_VISION_TIMEOUT_SECONDS`) that returns rows the same
+way; `learnova/vocabulary/service.py::rows_to_entries` tidies either answer. The kind of
 each entry comes from the column it stood in, not from a heuristic: the word column gives
 words and phrases, the examples column gives sentences, and every translated example
 also becomes a sentence entry of its own, so the three practice scopes on the study page
-— *Words*, *Sentences*, *Both* — each hold exactly what they say. One call per page
-replaces the old OCR call plus a translation call per uncertain word; rows read
-confidently from the table (and sentences) are never sent for a second opinion. If the
-reader cannot make a table of the page, the lines are read one by one as before and the
-import carries a warning saying so. A word the reader could not make out arrives as a
+— *Words*, *Sentences*, *Both* — each hold exactly what they say. Rows read
+confidently from the table (and sentences) are never sent for a second opinion. If
+neither reader can make a table of the page, the lines are read one by one — from the
+local text when there is one — and the import carries a warning saying so. A word the reader could not make out arrives as a
 row with a blank side: the review page asks the student to type it, or to **rescan** the
 page — a new photo taken from the review page (`POST
 /api/vocabulary/imports/<id>/rescan`) replaces only the rows still open, keeps every
