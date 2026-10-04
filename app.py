@@ -2793,9 +2793,11 @@ def safe_internal_url(value: str | None) -> str | None:
 def inject_i18n():
     language = get_current_language()
     ai_mode = app.config.get("AI_MODE", "cached")
+    static_version = app.config.get("STATIC_VERSION", "20261004")
     return {
         "_": lambda message, **values: translate(message, language, **values),
         "current_language": language,
+	"static_version": static_version,
         "interface_direction": language_direction(language),
         "language_options": language_options(),
         "grade_choices": [{"value": value, "label": grade_label(value)} for value in GRADE_CHOICES],

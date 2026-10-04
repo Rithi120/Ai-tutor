@@ -15,20 +15,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/navigation.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/study-planner.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navigation.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/study-planner.css', v=static_version) }}">
   {% block head %}{% endblock %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-tokens.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-components.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-layouts.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-study.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-pages.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css') }}">
-  {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css') }}">{% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-tokens.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-components.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-layouts.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-study.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-pages.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css', v=static_version) }}">
+  {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css', v=static_version) }}">{% endif %}
 </head>
 <body class="{{ 'authenticated-app' if current_user.is_authenticated else '' }} {% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main-content">{{ _('Skip to main content') }}</a>
