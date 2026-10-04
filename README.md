@@ -465,9 +465,8 @@ path goes to a language model, and the whole flow is deterministic:
 The target language comes from the student's profile (unless the book is in it, then the
 pair they used most recently), the saved words go to a running "Scanned words FR → DE"
 list per pair, and the photo is kept with the same retention and cleanup as every other
-upload. Fallback on a server without the engine: the page says so (503 on the API). The
-textbook-table import above still uses the vision model for its three-column reading,
-but its line-by-line fallback now reads locally when the engine is installed.
+upload. Fallback on a server without the engine: the page says so (503 on the API), and
+the textbook-table import above falls back to the vision model's table reader.
 
 **Why it was rebuilt.** The usage ledger for the night of 3 October shows every scan going
 to Groq's vision endpoint and every call failing with `network_failure` after 98–374 s:
@@ -494,17 +493,28 @@ pins both the arrangement and every hook the script depends on.
 
 **Textbook pages are read as the table they are.** A vocabulary book prints the word
 (with its pronunciation in brackets), the translation, and an example sentence with its
-own translation beneath. A photo or PDF page goes to one structured vision call
-(`vocabulary_page_extraction`, `GROQ_VISION_MODEL`, cached like OCR) that returns those
-rows as rows; `learnova/vocabulary/service.py::rows_to_entries` tidies them. The kind of
+own translation beneath. A photo or PDF page is read **on the server first**: the local
+engine (`learnova/ocr/local.py`, see *Scan a word* below) returns every line with its
+position in about two to five seconds, a page photographed sideways is turned upright,
+and `learnova/vocabulary/layout.py::table_rows` rebuilds the table from where the lines
+sit — columns from where lines start, rows from where the words start, and in the
+examples column a source-language line opens a sentence while the target-language lines
+beneath are its translation (so a translation that runs on past the next word stays with
+its sentence). Unit labels, page numbers, "englisch:" hints and the sliver of the next
+page are not rows; a remark such as "protéger wird konjugiert wie manger." becomes the
+row's note. No model is involved, and the same photo always gives the same rows
+(`tests/fixtures/vocabulary_page_m1_lines.json` is a real reading of such a page, and
+`tests/test_vocabulary_table.py` pins every pair on it). Only when no table can be
+rebuilt does the page go to one structured vision call (`vocabulary_page_extraction`,
+`GROQ_VISION_MODEL`, bounded by `AI_VISION_TIMEOUT_SECONDS`) that returns rows the same
+way; `learnova/vocabulary/service.py::rows_to_entries` tidies either answer. The kind of
 each entry comes from the column it stood in, not from a heuristic: the word column gives
 words and phrases, the examples column gives sentences, and every translated example
 also becomes a sentence entry of its own, so the three practice scopes on the study page
-— *Words*, *Sentences*, *Both* — each hold exactly what they say. One call per page
-replaces the old OCR call plus a translation call per uncertain word; rows read
-confidently from the table (and sentences) are never sent for a second opinion. If the
-reader cannot make a table of the page, the lines are read one by one as before and the
-import carries a warning saying so. A word the reader could not make out arrives as a
+— *Words*, *Sentences*, *Both* — each hold exactly what they say. Rows read
+confidently from the table (and sentences) are never sent for a second opinion. If
+neither reader can make a table of the page, the lines are read one by one — from the
+local text when there is one — and the import carries a warning saying so. A word the reader could not make out arrives as a
 row with a blank side: the review page asks the student to type it, or to **rescan** the
 page — a new photo taken from the review page (`POST
 /api/vocabulary/imports/<id>/rescan`) replaces only the rows still open, keeps every

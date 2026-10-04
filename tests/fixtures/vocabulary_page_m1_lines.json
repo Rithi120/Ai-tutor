@@ -1,0 +1,5392 @@
+[
+ {
+  "text": "M1",
+  "box": [
+   0.0242,
+   0.0456,
+   0.0958,
+   0.08
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "M1",
+    "clean": "M",
+    "box": [
+     0.035,
+     0.0456,
+     0.0933,
+     0.0794
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Vocabulaire",
+  "box": [
+   0.1625,
+   0.0381,
+   0.3092,
+   0.0675
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "Vocabulaire",
+    "clean": "Vocabulaire",
+    "box": [
+     0.17,
+     0.0381,
+     0.3033,
+     0.0669
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "protéger qn/qc [proteze]",
+  "box": [
+   0.1042,
+   0.13,
+   0.265,
+   0.1487
+  ],
+  "confidence": 0.974,
+  "words": [
+   {
+    "text": "protéger",
+    "clean": "protéger",
+    "box": [
+     0.11,
+     0.1306,
+     0.1617,
+     0.1481
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "qn/qc",
+    "clean": "qn",
+    "box": [
+     0.1658,
+     0.1306,
+     0.1992,
+     0.1475
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[proteze]",
+    "clean": "proteze",
+    "box": [
+     0.2025,
+     0.13,
+     0.2625,
+     0.1475
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "jdn./etw. schützen",
+  "box": [
+   0.285,
+   0.1306,
+   0.4083,
+   0.1456
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "jdn./etw.",
+    "clean": "jdn",
+    "box": [
+     0.29,
+     0.1306,
+     0.3458,
+     0.1456
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "schützen",
+    "clean": "schützen",
+    "box": [
+     0.35,
+     0.1306,
+     0.4025,
+     0.1456
+    ],
+    "confidence": 0.99
+   }
+  ]
+ },
+ {
+  "text": "paraitre",
+  "box": [
+   0.9583,
+   0.1225,
+   0.9992,
+   0.1519
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "paraitre",
+    "clean": "paraitre",
+    "box": [
+     0.9625,
+     0.1225,
+     0.9992,
+     0.1494
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "protéger wird konjugiert wie manger.",
+  "box": [
+   0.1092,
+   0.1512,
+   0.3475,
+   0.1725
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "protéger",
+    "clean": "protéger",
+    "box": [
+     0.1158,
+     0.1531,
+     0.1692,
+     0.1719
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "wird",
+    "clean": "wird",
+    "box": [
+     0.1692,
+     0.1525,
+     0.1983,
+     0.1713
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "konjugiert",
+    "clean": "konjugiert",
+    "box": [
+     0.1983,
+     0.1519,
+     0.2642,
+     0.1713
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "wie",
+    "clean": "wie",
+    "box": [
+     0.265,
+     0.1512,
+     0.2892,
+     0.1706
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "manger.",
+    "clean": "manger",
+    "box": [
+     0.2942,
+     0.1512,
+     0.3475,
+     0.17
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "parait",
+  "box": [
+   0.9633,
+   0.1481,
+   0.9992,
+   0.1737
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "parait",
+    "clean": "parait",
+    "box": [
+     0.9667,
+     0.1481,
+     0.9975,
+     0.1719
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "nous p",
+  "box": [
+   0.9617,
+   0.1638,
+   0.9992,
+   0.1881
+  ],
+  "confidence": 0.989,
+  "words": [
+   {
+    "text": "nous",
+    "clean": "nous",
+    "box": [
+     0.9625,
+     0.1663,
+     0.99,
+     0.1875
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "p",
+    "clean": "p",
+    "box": [
+     0.9908,
+     0.1638,
+     0.9975,
+     0.1787
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "jai paru",
+  "box": [
+   0.9617,
+   0.1787,
+   0.9992,
+   0.2031
+  ],
+  "confidence": 0.906,
+  "words": [
+   {
+    "text": "jai",
+    "clean": "jai",
+    "box": [
+     0.9633,
+     0.1844,
+     0.9825,
+     0.2025
+    ],
+    "confidence": 0.983
+   },
+   {
+    "text": "paru",
+    "clean": "paru",
+    "box": [
+     0.9792,
+     0.1787,
+     0.9992,
+     0.1975
+    ],
+    "confidence": 0.998
+   }
+  ]
+ },
+ {
+  "text": "englisch: to protect",
+  "box": [
+   0.5192,
+   0.2044,
+   0.6567,
+   0.2244
+  ],
+  "confidence": 0.978,
+  "words": [
+   {
+    "text": "englisch:",
+    "clean": "englisch",
+    "box": [
+     0.525,
+     0.2044,
+     0.5842,
+     0.2225
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "to",
+    "clean": "to",
+    "box": [
+     0.5892,
+     0.2056,
+     0.5992,
+     0.2225
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "protect",
+    "clean": "protect",
+    "box": [
+     0.6042,
+     0.2062,
+     0.6558,
+     0.2238
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "je parai",
+  "box": [
+   0.9592,
+   0.1925,
+   0.9992,
+   0.22
+  ],
+  "confidence": 0.99,
+  "words": [
+   {
+    "text": "je",
+    "clean": "je",
+    "box": [
+     0.96,
+     0.2013,
+     0.9792,
+     0.2194
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "parai",
+    "clean": "parai",
+    "box": [
+     0.9733,
+     0.1925,
+     0.9992,
+     0.2144
+    ],
+    "confidence": 0.998
+   }
+  ]
+ },
+ {
+  "text": "un mineur/une mineure",
+  "box": [
+   0.0992,
+   0.2188,
+   0.2533,
+   0.2362
+  ],
+  "confidence": 0.999,
+  "words": [
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.1042,
+     0.2188,
+     0.1192,
+     0.235
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "mineur/une",
+    "clean": "mineur",
+    "box": [
+     0.1258,
+     0.2188,
+     0.195,
+     0.2356
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "mineure",
+    "clean": "mineure",
+    "box": [
+     0.1983,
+     0.2194,
+     0.2492,
+     0.2356
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "ein Minderjähriger/eine",
+  "box": [
+   0.2808,
+   0.2188,
+   0.44,
+   0.2387
+  ],
+  "confidence": 0.999,
+  "words": [
+   {
+    "text": "ein",
+    "clean": "ein",
+    "box": [
+     0.2867,
+     0.2188,
+     0.305,
+     0.2356
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Minderjähriger/eine",
+    "clean": "Minderjähriger",
+    "box": [
+     0.3125,
+     0.2194,
+     0.435,
+     0.2381
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "La loi protège les mineurs.",
+  "box": [
+   0.5167,
+   0.2231,
+   0.7008,
+   0.2456
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "La",
+    "clean": "La",
+    "box": [
+     0.5225,
+     0.2231,
+     0.5383,
+     0.24
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "loi",
+    "clean": "loi",
+    "box": [
+     0.5408,
+     0.2238,
+     0.5608,
+     0.2412
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "protège",
+    "clean": "protège",
+    "box": [
+     0.5633,
+     0.2244,
+     0.6133,
+     0.2425
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "les",
+    "clean": "les",
+    "box": [
+     0.6167,
+     0.2256,
+     0.6358,
+     0.2431
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "mineurs.",
+    "clean": "mineurs",
+    "box": [
+     0.6425,
+     0.2269,
+     0.7008,
+     0.2456
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "[ēminαR/YnminαR]",
+  "box": [
+   0.1,
+   0.2319,
+   0.2258,
+   0.25
+  ],
+  "confidence": 0.864,
+  "words": [
+   {
+    "text": "[ēminαR/YnminαR]",
+    "clean": "ēminαR",
+    "box": [
+     0.1017,
+     0.2319,
+     0.2258,
+     0.25
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Minderjährige",
+  "box": [
+   0.28,
+   0.2325,
+   0.3775,
+   0.2525
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "Minderjährige",
+    "clean": "Minderjährige",
+    "box": [
+     0.2858,
+     0.2325,
+     0.375,
+     0.2519
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Das Gesetz schützt die Minderjährigen.",
+  "box": [
+   0.5167,
+   0.2375,
+   0.7817,
+   0.2625
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "Das",
+    "clean": "Das",
+    "box": [
+     0.5217,
+     0.2375,
+     0.5483,
+     0.2544
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Gesetz",
+    "clean": "Gesetz",
+    "box": [
+     0.5508,
+     0.2381,
+     0.5958,
+     0.2562
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "schützt",
+    "clean": "schützt",
+    "box": [
+     0.5975,
+     0.24,
+     0.65,
+     0.2581
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "die",
+    "clean": "die",
+    "box": [
+     0.6517,
+     0.2419,
+     0.6717,
+     0.2587
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Minderjährigen.",
+    "clean": "Minderjährigen",
+    "box": [
+     0.6775,
+     0.2425,
+     0.7817,
+     0.2625
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "B7",
+  "box": [
+   0.0625,
+   0.2487,
+   0.0992,
+   0.2675
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "B7",
+    "clean": "B",
+    "box": [
+     0.0708,
+     0.2487,
+     0.0958,
+     0.2675
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "défendre qn/qc [defādR]",
+  "box": [
+   0.0933,
+   0.2494,
+   0.2567,
+   0.2694
+  ],
+  "confidence": 0.963,
+  "words": [
+   {
+    "text": "défendre",
+    "clean": "défendre",
+    "box": [
+     0.1033,
+     0.2494,
+     0.1567,
+     0.2675
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "qn/qc",
+    "clean": "qn",
+    "box": [
+     0.1608,
+     0.25,
+     0.1958,
+     0.2681
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "[defādR]",
+    "clean": "defādR",
+    "box": [
+     0.2033,
+     0.2506,
+     0.2567,
+     0.2694
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "jdn./etw. verteidigen",
+  "box": [
+   0.2783,
+   0.2519,
+   0.4192,
+   0.2712
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "jdn./etw.",
+    "clean": "jdn",
+    "box": [
+     0.2842,
+     0.2519,
+     0.34,
+     0.2694
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "verteidigen",
+    "clean": "verteidigen",
+    "box": [
+     0.3442,
+     0.2525,
+     0.415,
+     0.2706
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "défendre ses idées = seine Ansichten vertreten",
+  "box": [
+   0.5158,
+   0.2569,
+   0.8308,
+   0.2831
+  ],
+  "confidence": 0.994,
+  "words": [
+   {
+    "text": "défendre",
+    "clean": "défendre",
+    "box": [
+     0.5208,
+     0.2569,
+     0.5792,
+     0.275
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ses",
+    "clean": "ses",
+    "box": [
+     0.5867,
+     0.2587,
+     0.605,
+     0.2756
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "idées",
+    "clean": "idées",
+    "box": [
+     0.6083,
+     0.2594,
+     0.645,
+     0.2769
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "=",
+    "clean": "",
+    "box": [
+     0.6483,
+     0.2606,
+     0.6558,
+     0.2775
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "seine",
+    "clean": "seine",
+    "box": [
+     0.6592,
+     0.2612,
+     0.6958,
+     0.2787
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Ansichten",
+    "clean": "Ansichten",
+    "box": [
+     0.7025,
+     0.2625,
+     0.7642,
+     0.2806
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "vertreten",
+    "clean": "vertreten",
+    "box": [
+     0.7675,
+     0.2644,
+     0.83,
+     0.2825
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "AUF",
+  "box": [
+   0.9592,
+   0.25,
+   0.9992,
+   0.2762
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "AUF",
+    "clean": "AUF",
+    "box": [
+     0.9633,
+     0.2512,
+     0.9933,
+     0.275
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "une objection [ynobzeksj5]",
+  "box": [
+   0.0975,
+   0.2719,
+   0.2683,
+   0.2925
+  ],
+  "confidence": 0.982,
+  "words": [
+   {
+    "text": "une",
+    "clean": "une",
+    "box": [
+     0.1033,
+     0.2719,
+     0.1267,
+     0.2894
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "objection",
+    "clean": "objection",
+    "box": [
+     0.1308,
+     0.2719,
+     0.185,
+     0.2906
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[ynobzeksj5]",
+    "clean": "ynobzeksj",
+    "box": [
+     0.1892,
+     0.2731,
+     0.2658,
+     0.2919
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "ein Einwand",
+  "box": [
+   0.2783,
+   0.2744,
+   0.3642,
+   0.2931
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "ein",
+    "clean": "ein",
+    "box": [
+     0.2842,
+     0.2744,
+     0.3025,
+     0.2913
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Einwand",
+    "clean": "Einwand",
+    "box": [
+     0.3067,
+     0.275,
+     0.3625,
+     0.2925
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "111",
+  "box": [
+   0.4067,
+   0.2762,
+   0.435,
+   0.2906
+  ],
+  "confidence": 0.963,
+  "words": [
+   {
+    "text": "111",
+    "clean": "",
+    "box": [
+     0.4067,
+     0.2762,
+     0.435,
+     0.2906
+    ],
+    "confidence": 0.906
+   }
+  ]
+ },
+ {
+  "text": "faire des objections = Einwände machen",
+  "box": [
+   0.5133,
+   0.28,
+   0.7883,
+   0.3044
+  ],
+  "confidence": 0.978,
+  "words": [
+   {
+    "text": "faire",
+    "clean": "faire",
+    "box": [
+     0.5183,
+     0.28,
+     0.5517,
+     0.2969
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "des",
+    "clean": "des",
+    "box": [
+     0.5542,
+     0.2806,
+     0.5775,
+     0.2981
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "objections",
+    "clean": "objections",
+    "box": [
+     0.58,
+     0.2819,
+     0.65,
+     0.3
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "=",
+    "clean": "",
+    "box": [
+     0.6525,
+     0.2838,
+     0.6608,
+     0.3
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Einwände",
+    "clean": "Einwände",
+    "box": [
+     0.6633,
+     0.2844,
+     0.7292,
+     0.3025
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "machen",
+    "clean": "machen",
+    "box": [
+     0.7358,
+     0.2863,
+     0.7875,
+     0.3038
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Obligati",
+  "box": [
+   0.95,
+   0.275,
+   0.9992,
+   0.3044
+  ],
+  "confidence": 0.999,
+  "words": [
+   {
+    "text": "Obligati",
+    "clean": "Obligati",
+    "box": [
+     0.9583,
+     0.275,
+     0.9992,
+     0.3025
+    ],
+    "confidence": 0.998
+   }
+  ]
+ },
+ {
+  "text": "d'un côté, ..., de l’autre, ... einerseits ... , andererseits",
+  "box": [
+   0.0967,
+   0.2938,
+   0.4567,
+   0.3175
+  ],
+  "confidence": 0.951,
+  "words": [
+   {
+    "text": "d'un",
+    "clean": "d'un",
+    "box": [
+     0.1025,
+     0.2938,
+     0.1275,
+     0.3106
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "côté,",
+    "clean": "côté",
+    "box": [
+     0.1308,
+     0.2944,
+     0.16,
+     0.3113
+    ],
+    "confidence": 0.948
+   },
+   {
+    "text": "...,",
+    "clean": "",
+    "box": [
+     0.1642,
+     0.295,
+     0.1892,
+     0.3119
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "de",
+    "clean": "de",
+    "box": [
+     0.1883,
+     0.2956,
+     0.2033,
+     0.3119
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "l’autre,",
+    "clean": "l’autre",
+    "box": [
+     0.2067,
+     0.2956,
+     0.2508,
+     0.3131
+    ],
+    "confidence": 0.795
+   },
+   {
+    "text": "...",
+    "clean": "",
+    "box": [
+     0.2542,
+     0.2969,
+     0.2758,
+     0.3131
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "einerseits",
+    "clean": "einerseits",
+    "box": [
+     0.2825,
+     0.2975,
+     0.3442,
+     0.315
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "...",
+    "clean": "",
+    "box": [
+     0.3442,
+     0.2988,
+     0.3658,
+     0.315
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": ",",
+    "clean": "",
+    "box": [
+     0.3658,
+     0.2994,
+     0.3733,
+     0.3156
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "andererseits",
+    "clean": "andererseits",
+    "box": [
+     0.3733,
+     0.2994,
+     0.4533,
+     0.3169
+    ],
+    "confidence": 0.995
+   }
+  ]
+ },
+ {
+  "text": "[dēkote ... delotR]",
+  "box": [
+   0.0967,
+   0.3075,
+   0.2117,
+   0.3269
+  ],
+  "confidence": 0.936,
+  "words": [
+   {
+    "text": "[dēkote",
+    "clean": "dēkote",
+    "box": [
+     0.0983,
+     0.3075,
+     0.1442,
+     0.325
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "...",
+    "clean": "",
+    "box": [
+     0.1433,
+     0.3081,
+     0.17,
+     0.3256
+    ],
+    "confidence": 0.993
+   },
+   {
+    "text": "delotR]",
+    "clean": "delotR",
+    "box": [
+     0.17,
+     0.3088,
+     0.2108,
+     0.3269
+    ],
+    "confidence": 0.411
+   }
+  ]
+ },
+ {
+  "text": "D'un côté, tu as raison, de l'autre, ce n'est pas aussi",
+  "box": [
+   0.5125,
+   0.3025,
+   0.8542,
+   0.3306
+  ],
+  "confidence": 0.977,
+  "words": [
+   {
+    "text": "D'un",
+    "clean": "D'un",
+    "box": [
+     0.5183,
+     0.3025,
+     0.5492,
+     0.32
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "côté,",
+    "clean": "côté",
+    "box": [
+     0.5517,
+     0.3038,
+     0.5867,
+     0.3212
+    ],
+    "confidence": 0.967
+   },
+   {
+    "text": "tu",
+    "clean": "tu",
+    "box": [
+     0.5858,
+     0.3044,
+     0.6017,
+     0.3219
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "as",
+    "clean": "as",
+    "box": [
+     0.605,
+     0.305,
+     0.6208,
+     0.3225
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "raison,",
+    "clean": "raison",
+    "box": [
+     0.6233,
+     0.3056,
+     0.67,
+     0.3244
+    ],
+    "confidence": 0.992
+   },
+   {
+    "text": "de",
+    "clean": "de",
+    "box": [
+     0.6725,
+     0.3075,
+     0.6883,
+     0.325
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "l'autre,",
+    "clean": "l'autre",
+    "box": [
+     0.6917,
+     0.3081,
+     0.7417,
+     0.3269
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "ce",
+    "clean": "ce",
+    "box": [
+     0.74,
+     0.31,
+     0.7567,
+     0.3269
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "n'est",
+    "clean": "n'est",
+    "box": [
+     0.7592,
+     0.3106,
+     0.7942,
+     0.3281
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "pas",
+    "clean": "pas",
+    "box": [
+     0.7967,
+     0.3119,
+     0.8167,
+     0.3294
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "aussi",
+    "clean": "aussi",
+    "box": [
+     0.8192,
+     0.3125,
+     0.8542,
+     0.3306
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "devoir fai",
+  "box": [
+   0.9483,
+   0.3031,
+   0.9992,
+   0.33
+  ],
+  "confidence": 0.989,
+  "words": [
+   {
+    "text": "devoir",
+    "clean": "devoir",
+    "box": [
+     0.9508,
+     0.3056,
+     0.9833,
+     0.33
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "fai",
+    "clean": "fai",
+    "box": [
+     0.99,
+     0.3031,
+     0.9992,
+     0.3244
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "simple que ça.",
+  "box": [
+   0.5117,
+   0.3175,
+   0.615,
+   0.3375
+  ],
+  "confidence": 0.975,
+  "words": [
+   {
+    "text": "simple",
+    "clean": "simple",
+    "box": [
+     0.5167,
+     0.3175,
+     0.5633,
+     0.3356
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "que",
+    "clean": "que",
+    "box": [
+     0.5658,
+     0.3187,
+     0.59,
+     0.3362
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ça.",
+    "clean": "ça",
+    "box": [
+     0.5917,
+     0.3194,
+     0.615,
+     0.3375
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Einerseits hast du recht, andererseits ist es nicht ganz",
+  "box": [
+   0.51,
+   0.33,
+   0.8675,
+   0.36
+  ],
+  "confidence": 0.992,
+  "words": [
+   {
+    "text": "Einerseits",
+    "clean": "Einerseits",
+    "box": [
+     0.5167,
+     0.33,
+     0.5808,
+     0.35
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "hast",
+    "clean": "hast",
+    "box": [
+     0.585,
+     0.3325,
+     0.6133,
+     0.3513
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "du",
+    "clean": "du",
+    "box": [
+     0.6175,
+     0.3331,
+     0.6333,
+     0.3519
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "recht,",
+    "clean": "recht",
+    "box": [
+     0.6375,
+     0.3337,
+     0.6783,
+     0.3531
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "andererseits",
+    "clean": "andererseits",
+    "box": [
+     0.6783,
+     0.335,
+     0.7592,
+     0.3563
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ist",
+    "clean": "ist",
+    "box": [
+     0.7633,
+     0.3381,
+     0.7792,
+     0.3569
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "es",
+    "clean": "es",
+    "box": [
+     0.7833,
+     0.3387,
+     0.795,
+     0.3575
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "nicht",
+    "clean": "nicht",
+    "box": [
+     0.8,
+     0.3394,
+     0.8317,
+     0.3588
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ganz",
+    "clean": "ganz",
+    "box": [
+     0.8358,
+     0.3406,
+     0.8675,
+     0.36
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "être oblige",
+  "box": [
+   0.9483,
+   0.32,
+   0.9992,
+   0.3444
+  ],
+  "confidence": 0.94,
+  "words": [
+   {
+    "text": "être",
+    "clean": "être",
+    "box": [
+     0.9517,
+     0.3231,
+     0.9708,
+     0.3438
+    ],
+    "confidence": 0.605
+   },
+   {
+    "text": "oblige",
+    "clean": "oblige",
+    "box": [
+     0.9767,
+     0.3194,
+     1.0,
+     0.3406
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "so einfach.",
+  "box": [
+   0.5092,
+   0.345,
+   0.5883,
+   0.3638
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "so",
+    "clean": "so",
+    "box": [
+     0.5142,
+     0.345,
+     0.53,
+     0.3619
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "einfach.",
+    "clean": "einfach",
+    "box": [
+     0.5333,
+     0.345,
+     0.5883,
+     0.3638
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "être force",
+  "box": [
+   0.9475,
+   0.3356,
+   0.9992,
+   0.3581
+  ],
+  "confidence": 0.959,
+  "words": [
+   {
+    "text": "être",
+    "clean": "être",
+    "box": [
+     0.95,
+     0.3375,
+     0.9733,
+     0.3575
+    ],
+    "confidence": 0.952
+   },
+   {
+    "text": "force",
+    "clean": "force",
+    "box": [
+     0.9742,
+     0.3356,
+     0.9992,
+     0.3556
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "par contre [parkõtR]",
+  "box": [
+   0.0933,
+   0.3513,
+   0.2283,
+   0.3731
+  ],
+  "confidence": 0.954,
+  "words": [
+   {
+    "text": "par",
+    "clean": "par",
+    "box": [
+     0.1,
+     0.3513,
+     0.12,
+     0.37
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "contre",
+    "clean": "contre",
+    "box": [
+     0.125,
+     0.3519,
+     0.1617,
+     0.3713
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[parkõtR]",
+    "clean": "parkõtR",
+    "box": [
+     0.1667,
+     0.3525,
+     0.2283,
+     0.3731
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "hingegen; dagegen",
+  "box": [
+   0.275,
+   0.3563,
+   0.4075,
+   0.3787
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "hingegen;",
+    "clean": "hingegen",
+    "box": [
+     0.2808,
+     0.3563,
+     0.3483,
+     0.3762
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dagegen",
+    "clean": "dagegen",
+    "box": [
+     0.3467,
+     0.3588,
+     0.4025,
+     0.3781
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Moi, par contre, je trouve que les adolescents peuvent",
+  "box": [
+   0.5092,
+   0.3631,
+   0.8675,
+   0.3925
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "Moi,",
+    "clean": "Moi",
+    "box": [
+     0.5158,
+     0.3631,
+     0.5483,
+     0.3819
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "par",
+    "clean": "par",
+    "box": [
+     0.5475,
+     0.3638,
+     0.5725,
+     0.3831
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "contre,",
+    "clean": "contre",
+    "box": [
+     0.5725,
+     0.365,
+     0.6208,
+     0.3844
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "je",
+    "clean": "je",
+    "box": [
+     0.6208,
+     0.3663,
+     0.6333,
+     0.385
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "trouve",
+    "clean": "trouve",
+    "box": [
+     0.6367,
+     0.3669,
+     0.6775,
+     0.3862
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "que",
+    "clean": "que",
+    "box": [
+     0.6858,
+     0.3681,
+     0.7058,
+     0.3869
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "les",
+    "clean": "les",
+    "box": [
+     0.71,
+     0.3694,
+     0.73,
+     0.3881
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "adolescents",
+    "clean": "adolescents",
+    "box": [
+     0.7342,
+     0.37,
+     0.8108,
+     0.3906
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "peuvent",
+    "clean": "peuvent",
+    "box": [
+     0.815,
+     0.3725,
+     0.8675,
+     0.3925
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "interdire à",
+  "box": [
+   0.945,
+   0.3663,
+   0.9992,
+   0.3862
+  ],
+  "confidence": 0.982,
+  "words": [
+   {
+    "text": "interdire",
+    "clean": "interdire",
+    "box": [
+     0.945,
+     0.3663,
+     0.9875,
+     0.3862
+    ],
+    "confidence": 0.983
+   },
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.995,
+     0.3663,
+     0.9992,
+     0.3837
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "décider eux-mêmes.",
+  "box": [
+   0.5083,
+   0.3775,
+   0.6483,
+   0.3981
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "décider",
+    "clean": "décider",
+    "box": [
+     0.5133,
+     0.3775,
+     0.565,
+     0.395
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "eux-mêmes.",
+    "clean": "eux-mêmes",
+    "box": [
+     0.5633,
+     0.3787,
+     0.6483,
+     0.3981
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "obliger qn",
+  "box": [
+   0.9433,
+   0.3812,
+   0.9992,
+   0.4031
+  ],
+  "confidence": 0.958,
+  "words": [
+   {
+    "text": "obliger",
+    "clean": "obliger",
+    "box": [
+     0.9467,
+     0.3819,
+     0.9817,
+     0.4025
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "qn",
+    "clean": "qn",
+    "box": [
+     0.9858,
+     0.3812,
+     0.995,
+     0.4006
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Ich finde dagegen, dass die Jugendlichen selbst",
+  "box": [
+   0.5067,
+   0.3906,
+   0.8233,
+   0.4181
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "Ich",
+    "clean": "Ich",
+    "box": [
+     0.5133,
+     0.3906,
+     0.5333,
+     0.4094
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "finde",
+    "clean": "finde",
+    "box": [
+     0.5375,
+     0.3912,
+     0.57,
+     0.41
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dagegen,",
+    "clean": "dagegen",
+    "box": [
+     0.5733,
+     0.3925,
+     0.6383,
+     0.4125
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dass",
+    "clean": "dass",
+    "box": [
+     0.6383,
+     0.3944,
+     0.6667,
+     0.4131
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "die",
+    "clean": "die",
+    "box": [
+     0.6708,
+     0.395,
+     0.6908,
+     0.4138
+    ],
+    "confidence": 0.987
+   },
+   {
+    "text": "Jugendlichen",
+    "clean": "Jugendlichen",
+    "box": [
+     0.695,
+     0.3956,
+     0.78,
+     0.4163
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "selbst",
+    "clean": "selbst",
+    "box": [
+     0.7842,
+     0.3987,
+     0.8233,
+     0.4181
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "un accord [ēnakəR]",
+  "box": [
+   0.0917,
+   0.4081,
+   0.2167,
+   0.4306
+  ],
+  "confidence": 0.944,
+  "words": [
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.0983,
+     0.4081,
+     0.1142,
+     0.4275
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "accord",
+    "clean": "accord",
+    "box": [
+     0.115,
+     0.4088,
+     0.1558,
+     0.4288
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[ēnakəR]",
+    "clean": "ēnakəR",
+    "box": [
+     0.1608,
+     0.41,
+     0.2167,
+     0.4306
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "entscheiden können.",
+  "box": [
+   0.5067,
+   0.405,
+   0.65,
+   0.4256
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "entscheiden",
+    "clean": "entscheiden",
+    "box": [
+     0.5117,
+     0.405,
+     0.5892,
+     0.4231
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "können.",
+    "clean": "können",
+    "box": [
+     0.595,
+     0.4075,
+     0.65,
+     0.4256
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "eine Übereinkunft",
+  "box": [
+   0.2733,
+   0.4144,
+   0.3967,
+   0.4356
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "eine",
+    "clean": "eine",
+    "box": [
+     0.2792,
+     0.4144,
+     0.3058,
+     0.4319
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Übereinkunft",
+    "clean": "Übereinkunft",
+    "box": [
+     0.3092,
+     0.4156,
+     0.3958,
+     0.435
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Il faut trouver un accord.",
+  "box": [
+   0.505,
+   0.4231,
+   0.6725,
+   0.445
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "Il",
+    "clean": "Il",
+    "box": [
+     0.5067,
+     0.4231,
+     0.5225,
+     0.4394
+    ],
+    "confidence": 0.896
+   },
+   {
+    "text": "faut",
+    "clean": "faut",
+    "box": [
+     0.525,
+     0.4238,
+     0.5517,
+     0.4406
+    ],
+    "confidence": 0.994
+   },
+   {
+    "text": "trouver",
+    "clean": "trouver",
+    "box": [
+     0.5533,
+     0.4244,
+     0.6017,
+     0.4425
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.6042,
+     0.4263,
+     0.62,
+     0.4431
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "accord.",
+    "clean": "accord",
+    "box": [
+     0.6258,
+     0.4269,
+     0.6725,
+     0.445
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "étre libre de",
+  "box": [
+   0.9425,
+   0.42,
+   0.9992,
+   0.4375
+  ],
+  "confidence": 0.962,
+  "words": [
+   {
+    "text": "étre",
+    "clean": "étre",
+    "box": [
+     0.9425,
+     0.42,
+     0.9625,
+     0.4375
+    ],
+    "confidence": 0.539
+   },
+   {
+    "text": "libre",
+    "clean": "libre",
+    "box": [
+     0.9642,
+     0.42,
+     0.99,
+     0.4375
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "de",
+    "clean": "de",
+    "box": [
+     0.9917,
+     0.42,
+     0.9992,
+     0.4375
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Wir müssen uns einig werden.",
+  "box": [
+   0.505,
+   0.4369,
+   0.7058,
+   0.4594
+  ],
+  "confidence": 0.976,
+  "words": [
+   {
+    "text": "Wir",
+    "clean": "Wir",
+    "box": [
+     0.5133,
+     0.4369,
+     0.5358,
+     0.4537
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "müssen",
+    "clean": "müssen",
+    "box": [
+     0.5392,
+     0.4375,
+     0.5825,
+     0.455
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "uns",
+    "clean": "uns",
+    "box": [
+     0.5892,
+     0.4394,
+     0.6117,
+     0.4562
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "einig",
+    "clean": "einig",
+    "box": [
+     0.6142,
+     0.44,
+     0.6475,
+     0.4575
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "werden.",
+    "clean": "werden",
+    "box": [
+     0.65,
+     0.4412,
+     0.705,
+     0.4587
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "avoir le droit",
+  "box": [
+   0.9408,
+   0.435,
+   0.9992,
+   0.4525
+  ],
+  "confidence": 0.992,
+  "words": [
+   {
+    "text": "avoir",
+    "clean": "avoir",
+    "box": [
+     0.9408,
+     0.435,
+     0.9642,
+     0.4525
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "le",
+    "clean": "le",
+    "box": [
+     0.9717,
+     0.435,
+     0.9792,
+     0.4525
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "droit",
+    "clean": "droit",
+    "box": [
+     0.9833,
+     0.435,
+     0.9992,
+     0.4525
+    ],
+    "confidence": 0.996
+   }
+  ]
+ },
+ {
+  "text": "B8 à fond [af5]",
+  "box": [
+   0.0525,
+   0.4481,
+   0.1733,
+   0.475
+  ],
+  "confidence": 0.956,
+  "words": [
+   {
+    "text": "B8",
+    "clean": "B",
+    "box": [
+     0.0633,
+     0.4481,
+     0.0875,
+     0.4706
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.0967,
+     0.45,
+     0.1058,
+     0.4713
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "fond",
+    "clean": "fond",
+    "box": [
+     0.1058,
+     0.4506,
+     0.1342,
+     0.4731
+    ],
+    "confidence": 0.515
+   },
+   {
+    "text": "[af5]",
+    "clean": "af",
+    "box": [
+     0.1392,
+     0.4519,
+     0.1733,
+     0.475
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "→ être d'accord (einverstanden sein)",
+  "box": [
+   0.5058,
+   0.4506,
+   0.7492,
+   0.4744
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "→",
+    "clean": "",
+    "box": [
+     0.5117,
+     0.4506,
+     0.5183,
+     0.4669
+    ],
+    "confidence": 0.993
+   },
+   {
+    "text": "être",
+    "clean": "être",
+    "box": [
+     0.5292,
+     0.4512,
+     0.555,
+     0.4681
+    ],
+    "confidence": 0.906
+   },
+   {
+    "text": "d'accord",
+    "clean": "d'accord",
+    "box": [
+     0.5583,
+     0.4519,
+     0.6092,
+     0.47
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "(einverstanden",
+    "clean": "einverstanden",
+    "box": [
+     0.6125,
+     0.4537,
+     0.71,
+     0.4731
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "sein)",
+    "clean": "sein",
+    "box": [
+     0.7175,
+     0.4569,
+     0.7492,
+     0.4744
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "permettre à",
+  "box": [
+   0.9392,
+   0.4487,
+   0.9992,
+   0.4675
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "permettre",
+    "clean": "permettre",
+    "box": [
+     0.9417,
+     0.4487,
+     0.9908,
+     0.4669
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.9925,
+     0.4494,
+     0.9983,
+     0.4669
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "hier: voll und ganz (ugs.);",
+  "box": [
+   0.2717,
+   0.46,
+   0.4375,
+   0.4831
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "hier:",
+    "clean": "hier",
+    "box": [
+     0.2775,
+     0.46,
+     0.3083,
+     0.4781
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "voll",
+    "clean": "voll",
+    "box": [
+     0.3067,
+     0.4612,
+     0.3342,
+     0.4788
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "und",
+    "clean": "und",
+    "box": [
+     0.3333,
+     0.4619,
+     0.3608,
+     0.48
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ganz",
+    "clean": "ganz",
+    "box": [
+     0.3633,
+     0.4631,
+     0.3942,
+     0.4813
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(ugs.);",
+    "clean": "ugs",
+    "box": [
+     0.3933,
+     0.4644,
+     0.4375,
+     0.4831
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "laisser le choi",
+  "box": [
+   0.9383,
+   0.4619,
+   0.9992,
+   0.4838
+  ],
+  "confidence": 0.891,
+  "words": [
+   {
+    "text": "laisser",
+    "clean": "laisser",
+    "box": [
+     0.9375,
+     0.4619,
+     0.9725,
+     0.4825
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "le",
+    "clean": "le",
+    "box": [
+     0.975,
+     0.4637,
+     0.985,
+     0.4831
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "choi",
+    "clean": "choi",
+    "box": [
+     1.0,
+     0.465,
+     1.0,
+     0.4906
+    ],
+    "confidence": 0.979
+   }
+  ]
+ },
+ {
+  "text": "gründlich",
+  "box": [
+   0.2708,
+   0.4738,
+   0.3408,
+   0.4919
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "gründlich",
+    "clean": "gründlich",
+    "box": [
+     0.2767,
+     0.4738,
+     0.3367,
+     0.4913
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Elle connaît cette histoire à fond.",
+  "box": [
+   0.5042,
+   0.4681,
+   0.7242,
+   0.4919
+  ],
+  "confidence": 0.995,
+  "words": [
+   {
+    "text": "Elle",
+    "clean": "Elle",
+    "box": [
+     0.51,
+     0.4681,
+     0.5308,
+     0.485
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "connaît",
+    "clean": "connaît",
+    "box": [
+     0.535,
+     0.4688,
+     0.5858,
+     0.4869
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "cette",
+    "clean": "cette",
+    "box": [
+     0.5892,
+     0.4706,
+     0.6183,
+     0.4881
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "histoire",
+    "clean": "histoire",
+    "box": [
+     0.6217,
+     0.4719,
+     0.6725,
+     0.49
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.6758,
+     0.4738,
+     0.6833,
+     0.49
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "fond.",
+    "clean": "fond",
+    "box": [
+     0.6867,
+     0.4738,
+     0.7233,
+     0.4913
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "un vieillard (péj.) [ēvjęjaR]",
+  "box": [
+   0.0892,
+   0.4838,
+   0.2558,
+   0.5075
+  ],
+  "confidence": 0.937,
+  "words": [
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.095,
+     0.4838,
+     0.1092,
+     0.5006
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "vieillard",
+    "clean": "vieillard",
+    "box": [
+     0.1125,
+     0.4844,
+     0.1633,
+     0.5031
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(péj.)",
+    "clean": "péj",
+    "box": [
+     0.1667,
+     0.4869,
+     0.2,
+     0.5044
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "[ēvjęjaR]",
+    "clean": "ēvjęjaR",
+    "box": [
+     0.2033,
+     0.4888,
+     0.2533,
+     0.5069
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "Sie kennt diese Geschichte in- und auswendig.",
+  "box": [
+   0.5025,
+   0.4819,
+   0.8058,
+   0.5081
+  ],
+  "confidence": 0.991,
+  "words": [
+   {
+    "text": "Sie",
+    "clean": "Sie",
+    "box": [
+     0.5075,
+     0.4819,
+     0.5267,
+     0.4988
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "kennt",
+    "clean": "kennt",
+    "box": [
+     0.5292,
+     0.4825,
+     0.57,
+     0.5
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "diese",
+    "clean": "diese",
+    "box": [
+     0.5725,
+     0.4838,
+     0.6058,
+     0.5012
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Geschichte",
+    "clean": "Geschichte",
+    "box": [
+     0.6092,
+     0.485,
+     0.6783,
+     0.5038
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "in-",
+    "clean": "in",
+    "box": [
+     0.6817,
+     0.4875,
+     0.7,
+     0.5044
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "und",
+    "clean": "und",
+    "box": [
+     0.7033,
+     0.4881,
+     0.7292,
+     0.505
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "auswendig.",
+    "clean": "auswendig",
+    "box": [
+     0.7325,
+     0.4894,
+     0.8058,
+     0.5081
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "ein alter Mann (abwertend)",
+  "box": [
+   0.2708,
+   0.4913,
+   0.4525,
+   0.5138
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "ein",
+    "clean": "ein",
+    "box": [
+     0.2758,
+     0.4913,
+     0.2958,
+     0.5081
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "alter",
+    "clean": "alter",
+    "box": [
+     0.2975,
+     0.4919,
+     0.3317,
+     0.5094
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Mann",
+    "clean": "Mann",
+    "box": [
+     0.3342,
+     0.4931,
+     0.3683,
+     0.5106
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(abwertend)",
+    "clean": "abwertend",
+    "box": [
+     0.37,
+     0.4944,
+     0.4525,
+     0.5138
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "→ vieux, vieil, vieille (alt)",
+  "box": [
+   0.5025,
+   0.4994,
+   0.6692,
+   0.5219
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "→",
+    "clean": "",
+    "box": [
+     0.5075,
+     0.4994,
+     0.5142,
+     0.5162
+    ],
+    "confidence": 0.99
+   },
+   {
+    "text": "vieux,",
+    "clean": "vieux",
+    "box": [
+     0.5225,
+     0.5,
+     0.5633,
+     0.5181
+    ],
+    "confidence": 0.953
+   },
+   {
+    "text": "vieil,",
+    "clean": "vieil",
+    "box": [
+     0.5642,
+     0.5012,
+     0.5967,
+     0.5194
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "vieille",
+    "clean": "vieille",
+    "box": [
+     0.5975,
+     0.5025,
+     0.6375,
+     0.5206
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(alt)",
+    "clean": "alt",
+    "box": [
+     0.6383,
+     0.5038,
+     0.6675,
+     0.5212
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "finir par trouve",
+  "box": [
+   0.9317,
+   0.4981,
+   0.9992,
+   0.5262
+  ],
+  "confidence": 0.949,
+  "words": [
+   {
+    "text": "finir",
+    "clean": "finir",
+    "box": [
+     0.9317,
+     0.4981,
+     0.9625,
+     0.5212
+    ],
+    "confidence": 0.993
+   },
+   {
+    "text": "par",
+    "clean": "par",
+    "box": [
+     0.9633,
+     0.5019,
+     0.9792,
+     0.5238
+    ],
+    "confidence": 0.746
+   },
+   {
+    "text": "trouve",
+    "clean": "trouve",
+    "box": [
+     1.0,
+     0.5062,
+     1.0,
+     0.5381
+    ],
+    "confidence": 0.706
+   }
+  ]
+ },
+ {
+  "text": "convenir",
+  "box": [
+   0.9308,
+   0.5138,
+   0.9792,
+   0.5363
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "convenir",
+    "clean": "convenir",
+    "box": [
+     0.9325,
+     0.5138,
+     0.9792,
+     0.5363
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "à travers [atraveR]",
+  "box": [
+   0.0892,
+   0.5387,
+   0.2108,
+   0.5625
+  ],
+  "confidence": 0.938,
+  "words": [
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.095,
+     0.5387,
+     0.1025,
+     0.5563
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "travers",
+    "clean": "travers",
+    "box": [
+     0.1067,
+     0.5394,
+     0.1475,
+     0.5587
+    ],
+    "confidence": 0.989
+   },
+   {
+    "text": "[atraveR]",
+    "clean": "atraveR",
+    "box": [
+     0.1517,
+     0.5419,
+     0.2108,
+     0.5625
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "durch",
+  "box": [
+   0.2683,
+   0.5469,
+   0.3158,
+   0.5663
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "durch",
+    "clean": "durch",
+    "box": [
+     0.2742,
+     0.5469,
+     0.3117,
+     0.5656
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Il marche à travers le village.",
+  "box": [
+   0.4983,
+   0.5563,
+   0.6875,
+   0.58
+  ],
+  "confidence": 0.984,
+  "words": [
+   {
+    "text": "Il",
+    "clean": "Il",
+    "box": [
+     0.5,
+     0.5563,
+     0.515,
+     0.5731
+    ],
+    "confidence": 0.974
+   },
+   {
+    "text": "marche",
+    "clean": "marche",
+    "box": [
+     0.5183,
+     0.5569,
+     0.5617,
+     0.5744
+    ],
+    "confidence": 0.985
+   },
+   {
+    "text": "à",
+    "clean": "à",
+    "box": [
+     0.565,
+     0.5587,
+     0.5725,
+     0.575
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "travers",
+    "clean": "travers",
+    "box": [
+     0.5758,
+     0.5587,
+     0.6233,
+     0.5769
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "le",
+    "clean": "le",
+    "box": [
+     0.6233,
+     0.5606,
+     0.6383,
+     0.5775
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "village.",
+    "clean": "village",
+    "box": [
+     0.6408,
+     0.5619,
+     0.6875,
+     0.58
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "Er geht durch das Dorf.",
+  "box": [
+   0.4983,
+   0.5694,
+   0.65,
+   0.5919
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "Er",
+    "clean": "Er",
+    "box": [
+     0.5042,
+     0.5694,
+     0.5192,
+     0.5869
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "geht",
+    "clean": "geht",
+    "box": [
+     0.5192,
+     0.57,
+     0.5483,
+     0.5875
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "durch",
+    "clean": "durch",
+    "box": [
+     0.5525,
+     0.5713,
+     0.5858,
+     0.5894
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "das",
+    "clean": "das",
+    "box": [
+     0.5933,
+     0.5725,
+     0.6117,
+     0.59
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Dorf.",
+    "clean": "Dorf",
+    "box": [
+     0.6192,
+     0.5737,
+     0.6492,
+     0.5913
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "écarter qc [ekarte]",
+  "box": [
+   0.0875,
+   0.5813,
+   0.2117,
+   0.6069
+  ],
+  "confidence": 0.99,
+  "words": [
+   {
+    "text": "écarter",
+    "clean": "écarter",
+    "box": [
+     0.0942,
+     0.5813,
+     0.14,
+     0.6025
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "qc",
+    "clean": "qc",
+    "box": [
+     0.14,
+     0.5837,
+     0.1567,
+     0.6038
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[ekarte]",
+    "clean": "ekarte",
+    "box": [
+     0.1567,
+     0.585,
+     0.2108,
+     0.6062
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "→ traverser qc (etw. überqueren)",
+  "box": [
+   0.4967,
+   0.5825,
+   0.715,
+   0.6075
+  ],
+  "confidence": 0.986,
+  "words": [
+   {
+    "text": "→",
+    "clean": "",
+    "box": [
+     0.5058,
+     0.5825,
+     0.5133,
+     0.5994
+    ],
+    "confidence": 0.988
+   },
+   {
+    "text": "traverser",
+    "clean": "traverser",
+    "box": [
+     0.5208,
+     0.5831,
+     0.5767,
+     0.6019
+    ],
+    "confidence": 0.939
+   },
+   {
+    "text": "qc",
+    "clean": "qc",
+    "box": [
+     0.5808,
+     0.5856,
+     0.5958,
+     0.6025
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(etw.",
+    "clean": "etw",
+    "box": [
+     0.5992,
+     0.5863,
+     0.6333,
+     0.6044
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "überqueren)",
+    "clean": "überqueren",
+    "box": [
+     0.6325,
+     0.5875,
+     0.715,
+     0.6075
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "AUF EINEN",
+  "box": [
+   0.9267,
+   0.5844,
+   0.9992,
+   0.6219
+  ],
+  "confidence": 0.986,
+  "words": [
+   {
+    "text": "AUF",
+    "clean": "AUF",
+    "box": [
+     0.935,
+     0.5863,
+     0.9625,
+     0.6112
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "EINEN",
+    "clean": "EINEN",
+    "box": [
+     0.9625,
+     0.5931,
+     1.0,
+     0.6225
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "hier: etw. spreizen",
+  "box": [
+   0.2675,
+   0.5913,
+   0.3892,
+   0.6119
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "hier:",
+    "clean": "hier",
+    "box": [
+     0.2733,
+     0.5913,
+     0.3025,
+     0.6081
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "etw.",
+    "clean": "etw",
+    "box": [
+     0.3058,
+     0.5925,
+     0.335,
+     0.6094
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "spreizen",
+    "clean": "spreizen",
+    "box": [
+     0.3342,
+     0.5931,
+     0.3858,
+     0.6112
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Il marche en écartant les jambes.",
+  "box": [
+   0.4958,
+   0.6,
+   0.7133,
+   0.625
+  ],
+  "confidence": 0.984,
+  "words": [
+   {
+    "text": "Il",
+    "clean": "Il",
+    "box": [
+     0.4975,
+     0.6,
+     0.5125,
+     0.6169
+    ],
+    "confidence": 0.951
+   },
+   {
+    "text": "marche",
+    "clean": "marche",
+    "box": [
+     0.5158,
+     0.6006,
+     0.5592,
+     0.6188
+    ],
+    "confidence": 0.99
+   },
+   {
+    "text": "en",
+    "clean": "en",
+    "box": [
+     0.5625,
+     0.6025,
+     0.5775,
+     0.6194
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "écartant",
+    "clean": "écartant",
+    "box": [
+     0.5842,
+     0.6031,
+     0.635,
+     0.6212
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "les",
+    "clean": "les",
+    "box": [
+     0.6383,
+     0.6056,
+     0.6575,
+     0.6225
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "jambes.",
+    "clean": "jambes",
+    "box": [
+     0.66,
+     0.6062,
+     0.7133,
+     0.625
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Exprimer son",
+  "box": [
+   0.9192,
+   0.605,
+   0.9992,
+   0.65
+  ],
+  "confidence": 0.971,
+  "words": [
+   {
+    "text": "Exprimer",
+    "clean": "Exprimer",
+    "box": [
+     0.9225,
+     0.6056,
+     0.98,
+     0.6425
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "son",
+    "clean": "son",
+    "box": [
+     0.9817,
+     0.625,
+     1.0,
+     0.6512
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "une dent [yndā]",
+  "box": [
+   0.0875,
+   0.6112,
+   0.1958,
+   0.635
+  ],
+  "confidence": 0.984,
+  "words": [
+   {
+    "text": "une",
+    "clean": "une",
+    "box": [
+     0.0933,
+     0.6112,
+     0.1175,
+     0.63
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dent",
+    "clean": "dent",
+    "box": [
+     0.12,
+     0.6131,
+     0.1492,
+     0.6319
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[yndā]",
+    "clean": "yndā",
+    "box": [
+     0.1517,
+     0.615,
+     0.1958,
+     0.635
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Er geht mit gespreizten Beinen.",
+  "box": [
+   0.495,
+   0.6131,
+   0.7025,
+   0.6381
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "Er",
+    "clean": "Er",
+    "box": [
+     0.5,
+     0.6131,
+     0.5158,
+     0.6306
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "geht",
+    "clean": "geht",
+    "box": [
+     0.515,
+     0.6138,
+     0.5458,
+     0.6319
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "mit",
+    "clean": "mit",
+    "box": [
+     0.5492,
+     0.615,
+     0.5717,
+     0.6325
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "gespreizten",
+    "clean": "gespreizten",
+    "box": [
+     0.575,
+     0.6162,
+     0.6467,
+     0.6356
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Beinen.",
+    "clean": "Beinen",
+    "box": [
+     0.6533,
+     0.6188,
+     0.7025,
+     0.6381
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "ein Zahn",
+  "box": [
+   0.2667,
+   0.6206,
+   0.3308,
+   0.6394
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "ein",
+    "clean": "ein",
+    "box": [
+     0.2717,
+     0.6206,
+     0.2925,
+     0.6381
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Zahn",
+    "clean": "Zahn",
+    "box": [
+     0.2942,
+     0.6212,
+     0.33,
+     0.6388
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "J'ai mal aux dents.",
+  "box": [
+   0.4933,
+   0.63,
+   0.6175,
+   0.6519
+  ],
+  "confidence": 0.993,
+  "words": [
+   {
+    "text": "J'ai",
+    "clean": "J'ai",
+    "box": [
+     0.4975,
+     0.63,
+     0.52,
+     0.6469
+    ],
+    "confidence": 0.979
+   },
+   {
+    "text": "mal",
+    "clean": "mal",
+    "box": [
+     0.5233,
+     0.6312,
+     0.545,
+     0.6481
+    ],
+    "confidence": 0.892
+   },
+   {
+    "text": "aux",
+    "clean": "aux",
+    "box": [
+     0.5483,
+     0.6325,
+     0.57,
+     0.6494
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dents.",
+    "clean": "dents",
+    "box": [
+     0.5733,
+     0.6331,
+     0.6175,
+     0.6519
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "A mon avis,",
+  "box": [
+   0.9183,
+   0.6331,
+   0.9833,
+   0.6687
+  ],
+  "confidence": 0.964,
+  "words": [
+   {
+    "text": "A",
+    "clean": "A",
+    "box": [
+     0.9233,
+     0.635,
+     0.9375,
+     0.6506
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "mon",
+    "clean": "mon",
+    "box": [
+     0.9292,
+     0.6369,
+     0.9558,
+     0.6581
+    ],
+    "confidence": 0.68
+   },
+   {
+    "text": "avis,",
+    "clean": "avis",
+    "box": [
+     0.9508,
+     0.6456,
+     0.9817,
+     0.6681
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "Ich habe Zahnweh.",
+  "box": [
+   0.4942,
+   0.6438,
+   0.62,
+   0.6637
+  ],
+  "confidence": 0.992,
+  "words": [
+   {
+    "text": "Ich",
+    "clean": "Ich",
+    "box": [
+     0.4975,
+     0.6438,
+     0.5158,
+     0.6594
+    ],
+    "confidence": 0.913
+   },
+   {
+    "text": "habe",
+    "clean": "habe",
+    "box": [
+     0.5208,
+     0.6444,
+     0.5525,
+     0.6606
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Zahnweh.",
+    "clean": "Zahnweh",
+    "box": [
+     0.5542,
+     0.6456,
+     0.62,
+     0.6637
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "le suis convaincu",
+  "box": [
+   0.9175,
+   0.6469,
+   0.9992,
+   0.6925
+  ],
+  "confidence": 0.995,
+  "words": [
+   {
+    "text": "le",
+    "clean": "le",
+    "box": [
+     0.9175,
+     0.6469,
+     0.9383,
+     0.6669
+    ],
+    "confidence": 0.926
+   },
+   {
+    "text": "suis",
+    "clean": "suis",
+    "box": [
+     0.9308,
+     0.6519,
+     0.9558,
+     0.6744
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "convaincu",
+    "clean": "convaincu",
+    "box": [
+     0.95,
+     0.6594,
+     1.0,
+     0.6925
+    ],
+    "confidence": 0.99
+   }
+  ]
+ },
+ {
+  "text": "englisch: dentist,",
+  "box": [
+   0.4933,
+   0.6569,
+   0.6075,
+   0.6763
+  ],
+  "confidence": 0.998,
+  "words": [
+   {
+    "text": "englisch:",
+    "clean": "englisch",
+    "box": [
+     0.4975,
+     0.6569,
+     0.5542,
+     0.6737
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dentist,",
+    "clean": "dentist",
+    "box": [
+     0.5575,
+     0.6594,
+     0.6075,
+     0.6763
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Je trouve que...",
+  "box": [
+   0.9158,
+   0.66,
+   0.9992,
+   0.7075
+  ],
+  "confidence": 0.921,
+  "words": [
+   {
+    "text": "Je",
+    "clean": "Je",
+    "box": [
+     0.9158,
+     0.66,
+     0.9342,
+     0.6781
+    ],
+    "confidence": 0.573
+   },
+   {
+    "text": "trouve",
+    "clean": "trouve",
+    "box": [
+     0.9292,
+     0.6656,
+     0.9642,
+     0.6919
+    ],
+    "confidence": 0.955
+   },
+   {
+    "text": "que...",
+    "clean": "que",
+    "box": [
+     0.9592,
+     0.6787,
+     1.0,
+     0.7081
+    ],
+    "confidence": 0.977
+   }
+  ]
+ },
+ {
+  "text": "approfondir qc [apRof5diR]",
+  "box": [
+   0.0883,
+   0.6675,
+   0.2583,
+   0.6913
+  ],
+  "confidence": 0.936,
+  "words": [
+   {
+    "text": "approfondir",
+    "clean": "approfondir",
+    "box": [
+     0.0942,
+     0.6675,
+     0.1658,
+     0.6869
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "qc",
+    "clean": "qc",
+    "box": [
+     0.1692,
+     0.6706,
+     0.185,
+     0.6881
+    ],
+    "confidence": 0.953
+   },
+   {
+    "text": "[apRof5diR]",
+    "clean": "apRof",
+    "box": [
+     0.1875,
+     0.6713,
+     0.2583,
+     0.6913
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "etw. vertiefen",
+  "box": [
+   0.2642,
+   0.6763,
+   0.3592,
+   0.695
+  ],
+  "confidence": 0.991,
+  "words": [
+   {
+    "text": "etw.",
+    "clean": "etw",
+    "box": [
+     0.2725,
+     0.6763,
+     0.3,
+     0.6925
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "vertiefen",
+    "clean": "vertiefen",
+    "box": [
+     0.3025,
+     0.6775,
+     0.3533,
+     0.6944
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "französisch: dentiste (Zahnarzt)",
+  "box": [
+   0.4917,
+   0.6687,
+   0.6983,
+   0.6931
+  ],
+  "confidence": 0.999,
+  "words": [
+   {
+    "text": "französisch:",
+    "clean": "französisch",
+    "box": [
+     0.4967,
+     0.6687,
+     0.5725,
+     0.6881
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dentiste",
+    "clean": "dentiste",
+    "box": [
+     0.5758,
+     0.6719,
+     0.6267,
+     0.69
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(Zahnarzt)",
+    "clean": "Zahnarzt",
+    "box": [
+     0.63,
+     0.6737,
+     0.6983,
+     0.6931
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "...'est pourquoi",
+  "box": [
+   0.915,
+   0.6737,
+   0.9992,
+   0.7262
+  ],
+  "confidence": 0.858,
+  "words": [
+   {
+    "text": "...'est",
+    "clean": "est",
+    "box": [
+     0.915,
+     0.6737,
+     0.9633,
+     0.7081
+    ],
+    "confidence": 0.82
+   },
+   {
+    "text": "pourquoi",
+    "clean": "pourquoi",
+    "box": [
+     0.9608,
+     0.6937,
+     1.0,
+     0.7288
+    ],
+    "confidence": 0.935
+   }
+  ]
+ },
+ {
+  "text": "approfondir wird konjugiert wie finir.",
+  "box": [
+   0.095,
+   0.6875,
+   0.3242,
+   0.7163
+  ],
+  "confidence": 0.999,
+  "words": [
+   {
+    "text": "approfondir",
+    "clean": "approfondir",
+    "box": [
+     0.1008,
+     0.6875,
+     0.1725,
+     0.7087
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "wird",
+    "clean": "wird",
+    "box": [
+     0.1775,
+     0.6913,
+     0.1992,
+     0.71
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "konjugiert",
+    "clean": "konjugiert",
+    "box": [
+     0.2042,
+     0.6925,
+     0.2658,
+     0.7137
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "wie",
+    "clean": "wie",
+    "box": [
+     0.2708,
+     0.6956,
+     0.2892,
+     0.715
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "finir.",
+    "clean": "finir",
+    "box": [
+     0.29,
+     0.6969,
+     0.325,
+     0.7169
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "approfondir ses connaissances = seine Kenntnisse",
+  "box": [
+   0.4908,
+   0.6869,
+   0.8092,
+   0.7144
+  ],
+  "confidence": 0.976,
+  "words": [
+   {
+    "text": "approfondir",
+    "clean": "approfondir",
+    "box": [
+     0.4958,
+     0.6869,
+     0.5725,
+     0.7056
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "ses",
+    "clean": "ses",
+    "box": [
+     0.5758,
+     0.6894,
+     0.5942,
+     0.7063
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "connaissances",
+    "clean": "connaissances",
+    "box": [
+     0.5975,
+     0.6906,
+     0.6883,
+     0.71
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "=",
+    "clean": "",
+    "box": [
+     0.6917,
+     0.6937,
+     0.6992,
+     0.71
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "seine",
+    "clean": "seine",
+    "box": [
+     0.7025,
+     0.6944,
+     0.7358,
+     0.7113
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Kenntnisse",
+    "clean": "Kenntnisse",
+    "box": [
+     0.7392,
+     0.6956,
+     0.8083,
+     0.7137
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Moi, par contre, je",
+  "box": [
+   0.9092,
+   0.6913,
+   0.9992,
+   0.7506
+  ],
+  "confidence": 0.979,
+  "words": [
+   {
+    "text": "Moi,",
+    "clean": "Moi",
+    "box": [
+     0.9125,
+     0.6925,
+     0.9467,
+     0.7212
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "par",
+    "clean": "par",
+    "box": [
+     0.9392,
+     0.7063,
+     0.9617,
+     0.73
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "contre,",
+    "clean": "contre",
+    "box": [
+     0.9558,
+     0.7144,
+     0.9933,
+     0.7475
+    ],
+    "confidence": 0.993
+   },
+   {
+    "text": "je",
+    "clean": "je",
+    "box": [
+     0.9908,
+     0.7319,
+     1.0,
+     0.7519
+    ],
+    "confidence": 0.861
+   }
+  ]
+ },
+ {
+  "text": "vertiefen",
+  "box": [
+   0.49,
+   0.6987,
+   0.555,
+   0.7169
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "vertiefen",
+    "clean": "vertiefen",
+    "box": [
+     0.4942,
+     0.6987,
+     0.55,
+     0.7163
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Saint-Louis [sēlwi]",
+  "box": [
+   0.0892,
+   0.7137,
+   0.2092,
+   0.7381
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "Saint-Louis",
+    "clean": "Saint-Louis",
+    "box": [
+     0.095,
+     0.7137,
+     0.1625,
+     0.735
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[sēlwi]",
+    "clean": "sēlwi",
+    "box": [
+     0.1667,
+     0.7181,
+     0.2075,
+     0.7375
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Ce que je ne comp",
+  "box": [
+   0.9108,
+   0.7087,
+   0.9992,
+   0.7631
+  ],
+  "confidence": 0.992,
+  "words": [
+   {
+    "text": "Ce",
+    "clean": "Ce",
+    "box": [
+     0.9125,
+     0.7094,
+     0.9358,
+     0.7281
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "que",
+    "clean": "que",
+    "box": [
+     0.9258,
+     0.7163,
+     0.95,
+     0.7362
+    ],
+    "confidence": 0.973
+   },
+   {
+    "text": "je",
+    "clean": "je",
+    "box": [
+     0.945,
+     0.7256,
+     0.9617,
+     0.7425
+    ],
+    "confidence": 0.99
+   },
+   {
+    "text": "ne",
+    "clean": "ne",
+    "box": [
+     0.9533,
+     0.73,
+     0.9717,
+     0.7481
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "comp",
+    "clean": "comp",
+    "box": [
+     0.9675,
+     0.7375,
+     0.9992,
+     0.7631
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Stadt im Norden des Senegal",
+  "box": [
+   0.2658,
+   0.7238,
+   0.45,
+   0.7506
+  ],
+  "confidence": 0.983,
+  "words": [
+   {
+    "text": "Stadt",
+    "clean": "Stadt",
+    "box": [
+     0.2717,
+     0.7238,
+     0.305,
+     0.7419
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "im",
+    "clean": "im",
+    "box": [
+     0.3075,
+     0.7256,
+     0.3192,
+     0.7425
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Norden",
+    "clean": "Norden",
+    "box": [
+     0.3258,
+     0.7269,
+     0.37,
+     0.7456
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "des",
+    "clean": "des",
+    "box": [
+     0.3725,
+     0.7294,
+     0.395,
+     0.7469
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Senegal",
+    "clean": "Senegal",
+    "box": [
+     0.3983,
+     0.7312,
+     0.4492,
+     0.75
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Ce n'est pas aussi s",
+  "box": [
+   0.9092,
+   0.7225,
+   0.9992,
+   0.7794
+  ],
+  "confidence": 0.956,
+  "words": [
+   {
+    "text": "Ce",
+    "clean": "Ce",
+    "box": [
+     0.9117,
+     0.7238,
+     0.9325,
+     0.7425
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "n'est",
+    "clean": "n'est",
+    "box": [
+     0.9233,
+     0.7294,
+     0.955,
+     0.755
+    ],
+    "confidence": 0.991
+   },
+   {
+    "text": "pas",
+    "clean": "pas",
+    "box": [
+     0.9475,
+     0.7419,
+     0.97,
+     0.7638
+    ],
+    "confidence": 0.966
+   },
+   {
+    "text": "aussi",
+    "clean": "aussi",
+    "box": [
+     0.9642,
+     0.75,
+     0.9975,
+     0.7788
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "s",
+    "clean": "s",
+    "box": [
+     0.9933,
+     0.765,
+     1.0,
+     0.7806
+    ],
+    "confidence": 0.844
+   }
+  ]
+ },
+ {
+  "text": "bosser (fam.) [bose]",
+  "box": [
+   0.0883,
+   0.7331,
+   0.2175,
+   0.7581
+  ],
+  "confidence": 0.993,
+  "words": [
+   {
+    "text": "bosser",
+    "clean": "bosser",
+    "box": [
+     0.0942,
+     0.7331,
+     0.1358,
+     0.7525
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(fam.)",
+    "clean": "fam",
+    "box": [
+     0.135,
+     0.7356,
+     0.1775,
+     0.755
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[bose]",
+    "clean": "bose",
+    "box": [
+     0.1767,
+     0.7388,
+     0.2175,
+     0.7581
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Il faut quand même",
+  "box": [
+   0.9092,
+   0.7362,
+   0.9992,
+   0.795
+  ],
+  "confidence": 0.968,
+  "words": [
+   {
+    "text": "Il",
+    "clean": "Il",
+    "box": [
+     0.9092,
+     0.7362,
+     0.9317,
+     0.755
+    ],
+    "confidence": 0.991
+   },
+   {
+    "text": "faut",
+    "clean": "faut",
+    "box": [
+     0.9208,
+     0.7425,
+     0.9475,
+     0.7638
+    ],
+    "confidence": 0.746
+   },
+   {
+    "text": "quand",
+    "clean": "quand",
+    "box": [
+     0.9367,
+     0.7512,
+     0.975,
+     0.7806
+    ],
+    "confidence": 0.844
+   },
+   {
+    "text": "même",
+    "clean": "même",
+    "box": [
+     0.97,
+     0.7688,
+     1.0,
+     0.7969
+    ],
+    "confidence": 0.99
+   }
+  ]
+ },
+ {
+  "text": "schuften (ugs.); jobben (ugs.)",
+  "box": [
+   0.265,
+   0.7431,
+   0.4483,
+   0.7712
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "schuften",
+    "clean": "schuften",
+    "box": [
+     0.2708,
+     0.7431,
+     0.3242,
+     0.7631
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(ugs.);",
+    "clean": "ugs",
+    "box": [
+     0.3275,
+     0.7469,
+     0.365,
+     0.7656
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "jobben",
+    "clean": "jobben",
+    "box": [
+     0.365,
+     0.7488,
+     0.4067,
+     0.7681
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "(ugs.)",
+    "clean": "ugs",
+    "box": [
+     0.41,
+     0.7519,
+     0.4483,
+     0.7712
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "le ne suis pas du to",
+  "box": [
+   0.9058,
+   0.7488,
+   0.9992,
+   0.8113
+  ],
+  "confidence": 0.982,
+  "words": [
+   {
+    "text": "le",
+    "clean": "le",
+    "box": [
+     0.9058,
+     0.7488,
+     0.9308,
+     0.77
+    ],
+    "confidence": 0.699
+   },
+   {
+    "text": "ne",
+    "clean": "ne",
+    "box": [
+     0.9192,
+     0.7562,
+     0.9408,
+     0.7762
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "suis",
+    "clean": "suis",
+    "box": [
+     0.9308,
+     0.7625,
+     0.96,
+     0.7875
+    ],
+    "confidence": 0.989
+   },
+   {
+    "text": "pas",
+    "clean": "pas",
+    "box": [
+     0.9508,
+     0.7738,
+     0.975,
+     0.7963
+    ],
+    "confidence": 0.992
+   },
+   {
+    "text": "du",
+    "clean": "du",
+    "box": [
+     0.97,
+     0.7844,
+     0.9892,
+     0.805
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "to",
+    "clean": "to",
+    "box": [
+     0.9842,
+     0.7925,
+     1.0,
+     0.8125
+    ],
+    "confidence": 0.999
+   }
+  ]
+ },
+ {
+  "text": "un cybercafé [ēsiberkafe]",
+  "box": [
+   0.0892,
+   0.7612,
+   0.2492,
+   0.7875
+  ],
+  "confidence": 0.969,
+  "words": [
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.095,
+     0.7612,
+     0.1108,
+     0.7788
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "cybercafé",
+    "clean": "cybercafé",
+    "box": [
+     0.1133,
+     0.7625,
+     0.17,
+     0.7825
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "[ēsiberkafe]",
+    "clean": "ēsiberkafe",
+    "box": [
+     0.1733,
+     0.7656,
+     0.2483,
+     0.7869
+    ],
+    "confidence": 0.998
+   }
+  ]
+ },
+ {
+  "text": "Malick bosse dans un cybercafé.",
+  "box": [
+   0.4875,
+   0.7569,
+   0.6925,
+   0.7806
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "Malick",
+    "clean": "Malick",
+    "box": [
+     0.495,
+     0.7569,
+     0.5333,
+     0.7738
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "bosse",
+    "clean": "bosse",
+    "box": [
+     0.535,
+     0.7588,
+     0.5733,
+     0.775
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "dans",
+    "clean": "dans",
+    "box": [
+     0.575,
+     0.7606,
+     0.6067,
+     0.7769
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "un",
+    "clean": "un",
+    "box": [
+     0.6083,
+     0.7619,
+     0.6267,
+     0.7775
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "cybercafé.",
+    "clean": "cybercafé",
+    "box": [
+     0.6283,
+     0.7625,
+     0.6925,
+     0.7806
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "ein Internetcafé",
+  "box": [
+   0.265,
+   0.7719,
+   0.3692,
+   0.7931
+  ],
+  "confidence": 0.993,
+  "words": [
+   {
+    "text": "ein",
+    "clean": "ein",
+    "box": [
+     0.27,
+     0.7719,
+     0.2883,
+     0.7881
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Internetcafé",
+    "clean": "Internetcafé",
+    "box": [
+     0.2908,
+     0.7731,
+     0.3683,
+     0.7925
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "Malick jobbt in einem Internetcafé.",
+  "box": [
+   0.4875,
+   0.7681,
+   0.7075,
+   0.7944
+  ],
+  "confidence": 0.997,
+  "words": [
+   {
+    "text": "Malick",
+    "clean": "Malick",
+    "box": [
+     0.4925,
+     0.7681,
+     0.5325,
+     0.7863
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "jobbt",
+    "clean": "jobbt",
+    "box": [
+     0.5325,
+     0.77,
+     0.5692,
+     0.7875
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "in",
+    "clean": "in",
+    "box": [
+     0.5692,
+     0.7712,
+     0.5833,
+     0.7881
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "einem",
+    "clean": "einem",
+    "box": [
+     0.5867,
+     0.7725,
+     0.62,
+     0.79
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "Internetcafé.",
+    "clean": "Internetcafé",
+    "box": [
+     0.6267,
+     0.7744,
+     0.7075,
+     0.7944
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "On ne peut pas acce",
+  "box": [
+   0.9025,
+   0.7762,
+   0.9992,
+   0.8419
+  ],
+  "confidence": 0.996,
+  "words": [
+   {
+    "text": "On",
+    "clean": "On",
+    "box": [
+     0.9033,
+     0.7769,
+     0.9292,
+     0.7975
+    ],
+    "confidence": 0.991
+   },
+   {
+    "text": "ne",
+    "clean": "ne",
+    "box": [
+     0.92,
+     0.7869,
+     0.9417,
+     0.805
+    ],
+    "confidence": 0.997
+   },
+   {
+    "text": "peut",
+    "clean": "peut",
+    "box": [
+     0.9292,
+     0.7925,
+     0.9625,
+     0.8187
+    ],
+    "confidence": 0.947
+   },
+   {
+    "text": "pas",
+    "clean": "pas",
+    "box": [
+     0.9508,
+     0.8056,
+     0.9792,
+     0.8294
+    ],
+    "confidence": 0.998
+   },
+   {
+    "text": "acce",
+    "clean": "acce",
+    "box": [
+     0.9683,
+     0.8163,
+     1.0,
+     0.8425
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "4",
+  "box": [
+   0.4983,
+   0.7913,
+   0.5117,
+   0.8031
+  ],
+  "confidence": 0.547,
+  "words": [
+   {
+    "text": "4",
+    "clean": "",
+    "box": [
+     0.4983,
+     0.7913,
+     0.5108,
+     0.8031
+    ],
+    "confidence": 0.547
+   }
+  ]
+ },
+ {
+  "text": "0",
+  "box": [
+   0.5883,
+   0.795,
+   0.6,
+   0.8037
+  ],
+  "confidence": 0.615,
+  "words": [
+   {
+    "text": "0",
+    "clean": "",
+    "box": [
+     0.5892,
+     0.795,
+     0.6,
+     0.8037
+    ],
+    "confidence": 0.615
+   }
+  ]
+ },
+ {
+  "text": "D'un côté,",
+  "box": [
+   0.9033,
+   0.7956,
+   0.9583,
+   0.835
+  ],
+  "confidence": 0.981,
+  "words": [
+   {
+    "text": "D'un",
+    "clean": "D'un",
+    "box": [
+     0.9067,
+     0.7975,
+     0.9367,
+     0.82
+    ],
+    "confidence": 0.99
+   },
+   {
+    "text": "côté,",
+    "clean": "côté",
+    "box": [
+     0.9233,
+     0.8094,
+     0.9583,
+     0.835
+    ],
+    "confidence": 0.973
+   }
+  ]
+ },
+ {
+  "text": "Tu as raison de dire qu",
+  "box": [
+   0.9025,
+   0.8244,
+   0.9992,
+   0.9006
+  ],
+  "confidence": 0.975,
+  "words": [
+   {
+    "text": "Tu",
+    "clean": "Tu",
+    "box": [
+     0.9025,
+     0.8244,
+     0.9242,
+     0.8425
+    ],
+    "confidence": 0.988
+   },
+   {
+    "text": "as",
+    "clean": "as",
+    "box": [
+     0.9142,
+     0.8325,
+     0.9367,
+     0.8519
+    ],
+    "confidence": 0.999
+   },
+   {
+    "text": "raison",
+    "clean": "raison",
+    "box": [
+     0.9242,
+     0.8394,
+     0.9583,
+     0.8688
+    ],
+    "confidence": 0.733
+   },
+   {
+    "text": "de",
+    "clean": "de",
+    "box": [
+     0.9508,
+     0.8588,
+     0.97,
+     0.8781
+    ],
+    "confidence": 0.986
+   },
+   {
+    "text": "dire",
+    "clean": "dire",
+    "box": [
+     0.9642,
+     0.8681,
+     0.9883,
+     0.8919
+    ],
+    "confidence": 1.0
+   },
+   {
+    "text": "qu",
+    "clean": "qu",
+    "box": [
+     0.985,
+     0.8831,
+     1.0,
+     0.9025
+    ],
+    "confidence": 0.997
+   }
+  ]
+ },
+ {
+  "text": ".. de l'au",
+  "box": [
+   0.9408,
+   0.8231,
+   0.9992,
+   0.8662
+  ],
+  "confidence": 0.863,
+  "words": [
+   {
+    "text": "..",
+    "clean": "",
+    "box": [
+     0.9408,
+     0.8231,
+     0.9725,
+     0.8488
+    ],
+    "confidence": 0.623
+   },
+   {
+    "text": "de",
+    "clean": "de",
+    "box": [
+     0.9692,
+     0.8381,
+     0.9858,
+     0.8575
+    ],
+    "confidence": 0.574
+   },
+   {
+    "text": "l'au",
+    "clean": "l'au",
+    "box": [
+     0.9783,
+     0.8438,
+     1.0,
+     0.8681
+    ],
+    "confidence": 0.543
+   }
+  ]
+ },
+ {
+  "text": "174",
+  "box": [
+   0.0808,
+   0.8969,
+   0.12,
+   0.9181
+  ],
+  "confidence": 0.993,
+  "words": [
+   {
+    "text": "174",
+    "clean": "",
+    "box": [
+     0.0867,
+     0.8969,
+     0.1133,
+     0.9175
+    ],
+    "confidence": 1.0
+   }
+  ]
+ },
+ {
+  "text": "cent-soixante-quatorze",
+  "box": [
+   0.1475,
+   0.9038,
+   0.3033,
+   0.9313
+  ],
+  "confidence": 1.0,
+  "words": [
+   {
+    "text": "cent-soixante-quatorze",
+    "clean": "cent-soixante-quatorze",
+    "box": [
+     0.1533,
+     0.9038,
+     0.2992,
+     0.9306
+    ],
+    "confidence": 1.0
+   }
+  ]
+ }
+]

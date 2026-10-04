@@ -9134,11 +9134,29 @@ def read_vocabulary_page(
 def read_vocabulary_page_safely(
     data: bytes, page_number: int, source_language: str, target_language: str,
 ) -> dict[str, Any]:
-    """The table reader first; line-by-line OCR only when it cannot read the page.
+    """A page as entries: the table rebuilt from the local reading first, then the rest.
 
+    1. Local OCR with positions (well under a second, nothing sent anywhere), and the
+       word / translation / examples table rebuilt from where the lines sit.
+    2. Only if that finds no table: the vision model's table reader, bounded by its
+       timeout, for a server without the engine or a page laid out unusually.
+    3. Only if that fails too: the lines read one by one, from the local text when there
+       is one, else from the vision OCR.
     A student's own AI limit is raised as it is: a second call would meet the same
     limit, and the student is owed the plain sentence about it, not "extraction failed".
     """
+    local_result = None
+    if local_ocr.available(app.config):
+        try:
+            local_result = local_ocr.recognize(data, app.config)
+        except (local_ocr.LocalOcrUnavailable, ValueError, OSError) as error:
+            app.logger.info("vocabulary page %s: local OCR failed (%s)", page_number, type(error).__name__)
+    if local_result is not None and local_result.lines:
+        rows = vocabulary_layout.table_rows(local_result.lines, source_language, target_language)
+        if len(rows) >= 2:
+            parsed = vocabulary.rows_to_entries({"rows": rows}, page_number)
+            parsed["warnings"] = list(local_result.warnings) + list(parsed["warnings"])
+            return parsed
     try:
         parsed = read_vocabulary_page(data, page_number, source_language, target_language)
         if parsed["entries"]:
@@ -9152,7 +9170,14 @@ def read_vocabulary_page_safely(
                         page_number, type(error).__name__)
         warnings = [f"Page {page_number} could not be read as a table; "
                     "its lines were read one by one."]
-    text, confidence, ocr_warnings = read_page_text(data, page_number)
+    if local_result is not None and local_result.lines:
+        confidences = [line.confidence for line in local_result.lines]
+        text, confidence = local_result.text, round(sum(confidences) / len(confidences), 3)
+        ocr_warnings = list(local_result.warnings)
+    else:
+        recognition = recognize_flashcard_import_image(data, "Languages", page_number)
+        text, confidence = str(recognition["text"] or ""), float(recognition["confidence"])
+        ocr_warnings = list(recognition["warnings"])
     parsed = vocabulary.parse_vocabulary_text(text, page_number)
     for entry in parsed["entries"]:
         entry["confidence"] = min(float(entry["confidence"]), confidence)
@@ -9161,26 +9186,6 @@ def read_vocabulary_page_safely(
     parsed["entries"] = vocabulary.expand_examples(parsed["entries"])
     parsed["warnings"] = warnings + ocr_warnings + list(parsed["warnings"])
     return parsed
-
-
-def read_page_text(data: bytes, page_number: int) -> tuple[str, float, list[str]]:
-    """The plain text of a page: the local engine when it is installed, else the vision model.
-
-    Local reading takes well under a second and costs nothing, so it is tried first; the
-    provider path is kept for a server without the engine.
-    """
-    if local_ocr.available(app.config):
-        try:
-            result = local_ocr.recognize(data, app.config)
-        except (local_ocr.LocalOcrUnavailable, ValueError, OSError) as error:
-            app.logger.info("local OCR failed on page %s (%s); asking the vision model",
-                            page_number, type(error).__name__)
-        else:
-            confidences = [line.confidence for line in result.lines]
-            confidence = sum(confidences) / len(confidences) if confidences else 0.0
-            return result.text, round(confidence, 3), list(result.warnings)
-    recognition = recognize_flashcard_import_image(data, "Languages", page_number)
-    return str(recognition["text"] or ""), float(recognition["confidence"]), list(recognition["warnings"])
 
 
 def read_vocabulary_document(

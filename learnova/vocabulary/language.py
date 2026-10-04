@@ -129,8 +129,9 @@ def detect_language(text: Any, candidates: tuple[str, ...] | list[str] | None = 
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
     best_code, best = ranked[0]
     second = ranked[1][1] if len(ranked) > 1 else 0.0
-    if best <= 0 or best == second:
-        # "la" is French and Spanish alike; a dead heat is not an answer.
+    if best < 1.0 or best == second:
+        # "la" is French and Spanish alike; a dead heat is not an answer. Nor is a single
+        # accented letter: one stray umlaut in a garbled bracket must not make a line German.
         return Detection(UNKNOWN, 0.0, scores)
     margin = (best - second) / best
     evidence = min(1.0, best / _SOLID_EVIDENCE)

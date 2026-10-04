@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
+
+from .language import UNKNOWN, detect_language
 
 Box = tuple[float, float, float, float]
 
@@ -265,3 +267,296 @@ def _box(value: Any) -> Box:
     except (TypeError, ValueError):
         return (0.0, 0.0, 0.0, 0.0)
     return (x0, y0, x1, y1)
+
+
+# ---- A vocabulary table, rebuilt from where the words sit ------------------------------------
+#
+# A vocabulary book prints a table: the word (with its pronunciation) on the left, the
+# translation in the middle, example sentences with their translations on the right. The
+# OCR engine returns lines with positions; nothing else is needed to put the table back
+# together. Columns are where the lines start, rows are where the words start, and which
+# of a right-hand line is the sentence and which its translation is told by the language
+# the line is in. All of it is geometry and counting, so a page costs nothing beyond the
+# OCR pass and always comes out the same.
+
+_LETTERS = re.compile(r"[^\W\d_]")
+_HEADING = re.compile(r"^[A-Z]\d{1,2}\b\s*")
+_PHONETIC_ONLY = re.compile(r"^\[[^\]]*\]?$")
+_HINT_PREFIX = re.compile(
+    r"^(englisch|english|anglais|franz[öo]sisch|fran[cç]ais|deutsch|german|allemand|spanisch|espa[ñn]ol|italienisch)\s*:",
+    re.I)
+_ARROW = ("→", "->", "=>", "⇒")
+_BRACKETED = re.compile(r"\[[^\]]*\]?")
+_COLUMN_GAP = 0.06        # of page width: a jump in where lines start = a new column
+_ROW_SLACK = 0.3          # of a line's height: how far below a word's top its translation may start
+_EDGE = 0.004             # a line touching the image edge is a fragment of the next page
+_LAST_COLUMN_START = 0.85  # no column starts in the last sixth of a page; that is the next page
+
+
+@dataclass
+class _Row:
+    top: float
+    term_parts: list[str] = field(default_factory=list)
+    translation_parts: list[str] = field(default_factory=list)
+    phonetic_parts: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    examples: list[dict[str, str]] = field(default_factory=list)
+    confidences: list[float] = field(default_factory=list)
+
+
+def _has_letters(text: str) -> bool:
+    return bool(_LETTERS.search(text))
+
+
+def _usable(lines: list[Line]) -> list[Line]:
+    return [
+        line for line in lines
+        if _has_letters(line.text) and len(line.text.strip()) >= 2
+        and line.box[0] > _EDGE and line.box[2] < 1 - _EDGE and line.box[1] > _EDGE
+        and line.box[0] < _LAST_COLUMN_START
+    ]
+
+
+def _column_starts(lines: list[Line]) -> list[float]:
+    """Where the columns begin: the left edges of lines, split at the big gaps.
+
+    Returns the median start of each column with enough lines in it, left to right, at
+    most three (word, translation, examples).
+    """
+
+    starts = sorted(line.box[0] for line in lines)
+    if not starts:
+        return []
+    groups: list[list[float]] = [[starts[0]]]
+    for value in starts[1:]:
+        if value - groups[-1][-1] > _COLUMN_GAP:
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    minimum = max(2, len(starts) // 12)
+    sized = [group for group in groups if len(group) >= minimum]
+    sized.sort(key=lambda group: -len(group))
+    kept = sorted(sized[:3], key=lambda group: group[0])
+    return [group[len(group) // 2] for group in kept]
+
+
+def _column_of(x: float, starts: list[float]) -> int:
+    """The column a point belongs to: the last column that starts before it."""
+
+    column = 0
+    for index, start in enumerate(starts):
+        if x >= start - _COLUMN_GAP / 2:
+            column = index
+    return column
+
+
+def _split_by_column(line: Line, starts: list[float]) -> list[tuple[int, str, Box, float]]:
+    """One OCR line may straddle two columns (a word and its translation printed close
+    together); its words are dealt to columns by where each of them sits.
+
+    Each part carries the line's confidence. The engine's per-word scores were tried and
+    found noisy (a correctly read four-letter word scoring 0.5 beside a line score of
+    0.96), so the line score, which the model gives for the whole reading, is the one used.
+    """
+
+    words = line.words or words_from_text(line.text, line.box, line.confidence)
+    parts: list[tuple[int, list[Word]]] = []
+    for word in words:
+        centre = (word.box[0] + word.box[2]) / 2
+        column = _column_of(centre, starts)
+        if parts and parts[-1][0] == column:
+            parts[-1][1].append(word)
+        else:
+            parts.append((column, [word]))
+    result = []
+    for column, members in parts:
+        boxes = [word.box for word in members]
+        box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+        result.append((column, " ".join(word.text for word in members), box, line.confidence))
+    return result
+
+
+def _language_of(text: str, source: str, target: str, detect: Callable[..., Any]) -> str:
+    # Pronunciations in brackets are judged by nobody: their letters belong to no language.
+    detection = detect(_BRACKETED.sub(" ", text), (source, target))
+    return detection.language if detection.language != UNKNOWN else ""
+
+
+@dataclass
+class _Example:
+    row: _Row | None = None
+    sentence: list[str] = field(default_factory=list)
+    translation: list[str] = field(default_factory=list)
+    pair: bool = False     # an "a = b" line: both sides given at once
+
+    def close(self) -> None:
+        sentence = " ".join(self.sentence).strip()
+        translation = " ".join(self.translation).strip()
+        if sentence and self.row is not None:
+            self.row.examples.append({"sentence": sentence, "translation": translation})
+        self.row, self.pair = None, False
+        self.sentence, self.translation = [], []
+
+
+def table_rows(lines: list[Line], source: str, target: str,
+               detect: Callable[..., Any] = detect_language) -> list[dict[str, Any]]:
+    """Rebuild a word / translation / examples table from positioned OCR lines.
+
+    Returns rows in the shape the page reader contract uses (`term`, `phonetic`,
+    `translation`, `examples`, `note`, `confidence`), so `rows_to_entries` turns them
+    into import entries exactly as it does for the model's answer. Returns [] when the
+    page does not look like such a table (fewer than two columns), and the caller falls
+    back to reading lines one by one.
+
+    Rows are anchored on the word column; a line in another column belongs to the last
+    row whose top is not below the line's own top, with a little slack. The examples
+    column is a running list rather than a strict grid, so it is read in order as one
+    stream: a source-language line opens a sentence, target-language lines beneath are
+    its translation, and a translation that runs on past the next word stays with its
+    sentence.
+    """
+
+    usable = _usable(lines)
+    starts = _column_starts(usable)
+    if len(starts) < 2:
+        return []
+    bilingual = target != source
+    pieces: list[tuple[int, str, Box, float, bool]] = []
+    for line in usable:
+        if (bilingual and _column_of(line.box[0], starts) == 0
+                and _language_of(line.text, source, target, detect) == target):
+            # A remark printed under the word, in the student's language ("protéger wird
+            # konjugiert wie manger."), even when it runs into the next column.
+            pieces.append((0, line.text, line.box, line.confidence, True))
+            continue
+        for column, text, box, confidence in _split_by_column(line, starts):
+            if _has_letters(text):
+                pieces.append((column, text, box, confidence, False))
+    pieces.sort(key=lambda piece: (round(piece[2][1], 3), piece[2][0]))
+
+    rows: list[_Row] = []
+    for column, text, box, confidence, is_note in pieces:
+        if column != 0:
+            continue
+        cleaned = _HEADING.sub("", text).strip()
+        if not _has_letters(cleaned):
+            continue
+        if is_note:
+            if rows:
+                rows[-1].notes.append(cleaned)
+            continue
+        if _PHONETIC_ONLY.match(cleaned) and rows:
+            rows[-1].phonetic_parts.append(cleaned.strip("[]"))
+            continue
+        rows.append(_Row(top=box[1], term_parts=[cleaned], confidences=[confidence]))
+    if not rows:
+        return []
+
+    def row_for(box: Box) -> _Row:
+        top = box[1]
+        slack = _ROW_SLACK * max(box[3] - box[1], 0.005)
+        home = rows[0]
+        for row in rows:
+            if row.top <= top + slack:
+                home = row
+            else:
+                break
+        return home
+
+    current = _Example()
+    for column, text, box, confidence, _is_note in pieces:
+        if column == 0:
+            continue
+        row = row_for(box)
+        if column == 1:
+            row.translation_parts.append(text)
+            row.confidences.append(confidence)
+            continue
+        if _HINT_PREFIX.match(text):
+            continue
+        if text.startswith(_ARROW):
+            current.close()
+            row.notes.append(text)
+            continue
+        if " = " in text:
+            current.close()
+            left, right = (part.strip() for part in text.split(" = ", 1))
+            current = _Example(row, [left], [right], pair=True)
+            continue
+        language = _language_of(text, source, target, detect) if bilingual else source
+        if language == source:
+            if current.translation or current.pair:
+                current.close()
+            if not current.sentence:
+                current.row = row
+            current.sentence.append(text)
+        elif language == target:
+            if not current.sentence:
+                row.notes.append(text)       # a translation with nothing above it
+                continue
+            current.translation.append(text)
+        elif current.sentence:
+            (current.translation if current.translation else current.sentence).append(text)
+        else:
+            row.notes.append(text)
+    current.close()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        term = " ".join(row.term_parts).strip()
+        if not term:
+            continue
+        result.append({
+            "term": term,
+            "phonetic": " ".join(row.phonetic_parts).strip(),
+            "translation": " ".join(row.translation_parts).strip(),
+            "examples": list(row.examples),
+            "note": " ".join(row.notes).strip(),
+            # A row is read from two lines (word, translation); the mean, not the minimum,
+            # so one slightly lower line does not send a certain pair to the review page.
+            "confidence": round(sum(row.confidences) / len(row.confidences) if row.confidences else 0.5, 3),
+        })
+    return _reattach_examples(_without_page_furniture(result))
+
+
+def _without_page_furniture(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Headings and page numbers sit at the top and bottom with nothing beside them.
+
+    A word in the middle of the page with no translation is kept - that is a row the
+    student has to complete - but an empty row at either edge is the page's furniture.
+    """
+
+    def empty(row: dict[str, Any]) -> bool:
+        return not row["translation"] and not row["examples"] and not row["note"]
+
+    first, last = 0, len(rows)
+    while first < last and empty(rows[first]):
+        first += 1
+    while last > first and empty(rows[last - 1]):
+        last -= 1
+    return rows[first:last]
+
+
+def _reattach_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """An example printed level with the next word still belongs to the word it uses.
+
+    The examples column is a running list, not strictly aligned with the words, so a
+    sentence often starts beside the following entry. When it visibly illustrates the
+    previous entry and not the one it landed on, it moves up.
+    """
+
+    from .service import has_checkable_stem, illustrates  # local import: service is the heavier module
+
+    for index in range(1, len(rows)):
+        keep: list[dict[str, str]] = []
+        for example in rows[index]["examples"]:
+            sentence = example["sentence"]
+            here = rows[index]["term"]
+            above = rows[index - 1]["term"]
+            if (has_checkable_stem(above) and illustrates(sentence, above)
+                    and not (has_checkable_stem(here) and illustrates(sentence, here))):
+                rows[index - 1]["examples"].append(example)
+            else:
+                keep.append(example)
+        rows[index]["examples"] = keep
+    return rows
