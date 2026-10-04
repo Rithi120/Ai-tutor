@@ -1,10 +1,12 @@
 """A textbook vocabulary page, read as the table it is.
 
 The books look like this: the word with its pronunciation | the translation | an example
-sentence with its own translation beneath. One structured vision call per page returns
-those rows. The code under test tidies them, labels words and sentences by the column
-they stood in, lets a missed word be typed in or the page be photographed again, and
-keeps the three practice scopes - words, sentences, both - honest about what they hold.
+sentence with its own translation beneath. The import reads the page with the local OCR
+engine and rebuilds those rows from where the lines sit; the structured vision reader
+still exists for its contract tests but is no longer on the import path. The code under
+test tidies the rows, labels words and sentences by the column they stood in, lets a
+doubtful word be typed in or the page be photographed again, and keeps the three
+practice scopes - words, sentences, both - honest about what they hold.
 """
 
 import io
@@ -243,20 +245,45 @@ def photo_bytes(shade="white"):
     return buffer.getvalue()
 
 
-def ocr_line(text, y=0.1):
+def ocr_line(text, y=0.1, x0=0.1, x1=0.9, confidence=0.98):
     from learnova.vocabulary import layout
-    box = (0.1, y, 0.9, y + 0.03)
-    return layout.Line(text, box, 0.98, layout.words_from_text(text, box))
+    box = (x0, y, x1, y + 0.03)
+    return layout.Line(text, box, confidence, layout.words_from_text(text, box, confidence))
 
 
-def recognition(text):
-    return {"blocks": [{"type": "printed_text", "content": text, "bbox": [0.05, 0.05, 0.95, 0.35],
-                        "confidence": 0.9, "crossed_out": False, "important_candidate": False,
-                        "teacher_highlight_candidate": False, "nearby_text": ""}],
-            "detected_page_number": "1", "warning": ""}
+def page_lines(page, confidences=None):
+    """Lay the rows of a page out as the engine would read them: three columns.
+
+    Word (with its pronunciation) on the left, translation in the middle, each example
+    sentence on the right with its translation on the line beneath.
+    """
+
+    lines, y = [], 0.10
+    for index, raw in enumerate(page["rows"]):
+        confidence = (confidences or {}).get(index, 0.98)
+        term = raw["term"] if "[" in raw["term"] or not raw.get("phonetic") else f"{raw['term']} [{raw['phonetic']}]"
+        if raw["term"]:
+            lines.append(ocr_line(term, y, 0.08, 0.26, confidence))
+        if raw["translation"]:
+            lines.append(ocr_line(raw["translation"], y, 0.30, 0.48, confidence))
+        example_y = y
+        for example in raw.get("examples", []):
+            lines.append(ocr_line(example["sentence"], example_y, 0.52, 0.90, confidence))
+            example_y += 0.035
+            if example["translation"]:
+                lines.append(ocr_line(example["translation"], example_y, 0.52, 0.90, confidence))
+                example_y += 0.035
+        y = max(y + 0.07, example_y + 0.02)
+    return lines
+
+
+def reading(lines):
+    return local_ocr.LocalOcrResult(lines, 1200, 1600, "rapidocr", 420)
 
 
 class TextbookImportTests(unittest.TestCase):
+    """The whole import on the local path: the AI gateway is patched to fail if touched."""
+
     def setUp(self):
         application.app.config.update(
             TESTING=True, FEATURE_VOCABULARY_TRAINER=True,
@@ -272,14 +299,16 @@ class TextbookImportTests(unittest.TestCase):
             "password": "correct-horse-battery"})
         self.calls = []
 
+    def no_model(self, **kwargs):
+        self.calls.append(kwargs.get("task_type"))
+        raise AssertionError(f"the import called the AI gateway for {kwargs.get('task_type')}")
+
     def answer_with(self, payloads):
         def respond(*, task_type, **_kwargs):
             self.calls.append(task_type)
             answer = payloads.get(task_type)
             if answer is None:
                 raise AssertionError(f"unexpected AI task {task_type}")
-            if isinstance(answer, Exception):
-                raise answer
             return FakeResponse(answer)
         return respond
 
@@ -291,21 +320,24 @@ class TextbookImportTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         return response.get_json()
 
-    def extract(self, import_id, payloads):
-        with patch.object(application, "create_response", self.answer_with(payloads)):
-            response = self.client.post(f"/api/vocabulary/imports/{import_id}/extract")
-        return response
+    def extract(self, import_id, lines, *, engine_available=True):
+        with patch.object(application, "create_response", self.no_model), \
+                patch.object(local_ocr, "available", return_value=engine_available), \
+                patch.object(local_ocr, "recognize", return_value=reading(lines)):
+            return self.client.post(f"/api/vocabulary/imports/{import_id}/extract")
 
-    def validate(self, import_id, body=None, payloads=None):
-        with patch.object(application, "create_response", self.answer_with(payloads or {})):
-            return self.client.post(f"/api/vocabulary/imports/{import_id}/validate", json=body or {})
+    def validate(self, import_id, body=None):
+        # The second opinion is opt-in; the local path itself never asks a provider.
+        with patch.object(application, "create_response", self.no_model):
+            return self.client.post(f"/api/vocabulary/imports/{import_id}/validate",
+                                    json=body or {"ai_validation": False})
 
-    def test_a_photo_is_read_in_one_call_and_a_clean_page_needs_no_review(self):
+    def test_a_photo_is_read_locally_and_a_clean_page_needs_no_review(self):
         created = self.upload()
         import_id = created["vocabulary_import"]["id"]
-        extracted = self.extract(import_id, {"vocabulary_page_extraction": PAGE})
+        extracted = self.extract(import_id, page_lines(PAGE))
         self.assertEqual(extracted.status_code, 200, extracted.data)
-        self.assertEqual(self.calls, ["vocabulary_page_extraction"], "one call per page, no OCR")
+        self.assertEqual(self.calls, [], "no provider anywhere on the path")
         entries = extracted.get_json()["vocabulary_import"]["entries"]
         self.assertEqual([entry["entry_kind"] for entry in entries],
                          ["phrase", "sentence", "word", "sentence", "phrase"])
@@ -334,8 +366,8 @@ class TextbookImportTests(unittest.TestCase):
 
     def test_a_confident_textbook_row_is_not_sent_for_a_second_opinion(self):
         import_id = self.upload()["vocabulary_import"]["id"]
-        page = {"rows": PAGE["rows"] + [row("le vilage", "das Dorf", confidence=0.5)]}
-        self.extract(import_id, {"vocabulary_page_extraction": page})
+        page = {"rows": PAGE["rows"] + [row("le vilage", "das Dorf")]}
+        self.extract(import_id, page_lines(page, confidences={3: 0.5}))
         self.calls.clear()
         asked = {}
 
@@ -346,21 +378,22 @@ class TextbookImportTests(unittest.TestCase):
         with patch.object(application, "create_response", respond):
             checked = self.client.post(f"/api/vocabulary/imports/{import_id}/validate",
                                        json={"ai_validation": True}).get_json()
-        self.assertEqual(self.calls, ["translation"])
+        self.assertEqual(self.calls, ["translation"], "the second opinion is opt-in and asked once")
         self.assertEqual(asked["texts"], ["le vilage"], "only the unsure row, never the confident ones or the sentences")
         self.assertTrue(checked["review_needed"])
         self.assertEqual(checked["flagged_count"], 1)
 
-    def test_an_unreadable_word_sends_the_student_to_type_it_or_rescan(self):
+    def test_a_doubtful_word_sends_the_student_to_type_it_or_rescan(self):
         created = self.upload()
         import_id = created["vocabulary_import"]["id"]
-        self.extract(import_id, {"vocabulary_page_extraction": {"rows": [row("à travers", "durch"), row("", "die Bäckerei", confidence=0.4)]}})
+        page = {"rows": [row("à travers", "durch"), row("le vilage", "das Dorf")]}
+        self.extract(import_id, page_lines(page, confidences={1: 0.4}))
         checked = self.validate(import_id).get_json()
         self.assertTrue(checked["review_needed"])
         self.assertEqual(checked["flagged_count"], 1)
-        page = self.client.get(created["review_url"])
-        self.assertEqual(page.status_code, 200)
-        html = page.get_data(as_text=True)
+        page_html = self.client.get(created["review_url"])
+        self.assertEqual(page_html.status_code, 200)
+        html = page_html.get_data(as_text=True)
         self.assertIn("vocabularyRescanFile", html)
         self.assertIn("Rescan page", html)
         self.assertIn("vocabularyPhoto", html)
@@ -369,24 +402,27 @@ class TextbookImportTests(unittest.TestCase):
         created = self.upload()
         import_id = created["vocabulary_import"]["id"]
         first_preview = created["vocabulary_import"]["preview_url"]
-        self.extract(import_id, {"vocabulary_page_extraction": {"rows": [row("à travers", "durch"), row("", "die Bäckerei", confidence=0.4)]}})
+        first = {"rows": [row("à travers", "durch"), row("le vilage", "das Dorf")]}
+        self.extract(import_id, page_lines(first, confidences={1: 0.4}))
         entries = self.validate(import_id).get_json()["vocabulary_import"]["entries"]
         entries.append({"source_term": "le chat", "target_translation": "die Katze", "user_confirmed": True,
                         "included": True, "status": "needs_review", "confidence": 1})
         self.assertEqual(self.client.put(f"/api/vocabulary/imports/{import_id}/entries",
                                          json={"entries": entries}).status_code, 200)
         self.calls.clear()
-        with patch.object(application, "create_response", self.answer_with({
-                "vocabulary_page_extraction": {"rows": [row("à travers", "durch"), row("la boulangerie", "die Bäckerei")]}})):
+        second = {"rows": [row("à travers", "durch"), row("le village", "das Dorf")]}
+        with patch.object(application, "create_response", self.no_model), \
+                patch.object(local_ocr, "available", return_value=True), \
+                patch.object(local_ocr, "recognize", return_value=reading(page_lines(second))):
             rescanned = self.client.post(f"/api/vocabulary/imports/{import_id}/rescan", data={
                 "file": (io.BytesIO(photo_bytes("gray")), "page-again.png")}, content_type="multipart/form-data")
         self.assertEqual(rescanned.status_code, 200, rescanned.data)
         body = rescanned.get_json()
-        self.assertEqual(self.calls, ["vocabulary_page_extraction"])
+        self.assertEqual(self.calls, [])
         self.assertEqual((body["replaced"], body["added"]), (1, 0))
         self.assertFalse(body["review_needed"])
         self.assertEqual([entry["source_term"] for entry in body["vocabulary_import"]["entries"]],
-                         ["à travers", "la boulangerie", "le chat"])
+                         ["à travers", "le village", "le chat"])
         self.assertTrue(all(entry["user_confirmed"] for entry in body["vocabulary_import"]["entries"]))
         self.assertNotEqual(body["vocabulary_import"]["preview_url"], first_preview)
         self.assertEqual(self.client.get(body["vocabulary_import"]["preview_url"]).status_code, 200)
@@ -403,44 +439,34 @@ class TextbookImportTests(unittest.TestCase):
         self.assertEqual(rescanned.get_json()["code"], "rescan_not_possible")
 
     def test_when_the_page_is_no_table_the_lines_are_read_one_by_one(self):
-        # A server without the local engine: the line-by-line fallback asks the vision model.
         import_id = self.upload()["vocabulary_import"]["id"]
-        with patch.object(local_ocr, "available", return_value=False):
-            extracted = self.extract(import_id, {
-                "vocabulary_page_extraction": ai_service.AIValidationError("schema_validation", "rows must be a list"),
-                "ocr_document_recognition": recognition("le village | das Dorf\nIl habite dans le village. | Er wohnt im Dorf."),
-            })
+        single_column = [ocr_line("le village | das Dorf"),
+                         ocr_line("Il habite dans le village. | Er wohnt im Dorf.", 0.14)]
+        extracted = self.extract(import_id, single_column)
         self.assertEqual(extracted.status_code, 200, extracted.data)
-        self.assertEqual(self.calls[0], "vocabulary_page_extraction")
-        self.assertIn("ocr_document_recognition", self.calls)
+        self.assertEqual(self.calls, [], "no provider, even when the page is no table")
         imported = extracted.get_json()["vocabulary_import"]
         self.assertEqual([entry["source_term"] for entry in imported["entries"]],
                          ["le village", "Il habite dans le village."])
         self.assertEqual(imported["entries"][1]["entry_kind"], "sentence")
-        self.assertTrue(any("could not be read as a table" in warning for warning in imported["warnings"]))
+        self.assertTrue(any("did not match a clear vocabulary table" in warning for warning in imported["warnings"]))
 
-    def test_with_the_local_engine_the_fallback_reads_the_page_here_not_at_the_provider(self):
+    def test_without_the_local_engine_the_import_says_so_instead_of_calling_a_model(self):
         import_id = self.upload()["vocabulary_import"]["id"]
-        local_lines = [ocr_line("le village | das Dorf"), ocr_line("Il habite dans le village. | Er wohnt im Dorf.", 0.14)]
-        with patch.object(local_ocr, "available", return_value=True), \
-                patch.object(local_ocr, "recognize",
-                             return_value=local_ocr.LocalOcrResult(local_lines, 800, 600, "rapidocr", 9)):
-            extracted = self.extract(import_id, {
-                "vocabulary_page_extraction": ai_service.AIValidationError("schema_validation", "rows must be a list")})
+        extracted = self.extract(import_id, [], engine_available=False)
         self.assertEqual(extracted.status_code, 200, extracted.data)
-        self.assertEqual(self.calls, ["vocabulary_page_extraction"], "no second provider call")
+        self.assertEqual(self.calls, [])
         imported = extracted.get_json()["vocabulary_import"]
-        self.assertEqual([entry["source_term"] for entry in imported["entries"]],
-                         ["le village", "Il habite dans le village."])
+        self.assertEqual(imported["entries"], [])
+        self.assertTrue(any("Local OCR is unavailable" in warning for warning in imported["warnings"]))
 
-    def test_the_students_own_limit_is_reported_in_one_plain_sentence(self):
+    def test_a_blank_photo_is_reported_not_sent_anywhere(self):
         import_id = self.upload()["vocabulary_import"]["id"]
-        extracted = self.extract(import_id, {
-            "vocabulary_page_extraction": ai_service.AIRequestLimitError("x", scope="user_hour", retry_after_seconds=60)})
-        self.assertEqual(extracted.status_code, 429)
-        self.assertEqual(extracted.get_json()["code"], "ai_limit_reached")
-        self.assertTrue(extracted.get_json()["error"].startswith("You have reached your limit"))
-        self.assertEqual(self.calls, ["vocabulary_page_extraction"], "no OCR fallback into the same limit")
+        extracted = self.extract(import_id, [])
+        self.assertEqual(extracted.status_code, 200)
+        self.assertEqual(self.calls, [])
+        self.assertTrue(any("No readable text" in warning
+                            for warning in extracted.get_json()["vocabulary_import"]["warnings"]))
 
     def test_the_review_page_speaks_german(self):
         created = self.upload()

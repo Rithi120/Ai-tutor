@@ -465,8 +465,8 @@ path goes to a language model, and the whole flow is deterministic:
 The target language comes from the student's profile (unless the book is in it, then the
 pair they used most recently), the saved words go to a running "Scanned words FR → DE"
 list per pair, and the photo is kept with the same retention and cleanup as every other
-upload. Fallback on a server without the engine: the page says so (503 on the API), and
-the textbook-table import above falls back to the vision model's table reader.
+upload. On a server without the engine the scanner page says so (503 on the API) and
+the textbook-table import above reports that it could not read the page.
 
 **Why it was rebuilt.** The usage ledger for the night of 3 October shows every scan going
 to Groq's vision endpoint and every call failing with `network_failure` after 98–374 s:
@@ -504,17 +504,20 @@ its sentence). Unit labels, page numbers, "englisch:" hints and the sliver of th
 page are not rows; a remark such as "protéger wird konjugiert wie manger." becomes the
 row's note. No model is involved, and the same photo always gives the same rows
 (`tests/fixtures/vocabulary_page_m1_lines.json` is a real reading of such a page, and
-`tests/test_vocabulary_table.py` pins every pair on it). Only when no table can be
-rebuilt does the page go to one structured vision call (`vocabulary_page_extraction`,
-`GROQ_VISION_MODEL`, bounded by `AI_VISION_TIMEOUT_SECONDS`) that returns rows the same
-way; `learnova/vocabulary/service.py::rows_to_entries` tidies either answer. The kind of
+`tests/test_vocabulary_table.py` pins every pair on it). When no table can be rebuilt,
+the OCR text is parsed line by line instead, and the import says so in a warning. **No
+model is on this path at all**: the structured vision reader (`vocabulary_page_extraction`,
+`read_vocabulary_page`) still exists with its contract tests but is not called by the
+import, so an unreachable provider can no longer stall a scan or trip the server's request
+timeout. `learnova/vocabulary/service.py::rows_to_entries` tidies the rows. The kind of
 each entry comes from the column it stood in, not from a heuristic: the word column gives
 words and phrases, the examples column gives sentences, and every translated example
 also becomes a sentence entry of its own, so the three practice scopes on the study page
 — *Words*, *Sentences*, *Both* — each hold exactly what they say. Rows read
-confidently from the table (and sentences) are never sent for a second opinion. If
-neither reader can make a table of the page, the lines are read one by one — from the
-local text when there is one — and the import carries a warning saying so. A word the reader could not make out arrives as a
+confidently from the table (and sentences) are never sent for a second opinion; the
+opt-in second opinion for a doubtful row is the only AI call the import can make, and it
+runs after extraction, never on its critical path. On a server without the local engine
+the import returns no entries and a warning saying so. A word the reader could not make out arrives as a
 row with a blank side: the review page asks the student to type it, or to **rescan** the
 page — a new photo taken from the review page (`POST
 /api/vocabulary/imports/<id>/rescan`) replaces only the rows still open, keeps every
