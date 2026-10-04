@@ -20,13 +20,24 @@ from pathlib import Path
 from typing import Any, Callable
 
 from flask import current_app, g, has_request_context
-from anthropic import Anthropic
 from openai import OpenAI
 
 from . import adapters, budgets, routing
 from .budgets import BudgetPolicy, LimitSpec, LimitState, UsageTotals
 from .contracts import AIValidationError, repair_latex_json, validate_output
 from .prompts import PROMPT_VERSIONS, corrective_instruction, output_contract
+
+
+def Anthropic(**kwargs: Any) -> Any:  # noqa: N802 - keeps the SDK's name so tests can patch it
+    """The Anthropic client, imported on first use.
+
+    The SDK takes about two seconds to import (a very large generated type tree), which
+    was a third of the server's start-up for a provider most installs never configure.
+    """
+
+    from anthropic import Anthropic as _Anthropic  # noqa: PLC0415
+
+    return _Anthropic(**kwargs)
 
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
