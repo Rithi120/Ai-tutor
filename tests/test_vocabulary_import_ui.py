@@ -52,11 +52,28 @@ class VocabularyImportPageTests(unittest.TestCase):
         for name in ("source_kind", "source_language", "target_language", "title", "file", "text"):
             self.assertIn(f'name="{name}"', self.html, name)
 
-    def test_the_three_input_methods_are_still_radios_with_the_same_values(self):
-        # app.py branches on exactly these values; the script toggles fields on them.
+    def test_the_four_input_methods_are_radios_with_the_values_the_code_branches_on(self):
+        # app.py branches on the first three; the script swaps the form for the scanner
+        # on the fourth.
         values = re.findall(r'name="source_kind" value="([a-z]+)"', self.html)
-        self.assertEqual(values, ["file", "text", "manual"])
+        self.assertEqual(values, ["file", "text", "manual", "scan"])
         self.assertIn('value="file" checked', self.html)
+
+    def test_the_scanner_is_on_this_page_hidden_until_chosen(self):
+        self.assertIn('id="vocabularyScanSection" class="scan-page hidden"', self.html)
+        self.assertIn("vocabulary-scan.js", self.html)
+        chosen = self.client.get("/vocabulary/import?method=scan").get_data(as_text=True)
+        self.assertIn('value="scan" checked', chosen)
+        self.assertIn('id="vocabularyScanSection" class="scan-page"', chosen)
+        self.assertIn('class="import-step import-only hidden"', chosen)
+
+    def test_the_old_addresses_arrive_on_this_page(self):
+        library = self.client.get("/vocabulary")
+        self.assertEqual(library.status_code, 302)
+        self.assertTrue(library.headers["Location"].endswith("/vocabulary/import"))
+        scan = self.client.get("/vocabulary/scan")
+        self.assertEqual(scan.status_code, 302)
+        self.assertIn("/vocabulary/import?method=scan", scan.headers["Location"])
 
     def test_the_text_field_starts_hidden_and_the_file_field_shown(self):
         text_field = re.search(r'<label id="vocabularyTextField" class="([^"]*)"', self.html)
@@ -69,7 +86,7 @@ class VocabularyImportPageTests(unittest.TestCase):
     def test_the_method_chooser_is_cards_not_a_bare_fieldset(self):
         self.assertNotIn("<fieldset", self.html)
         self.assertNotIn("<legend", self.html)
-        self.assertEqual(self.html.count('class="method-card"'), 3)
+        self.assertEqual(self.html.count('class="method-card"'), 4)
         self.assertIn('role="radiogroup"', self.html)
 
     def test_each_method_explains_itself_in_one_line(self):
@@ -136,11 +153,11 @@ class VocabularyImportPageTests(unittest.TestCase):
         self.assertIn(".manual-head { display: none; }", phone)
         self.assertIn(".manual-label { display: block; }", phone)
 
-    def test_the_sibling_pages_still_have_their_classes(self):
-        # vocabulary.css was rewritten; every selector the other four pages use must remain.
-        for selector in (".vocabulary-grid", ".vocabulary-list-card", ".vocabulary-table",
-                         ".review-row", ".vocabulary-practice-card",
-                         ".generation-settings", ".row-actions", ".status-valid"):
+    def test_the_review_page_still_has_its_classes(self):
+        # The library, list and practice pages are gone (a list lives on its flashcard set
+        # now); the review page and the scanner section share this stylesheet.
+        for selector in (".review-row", ".generation-settings", ".row-actions", ".status-valid",
+                         ".scan-words", ".scan-lookup", ".method-card"):
             self.assertIn(selector, self.css, selector)
 
 

@@ -85,7 +85,7 @@ class TourTests(unittest.TestCase):
         for mask in ("top", "bottom", "left", "right"):
             self.assertIn(f'data-mask="{mask}"', page)
         self.assertIn('src="/static/js/tour.js"', page)
-        self.assertIn('href="/static/css/tour.css"', page)
+        self.assertIn('href="/static/css/tour.css', page, "linked, with or without a cache-busting version")
 
     def test_signed_out_pages_have_no_tour(self):
         page = self.client.get("/login").data.decode()

@@ -38,7 +38,7 @@ class LearnovaRedesignTests(unittest.TestCase):
         return response.get_json()["id"]
 
     def test_shared_theme_and_accessibility_shell_is_on_product_pages(self):
-        for path in ("/dashboard", "/flashcards", "/flashcards/create", "/community", "/progress", "/vocabulary"):
+        for path in ("/dashboard", "/flashcards", "/flashcards/create", "/community", "/progress", "/vocabulary/import"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
             html = response.data

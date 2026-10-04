@@ -206,7 +206,7 @@ class OneRendererEverywhereTests(unittest.TestCase):
         base = (ROOT / "templates/base.html").read_text(encoding="utf-8")
         self.assertIn("js/math.js", base)
         for path in ("/dashboard", "/flashcards", "/community", "/projects",
-                     "/assistant", "/progress", "/vocabulary"):
+                     "/assistant", "/progress", "/vocabulary/import"):
             html = self.client.get(path).get_data(as_text=True)
             self.assertIn("js/math.js", html, path)
 

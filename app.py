@@ -2892,12 +2892,14 @@ def flashcards_import_page():
 @app.get("/vocabulary")
 @login_required
 def vocabulary_page():
+    """The trainer has one page now: import (with the scanner on it).
+
+    A vocabulary list lives on its flashcard set, so a separate library would list the
+    same sets a second time in another layout. The old address still arrives somewhere.
+    """
     if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
         abort(404)
-    lists = db.session.scalars(db.select(VocabularyList).where(
-        VocabularyList.owner_user_id == current_user.id).order_by(
-            VocabularyList.updated_at.desc())).all()
-    return render_template("vocabulary_library.html", vocabulary_lists=lists)
+    return redirect(url_for("vocabulary_import_page"))
 
 
 @app.get("/vocabulary/import")
@@ -2906,19 +2908,41 @@ def vocabulary_import_page():
     if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
         abort(404)
     cleanup_expired_flashcard_imports()
+    method = str(request.args.get("method") or "file")
     return render_template(
-        "vocabulary_import.html", supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+        "vocabulary_import.html", supported_languages=vocabulary.SUPPORTED_LANGUAGES,
+        initial_method=method if method in {"file", "text", "manual", "scan"} else "file",
+        scanner_available=local_ocr.available(app.config),
+        default_target=scan_target_language(""))
 
 
 @app.get("/vocabulary/scan")
 @login_required
 def vocabulary_scan_page():
+    """The scanner is a method on the import page now; the old address still arrives there."""
     if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
         abort(404)
-    return render_template(
-        "vocabulary_scan.html", scanner_available=local_ocr.available(app.config),
-        supported_languages=vocabulary.SUPPORTED_LANGUAGES,
-        default_target=scan_target_language(""))
+    return redirect(url_for("vocabulary_import_page", method="scan"))
+
+
+def vocabulary_list_destination(item: VocabularyList, *, edit: bool = False) -> str:
+    """Where a vocabulary list lives: its flashcard set.
+
+    The list page, the practice page and the set page showed the same words in three
+    layouts. The set page has the learning modes, so it is the one that stays, and the
+    card editor is where a list is edited. A list whose cards were never saved goes back
+    to the editor with its draft; one with nothing behind it goes to the import page.
+    """
+    if item.flashcard_set_id and owned_flashcard_set(item.flashcard_set_id):
+        endpoint = "flashcards_edit_page" if edit else "flashcards_overview_page"
+        return url_for(endpoint, set_id=item.flashcard_set_id)
+    pending = db.session.scalar(db.select(VocabularyImport).where(
+        VocabularyImport.owner_user_id == current_user.id,
+        VocabularyImport.vocabulary_list_id == item.id,
+        VocabularyImport.status == "generated").order_by(VocabularyImport.updated_at.desc()))
+    if pending is not None:
+        return url_for("flashcards_create_page", vocabulary_import_id=pending.id)
+    return url_for("vocabulary_import_page")
 
 
 @app.get("/vocabulary/<list_id>")
@@ -2927,7 +2951,7 @@ def vocabulary_list_page(list_id):
     item = owned_vocabulary_list(list_id)
     if not item:
         abort(404)
-    return render_template("vocabulary_list.html", vocabulary_list=item)
+    return redirect(vocabulary_list_destination(item))
 
 
 @app.get("/vocabulary/<list_id>/edit")
@@ -2936,9 +2960,7 @@ def vocabulary_list_edit_page(list_id):
     item = owned_vocabulary_list(list_id)
     if not item:
         abort(404)
-    return render_template(
-        "vocabulary_review.html", vocabulary_list=item, vocabulary_import=None,
-        supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+    return redirect(vocabulary_list_destination(item, edit=True))
 
 
 @app.get("/vocabulary/<list_id>/study")
@@ -2947,7 +2969,7 @@ def vocabulary_study_page(list_id):
     item = owned_vocabulary_list(list_id)
     if not item:
         abort(404)
-    return render_template("vocabulary_study.html", vocabulary_list=item)
+    return redirect(vocabulary_list_destination(item))
 
 
 @app.get("/vocabulary/imports/<import_id>/review")
@@ -8698,7 +8720,7 @@ def start_flashcard_session(set_id):
         db.session.commit()
         return jsonify(ok=True, session=serialize_flashcard_session(resume), resumed=True)
     objective = str(payload.get("objective") or "all")
-    if objective not in {"all", "due", "weak", "starred", "new", "quick"}:
+    if objective not in {"all", "due", "weak", "starred", "new", "quick", "words", "sentences"}:
         objective = "all"
     count = max(1, min(30, int(payload.get("count") or (5 if objective == "quick" else 20))))
     if mode == "match":
@@ -9917,6 +9939,48 @@ def lookup_vocabulary_scan_word(scan_id, line_index, word_index):
     return jsonify(ok=True, lookup=lookup, cached=False)
 
 
+def vocabulary_flashcard_set(vocabulary_list: VocabularyList) -> FlashcardSet:
+    """The flashcard set behind a vocabulary list, created on first need.
+
+    Every list is reachable through its set's page (learning modes, editor), so a list
+    that gains words outside the import flow - the scanner - must have one too.
+    """
+    existing = (db.session.get(FlashcardSet, vocabulary_list.flashcard_set_id)
+                if vocabulary_list.flashcard_set_id else None)
+    if existing is not None and existing.user_id == current_user.id:
+        return existing
+    flashcard_set = FlashcardSet(
+        user_id=current_user.id, title=vocabulary_list.title,
+        subject=vocabulary_list.subject or "Languages", grade=vocabulary_list.grade or "",
+        difficulty="medium", language=vocabulary_list.target_language, card_type="mixed",
+        source_kind="vocabulary", source_reference="")
+    db.session.add(flashcard_set)
+    db.session.flush()
+    vocabulary_list.flashcard_set_id = flashcard_set.id
+    return flashcard_set
+
+
+def append_vocabulary_cards(
+    vocabulary_list: VocabularyList, entry: VocabularyEntry, cards: list[dict[str, Any]],
+) -> list[int]:
+    """Add cards for one entry to the list's set and remember the link on the entry."""
+    flashcard_set = vocabulary_flashcard_set(vocabulary_list)
+    normalized = flashcards.normalize_cards(cards, flashcards.MAX_CARDS)
+    start = db.session.scalar(db.select(func.count(Flashcard.id)).where(
+        Flashcard.set_id == flashcard_set.id)) or 0
+    card_ids: list[int] = []
+    for offset, card in enumerate(normalized):
+        flashcard = Flashcard(
+            set_id=flashcard_set.id, position=int(start) + offset,
+            **flashcard_columns(card, flashcards.new_schedule()))
+        db.session.add(flashcard)
+        db.session.flush()
+        card_ids.append(flashcard.id)
+    entry.linked_flashcard_ids_json = json.dumps(card_ids)
+    flashcard_set.updated_at = utcnow()
+    return card_ids
+
+
 def scanned_words_list(source: str, target: str) -> VocabularyList:
     """The student's running list for one language pair, created on the first save."""
     existing = db.session.scalar(db.select(VocabularyList).where(
@@ -9963,8 +10027,6 @@ def save_vocabulary_scan_word(scan_id):
         vocabulary_list = scanned_words_list(source, target)
     sentence = vocabulary.clean_text(payload.get("sentence"), 1200)
     sentence_translation = vocabulary.clean_text(payload.get("sentence_translation"), 1200)
-    link = {"list_id": vocabulary_list.id, "list_title": vocabulary_list.title,
-            "list_url": url_for("vocabulary_list_page", list_id=vocabulary_list.id)}
     wanted = vocabulary.normalize_answer(word)
     entries = db.session.scalars(db.select(VocabularyEntry).where(
         VocabularyEntry.list_id == vocabulary_list.id)).all()
@@ -9975,7 +10037,7 @@ def save_vocabulary_scan_word(scan_id):
             existing.source_example_sentence = sentence
             existing.target_example_translation = sentence_translation
         db.session.commit()
-        return jsonify(ok=True, duplicate=True, entry_id=existing.id, **link)
+        return jsonify(ok=True, duplicate=True, entry_id=existing.id, **scan_list_link(vocabulary_list))
     entry = VocabularyEntry(
         list_id=vocabulary_list.id, position=len(entries),
         source_language=source, target_language=target,
@@ -9985,9 +10047,20 @@ def save_vocabulary_scan_word(scan_id):
         validation_status="valid", validation_explanation="Saved from the scanner.",
         user_confirmed=True, included=True)
     db.session.add(entry)
+    db.session.flush()
+    # One tap more and the word is a card too: the set page is where it will be studied.
+    append_vocabulary_cards(vocabulary_list, entry, vocabulary.card_variants(
+        {"source_term": word, "target_translation": translation, "source_example_sentence": sentence,
+         "source_language": source, "entry_kind": entry.entry_kind},
+        ["source_to_target"], {"include_examples": True, "include_hints": True, "difficulty": "medium"}))
     vocabulary_list.updated_at = utcnow()
     db.session.commit()
-    return jsonify(ok=True, duplicate=False, entry_id=entry.id, **link), 201
+    return jsonify(ok=True, duplicate=False, entry_id=entry.id, **scan_list_link(vocabulary_list)), 201
+
+
+def scan_list_link(vocabulary_list: VocabularyList) -> dict[str, Any]:
+    return {"list_id": vocabulary_list.id, "list_title": vocabulary_list.title,
+            "list_url": vocabulary_list_destination(vocabulary_list)}
 
 
 @app.get("/api/vocabulary/lists")

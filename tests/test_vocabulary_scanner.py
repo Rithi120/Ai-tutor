@@ -417,7 +417,7 @@ class ScannerFlowTests(unittest.TestCase):
         with patch.object(local_ocr, "available", return_value=False):
             response = self.client.post("/api/vocabulary/scans", data={
                 "file": (io.BytesIO(photo()), "page.png")}, content_type="multipart/form-data")
-            page = self.client.get("/vocabulary/scan")
+            page = self.client.get("/vocabulary/import?method=scan")
         self.assertEqual(response.status_code, 503)
         self.assertIn("nicht verfügbar", page.get_data(as_text=True), "this student reads German")
 
@@ -428,12 +428,38 @@ class ScannerFlowTests(unittest.TestCase):
         self.assertEqual(stranger.get(f"/api/vocabulary/scans/{scan['id']}/words/0/1").status_code, 404)
         self.assertEqual(stranger.get(scan["preview_url"]).status_code, 404)
 
-    def test_the_page_speaks_german_and_links_from_the_library(self):
+    def test_the_scanner_speaks_german_on_the_import_page(self):
         with patch.object(local_ocr, "available", return_value=True):
-            page = self.client.get("/vocabulary/scan").get_data(as_text=True)
+            page = self.client.get("/vocabulary/import").get_data(as_text=True)
         self.assertIn("Ein Wort scannen", page)
         self.assertIn("Foto aufnehmen", page)
-        self.assertIn("/vocabulary/scan", self.client.get("/vocabulary").get_data(as_text=True))
+        self.assertIn('id="vocabularyScanSection"', page)
+        moved = self.client.get("/vocabulary/scan")
+        self.assertEqual(moved.status_code, 302)
+        self.assertIn("/vocabulary/import?method=scan", moved.headers["Location"])
+
+    def test_a_saved_word_is_also_a_card_in_a_set_with_a_page(self):
+        scan = self.scan().get_json()["scan"]
+        saved = self.client.post(f"/api/vocabulary/scans/{scan['id']}/words/save", json={
+            "word": "boulangerie", "translation": "die Bäckerei",
+            "sentence": "La boulangerie ouvre à sept heures.", "sentence_translation": "Die Bäckerei öffnet um sieben Uhr."})
+        self.assertEqual(saved.status_code, 201, saved.data)
+        body = saved.get_json()
+        self.assertRegex(body["list_url"], r"/flashcards/\d+$", "the list's page is its set's page")
+        set_id = int(body["list_url"].rsplit("/", 1)[1])
+        cards = self.client.get(f"/api/flashcards/sets/{set_id}").get_json()["set"]["cards"]
+        self.assertEqual([(card["front"], card["back"]) for card in cards], [("boulangerie", "die Bäckerei")])
+        self.assertEqual(cards[0]["explanation"], "La boulangerie ouvre à sept heures.")
+        self.assertIn("word", cards[0]["tags"])
+        second = self.client.post(f"/api/vocabulary/scans/{scan['id']}/words/save", json={
+            "word": "village", "translation": "das Dorf"}).get_json()
+        self.assertEqual(second["list_url"], body["list_url"], "one set per language pair")
+        self.assertEqual(len(self.client.get(f"/api/flashcards/sets/{set_id}").get_json()["set"]["cards"]), 2)
+        for suffix in ("", "/edit", "/study"):
+            where = self.client.get(f"/vocabulary/{body['list_id']}{suffix}")
+            self.assertEqual(where.status_code, 302, suffix)
+        self.assertTrue(self.client.get(f"/vocabulary/{body['list_id']}").headers["Location"].endswith(f"/flashcards/{set_id}"))
+        self.assertTrue(self.client.get(f"/vocabulary/{body['list_id']}/edit").headers["Location"].endswith(f"/flashcards/{set_id}/edit"))
 
     def test_expired_photos_take_their_scans_with_them(self):
         scan = self.scan().get_json()["scan"]
@@ -497,7 +523,7 @@ class ScannerPageWiringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.js = (ROOT / "static/js/vocabulary-scan.js").read_text(encoding="utf-8")
-        cls.template = (ROOT / "templates/vocabulary_scan.html").read_text(encoding="utf-8")
+        cls.template = (ROOT / "templates/vocabulary_import.html").read_text(encoding="utf-8")
 
     def test_the_camera_opens_first_and_the_gallery_stays_available(self):
         self.assertIn('id="scanCamera" type="file" accept="image/*" capture="environment"', self.template)

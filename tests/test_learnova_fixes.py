@@ -209,8 +209,9 @@ class DashboardWidgetStyleTests(unittest.TestCase):
         # cannot drift when a stylesheet is added, renamed or dropped. learnova-rtl
         # is excluded: it is loaded only for RTL interfaces, so a rule that lives
         # only there is still missing for everyone else.
+        # The links may carry a cache-busting `v=` argument after the filename.
         sheets = [name for name in re.findall(
-            r"url_for\('static', filename='([^']+\.css)'\)", cls.base)
+            r"url_for\('static', filename='([^']+\.css)'", cls.base)
             if "learnova-rtl" not in name]
         assert len(sheets) >= 10, sheets
         assert "css/learnova-content.css" in sheets, sheets

@@ -156,8 +156,9 @@ class VocabularyWorkflowTests(unittest.TestCase):
             f"/api/vocabulary/imports/{imported['id']}").status_code, 404)
 
     def test_pages_navigation_dashboard_and_german_are_real(self):
-        for url in ("/vocabulary", "/vocabulary/import", "/dashboard", "/flashcards"):
+        for url in ("/vocabulary/import", "/dashboard", "/flashcards"):
             self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get("/vocabulary").status_code, 302, "the library lives on the import page")
         self.assertIn(b"Vocabulary Trainer", self.client.get("/dashboard").data)
         with application.app.app_context():
             user = application.db.session.scalar(application.db.select(
@@ -165,9 +166,9 @@ class VocabularyWorkflowTests(unittest.TestCase):
             assert user is not None
             user.preferred_language = "de"
             application.db.session.commit()
-        page = self.client.get("/vocabulary")
-        self.assertIn("Vokabeltrainer".encode(), page.data)
+        page = self.client.get("/vocabulary/import")
         self.assertIn("Vokabeln importieren".encode(), page.data)
+        self.assertIn("Ein Wort scannen".encode(), page.data)
 
 
 class ManualVocabularyEntryTests(unittest.TestCase):

@@ -434,9 +434,10 @@ for streak credit.
 
 ### Scan a word (no language model)
 
-`/vocabulary/scan` is the fast path for a student with a book open: **photo → tap a word →
-word, meaning, the sentence it is in, the sentence's meaning → save**. Nothing on this
-path goes to a language model, and the whole flow is deterministic:
+*Scan a word*, the fourth method on `/vocabulary/import`, is the fast path for a student
+with a book open: **photo → tap a word → word, meaning, the sentence it is in, the
+sentence's meaning → save**. Nothing on this path goes to a language model, and the whole
+flow is deterministic:
 
 1. **OCR on the server**, `learnova/ocr/local.py`: RapidOCR (PaddleOCR's PP-OCR models on
    ONNX Runtime, pip-installed, no key) reads a page in about 0.4 s on a laptop CPU and
@@ -512,8 +513,9 @@ import, so an unreachable provider can no longer stall a scan or trip the server
 timeout. `learnova/vocabulary/service.py::rows_to_entries` tidies the rows. The kind of
 each entry comes from the column it stood in, not from a heuristic: the word column gives
 words and phrases, the examples column gives sentences, and every translated example
-also becomes a sentence entry of its own, so the three practice scopes on the study page
-— *Words*, *Sentences*, *Both* — each hold exactly what they say. Rows read
+also becomes a sentence entry of its own, and the kind rides on each card as a tag, so a
+flashcard session on the set can be narrowed to *Words only* or *Sentences only* (the two
+objectives appear in the session settings once a set holds both kinds). Rows read
 confidently from the table (and sentences) are never sent for a second opinion; the
 opt-in second opinion for a doubtful row is the only AI call the import can make, and it
 runs after extraction, never on its critical path. On a server without the local engine
@@ -524,11 +526,19 @@ page — a new photo taken from the review page (`POST
 settled or typed row in place, and adds what the first reading missed. The page photo is
 one tap away on the review page so a flagged word can be checked against the book.
 
-`/vocabulary` provides private photo/PDF/text/manual vocabulary imports using the same validated upload,
+**One page, one home.** The vocabulary trainer is the import page (`/vocabulary/import`,
+with the scanner as its fourth method); a vocabulary list lives on its flashcard set — the
+set page with the learning modes is where "Üben" lands, the card editor is where
+"Bearbeiten" lands. The former library, list and practice pages showed the same words in
+three more layouts and are gone; their addresses (`/vocabulary`, `/vocabulary/<list>`,
+`/vocabulary/<list>/edit`, `/vocabulary/<list>/study`, `/vocabulary/scan`) redirect. A
+word saved from the scanner becomes a card in a "Scanned words FR → DE" set at once, so it
+has a page too. The import provides private photo/PDF/text/manual vocabulary imports using the same validated upload,
 OCR, retention, cleanup, and ownership system as flashcard imports. Students select source and target
 languages independently of the interface language, review structured word pairs and example sentences,
 accept or reject visible corrections, then open selected card variants in the existing compact flashcard
-editor. Dedicated practice persists mastery separately for each translation direction and contributes
+editor. The practice API (`/api/vocabulary/lists/<id>/practice`) persists mastery separately for each
+translation direction and contributes
 idempotent XP, streak, mission, badge, dashboard, and progress activity. Initially supported vocabulary
 languages are English, German, French, and Spanish. Production requires
 `FEATURE_VOCABULARY_TRAINER=true`; the flag defaults on outside production.

@@ -363,41 +363,42 @@ class GapFillTests(unittest.TestCase):
         self.assertIn("continue", practice)
 
 
-class StudyPageTests(unittest.TestCase):
+class SessionScopeTests(unittest.TestCase):
+    """The practice page's picker became two objectives inside a flashcard session."""
+
     @classmethod
     def setUpClass(cls):
-        cls.template = (ROOT / "templates/vocabulary_study.html").read_text(encoding="utf-8")
-        cls.js = (ROOT / "static/js/vocabulary.js").read_text(encoding="utf-8")
-        cls.css = (ROOT / "static/css/vocabulary.css").read_text(encoding="utf-8")
+        cls.template = (ROOT / "templates/flashcards_mode.html").read_text(encoding="utf-8")
+        cls.engine = (ROOT / "static/js/flashcards/mode-engine.js").read_text(encoding="utf-8")
 
-    def test_the_three_choices_are_offered_in_the_order_they_were_asked_for(self):
+    def test_the_two_scopes_are_offered_in_the_session_settings(self):
         import re
-        values = re.findall(r'name="scope" value="(\w+)"', self.template)
-        self.assertEqual(values, ["words", "sentences", "all"])
-        self.assertIn('value="all" checked', self.template)
+        values = re.findall(r'<option value="(\w+)" data-vocabulary-only hidden>', self.template)
+        self.assertEqual(values, ["words", "sentences"])
 
-    def test_the_choice_reaches_the_server(self):
-        self.assertIn("scope=${encodeURIComponent(scope)}", self.js)
+    def test_they_appear_only_for_a_set_that_has_both_kinds(self):
+        self.assertIn('(card.tags || []).includes("sentence")', self.engine)
+        self.assertIn("sentences > 0 && sentences < cards.length", self.engine)
 
-    def test_an_option_with_nothing_behind_it_is_disabled_not_hidden(self):
-        self.assertIn("radio.disabled = total === 0", self.js)
-        self.assertIn(".scope-option.is-empty", self.css)
+    def test_cards_carry_their_kind_as_a_tag(self):
+        cards = service.card_variants(
+            {"source_term": "Il pleut.", "target_translation": "Es regnet.", "entry_kind": "sentence",
+             "source_language": "fr"}, ["source_to_target"], {"include_examples": True, "difficulty": "medium"})
+        self.assertIn("sentence", cards[0]["tags"])
+        word = service.card_variants(
+            {"source_term": "la maison", "target_translation": "das Haus", "source_language": "fr"},
+            ["source_to_target"], {"difficulty": "medium"})
+        self.assertIn("word", word[0]["tags"])
 
-    def test_the_student_is_never_left_on_an_empty_choice(self):
-        self.assertIn("if (radio.checked && total === 0)", self.js)
-        self.assertIn("vocabularyNothingInScope", self.js)
-
-    def test_the_counts_come_from_the_list_rather_than_a_second_endpoint(self):
-        counter = self.js.split("async function labelScopeOptions", 1)[1].split("\n  }", 1)[0]
-        self.assertIn("/api/vocabulary/lists/", counter)
-        self.assertIn('entry.entry_kind || "word"', counter)
-
-    def test_a_missing_count_does_not_stop_practice_starting(self):
-        self.assertIn("labelScopeOptions().catch(", self.js)
-
-    def test_the_picker_stacks_on_a_phone(self):
-        phone = self.css.split("@media (max-width: 700px)", 1)[1].split("}\n}", 1)[0]
-        self.assertIn(".scope-picker { grid-template-columns: 1fr; }", phone)
+    def test_the_session_filter_reads_the_tag(self):
+        from types import SimpleNamespace
+        from learnova.flashcards import modes
+        cards = [SimpleNamespace(id=1, tags_json='["vocabulary", "fr", "word"]', weakness_score=0, repetition_count=0),
+                 SimpleNamespace(id=2, tags_json='["vocabulary", "fr", "sentence"]', weakness_score=0, repetition_count=0),
+                 SimpleNamespace(id=3, tags_json="[]", weakness_score=0, repetition_count=0)]
+        self.assertEqual([c.id for c in modes.select_cards(cards, "words", None, 10)], [1, 3], "untagged cards count as words")
+        self.assertEqual([c.id for c in modes.select_cards(cards, "sentences", None, 10)], [2])
+        self.assertEqual(len(modes.select_cards(cards, "all", None, 10)), 3)
 
 
 class ReviewPageTests(unittest.TestCase):
