@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from collections import Counter
@@ -20,7 +21,7 @@ from flask import Flask, abort, flash, g, has_app_context, has_request_context, 
 from flask_login import UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import Index, UniqueConstraint, func, insert, inspect, or_, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -119,6 +120,10 @@ from learnova.flashcards.image_extraction import extract_image_text
 from learnova.flashcards import modes as flashcard_modes
 from learnova.gamification import service as gamification
 from learnova.vocabulary import service as vocabulary
+from learnova.vocabulary import language as vocabulary_language
+from learnova.vocabulary import layout as vocabulary_layout
+from learnova.vocabulary import translate as vocabulary_translate
+from learnova.ocr import local as local_ocr
 from learnova.community import service as community
 from learnova import moderation
 from learnova import assistant
@@ -874,6 +879,50 @@ class VocabularyEntry(db.Model):
     linked_flashcard_ids_json = db.Column(db.Text, nullable=False, default="[]")
     vocabulary_list = db.relationship("VocabularyList", back_populates="entries")
     states = db.relationship("VocabularyStudyState", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class VocabularyScan(db.Model):
+    """One photographed page in the tap-a-word scanner.
+
+    The OCR result is kept, so every tap is a lookup in stored text rather than a second
+    read of the picture, and the photo itself lives in the import store with the same
+    retention and cleanup as every other upload.
+    """
+
+    __tablename__ = "vocabulary_scan"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    flashcard_import_id = db.Column(db.String(36), db.ForeignKey("flashcard_import.id"), nullable=True, index=True)
+    source_language = db.Column(db.String(5), nullable=False, default="")
+    language_confidence = db.Column(db.Float, nullable=False, default=0.0)
+    target_language = db.Column(db.String(5), nullable=False, default="")
+    engine = db.Column(db.String(40), nullable=False, default="")
+    ocr_ms = db.Column(db.Integer, nullable=False, default=0)
+    lines_json = db.Column(db.Text, nullable=False, default="[]")
+    lookups_json = db.Column(db.Text, nullable=False, default="{}")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class TranslationCache(db.Model):
+    """Answers from the translation providers, shared by every student.
+
+    A word looked up once is never paid for again, whoever taps it next.
+    """
+
+    __tablename__ = "translation_cache"
+    key = db.Column(db.String(40), primary_key=True)
+    source_language = db.Column(db.String(5), nullable=False, index=True)
+    target_language = db.Column(db.String(5), nullable=False)
+    source_text = db.Column(db.Text, nullable=False)
+    translated_text = db.Column(db.Text, nullable=False)
+    provider = db.Column(db.String(30), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -2253,6 +2302,7 @@ def ensure_database():
             apply_schema_migration("027_add_user_ai_cooldown", lambda: None)
         # Two new tables (competency, exam_prep_state); create_all made them above.
         apply_schema_migration("025_exam_autopilot", lambda: None)
+        apply_schema_migration("028_vocabulary_scanner", lambda: None)
         badge_rows = (
             ("first_steps", "First Steps", "Complete your first meaningful learning activity.", "spark", "general", 1, "bronze", 10),
             ("flashcard_beginner", "Flashcard Beginner", "Review 10 flashcards.", "cards", "flashcards", 10, "bronze", 15),
@@ -2274,7 +2324,24 @@ def ensure_database():
         db.session.commit()
 
 
+def start_local_ocr_warmup() -> None:
+    """Load the local OCR models in the background so the first scan is not the slow one."""
+    if app.config.get("TESTING") or not app.config.get("LOCAL_OCR_WARMUP"):
+        return
+    if not local_ocr.available(app.config):
+        return
+
+    def run() -> None:
+        try:
+            local_ocr.warm_up(app.config)
+        except Exception as error:  # the first scan will report the reason properly
+            app.logger.warning("local OCR warm-up failed: %s", error)
+
+    threading.Thread(target=run, name="local-ocr-warmup", daemon=True).start()
+
+
 ensure_database()
+start_local_ocr_warmup()
 # From here on token budgets are checked against the database; the JSONL log is still
 # written as a mirror for the diagnostics page and for a checkout with no database.
 ai_service.set_usage_ledger(DatabaseLedger())
@@ -2839,6 +2906,17 @@ def vocabulary_import_page():
     cleanup_expired_flashcard_imports()
     return render_template(
         "vocabulary_import.html", supported_languages=vocabulary.SUPPORTED_LANGUAGES)
+
+
+@app.get("/vocabulary/scan")
+@login_required
+def vocabulary_scan_page():
+    if not app.config.get("FEATURE_VOCABULARY_TRAINER"):
+        abort(404)
+    return render_template(
+        "vocabulary_scan.html", scanner_available=local_ocr.available(app.config),
+        supported_languages=vocabulary.SUPPORTED_LANGUAGES,
+        default_target=scan_target_language(""))
 
 
 @app.get("/vocabulary/<list_id>")
@@ -9074,15 +9152,35 @@ def read_vocabulary_page_safely(
                         page_number, type(error).__name__)
         warnings = [f"Page {page_number} could not be read as a table; "
                     "its lines were read one by one."]
-    recognition = recognize_flashcard_import_image(data, "Languages", page_number)
-    parsed = vocabulary.parse_vocabulary_text(str(recognition["text"] or ""), page_number)
+    text, confidence, ocr_warnings = read_page_text(data, page_number)
+    parsed = vocabulary.parse_vocabulary_text(text, page_number)
     for entry in parsed["entries"]:
-        entry["confidence"] = min(float(entry["confidence"]), float(recognition["confidence"]))
+        entry["confidence"] = min(float(entry["confidence"]), confidence)
     # The folded examples also become sentence entries, so "sentences only" has the same
     # material whichever reader produced the page.
     parsed["entries"] = vocabulary.expand_examples(parsed["entries"])
-    parsed["warnings"] = warnings + list(recognition["warnings"]) + list(parsed["warnings"])
+    parsed["warnings"] = warnings + ocr_warnings + list(parsed["warnings"])
     return parsed
+
+
+def read_page_text(data: bytes, page_number: int) -> tuple[str, float, list[str]]:
+    """The plain text of a page: the local engine when it is installed, else the vision model.
+
+    Local reading takes well under a second and costs nothing, so it is tried first; the
+    provider path is kept for a server without the engine.
+    """
+    if local_ocr.available(app.config):
+        try:
+            result = local_ocr.recognize(data, app.config)
+        except (local_ocr.LocalOcrUnavailable, ValueError, OSError) as error:
+            app.logger.info("local OCR failed on page %s (%s); asking the vision model",
+                            page_number, type(error).__name__)
+        else:
+            confidences = [line.confidence for line in result.lines]
+            confidence = sum(confidences) / len(confidences) if confidences else 0.0
+            return result.text, round(confidence, 3), list(result.warnings)
+    recognition = recognize_flashcard_import_image(data, "Languages", page_number)
+    return str(recognition["text"] or ""), float(recognition["confidence"]), list(recognition["warnings"])
 
 
 def read_vocabulary_document(
@@ -9581,6 +9679,270 @@ def delete_vocabulary_import(import_id):
     return jsonify(ok=True)
 
 
+# ---- Tap-a-word scanner: photo -> local OCR -> language -> word -> sentence -> translation
+#
+# No language model anywhere on this path. The page is read on this machine in well
+# under a second, its language is told from its function words, the sentence is found
+# from the line geometry, and the meaning comes from a translation API with a cache in
+# front of it. One failed service degrades one field of the answer, never the scan.
+
+_TRANSLATION_MEMORY = vocabulary_translate.MemoryCache()
+
+
+def translator() -> vocabulary_translate.Translator:
+    return vocabulary_translate.Translator(
+        vocabulary_translate.providers_from_config(app.config), cache=_TRANSLATION_MEMORY,
+        timeout=float(app.config.get("TRANSLATION_TIMEOUT_SECONDS") or vocabulary_translate.DEFAULT_TIMEOUT))
+
+
+def translate_texts(texts: list[str], source: str, target: str) -> list[vocabulary_translate.Translation]:
+    """Translate several texts at once, with the shared database cache in front.
+
+    The database is touched only on this thread: the provider calls run in worker
+    threads, which have no session. Known answers are seeded into the in-process cache
+    first; new ones are stored afterwards. The cache is a saving, not a requirement, so
+    a clash between two simultaneous first lookups is rolled back and forgotten.
+    """
+    keys = [vocabulary_translate.cache_key(text, source, target) for text in texts]
+    rows = db.session.scalars(db.select(TranslationCache).where(TranslationCache.key.in_(keys))).all()
+    for row in rows:
+        _TRANSLATION_MEMORY.set(row.key, row.translated_text, row.provider)
+    results = translator().translate_many(list(texts), source, target)
+    known = {row.key for row in rows}
+    stored = False
+    for key, source_text, result in zip(keys, texts, results):
+        if result.ok and not result.cached and result.provider not in ("", "identity") and key not in known:
+            db.session.add(TranslationCache(
+                key=key, source_language=source, target_language=target,
+                source_text=vocabulary_translate.clean_text(source_text), translated_text=result.text,
+                provider=result.provider))
+            known.add(key)
+            stored = True
+    if stored:
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+    return results
+
+
+def owned_vocabulary_scan(scan_id: Any) -> "VocabularyScan | None":
+    try:
+        normalized = str(uuid.UUID(str(scan_id)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return db.session.scalar(db.select(VocabularyScan).where(
+        VocabularyScan.id == normalized, VocabularyScan.owner_user_id == current_user.id))
+
+
+def scan_language(value: Any, fallback: str = "") -> str:
+    code = str(value or "").strip().lower()
+    return code if code in vocabulary.SUPPORTED_LANGUAGES else fallback
+
+
+def scan_target_language(detected: str) -> str:
+    """The language the student wants meanings in.
+
+    Their profile language, unless the book is in it; then the pair they used most
+    recently for that book language; then a sensible default. Nothing to type.
+    """
+    profile = str(getattr(current_user, "preferred_language", "") or "")
+    if profile in vocabulary.SUPPORTED_LANGUAGES and profile != detected:
+        return profile
+    if detected:
+        recent = db.session.scalar(db.select(VocabularyList.target_language).where(
+            VocabularyList.owner_user_id == current_user.id,
+            VocabularyList.source_language == detected).order_by(VocabularyList.updated_at.desc()))
+        if recent and recent != detected:
+            return str(recent)
+    return "en" if detected != "en" else "de"
+
+
+def vocabulary_scan_payload(scan: VocabularyScan) -> dict[str, Any]:
+    document = db.session.get(FlashcardImport, scan.flashcard_import_id) if scan.flashcard_import_id else None
+    lines = json_value(scan.lines_json, [])
+    return {
+        "id": scan.id, "source_language": scan.source_language,
+        "language_confidence": scan.language_confidence, "target_language": scan.target_language,
+        "engine": scan.engine, "ocr_ms": scan.ocr_ms,
+        "preview_url": url_for("flashcard_import_preview", document_id=document.id) if document else None,
+        "lines": lines, "word_count": sum(len(line.get("words") or []) for line in lines),
+        "languages": dict(vocabulary.SUPPORTED_LANGUAGES),
+    }
+
+
+def discard_private_upload(storage_key: str) -> None:
+    if storage_key:
+        flashcard_imports.delete_private(app.config["FLASHCARD_IMPORT_STORAGE_DIR"], storage_key)
+
+
+@app.post("/api/vocabulary/scans")
+@limiter.limit("10 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def create_vocabulary_scan():
+    if not local_ocr.available(app.config):
+        return api_error(tr("The scanner is not available on this server."), 503, "scanner_unavailable")
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return api_error(tr("Take a photo first."), 400, "missing_file")
+    stored_key = ""
+    try:
+        document, data = store_vocabulary_upload(upload, f"scan:{uuid.uuid4()}")
+        stored_key = document.storage_key
+        if document.source_type != "image":
+            raise ValueError("not_an_image")
+        result = local_ocr.recognize(data, app.config)
+    except flashcard_imports.ImportProblem as problem:
+        db.session.rollback()
+        return import_api_problem(problem)
+    except local_ocr.LocalOcrUnavailable as error:
+        db.session.rollback()
+        discard_private_upload(stored_key)
+        app.logger.warning("scanner unavailable: %s", error)
+        return api_error(tr("The scanner is not available on this server."), 503, "scanner_unavailable")
+    except (ValueError, OSError):
+        db.session.rollback()
+        discard_private_upload(stored_key)
+        return api_error(tr("The photo could not be read. Try a sharper picture."), 422, "unreadable_photo")
+    if not result.lines:
+        db.session.rollback()
+        discard_private_upload(stored_key)
+        return api_error(tr("No text was found in the photo. Try a sharper picture."), 422, "no_text_found")
+    detection = vocabulary_language.detect_language(result.text, tuple(vocabulary.SUPPORTED_LANGUAGES))
+    detected = detection.language if detection.language in vocabulary.SUPPORTED_LANGUAGES else ""
+    source = scan_language(request.form.get("source_language"), detected)
+    target = scan_language(request.form.get("target_language")) or scan_target_language(source)
+    scan = VocabularyScan(
+        owner_user_id=current_user.id, flashcard_import_id=document.id,
+        source_language=source, language_confidence=float(detection.confidence),
+        target_language=target, engine=result.engine, ocr_ms=result.duration_ms,
+        lines_json=json.dumps(vocabulary_layout.lines_to_payload(result.lines), ensure_ascii=False))
+    db.session.add(scan)
+    db.session.commit()
+    return jsonify(ok=True, scan=vocabulary_scan_payload(scan), detection=detection.as_dict(),
+                   warnings=result.warnings), 201
+
+
+@app.get("/api/vocabulary/scans/<scan_id>/words/<int:line_index>/<int:word_index>")
+@limiter.limit("60 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def lookup_vocabulary_scan_word(scan_id, line_index, word_index):
+    """The tapped word, its meaning, the sentence it sits in, and that sentence's meaning."""
+    scan = owned_vocabulary_scan(scan_id)
+    if not scan:
+        return api_error(tr("This scan could not be found."), 404, "scan_not_found")
+    source = scan_language(request.args.get("source"), scan.source_language)
+    target = scan_language(request.args.get("target"), scan.target_language)
+    if not source:
+        return api_error(tr("Choose the language of the book first."), 400, "source_language_missing")
+    if source == target:
+        return api_error(tr("Choose two supported, different languages."), 400, "invalid_languages")
+    lines = vocabulary_layout.lines_from_payload(json_value(scan.lines_json, []))
+    located = vocabulary_layout.locate(lines, line_index, word_index)
+    if located is None or not located.clean:
+        return api_error(tr("That word could not be found on the page."), 404, "word_not_found")
+    lookups = json_value(scan.lookups_json, {})
+    lookups = lookups if isinstance(lookups, dict) else {}
+    key = f"{line_index}:{word_index}:{source}:{target}"
+    if key in lookups:
+        return jsonify(ok=True, lookup=lookups[key], cached=True)
+    sentence = located.sentence if located.sentence.casefold() != located.clean.casefold() else ""
+    results = translate_texts([located.clean] + ([sentence] if sentence else []), source, target)
+    word_result, sentence_result = results[0], (results[1] if len(results) > 1 else None)
+    lookup = {
+        "word": located.clean, "word_as_printed": located.word,
+        "translation": word_result.text, "translation_ok": word_result.ok, "provider": word_result.provider,
+        "sentence": sentence,
+        "sentence_translation": sentence_result.text if sentence_result else "",
+        "sentence_translation_ok": bool(sentence_result and sentence_result.ok),
+        "source_language": source, "target_language": target,
+        "line_index": line_index, "word_index": word_index,
+        "reason": "" if word_result.ok else word_result.reason,
+    }
+    if word_result.ok:
+        # Only answers are remembered; a failed lookup is tried again on the next tap.
+        lookups[key] = lookup
+        scan.lookups_json = json.dumps(lookups, ensure_ascii=False)
+        scan.source_language, scan.target_language = source, target
+        db.session.commit()
+    return jsonify(ok=True, lookup=lookup, cached=False)
+
+
+def scanned_words_list(source: str, target: str) -> VocabularyList:
+    """The student's running list for one language pair, created on the first save."""
+    existing = db.session.scalar(db.select(VocabularyList).where(
+        VocabularyList.owner_user_id == current_user.id, VocabularyList.unit == "scanner",
+        VocabularyList.source_language == source, VocabularyList.target_language == target))
+    if existing is not None:
+        return existing
+    created = VocabularyList(
+        owner_user_id=current_user.id,
+        title=f"{tr('Scanned words')} {source.upper()} → {target.upper()}",
+        description=tr("Words you tapped in the scanner."), unit="scanner",
+        source_language=source, target_language=target, subject="Languages")
+    db.session.add(created)
+    db.session.flush()
+    return created
+
+
+@app.post("/api/vocabulary/scans/<scan_id>/words/save")
+@limiter.limit("60 per minute")
+@login_required
+@require_feature("FEATURE_VOCABULARY_TRAINER")
+def save_vocabulary_scan_word(scan_id):
+    """One tap more: the word, its meaning and its sentence become a vocabulary entry."""
+    scan = owned_vocabulary_scan(scan_id)
+    if not scan:
+        return api_error(tr("This scan could not be found."), 404, "scan_not_found")
+    payload = request.get_json(silent=True) or {}
+    word = vocabulary.clean_text(payload.get("word"), 300)
+    translation = vocabulary.clean_text(payload.get("translation"), 500)
+    if not word:
+        return api_error(tr("Tap a word first."), 400, "missing_word")
+    if not translation:
+        return api_error(tr("Add a translation first."), 400, "missing_translation")
+    source = scan_language(payload.get("source_language"), scan.source_language)
+    target = scan_language(payload.get("target_language"), scan.target_language)
+    if not source or source == target:
+        return api_error(tr("Choose two supported, different languages."), 400, "invalid_languages")
+    vocabulary_list = None
+    if payload.get("list_id"):
+        vocabulary_list = owned_vocabulary_list(payload.get("list_id"))
+        if vocabulary_list is None or (vocabulary_list.source_language, vocabulary_list.target_language) != (source, target):
+            return api_error(tr("This vocabulary list could not be found."), 404, "list_not_found")
+    if vocabulary_list is None:
+        vocabulary_list = scanned_words_list(source, target)
+    sentence = vocabulary.clean_text(payload.get("sentence"), 1200)
+    sentence_translation = vocabulary.clean_text(payload.get("sentence_translation"), 1200)
+    link = {"list_id": vocabulary_list.id, "list_title": vocabulary_list.title,
+            "list_url": url_for("vocabulary_list_page", list_id=vocabulary_list.id)}
+    wanted = vocabulary.normalize_answer(word)
+    entries = db.session.scalars(db.select(VocabularyEntry).where(
+        VocabularyEntry.list_id == vocabulary_list.id)).all()
+    existing = next((entry for entry in entries
+                     if vocabulary.normalize_answer(entry.source_term) == wanted), None)
+    if existing is not None:
+        if sentence and not existing.source_example_sentence:
+            existing.source_example_sentence = sentence
+            existing.target_example_translation = sentence_translation
+        db.session.commit()
+        return jsonify(ok=True, duplicate=True, entry_id=existing.id, **link)
+    entry = VocabularyEntry(
+        list_id=vocabulary_list.id, position=len(entries),
+        source_language=source, target_language=target,
+        source_term=word, target_translation=translation,
+        source_example_sentence=sentence, target_example_translation=sentence_translation,
+        entry_kind=vocabulary.text_kind(word), ocr_confidence=1.0,
+        validation_status="valid", validation_explanation="Saved from the scanner.",
+        user_confirmed=True, included=True)
+    db.session.add(entry)
+    vocabulary_list.updated_at = utcnow()
+    db.session.commit()
+    return jsonify(ok=True, duplicate=False, entry_id=entry.id, **link), 201
+
+
 @app.get("/api/vocabulary/lists")
 @login_required
 @require_feature("FEATURE_VOCABULARY_TRAINER")
@@ -9880,6 +10242,9 @@ def cleanup_expired_flashcard_imports(now: datetime | None = None) -> int:
             VocabularyImport.flashcard_import_id == document.id)).all()
         for vocabulary_import in vocabulary_imports:
             db.session.delete(vocabulary_import)
+        for scan in db.session.scalars(db.select(VocabularyScan).where(
+                VocabularyScan.flashcard_import_id == document.id)).all():
+            db.session.delete(scan)
         flashcard_imports.delete_private(
             app.config["FLASHCARD_IMPORT_STORAGE_DIR"], document.storage_key)
         db.session.delete(document)

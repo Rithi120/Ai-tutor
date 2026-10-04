@@ -432,6 +432,51 @@ keeps the individual `FEATURE_FLASHCARD_*_MODE` / `FEATURE_FLASHCARD_*_GAME` fla
 for the complete flag list. `GAMIFICATION_MIN_DAILY_EVENTS` controls how many meaningful events qualify a day
 for streak credit.
 
+### Scan a word (no language model)
+
+`/vocabulary/scan` is the fast path for a student with a book open: **photo → tap a word →
+word, meaning, the sentence it is in, the sentence's meaning → save**. Nothing on this
+path goes to a language model, and the whole flow is deterministic:
+
+1. **OCR on the server**, `learnova/ocr/local.py`: RapidOCR (PaddleOCR's PP-OCR models on
+   ONNX Runtime, pip-installed, no key) reads a page in about 0.4 s on a laptop CPU and
+   returns every line and every word with its box. The models are downloaded once;
+   `scripts/warm_local_ocr.py` does that at build time and a background thread at
+   start-up (`LOCAL_OCR_WARMUP`), so the first scan is not the slow one. Install it with
+   `pip install -r requirements.txt && pip install --no-deps rapidocr==3.9.2` — the
+   `--no-deps` because RapidOCR declares the full OpenCV, which would sit beside the
+   headless build the project uses and needs libGL on a server; its other dependencies
+   are pinned in `requirements.txt`. Without the engine the scanner page says so.
+2. **Language** from function words, `learnova/vocabulary/language.py` — "le, la, est,
+   dans" against "der, die, und, nicht" — with a few exclusive letters (ß, ñ, œ, ã) as
+   extra weight. A dead heat is reported as unknown and the student picks the language.
+3. **The sentence** from the line geometry, `learnova/vocabulary/layout.py`: lines are
+   grouped into blocks by vertical gap and horizontal overlap, columns are read left then
+   right, hyphenation at a line break is mended, and the sentence containing the tapped
+   word is cut on `. ! ?` followed by a capital (abbreviations such as "z. B." excepted).
+4. **Meaning** from a translation API, `learnova/vocabulary/translate.py`: DeepL
+   (`DEEPL_API_KEY`), LibreTranslate (`LIBRETRANSLATE_URL`) or the keyless MyMemory API,
+   tried in `TRANSLATION_PROVIDERS` order with a 4 s timeout each, the word and its
+   sentence fetched together. Every answer lands in `translation_cache` (shared by all
+   students) and an in-process cache, so a word costs one call ever. A provider outage
+   degrades one field of the answer — the translation box is editable, so the student
+   types the meaning and still saves the word — never the scan.
+
+The target language comes from the student's profile (unless the book is in it, then the
+pair they used most recently), the saved words go to a running "Scanned words FR → DE"
+list per pair, and the photo is kept with the same retention and cleanup as every other
+upload. Fallback on a server without the engine: the page says so (503 on the API). The
+textbook-table import above still uses the vision model for its three-column reading,
+but its line-by-line fallback now reads locally when the engine is installed.
+
+**Why it was rebuilt.** The usage ledger for the night of 3 October shows every scan going
+to Groq's vision endpoint and every call failing with `network_failure` after 98–374 s:
+the SDK's default 600 s timeout and two silent retries, then the OCR fallback meeting the
+same outage. Each photo waited three to eight minutes and ended in "extraction failed".
+Provider clients are now built with `max_retries=0` and a bounded `timeout`
+(`AI_PROVIDER_TIMEOUT_SECONDS` 40 s for text, `AI_VISION_TIMEOUT_SECONDS` 75 s for a
+page), and the basic scanner no longer depends on a provider at all.
+
 ### Vocabulary Trainer
 
 The import page at `/vocabulary/import` asks one question first — *how do you want to add

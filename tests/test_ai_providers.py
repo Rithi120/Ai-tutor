@@ -11,7 +11,7 @@ not offered. docs/AI_ROUTING.md keeps the live-verification status current.
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from flask import Flask
 
@@ -91,7 +91,7 @@ class GeminiTests(ProviderTestCase):
         with patch.object(service, "OpenAI", return_value=client) as constructor:
             result = service._provider_response(**self.request("gemini:gemini-x", reasoning={"effort": "low"}))
         constructor.assert_called_once_with(
-            api_key="gemini-key", base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+            api_key="gemini-key", base_url="https://generativelanguage.googleapis.com/v1beta/openai/", max_retries=0, timeout=ANY)
         client.responses.create.assert_not_called()
         sent = client.chat.completions.create.call_args.kwargs
         self.assertEqual(sent["model"], "gemini-x", "the provider prefix never reaches the wire")
@@ -117,7 +117,8 @@ class AnthropicTests(ProviderTestCase):
         client.messages.create.return_value = anthropic_message()
         with patch.object(service, "Anthropic", return_value=client) as constructor:
             result = service._provider_response(**self.request("anthropic:claude-x"))
-        constructor.assert_called_once_with(api_key="anthropic-key", base_url="https://api.anthropic.com")
+        constructor.assert_called_once_with(
+            api_key="anthropic-key", base_url="https://api.anthropic.com", max_retries=0, timeout=ANY)
         sent = client.messages.create.call_args.kwargs
         self.assertEqual(sent["model"], "claude-x")
         self.assertEqual(sent["system"], "Answer as JSON.")
@@ -144,7 +145,8 @@ class OpenAITests(ProviderTestCase):
         with patch.object(service, "OpenAI", return_value=client) as constructor:
             service._provider_response(**self.request("openai:gpt-5", reasoning={"effort": "low"}))
             service._provider_response(**self.request("openai:gpt-4.1"))
-        constructor.assert_called_with(api_key="openai-key", base_url="https://api.openai.com/v1")
+        constructor.assert_called_with(
+            api_key="openai-key", base_url="https://api.openai.com/v1", max_retries=0, timeout=ANY)
         reasoning_call, plain_call = [call.kwargs for call in client.responses.create.call_args_list]
         self.assertNotIn("temperature", reasoning_call)
         self.assertEqual(reasoning_call["reasoning"], {"effort": "low"})
@@ -156,7 +158,8 @@ class OpenAITests(ProviderTestCase):
         client.responses.create.return_value = responses_object()
         with patch.object(service, "OpenAI", return_value=client) as constructor:
             service._provider_response(**self.request("openai/gpt-oss-20b"))
-        constructor.assert_called_once_with(api_key="groq-key", base_url="https://api.groq.com/openai/v1")
+        constructor.assert_called_once_with(
+            api_key="groq-key", base_url="https://api.groq.com/openai/v1", max_retries=0, timeout=ANY)
         self.assertEqual(client.responses.create.call_args.kwargs["temperature"], 0.2)
 
 

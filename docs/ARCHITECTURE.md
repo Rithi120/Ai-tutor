@@ -71,7 +71,8 @@ The top-level `adaptive_learning.py`, `document_processing.py`, `study_projects.
 | --- | --- | --- |
 | `authentication` | credential validation, password-backed user creation, identity lookup | templates or redirects |
 | `uploads` | one transaction for files/pages, de-duplication and page limits | request parsing |
-| `ocr` | file signatures, conservative image work and recognition normalization | account authorization |
+| `ocr` | file signatures, conservative image work and recognition normalization; `ocr.local` is the on-server OCR engine seam (RapidOCR) with word boxes | account authorization |
+| `vocabulary` | parsing, validation and practice rules; `language` (function-word detection), `layout` (blocks, columns, the sentence around a word), `translate` (DeepL / LibreTranslate / MyMemory behind one HTTP seam, cached) | Flask, the database, any language model |
 | `ai_services` | cached/live gateway, the provider registry and sole provider client, per-provider request adapters (`adapters.py`), task routing and fallback (`routing.py`), token budgets (`budgets.py`), the usage-ledger interface, private cache keys, sanitized accounting, JSON parsing and shared prompts | database transactions or raw student-data logging |
 | `assistant` | what the direct assistant is told to be, and what of a conversation the model sees | persistence, authorization, or the provider call itself |
 | `moderation` | community safety vocabulary, text preprocessing and obfuscation signals, the classification contract, and the decision policy | provider access, database writes, or publishing anything itself |
