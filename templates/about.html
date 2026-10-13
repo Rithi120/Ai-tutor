@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}{{ _('About Learnova') }}{% endblock %}
+{% block head %}
+<meta name="description" content="{{ _('Learnova turns your own learning material into explanations at your level, practice questions, flashcards and structured exam preparation — in one place, so you always know what to work on next.') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/about.css', v=static_version) }}">
+{% endblock %}
+{% block body_class %}about-page{% endblock %}
+{% block content %}
+<main id="main-content" class="about-shell">
+
+  <section class="about-hero">
+    <div class="eyebrow">{{ _('ABOUT LEARNOVA') }}</div>
+    <h1>{{ _('Learn smarter. Understand deeper. Make every study session count.') }}</h1>
+    <p class="about-lead">{{ _('Learnova turns your own learning material into explanations at your level, practice questions, flashcards and structured exam preparation — in one place, so you always know what to work on next.') }}</p>
+    <div class="about-cta-row">
+      {% if current_user.is_authenticated %}
+      <a class="primary-button" href="{{ url_for('dashboard') }}">{{ _('Open your dashboard') }}</a>
+      {% else %}
+      <a class="primary-button" href="{{ url_for('register') }}">{{ _('Start learning for free') }}</a>
+      {% endif %}
+      <a class="about-secondary-link" href="#how-it-works">{{ _('Explore how it works') }} <span aria-hidden="true">↓</span></a>
+    </div>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-problem">
+    <h2 id="about-problem">{{ _('Studying alone is harder than it should be') }}</h2>
+    <p class="about-section-lead">{{ _('Most study time is lost to the same four problems.') }}</p>
+    <div class="about-grid about-grid-4">
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">📖</span>
+        <h3>{{ _('Rereading without learning') }}</h3>
+        <p>{{ _("You reread your notes but can't tell whether you truly understand them.") }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🧩</span>
+        <h3>{{ _('Too many disconnected apps') }}</h3>
+        <p>{{ _('Notes in one app, flashcards in another, explanations in a third — nothing talks to each other.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🔁</span>
+        <h3>{{ _('Practising what you already know') }}</h3>
+        <p>{{ _('Without feedback, it is easiest to repeat the comfortable material instead of the weak spots.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🗓️</span>
+        <h3>{{ _('No plan before the exam') }}</h3>
+        <p>{{ _('The exam date is close, but it is unclear what exactly still needs work.') }}</p>
+      </article>
+    </div>
+    <p class="about-resolution">{{ _('Learnova is built around this loop: understand, practise, see your mistakes, and focus the next session where it counts. It will not do the learning for you — it makes your effort land in the right place.') }}</p>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-features">
+    <h2 id="about-features">{{ _('What you can do with Learnova') }}</h2>
+    <div class="about-grid about-grid-3">
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">📷</span>
+        <h3>{{ _('Lessons from your material') }}</h3>
+        <p>{{ _('Photograph your notes or describe a study goal — Learnova builds a step-by-step explanation, a worked example and teacher tips, matched to your grade level.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🎯</span>
+        <h3>{{ _('Tests that know when to stop') }}</h3>
+        <p>{{ _('Practice tests adapt between 3 and 15 questions and end once you have shown you know each concept — no busywork on material you already mastered.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">💬</span>
+        <h3>{{ _('A tutor in every lesson') }}</h3>
+        <p>{{ _('Ask the built-in tutor chat for a hint, a smaller step or feedback on your attempt. It coaches you toward the answer instead of handing it over.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🔍</span>
+        <h3>{{ _('Mistakes that teach') }}</h3>
+        <p>{{ _('Every wrong answer lands in your Mistake Notebook with an AI diagnosis of what went wrong, and you can practise a similar question right away.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🃏</span>
+        <h3>{{ _('Flashcards and community sets') }}</h3>
+        <p>{{ _('Create flashcards yourself or generate them from your material, review them with spaced repetition, and browse sets other students published.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🎓</span>
+        <h3>{{ _('Exam preparation with a plan') }}</h3>
+        <p>{{ _('Upload a whole project — notes, scans, PDFs — and Learnova structures it into sections, section tests, final exams and a day-by-day study plan toward your exam date.') }}</p>
+      </article>
+    </div>
+    <ul class="about-chip-row" aria-label="{{ _('Also good to know') }}">
+      <li>{{ _('Works in English, German, French and Spanish') }}</li>
+      <li>{{ _('Calibrated from grade 1 to university') }}</li>
+      <li>{{ _('Listen to explanations out loud') }}</li>
+    </ul>
+  </section>
+
+  <section class="about-section" id="how-it-works" aria-labelledby="about-how">
+    <h2 id="about-how">{{ _('How Learnova works') }}</h2>
+    <ol class="about-steps">
+      <li class="about-step">
+        <span class="about-step-number" aria-hidden="true">1</span>
+        <h3>{{ _('Bring your material') }}</h3>
+        <p>{{ _('Photograph notes, upload documents, or simply name a topic and a study goal.') }}</p>
+      </li>
+      <li class="about-step">
+        <span class="about-step-number" aria-hidden="true">2</span>
+        <h3>{{ _('Understand it at your level') }}</h3>
+        <p>{{ _('Get an explanation that matches your grade, with worked examples and a tutor to ask.') }}</p>
+      </li>
+      <li class="about-step">
+        <span class="about-step-number" aria-hidden="true">3</span>
+        <h3>{{ _('Practise actively') }}</h3>
+        <p>{{ _('Answer adaptive test questions and review flashcards until the knowledge is really there.') }}</p>
+      </li>
+      <li class="about-step">
+        <span class="about-step-number" aria-hidden="true">4</span>
+        <h3>{{ _('Learn from mistakes') }}</h3>
+        <p>{{ _('See what went wrong, practise similar questions, and let the next session start where it helps most.') }}</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-compare">
+    <h2 id="about-compare">{{ _('Why choose Learnova?') }}</h2>
+    <p class="about-section-lead">{{ _('A fair look at how Learnova compares with popular study tools.') }}</p>
+    {% macro mark(state) -%}
+      {%- if state == 'yes' -%}<span class="about-mark about-mark-yes"><span aria-hidden="true">✓</span><span class="visually-hidden">{{ _('Included') }}</span></span>
+      {%- elif state == 'part' -%}<span class="about-mark about-mark-part"><span aria-hidden="true">◐</span><span class="visually-hidden">{{ _('Limited or paid') }}</span></span>
+      {%- else -%}<span class="about-mark about-mark-no"><span aria-hidden="true">—</span><span class="visually-hidden">{{ _('Not included or not verified') }}</span></span>
+      {%- endif -%}
+    {%- endmacro %}
+    <div class="about-table-wrap" tabindex="0">
+      <table class="about-table">
+        <caption class="visually-hidden">{{ _('Why choose Learnova?') }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ _('What matters for studying') }}</th>
+            <th scope="col" class="about-table-self">Learnova</th>
+            <th scope="col">Quizlet</th>
+            <th scope="col">Knowt</th>
+            <th scope="col">StudyFetch</th>
+            <th scope="col">ChatGPT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">{{ _('Turn your own material into study resources') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('AI explanations and tutoring') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td><td>{{ mark('yes') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('Adaptive practice tests with feedback') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('part') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('Mistake analysis and weak-area tracking') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('Structured exam preparation and planning') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td><td>{{ mark('no') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('Flashcards with spaced repetition') }}</th>
+            <td class="about-table-self">{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('yes') }}</td><td>{{ mark('part') }}</td><td>{{ mark('no') }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ _('Price') }}</th>
+            <td class="about-table-self">{{ _('Free with fair-use AI limits') }}</td>
+            <td>{{ _('Free with ads; paid plans remove limits') }}</td>
+            <td>{{ _('Free core; paid tier for unlimited AI') }}</td>
+            <td>{{ _('Small free tier; paid plans') }}</td>
+            <td>{{ _('Free tier; paid plans') }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="about-table-legend">
+      <span><span aria-hidden="true">✓</span> {{ _('Included') }}</span>
+      <span><span aria-hidden="true">◐</span> {{ _('Limited or paid') }}</span>
+      <span><span aria-hidden="true">—</span> {{ _('Not included or not verified') }}</span>
+    </p>
+    <p class="about-fine-print">{{ _('Products and plans change. This comparison reflects what we could verify on the providers’ official pages in October 2026 — check their sites for current details.') }}</p>
+    <p class="about-fairness">{{ _('If all you want is flashcards, a dedicated flashcard app like Quizlet or Knowt may be all you need, and for open-ended questions far beyond school topics a general assistant like ChatGPT is a great companion. Learnova is for students who want one connected workflow — from their own material to understanding, practice, mistakes and exam preparation.') }}</p>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-who">
+    <h2 id="about-who">{{ _('Who is Learnova for?') }}</h2>
+    <div class="about-grid about-grid-3">
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🏫</span>
+        <h3>{{ _('School students from grade 1 to 13') }}</h3>
+        <p>{{ _('Explanations, questions and examples are calibrated to your grade — set it once in your profile.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🎒</span>
+        <h3>{{ _('University and vocational students') }}</h3>
+        <p>{{ _('Rigorous explanations for higher education, practical examples for vocational training.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🌍</span>
+        <h3>{{ _('Learning in your language') }}</h3>
+        <p>{{ _('The interface runs in English, German, French and Spanish, and lessons can be generated in several more languages.') }}</p>
+      </article>
+    </div>
+    <p class="about-fine-print">{{ _('Learnova supports understanding, practice, revision and exam preparation. How far that carries you still depends on your own work — we make no grade promises.') }}</p>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-trust">
+    <h2 id="about-trust">{{ _('Honest about the AI') }}</h2>
+    <div class="about-grid about-grid-2">
+      <article class="about-card">
+        <h3>{{ _('What the AI helps with') }}</h3>
+        <p>{{ _('Explanations, practice questions, feedback on your answers, flashcards and study planning — always based on your material and your level.') }}</p>
+      </article>
+      <article class="about-card">
+        <h3>{{ _('AI can make mistakes') }}</h3>
+        <p>{{ _('AI-generated answers can be wrong or incomplete. For anything important — especially before an exam — double-check against your class material.') }}</p>
+      </article>
+      <article class="about-card">
+        <h3>{{ _('Free to use') }}</h3>
+        <p>{{ _('Learnova is currently free. There are no paid plans; fair-use limits on AI help keep the service available for everyone.') }}</p>
+      </article>
+      <article class="about-card">
+        <h3>{{ _('Your material stays yours') }}</h3>
+        <p>{{ _('Uploads, lessons, attempts and progress are stored in your account and used to build your study materials. Nothing is shared with other students unless you publish a flashcard set yourself.') }}</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="about-section" aria-labelledby="about-faq">
+    <h2 id="about-faq">{{ _('Frequently asked questions') }}</h2>
+    <div class="about-faq">
+      <details>
+        <summary>{{ _('What is Learnova?') }}</summary>
+        <p>{{ _('A study tutor that turns your learning material into explanations, practice, flashcards and exam preparation, and tracks what you still need to work on.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('Is Learnova free?') }}</summary>
+        <p>{{ _('Yes. All features are free; AI help has fair-use limits so the service stays available for everyone.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('How is Learnova different from ChatGPT?') }}</summary>
+        <p>{{ _('ChatGPT is a general assistant you can ask anything. Learnova is built only for studying: it remembers your lessons, grades your practice, tracks your mistakes and plans toward your exam — things a single chat does not do.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('Can I use my own notes?') }}</summary>
+        <p>{{ _('Yes. Photograph notes or upload documents; Learnova builds its explanations, tests and flashcards from your material.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('Can Learnova prepare me for exams?') }}</summary>
+        <p>{{ _('Yes — upload your material as a project, set the exam date, and work through sections, section tests, final exams and a day-by-day plan.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('Can the AI make mistakes?') }}</summary>
+        <p>{{ _('Yes. Treat AI answers as a strong starting point, not a final authority, and check important answers against your class material.') }}</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="about-final-cta">
+    <h2>{{ _('Your next study session can be more focused.') }}</h2>
+    {% if current_user.is_authenticated %}
+    <a class="primary-button" href="{{ url_for('dashboard') }}">{{ _('Open your dashboard') }}</a>
+    {% else %}
+    <a class="primary-button" href="{{ url_for('register') }}">{{ _('Start learning for free') }}</a>
+    <p class="about-fine-print"><a href="{{ url_for('login') }}">{{ _('Already have an account? Log in') }}</a></p>
+    {% endif %}
+  </section>
+
+</main>
+{% endblock %}

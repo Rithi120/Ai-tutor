@@ -1,5 +1,7 @@
 import {escapeHtml} from "./js/dom.js";
 import {renderMath} from "./js/math.js";
+import {parseChips, renderMarkdown} from "./js/markdown.js";
+import {announceXp} from "./js/xp.js";
 import {bindDiagnosisDetails, diagnosisMarkup} from "./js/diagnosis.js";
 import {selectedLanguage, t} from "./js/i18n.js";
 import {answerSymbols} from "./js/symbols.js";
@@ -325,6 +327,7 @@ document.querySelector("#finishTest")?.addEventListener("click", async event => 
                                  body: JSON.stringify({ session_id: sessionId }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
+    announceXp(data, `finish:${sessionId}`);
     latestKnowledge = data.progress.knowledge;
     button.hidden = true;
     renderSummary(data);
@@ -400,6 +403,7 @@ answerForm.addEventListener("submit", async event => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
+    announceXp(data, `lesson:${sessionId}:${questionResults.length}`);
     nextQuestion = data.next_question;
     const feedback = document.querySelector("#feedback");
     const correct = data.evaluation.is_correct;
@@ -444,16 +448,41 @@ document.querySelector("#chatToggle").addEventListener("click", () => {
   chatInput.focus();
 });
 document.querySelector("#chatClose").addEventListener("click", () => chatPanel.classList.add("hidden"));
-document.querySelectorAll(".chat-suggestions button").forEach(button => button.addEventListener("click", () => {
+const chatSuggestions = document.querySelector(".chat-suggestions");
+// One delegated listener on the container: the tutor replaces these buttons with its
+// own quick replies (chips) after each turn, and delegation survives that replacement.
+chatSuggestions.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
   chatInput.value = button.textContent;
   chatForm.requestSubmit();
-}));
+});
+
+function renderChips(labels) {
+  const entries = labels.length
+    ? labels.map(label => ({ label }))
+    : [{ label: t("giveHint"), key: "giveHint" }, { label: t("whatPractice"), key: "whatPractice" }];
+  chatSuggestions.replaceChildren(...entries.map(({ label, key }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    if (key) button.dataset.i18n = key;
+    button.textContent = label; // textContent: a model-written label can never become markup
+    return button;
+  }));
+}
 
 function addChatMessage(text, role, extraClass = "") {
   const message = document.createElement("div");
   message.className = `message ${role === "student" ? "student-message" : "tutor-message"} ${extraClass}`;
-  message.textContent = text;
-  if (role === "tutor" && !extraClass.includes("typing-message")) message.dataset.speechListenAuto = "";
+  if (role === "tutor" && !extraClass.includes("typing-message")) {
+    // Tutor replies are untrusted model text: the shared escape-first renderer builds
+    // the only tags that appear, then KaTeX typesets the $…$ delimiters it finds.
+    message.innerHTML = renderMarkdown(text);
+    message.dataset.speechListenAuto = "";
+    renderMath(message);
+  } else {
+    message.textContent = text; // student text and the typing indicator stay verbatim
+  }
   chatMessages.appendChild(message);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   return message;
@@ -475,7 +504,11 @@ chatForm.addEventListener("submit", async event => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     typing.remove();
-    addChatMessage(data.reply, "tutor");
+    // The reply may end with a "CHIPS: a | b" line naming tap answers for its question;
+    // it is stripped before rendering (and speech), so it is never shown or read aloud.
+    const parsed = parseChips(data.reply);
+    addChatMessage(parsed.text, "tutor");
+    renderChips(parsed.chips);
     renderMastery(data.mastery);
   } catch (error) {
     typing.remove();
@@ -491,4 +524,12 @@ if (lessonBootstrap) {
   uploadView.classList.add("hidden");
   lessonView.classList.remove("hidden");
   renderLesson(lessonBootstrap);
+} else {
+  // The assistant's "start a short lesson" button lands here with the question as
+  // ?goal=..., so the student taps "Build my lesson" instead of retyping it.
+  const prefillGoal = new URLSearchParams(window.location.search).get("goal");
+  if (prefillGoal && studyGoal) {
+    studyGoal.value = prefillGoal.slice(0, 500);
+    studyGoal.focus();
+  }
 }

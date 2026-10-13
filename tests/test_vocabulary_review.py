@@ -159,6 +159,29 @@ class ValidateEndpointTests(unittest.TestCase):
         self.assertEqual(generated.status_code, 200, generated.data)
         self.assertTrue(generated.get_json()["creator_url"])
 
+    def test_a_flagged_import_generates_with_auto_confirm(self):
+        # The import form no longer routes students through the review page: it sends
+        # auto_confirm, flagged rows keep their original reading, and the flow lands in
+        # the card editor. Without the flag the guard still protects the API.
+        import_id = self.manual_import([
+            {"source_term": "médiathèque", "target_translation": "Mediathek"},
+            {"source_term": "médiathèque", "target_translation": "Mediathek"},
+        ], key="manual-auto-confirm")
+        self.client.post(f"/api/vocabulary/imports/{import_id}/validate")
+        refused = self.client.post(
+            f"/api/vocabulary/imports/{import_id}/generate",
+            json={"directions": ["source_to_target"]},
+            headers={"Idempotency-Key": "auto-confirm-refused"})
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.get_json()["code"], "confirmation_required")
+        generated = self.client.post(
+            f"/api/vocabulary/imports/{import_id}/generate",
+            json={"directions": ["source_to_target"], "include_examples": True,
+                  "auto_confirm": True},
+            headers={"Idempotency-Key": "auto-confirm-cards"})
+        self.assertEqual(generated.status_code, 200, generated.data)
+        self.assertTrue(generated.get_json()["creator_url"])
+
     def test_a_typed_duplicate_still_stops_the_student(self):
         import_id = self.manual_import([
             {"source_term": "médiathèque", "target_translation": "Mediathek"},
@@ -325,13 +348,18 @@ class ImportFlowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.js = (ROOT / "static/js/vocabulary.js").read_text(encoding="utf-8")
 
-    def test_the_client_only_opens_the_review_page_when_the_server_asks_for_it(self):
+    def test_the_import_goes_straight_to_the_card_editor(self):
+        # The review page is no longer part of the flow: students land in the card
+        # editor, where every pair is still visible and editable before anything is
+        # saved. auto_confirm keeps flagged entries at their original reading instead
+        # of blocking the flow on a separate review screen.
         submit = self.js.split('importForm.addEventListener("submit"', 1)[1].split("\n  });", 1)[0]
-        self.assertIn("checked.review_needed", submit)
+        self.assertNotIn("review_needed", submit)
+        self.assertIn("auto_confirm: true", submit)
         self.assertIn("/generate", submit)
         self.assertIn("built.creator_url", submit)
 
-    def test_the_skip_path_uses_the_same_defaults_the_options_panel_shows(self):
+    def test_the_flow_uses_the_same_defaults_the_options_panel_shows(self):
         submit = self.js.split('importForm.addEventListener("submit"', 1)[1].split("\n  });", 1)[0]
         self.assertIn('directions: ["source_to_target"], include_examples: true', submit)
 

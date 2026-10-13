@@ -9,10 +9,11 @@
 {% set flashcards_active = endpoint.startswith('flashcards_') %}
 {% set vocabulary_active = endpoint.startswith('vocabulary_') %}
 {% set community_active = endpoint in ['community_page', 'community_set_detail_page'] %}
+{% set about_active = endpoint == 'about' %}
 {% set profile_active = endpoint in ['settings', 'update_language'] %}
 <header class="app-nav global-nav" data-app-navigation>
   <div class="app-nav-inner">
-    <a class="app-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span></a>
+    <a class="app-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('about') }}"><img class="brand-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span></a>
     {% if current_user.is_authenticated %}
     <nav class="desktop-app-nav global-nav-links" aria-label="{{ _('Main navigation') }}">
       <a class="app-nav-link {{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %} data-tour-target="overview">{{ _('Overview') }}</a>
@@ -31,9 +32,19 @@
           <a role="menuitem" class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
           <a role="menuitem" class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>
           <a role="menuitem" class="{{ 'is-active' if exam_active }}" href="{{ url_for('projects') }}" {% if exam_active %}aria-current="page"{% endif %}>{{ _('Exam Mode') }}</a>
+          <a role="menuitem" class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %}>{{ _('About Learnova') }}</a>
         </div>
       </div>
     </nav>
+    {% if xp_chip %}
+    <a class="xp-chip" href="{{ url_for('progress_page') }}" data-xp-chip data-xp-chip-level="{{ xp_chip.level }}"
+       aria-label="{{ _('Level {level} · {xp} XP — view your progress', level=xp_chip.level, xp=xp_chip.total_xp) }}">
+      <span class="xp-chip-level">{{ _('Level') }} <b data-xp-level>{{ xp_chip.level }}</b></span>
+      <span class="xp-chip-bar" aria-hidden="true"><i data-xp-bar style="width: {{ (100 * xp_chip.current_level_xp / xp_chip.next_level_xp)|round|int }}%"></i></span>
+      <span class="xp-chip-total" aria-hidden="true"><b data-xp-total>{{ xp_chip.total_xp }}</b> XP</span>
+      {% if xp_chip.streak %}<span class="xp-chip-streak" aria-hidden="true">🔥{{ xp_chip.streak }}</span>{% endif %}
+    </a>
+    {% endif %}
     <button class="theme-toggle" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-label="{{ _('Use dark mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span></button>
     <div class="desktop-profile-menu app-menu">
       <button class="app-menu-trigger profile-trigger {{ 'is-active' if profile_active }}" type="button" aria-expanded="false" aria-controls="profileMenu"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[:1]|upper }}</span><span>{{ _('Account') }}</span><span aria-hidden="true">⌄</span></button>
@@ -45,7 +56,15 @@
       </div>
     </div>
     <button class="mobile-nav-toggle" type="button" aria-controls="mobileAppMenu" aria-expanded="false" aria-label="{{ _('Open navigation') }}"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
-    {% else %}<button class="theme-toggle" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-label="{{ _('Use dark mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span></button><a class="app-nav-link settings-link" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>{% endif %}
+    {% else %}
+    <div class="guest-nav">
+      <button class="theme-toggle" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-label="{{ _('Use dark mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span></button>
+      <a class="app-nav-link guest-nav-about {{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %}>{{ _('About') }}</a>
+      <a class="app-nav-link settings-link guest-nav-settings" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
+      <a class="app-nav-link" href="{{ url_for('login') }}">{{ _('Log in') }}</a>
+      <a class="app-nav-link nav-primary-action" href="{{ url_for('register') }}">{{ _('Create account') }}</a>
+    </div>
+    {% endif %}
   </div>
   {% if current_user.is_authenticated %}
   <div class="mobile-nav-backdrop" data-mobile-nav-close></div>
@@ -64,6 +83,7 @@
     <a class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %}>{{ _("Today's Practice") }}</a>
     <a class="{{ 'is-active' if planner_active }}" href="{{ url_for('study_plans') }}" {% if planner_active %}aria-current="page"{% endif %}>{{ _('Study Planner') }}</a>
     <a class="{{ 'is-active' if exam_active }}" href="{{ url_for('projects') }}" {% if exam_active %}aria-current="page"{% endif %}>{{ _('Exam Mode') }}</a>
+    <a class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %}>{{ _('About Learnova') }}</a>
     <div class="mobile-menu-divider"></div>
     <a class="settings-link {{ 'is-active' if profile_active }}" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
     <a href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>

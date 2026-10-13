@@ -144,18 +144,14 @@ if (importForm) {
       status.textContent = t("vocabularyExtracting");
       await api(`/api/vocabulary/imports/${id}/extract`, { method: "POST", body: {} });
       status.textContent = t("vocabularyValidating");
-      const checked = await api(`/api/vocabulary/imports/${id}/validate`, { method: "POST", body: {} });
-      // The review page only earns its place when it has a question to ask. The server
-      // already confirmed every entry it had no question about, so when nothing is left
-      // flagged the student goes straight to the card editor - where every card is still
-      // visible and editable before anything is saved.
-      if (checked.review_needed) {
-        location.href = checked.review_url || created.review_url;
-        return;
-      }
+      await api(`/api/vocabulary/imports/${id}/validate`, { method: "POST", body: {} });
+      // Students land directly in the card editor, where every pair is still visible
+      // and editable before anything is saved - no separate review screen. auto_confirm
+      // keeps flagged entries at their original reading; the review page remains
+      // reachable by URL for rescanning a page or merging duplicates.
       status.textContent = t("vocabularyBuildingCards");
       const built = await api(`/api/vocabulary/imports/${id}/generate`, {
-        method: "POST", body: { directions: ["source_to_target"], include_examples: true },
+        method: "POST", body: { directions: ["source_to_target"], include_examples: true, auto_confirm: true },
       });
       location.href = built.creator_url;
     } catch (caught) {

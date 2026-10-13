@@ -36,6 +36,22 @@ class GamificationRuleTests(unittest.TestCase):
         self.assertGreater(modes.game_score("blast", 5, 1, 30, 4), 0)
         self.assertGreater(modes.weakness_score(1, 4, 2, 1.8), 50)
 
+    def test_effective_streak_shows_zero_after_missed_days(self):
+        self.assertEqual(gamification.effective_streak(5, date(2026, 7, 26), date(2026, 7, 27)), 5)
+        self.assertEqual(gamification.effective_streak(5, date(2026, 7, 27), date(2026, 7, 27)), 5)
+        self.assertEqual(gamification.effective_streak(5, date(2026, 7, 24), date(2026, 7, 27)), 0)
+        self.assertEqual(gamification.effective_streak(5, None, date(2026, 7, 27)), 0)
+
+    def test_every_repeatable_event_has_a_cap_group(self):
+        self.assertEqual(gamification.xp_cap_group("flashcard_reviewed"), "flashcards")
+        self.assertEqual(gamification.xp_cap_group("practice_question_completed"), "practice")
+        self.assertEqual(gamification.xp_cap_group("vocabulary_reviewed"), "vocabulary")
+        self.assertEqual(gamification.xp_cap_group("study_plan_task_completed"), "planning")
+        # Once-per-period rewards stay uncapped by construction.
+        for uncapped in ("badge_awarded", "mission_completed", "daily_goal_completed"):
+            self.assertIsNone(gamification.xp_cap_group(uncapped))
+        self.assertIn("match_completed", gamification.capped_group_events("flashcards"))
+
 
 class FlashcardModeWorkflowTests(unittest.TestCase):
     def setUp(self):
@@ -97,6 +113,123 @@ class FlashcardModeWorkflowTests(unittest.TestCase):
         })
         self.assertEqual(stranger.get(
             f"/api/flashcards/sessions/{session['id']}").status_code, 404)
+
+    def test_daily_group_caps_stop_xp_farming(self):
+        # Fresh sessions always have fresh idempotency keys, so without a daily budget a
+        # replayed set minted XP forever. The budget pays honest studying in full and
+        # then stops; the events themselves still count as activity.
+        with application.app.app_context():
+            user = application.db.session.scalar(application.db.select(application.User))
+            total = 0
+            for index in range(60):
+                _, earned = application.record_learning_event(
+                    user.id, "flashcard_session_completed", f"cap-test-{index}", xp=15)
+                total += earned
+            application.db.session.commit()
+            self.assertEqual(total, gamification.DAILY_XP_CAPS["flashcards"])
+
+    def test_legacy_review_pays_once_per_card_per_day(self):
+        with application.app.app_context():
+            card_id = application.db.session.scalar(
+                application.db.select(application.Flashcard.id))
+        first = self.client.post(f"/api/flashcards/cards/{card_id}/review",
+                                 json={"grade": "good", "request_id": "replay-1"}).get_json()
+        self.assertGreater(first["xp_earned"], 0)
+        # The old key trusted the client's request_id, so a fresh id paid again forever.
+        replay = self.client.post(f"/api/flashcards/cards/{card_id}/review",
+                                  json={"grade": "good", "request_id": "replay-2"}).get_json()
+        self.assertEqual(replay["xp_earned"], 0)
+
+    def test_award_responses_carry_totals_and_the_navbar_shows_the_chip(self):
+        session = self.start("flashcards", key="chip")
+        item = session["items"][0]
+        answer = self.client.post(
+            f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
+            json={"answer": "good", "response_ms": 700, "request_id": "chip-1"}).get_json()
+        self.assertGreater(answer["xp_earned"], 0)
+        self.assertGreaterEqual(answer["xp"]["total_xp"], answer["xp_earned"])
+        self.assertGreaterEqual(answer["xp"]["level"], 1)
+        page = self.client.get(f"/flashcards/{self.set_id}/study").data.decode("utf-8")
+        self.assertIn("data-xp-chip", page)
+        self.assertIn("xp-chip-bar", page)
+
+    def test_the_flag_hides_the_chip_and_the_totals(self):
+        application.app.config.update(FEATURE_GAMIFICATION=False)
+        try:
+            page = self.client.get(f"/flashcards/{self.set_id}/study").data.decode("utf-8")
+            self.assertNotIn("data-xp-chip", page)
+            session = self.start("flashcards", key="noflag")
+            item = session["items"][0]
+            answer = self.client.post(
+                f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
+                json={"answer": "good", "response_ms": 700, "request_id": "noflag-1"}).get_json()
+            self.assertIsNone(answer["xp"])
+        finally:
+            application.app.config.update(FEATURE_GAMIFICATION=True)
+
+    def test_the_xp_notifier_dedupes_and_respects_the_flag(self):
+        # Source pins for behavior no Python test can execute: the shared notifier
+        # no-ops without the flag, never re-announces a seen key or a server duplicate,
+        # persists the one-time explainer, and the client stops counting replays.
+        root = Path(application.app.root_path)
+        notifier = (root / "static/js/xp.js").read_text(encoding="utf-8")
+        self.assertIn("FLAGS.gamification_enabled", notifier)
+        self.assertIn("duplicate", notifier)
+        self.assertIn("learnova:xpIntroSeen", notifier)
+        self.assertIn("prefers-reduced-motion", notifier)
+        engine = (root / "static/js/flashcards/mode-engine.js").read_text(encoding="utf-8")
+        self.assertIn("announceXp(data", engine)
+        self.assertIn("if (data.duplicate)", engine)
+        css = (root / "static/css/learnova-components.css").read_text(encoding="utf-8")
+        self.assertIn(".xp-toast", css)
+        self.assertIn(".xp-intro", css)
+
+    def test_count_zero_means_every_card_and_direction_is_honoured(self):
+        # The session settings offer "All cards" (sent as count 0) and, for the
+        # flashcards mode, a card direction - back_to_front asks the German side first.
+        session = self.start("flashcards", count=0, direction="back_to_front", key="all")
+        self.assertEqual(session["total_items"], len(CARDS))
+        prompts = {item["prompt"] for item in session["items"]}
+        self.assertEqual(prompts, {card["back"] for card in CARDS})
+
+    def test_mixed_direction_alternates_sides_in_flashcards_mode(self):
+        session = self.start("flashcards", count=0, direction="mixed", key="mixed")
+        fronts = {card["front"] for card in CARDS}
+        sides = ["front" if item["prompt"] in fronts else "back" for item in session["items"]]
+        self.assertIn("front", sides)
+        self.assertIn("back", sides, "mixed must actually ask both directions")
+
+    def test_the_flashcards_page_offers_direction_all_cards_and_two_grades(self):
+        page = self.client.get(f"/flashcards/{self.set_id}/study").data.decode("utf-8")
+        self.assertIn('id="modeDirection"', page)
+        self.assertIn('id="modeCountChoice"', page)
+        self.assertIn('id="modeTotal"', page)
+        self.assertIn('data-answer="again"', page)
+        self.assertIn('data-answer="good"', page)
+        # The simplified card keeps Previous/Show answer/Shuffle/Next plus Wrong/Correct;
+        # the four-step grade row, full screen and hint button are gone.
+        for removed in ('data-answer="hard"', 'data-answer="easy"',
+                        'id="fullscreenMode"', 'id="showModeHint"'):
+            self.assertNotIn(removed, page)
+        for kept in ('id="previousCard"', 'id="flipCard"', 'id="nextCard"', 'id="shuffleCards"'):
+            self.assertIn(kept, page)
+
+    def test_the_engine_waits_after_grading_and_lights_up_next(self):
+        # After Wrong/Correct the page stays on the card - no auto-advance timer - and
+        # "Next" takes the Learnova violet; once every card is graded it completes the
+        # session instead of looping.
+        engine = (Path(application.app.root_path) / "static/js/flashcards/mode-engine.js").read_text(encoding="utf-8")
+        self.assertIn('classList.add("next-ready")', engine)
+        self.assertIn('items.every(item => item.answered)', engine)
+        css = (Path(application.app.root_path) / "static/css/flashcards.css").read_text(encoding="utf-8")
+        self.assertIn("#nextCard.next-ready", css)
+        self.assertIn("prefers-reduced-motion", css)
+
+    def test_the_library_loading_skeleton_actually_hides_when_sets_arrive(self):
+        # .cards-skeleton/.cards-grid set an explicit display, which beats the browser's
+        # [hidden] rule - the three shimmer tiles stayed visible next to the loaded sets.
+        css = (Path(application.app.root_path) / "static/css/flashcards.css").read_text(encoding="utf-8")
+        self.assertIn(".cards-grid[hidden], .cards-skeleton[hidden] { display: none; }", css)
 
     def test_learn_answer_mastery_star_xp_duplicate_and_completion(self):
         session = self.start("learn")

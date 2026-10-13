@@ -33,14 +33,35 @@
           <option value="sentences" data-vocabulary-only hidden>{{ _('Sentences only') }}</option>
         </select>
       </label>
-      <label class="field">{{ _('Number of questions') }}<input id="modeCount" type="number" min="1" max="30" value="10"></label>
+      <label class="field">{{ _('Number of questions') }}
+        <select id="modeCountChoice">
+          <option value="all">{{ _('All cards') }}</option>
+          <option value="custom">{{ _('Enter a number') }}</option>
+        </select>
+      </label>
+      <label class="field hidden" id="modeCountField">{{ _('How many cards') }}<input id="modeCount" type="number" min="1" max="200" value="10"></label>
       {% if mode == 'test' %}
       <label class="field">{{ _('Time limit (minutes)') }}<input id="modeTime" type="number" min="0" max="60" value="0"></label>
+      {% endif %}
+      {% if mode in ('test', 'flashcards') %}
       <label class="field">{{ _('Card direction') }}
-        <select id="modeDirection"><option value="mixed">{{ _('Mixed') }}</option><option value="front_to_back">{{ _('Front to back') }}</option><option value="back_to_front">{{ _('Back to front') }}</option></select>
+        <select id="modeDirection">
+          {% if mode == 'flashcards' %}
+          {# A vocabulary set is asked source-first by default; the student can flip it
+             (German -> French) or alternate both directions with "Mixed". #}
+          <option value="front_to_back">{{ _('Front to back') }}</option>
+          <option value="back_to_front">{{ _('Back to front') }}</option>
+          <option value="mixed">{{ _('Mixed') }}</option>
+          {% else %}
+          <option value="mixed">{{ _('Mixed') }}</option>
+          <option value="front_to_back">{{ _('Front to back') }}</option>
+          <option value="back_to_front">{{ _('Back to front') }}</option>
+          {% endif %}
+        </select>
       </label>
       {% endif %}
     </div>
+    <p id="modeTotal" class="cards-subtitle hidden"></p>
     <label><input id="reducedMotion" type="checkbox"> {{ _('Reduced motion') }}</label>
     <button id="startMode" type="button" class="primary-button">{{ _('Start session') }}</button>
     <button id="continueMode" type="button" class="ghost-button hidden">{{ _('Continue previous session') }}</button>
@@ -58,19 +79,17 @@
       <button id="modeStar" type="button" class="star-toggle" aria-label="{{ _('Star this card') }}">☆</button>
       <div id="modePrompt" class="mode-prompt"></div>
       <div id="modeAnswer" class="mode-answer hidden" aria-live="polite"></div>
-      <button id="showModeHint" type="button" class="ghost-button">{{ _('Hint') }}</button>
-      <p id="modeHint" class="study-hint hidden"></p>
       <div id="modeOptions" class="mode-options"></div>
       <label id="writtenWrap" class="field hidden">{{ _('Your answer') }}<input id="writtenAnswer" autocomplete="off"></label>
       <div id="selfGrades" class="study-grades hidden">
-        {% for grade in ['again','hard','good','easy'] %}<button type="button" data-answer="{{ grade }}" class="grade grade-{{ grade }}">{{ _(grade|capitalize) }}</button>{% endfor %}
+        <button type="button" data-answer="again" class="grade grade-again">{{ _('Wrong') }}</button>
+        <button type="button" data-answer="good" class="grade grade-good">{{ _('Correct') }}</button>
       </div>
       <nav id="flashcardControls" class="flashcard-controls hidden" aria-label="{{ _('Flashcard controls') }}">
         <button id="previousCard" type="button" class="ghost-button">{{ _('Previous') }}</button>
-        <button id="flipCard" type="button" class="primary-button" data-show-label="{{ _('Show answer') }}">{{ _('Show answer') }}</button>
+        <button id="flipCard" type="button" class="primary-button">{{ _('Show answer') }}</button>
         <button id="shuffleCards" type="button" class="ghost-button">{{ _('Shuffle') }}</button>
         <button id="nextCard" type="button" class="ghost-button">{{ _('Next') }}</button>
-        <button id="fullscreenMode" type="button" class="ghost-button">{{ _('Full screen') }}</button>
       </nav>
       <button id="submitModeAnswer" type="button" class="primary-button hidden">{{ _('Check answer') }}</button>
     </div>

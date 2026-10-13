@@ -46,7 +46,7 @@ class TierTableTests(unittest.TestCase):
     def test_premium_eligibility_is_an_explicit_short_list(self):
         self.assertEqual(routing.PREMIUM_ELIGIBLE, {
             "answer_evaluation", "final_exam_evaluation", "answer_diagnosis",
-            "mistake_analysis", "assistant_chat"})
+            "mistake_analysis", "assistant_chat", "tutor_chat"})
 
     def test_the_assistant_moves_up_a_tier_when_asked_to_think_harder(self):
         self.assertEqual(routing.tier_for("assistant_chat", RoutingContext("assistant_chat", deep=True)), Tier.strong)
@@ -115,9 +115,27 @@ class PremiumTests(unittest.TestCase):
         self.assertIsNone(plan("assistant_chat", PREMIUM, preset="general").premium_reason)
 
     def test_a_routine_task_never_goes_premium_however_much_budget_there_is(self):
-        for task in ("tutor_chat", "flashcard_generation", "lesson_generation", "translation", "content_moderation"):
+        for task in ("flashcard_generation", "lesson_generation", "translation", "content_moderation"):
             result = plan(task, PREMIUM, signals={"is_final": True}, deep=True)
             self.assertTrue(all(c.provider == "groq" for c in result.candidates), task)
+
+    def test_the_lesson_coach_leads_with_premium_and_keeps_groq_behind_it(self):
+        # The in-lesson tutor chat is premium whenever a reasoning model is configured:
+        # premium -> the call site's model (AI_TUTOR_CHAT_MODEL) -> the fast tier model.
+        result = plan("tutor_chat", PREMIUM, requested_model="openai/gpt-oss-120b")
+        self.assertEqual(result.premium_reason, "lesson_coaching")
+        self.assertEqual(result.models, ["anthropic:claude-x", "openai/gpt-oss-120b", "openai/gpt-oss-20b"])
+        self.assertEqual(result.candidates[-1].provider, "groq")
+
+    def test_the_lesson_coach_stays_on_groq_without_a_premium_model_or_key(self):
+        unconfigured = plan("tutor_chat", GROQ_ONLY, requested_model="openai/gpt-oss-120b")
+        self.assertEqual(unconfigured.models, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
+        self.assertIsNone(unconfigured.premium_reason)
+        no_key = plan("tutor_chat", PREMIUM,
+                      {**AVAILABLE, "anthropic": ProviderAvailability(has_key=False)},
+                      requested_model="openai/gpt-oss-120b")
+        self.assertEqual(no_key.models, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
+        self.assertIsNone(no_key.premium_reason)
 
     def test_premium_is_skipped_without_a_key_budget_or_rate_headroom(self):
         for broken in (ProviderAvailability(has_key=False, budget_ok=True),

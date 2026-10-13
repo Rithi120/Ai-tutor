@@ -29,7 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-TASKS = ("lesson", "moderation", "assistant", "diagnosis", "suggestion", "handwriting")
+TASKS = ("lesson", "moderation", "assistant", "diagnosis", "suggestion", "handwriting",
+         "duplicate-distinct", "duplicate-repeat")
 # Not a task: a zero-token GET that lists the models this key is served and flags every
 # configured GROQ_*_MODEL that is not among them. Run this first when anything AI-shaped
 # stops working - a withdrawn model id answers 404 on every call, and for three months
@@ -357,10 +358,78 @@ def _check_handwriting(text: str, orders) -> dict:
     }
 
 
+def _duplicate_case(application, language: str, student_answer: str, expected: str) -> dict:
+    """Does a live model apply the argument-diversity rule the way it is written?
+
+    The rule's threshold is semantic (same core reason, never shared topic words), so it
+    cannot be pinned by a unit test; this scenario exercises the exact production rule
+    text (ARGUMENT_DIVERSITY_RULE) against a crafted second argument and reports the
+    score and feedback for a human to judge against `expected`.
+    """
+
+    from learnova.ai_services import service
+    from learnova.ai_services.prompts import ARGUMENT_DIVERSITY_RULE
+
+    previous = ("Handys sollten an Schulen verboten werden, weil Schüler heimlich "
+                "peinliche Fotos machen können, die Mitschüler bloßstellen.")
+    reply_language = "German" if language == "de" else "English"
+
+    def check(text: str) -> dict:
+        payload = service.parse_json(text)
+        evaluation = payload["evaluation"]
+        return {"score": evaluation["score"], "feedback": evaluation["feedback"],
+                "expected": expected}
+
+    return {
+        "task_type": "answer_evaluation",
+        "model": application.app.config["GROQ_TUTOR_MODEL"],
+        "instructions": "You are grading one open text answer in a grade 8 German lesson "
+                        "about dialectical essays (Erörterung). " + ARGUMENT_DIVERSITY_RULE,
+        "input": (
+            'The lesson taught the method "5-Fragen-Methode" for finding essay arguments.\n'
+            'question (type "text"): "Nenne ein weiteres Argument für ein Handyverbot an '
+            'Schulen. Es muss sich von deinen bisherigen Argumenten unterscheiden."\n'
+            f'previous_results: [{{"question": "Nenne ein Argument für ein Handyverbot.", '
+            f'"student_answer": "{previous}", "score": 85}}]\n'
+            f'student_answer: "{student_answer}"\n'
+            f"Write all student-facing values in {reply_language}.\n"
+            'Return JSON only: {"evaluation": {"is_correct": bool, "score": 0-100, '
+            '"feedback": str, "correction": str, "teacher_tip": str, "exception_note": "", '
+            '"skill_status": "practicing"}, "next_question": null, "summary": null}'),
+        "max_output_tokens": application.app.config["AI_ANSWER_EVALUATION_MAX_OUTPUT_TOKENS"],
+        "temperature": 0.1,
+        "_check": check,
+    }
+
+
+def _duplicate_distinct(application, language: str) -> dict:
+    # Shares the topic words (Handys, Schule, Schüler) but the core reason is new:
+    # distraction and learning, not privacy. Penalising this is the false positive the
+    # rule exists to prevent.
+    return _duplicate_case(
+        application, language,
+        "Handys sollten in der Schule verboten werden, weil Schüler im Unterricht "
+        "abgelenkt werden und sich schlechter konzentrieren können.",
+        "score above 50: same topic words, but a genuinely different core reason "
+        "(concentration, not privacy); the duplicate rule must not fire")
+
+
+def _duplicate_repeat(application, language: str) -> dict:
+    # The same core reason as the previous argument (embarrassing photos violate
+    # privacy), merely reworded.
+    return _duplicate_case(
+        application, language,
+        "Handys sollte man verbieten, weil man damit unbemerkt blamierende Bilder von "
+        "anderen aufnehmen und herumzeigen kann.",
+        "score at most 50, and the feedback names the earlier photo/privacy argument "
+        "and asks for a reason from a different area")
+
+
 BUILDERS = {
     "lesson": _lesson, "moderation": _moderation,
     "assistant": _assistant, "diagnosis": _diagnosis,
     "suggestion": _suggestion, "handwriting": _handwriting,
+    "duplicate-distinct": _duplicate_distinct, "duplicate-repeat": _duplicate_repeat,
 }
 
 

@@ -18,6 +18,40 @@ XP_VALUES = {
     "study_plan_task_completed": 10, "daily_goal_completed": 20,
 }
 
+# Every repeatable event belongs to a cap group with a daily XP budget. Users own their
+# sets and grade themselves, so answer validation alone cannot stop farming - a fresh
+# session always mints fresh item ids. The budget keeps a long honest study day fully
+# rewarded while making an endless replay loop pointless. Goal, mission and badge XP
+# are not listed: they are already once-per-period by construction.
+DAILY_XP_CAPS = {
+    "flashcards": 200,   # answers, mastery, session/test/game completions
+    "practice": 150,     # lesson questions, quizzes, recall, corrected mistakes
+    "vocabulary": 100,   # vocabulary answers, sessions, created lists
+    "planning": 50,      # study-plan tasks
+}
+
+_CAP_GROUPS = {
+    "flashcard_reviewed": "flashcards", "flashcard_mastered": "flashcards",
+    "flashcard_session_completed": "flashcards", "learn_session_completed": "flashcards",
+    "test_completed": "flashcards", "test_perfect_score": "flashcards",
+    "match_completed": "flashcards", "blast_completed": "flashcards",
+    "blocks_completed": "flashcards",
+    "practice_question_completed": "practice", "quiz_completed": "practice",
+    "mistake_corrected": "practice",
+    "vocabulary_reviewed": "vocabulary", "vocabulary_session_completed": "vocabulary",
+    "vocabulary_list_created": "vocabulary",
+    "study_plan_task_completed": "planning",
+}
+
+
+def xp_cap_group(event_type: str) -> str | None:
+    """The daily-cap group an event belongs to, or None when it is uncapped."""
+    return _CAP_GROUPS.get(event_type)
+
+
+def capped_group_events(group: str) -> tuple[str, ...]:
+    return tuple(sorted(event for event, name in _CAP_GROUPS.items() if name == group))
+
 
 def level_for_xp(total_xp: int) -> int:
     """Scalable curve matching 0, 100, 250, 450, 700… XP thresholds."""
@@ -47,6 +81,17 @@ def bounded_answer_xp(*, correct: bool, written: bool, difficult: bool) -> int:
     if difficult:
         return XP_VALUES["difficult_answer"]
     return XP_VALUES["written_answer" if written else "basic_answer"]
+
+
+def effective_streak(current: int, last_date: date | None, today: date) -> int:
+    """The streak as it truly stands today.
+
+    The stored value only changes when the user studies, so after missed days the
+    dashboard kept showing the old number. A streak survives yesterday's activity;
+    anything older has ended."""
+    if not last_date or (today - last_date).days > 1:
+        return 0
+    return max(0, int(current))
 
 
 def update_streak(

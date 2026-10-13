@@ -1,6 +1,7 @@
-import { api, toast, t, renderMath, SET_ID } from "./common.js";
+import { api, toast, t, renderMath, SET_ID, FLAGS } from "./common.js";
 import { safeUUID } from "../dom.js";
 import { matchPair, nextLives, scoreAnswer, shouldReduceMotion } from "./mode-rules.js";
+import { announceXp } from "../xp.js";
 
 const MODE = window.LEARNOVA_MODE;
 const resultSession = window.LEARNOVA_RESULT_SESSION;
@@ -27,16 +28,17 @@ function renderItem() {
   $("#modeFeedback").classList.add("hidden");
   $("#modePrompt").textContent = item.prompt;
   state.flipped = false;
-  $("#flipCard").textContent = $("#flipCard").dataset.showLabel;
   $("#modeAnswer").textContent = "";
   $("#modeAnswer").classList.add("hidden");
-  $("#modeHint").textContent = item.hint || t("fcNoHint");
-  $("#modeHint").classList.add("hidden");
   $("#modeStar").textContent = item.starred ? "★" : "☆";
   const written = ["written", "fill_blank", "front_to_back", "back_to_front"].includes(item.question_type);
   $("#writtenWrap").classList.toggle("hidden", !written);
   $("#submitModeAnswer").classList.toggle("hidden", !written);
   $("#selfGrades").classList.add("hidden");
+  // Tapping the card or the "Show answer" button flips it; then Wrong/Correct.
+  $("#standardQuestion").classList.toggle("flashcard-tappable", item.question_type === "self_grade");
+  $("#flipCard").classList.toggle("hidden", item.question_type !== "self_grade");
+  $("#nextCard").classList.remove("next-ready");
   $("#flashcardControls").classList.toggle("hidden", item.question_type !== "self_grade");
   $("#modeOptions").innerHTML = written || item.question_type === "self_grade" ? "" :
     (item.options || []).map(value => {
@@ -69,6 +71,13 @@ async function submit(answer, item = current()) {
     const data = await api(`/api/flashcards/sessions/${state.session.id}/items/${item.id}/answer`, { method: "POST", body: {
       answer, response_ms: responseMs, request_id: safeUUID(),
     } });
+    announceXp(data, `item:${item.id}`);
+    if (data.duplicate) {
+      // A replay (double-tap, navigation race) earns nothing and must not notify or
+      // bump the counters a second time.
+      state.locked = false;
+      return;
+    }
     if (MODE === "test") {
       item.answered = true; item.student_answer = answer; state.session.answered_items++;
       state.index++; state.started = Date.now(); renderItem(); return;
@@ -88,10 +97,18 @@ async function submit(answer, item = current()) {
     state.combo = scored.combo; state.maxCombo = Math.max(state.maxCombo, state.combo);
     state.lives = nextLives(state.lives, data.correct);
     const feedback = $("#modeFeedback");
-    feedback.innerHTML = `<strong>${escapeText(data.correct ? t("fcCorrect") : t("fcIncorrect"))}</strong><p>${escapeText(t("fcCorrectAnswer"))}: ${escapeText(data.correct_answer)}</p><p>${escapeText(t("fcXpEarned"))}: +${data.xp_earned}</p>`;
+    feedback.innerHTML = `<strong>${escapeText(data.correct ? t("fcCorrect") : t("fcIncorrect"))}</strong><p>${escapeText(t("fcCorrectAnswer"))}: ${escapeText(data.correct_answer)}</p>${FLAGS.gamification_enabled ? `<p>${escapeText(t("fcXpEarned"))}: +${data.xp_earned}</p>` : ""}`;
     feedback.classList.remove("hidden");
     renderMath(feedback);
     updateCounters();
+    if (MODE === "flashcards") {
+      // The page waits: the student reads the answer in peace, and "Next" lights up
+      // in the Learnova violet to carry them to the following card.
+      $("#selfGrades").classList.add("hidden");
+      $("#nextCard").classList.add("next-ready");
+      state.locked = false;
+      return;
+    }
     if (["blast", "blocks"].includes(MODE) && state.lives <= 0) {
       window.setTimeout(finish, 250);
       return;
@@ -102,8 +119,11 @@ async function submit(answer, item = current()) {
 async function start(resume = true) {
   error("");
   try {
+    // "All cards" is sent as 0: the server reads it as "every card in the set".
+    const wantsAll = $("#modeCountChoice").value === "all";
     const data = await api(`/api/flashcards/sets/${SET_ID}/sessions`, { method: "POST", body: {
-      mode: MODE, objective: $("#modeObjective").value, count: Number($("#modeCount").value),
+      mode: MODE, objective: $("#modeObjective").value,
+      count: wantsAll ? 0 : Math.max(1, Number($("#modeCount").value) || 1),
       time_limit: Number($("#modeTime")?.value || 0) * 60,
       direction: $("#modeDirection")?.value || "mixed", resume,
       reduced_motion: $("#reducedMotion").checked, idempotency_key: safeUUID(),
@@ -132,13 +152,14 @@ async function finish() {
   clearInterval(state.timer);
   try {
     const data = await api(`/api/flashcards/sessions/${state.session.id}/complete`, { method: "POST", body: { max_combo: state.maxCombo } });
+    announceXp({ xp_earned: 0, xp: data.xp }, `complete:${state.session.id}`);
     state.session = data.session; showSummary();
   } catch (e) { error(e.message); state.finishing = false; }
 }
 function showSummary() {
   $("#modePlay").classList.add("hidden"); $("#modeSummary").classList.remove("hidden");
   const s = state.session;
-  $("#summaryStats").innerHTML = `<div><b>${s.score}</b><span>${escapeText(t("fcScore"))}</span></div><div><b>${s.accuracy}%</b><span>${escapeText(t("fcAccuracy"))}</span></div><div><b>${s.active_seconds}s</b><span>${escapeText(t("fcStudyTime"))}</span></div><div><b>+${s.xp_earned}</b><span>${escapeText(t("fcXp"))}</span></div>`;
+  $("#summaryStats").innerHTML = `<div><b>${s.score}</b><span>${escapeText(t("fcScore"))}</span></div><div><b>${s.accuracy}%</b><span>${escapeText(t("fcAccuracy"))}</span></div><div><b>${s.active_seconds}s</b><span>${escapeText(t("fcStudyTime"))}</span></div>${FLAGS.gamification_enabled ? `<div><b>+${s.xp_earned}</b><span>${escapeText(t("fcXp"))}</span></div>` : ""}`;
   renderMath($("#summaryStats"));
   // "Review mistakes" must not appear when the session had no incorrect answers.
   const hadMistakes = (s.incorrect_count || 0) > 0;
@@ -178,8 +199,10 @@ function flipCard() {
   state.flipped = true;
   $("#modeAnswer").textContent = item.correct_answer;
   $("#modeAnswer").classList.remove("hidden");
-  $("#selfGrades").classList.remove("hidden");
-  $("#flipCard").textContent = t("fcCorrectAnswer");
+  $("#flipCard").classList.add("hidden");
+  // An already-graded card only shows its answer again; re-grading would double-count.
+  if (item.answered) $("#nextCard").classList.add("next-ready");
+  else $("#selfGrades").classList.remove("hidden");
   renderMath($("#modeAnswer"));
 }
 function navigate(delta) {
@@ -188,6 +211,12 @@ function navigate(delta) {
   state.index = (state.index + delta + total) % total;
   state.started = Date.now();
   renderItem();
+}
+function advance() {
+  if (!state.session || MODE !== "flashcards") return;
+  // Once every card is graded, "Next" completes the session instead of looping.
+  if (state.session.items.every(item => item.answered)) return finish();
+  navigate(1);
 }
 function shuffleCards() {
   if (!state.session || MODE !== "flashcards") return;
@@ -207,6 +236,12 @@ async function offerVocabularyScopes() {
   try {
     const data = await api(`/api/flashcards/sets/${SET_ID}`);
     const cards = data.set?.cards || [];
+    // The settings say how big the set is, so "All cards" is an informed choice.
+    const total = $("#modeTotal");
+    if (total && cards.length) {
+      total.textContent = t("fcSetTotal", { count: cards.length });
+      total.classList.remove("hidden");
+    }
     const sentences = cards.filter(card => (card.tags || []).includes("sentence")).length;
     if (sentences > 0 && sentences < cards.length) {
       document.querySelectorAll("#modeObjective [data-vocabulary-only]").forEach(option => { option.hidden = false; });
@@ -218,20 +253,24 @@ function init() {
   const objective = new URLSearchParams(location.search).get("objective"); if (objective) $("#modeObjective").value = objective;
   $("#startMode").addEventListener("click", () => start(false));
   $("#continueMode").addEventListener("click", () => start(true));
+  $("#modeCountChoice").addEventListener("change", e => {
+    $("#modeCountField").classList.toggle("hidden", e.currentTarget.value !== "custom");
+  });
   $("#modeOptions").addEventListener("click", e => { const b = e.target.closest("[data-answer]"); if (b) submit(b.dataset.answer); });
   $("#selfGrades").addEventListener("click", e => { const b = e.target.closest("[data-answer]"); if (b) submit(b.dataset.answer); });
   $("#submitModeAnswer").addEventListener("click", () => { const value = $("#writtenAnswer").value; if (value.trim()) { $("#writtenAnswer").value = ""; submit(value); } });
-  $("#showModeHint").addEventListener("click", () => $("#modeHint").classList.toggle("hidden"));
   $("#modeStar").addEventListener("click", async () => { const item = current(); item.starred = !item.starred; await api(`/api/flashcards/cards/${item.card_id}/star`, { method: "PUT", body: { starred: item.starred } }); renderItem(); });
   $("#matchBoard").addEventListener("click", onMatch);
+  // The card itself flips too: one tap anywhere on it that is not a control.
+  $("#standardQuestion").addEventListener("click", e => {
+    if (MODE !== "flashcards" || state.flipped) return;
+    if (e.target.closest("button, a, input, label")) return;
+    flipCard();
+  });
   $("#flipCard").addEventListener("click", flipCard);
   $("#previousCard").addEventListener("click", () => navigate(-1));
-  $("#nextCard").addEventListener("click", () => navigate(1));
+  $("#nextCard").addEventListener("click", advance);
   $("#shuffleCards").addEventListener("click", shuffleCards);
-  $("#fullscreenMode").addEventListener("click", () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else $("#modePage").requestFullscreen?.();
-  });
   $("#pauseMode").addEventListener("click", async () => { state.paused = !state.paused; $("#pauseMode").textContent = state.paused ? t("fcResume") : t("fcPause"); await api(`/api/flashcards/sessions/${state.session.id}/${state.paused ? "pause" : "resume"}`, { method: "POST", body: {} }); });
   $("#soundToggle").addEventListener("click", e => { const on = e.currentTarget.getAttribute("aria-pressed") !== "true"; e.currentTarget.setAttribute("aria-pressed", String(on)); e.currentTarget.textContent = on ? t("fcSoundOn") : t("fcSoundOff"); });
   $("#retryMode").addEventListener("click", () => location.reload());
@@ -240,9 +279,10 @@ function init() {
     if (e.key === "Escape" && state.session && !document.fullscreenElement) $("#pauseMode").click();
     if (MODE === "flashcards" && e.key === " ") { e.preventDefault(); flipCard(); }
     if (MODE === "flashcards" && e.key === "ArrowLeft") navigate(-1);
-    if (MODE === "flashcards" && e.key === "ArrowRight") navigate(1);
-    if (MODE === "flashcards" && state.flipped && ["1", "2", "3", "4"].includes(e.key)) {
-      submit(["again", "hard", "good", "easy"][Number(e.key) - 1]);
+    if (MODE === "flashcards" && e.key === "ArrowRight") advance();
+    // Self-grading is a single honest question: did you know it? 1 = wrong, 2 = correct.
+    if (MODE === "flashcards" && state.flipped && ["1", "2"].includes(e.key)) {
+      submit(e.key === "1" ? "again" : "good");
     }
   });
   $("#standardQuestion").addEventListener("touchstart", e => { state.touchX = e.changedTouches[0]?.clientX ?? null; }, { passive: true });

@@ -35,12 +35,22 @@ class ProfileGradeTests(unittest.TestCase):
         self.assertEqual(profiles.normalize_grade("99"), "")
         self.assertEqual(profiles.normalize_grade(None), "")
 
-    def test_descriptor_matches_level_and_is_empty_when_unset(self):
+    def test_descriptor_matches_level_and_calibrates_when_unset(self):
         self.assertIn("grade 7", profiles.grade_descriptor("7").lower())
         self.assertIn("university", profiles.grade_descriptor("university").lower())
         self.assertIn("vocational", profiles.grade_descriptor("vocational").lower())
-        self.assertEqual(profiles.grade_descriptor(""), "")
-        self.assertEqual(profiles.grade_descriptor("other"), "")
+        # Unknown levels no longer inject nothing (models then default to adult-level
+        # text); they get an explicit start-simple-and-calibrate instruction.
+        for unknown in ("", "other", "99", None):
+            descriptor = profiles.grade_descriptor(unknown)
+            self.assertIn("not set", descriptor.lower())
+            self.assertIn("calibrate", descriptor.lower())
+
+    def test_every_grade_token_yields_level_guidance(self):
+        for token in profiles.GRADE_CHOICES:
+            self.assertTrue(profiles.grade_descriptor(token).strip(), f"empty descriptor for {token!r}")
+        # Numeric grades tell the model to name the level in the response language.
+        self.assertIn("Klasse 8", profiles.grade_descriptor("8"))
 
     def test_labels(self):
         self.assertEqual(profiles.grade_label("7"), "Grade 7")

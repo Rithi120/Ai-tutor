@@ -115,6 +115,12 @@ def configure_app(app, environment: str | None = None) -> str:
         "GROQ_DIAGNOSIS_VERIFY_MODEL", app.config["GROQ_FAST_MODEL"])
     app.config["GROQ_QUESTION_MODEL"] = os.getenv(
         "GROQ_QUESTION_MODEL", app.config["GROQ_TUTOR_MODEL"])
+    # The lesson tutor chat: the one conversational surface inside a lesson. Teaching
+    # quality beats cost here, so it defaults to the strong Groq model rather than the
+    # fast one; accepts "provider:model" like the assistant models. Routing still puts
+    # the fast model behind it, so a rate limit degrades instead of failing.
+    app.config["AI_TUTOR_CHAT_MODEL"] = os.getenv(
+        "AI_TUTOR_CHAT_MODEL", app.config["GROQ_ANALYSIS_MODEL"]).strip()
     # Community moderation runs the cheapest capable model on every submission and
     # re-runs the strongest one only when the deterministic pass or the first
     # classification says the case is genuinely hard. Both are named here so a
@@ -174,7 +180,7 @@ def configure_app(app, environment: str | None = None) -> str:
     # to report as a generic internal error; this names the problem at startup instead.
     retired = {
         name: app.config[name] for name in sorted(app.config)
-        if name.startswith(("GROQ_", "ASSISTANT_", "AI_PREMIUM_", "AI_FALLBACK_", "AI_SLOW_")) and name.endswith("_MODEL")
+        if name.startswith(("GROQ_", "ASSISTANT_", "AI_PREMIUM_", "AI_FALLBACK_", "AI_SLOW_", "AI_TUTOR_")) and name.endswith("_MODEL")
         and _bare_model(app.config[name]) in RETIRED_GROQ_MODELS
     }
     for name, value in retired.items():
@@ -227,7 +233,10 @@ def configure_app(app, environment: str | None = None) -> str:
             raise RuntimeError(f"{name} must be a positive integer") from error
     output_budgets = {
         # /api/translate asks for 2500 (a whole lesson's strings) and was cut to 400.
-        "TUTOR_CHAT": 350, "ANSWER_EVALUATION": 2200, "MISTAKE_ANALYSIS": 3000, "TRANSLATION": 2500,
+        # TUTOR_CHAT was 350, which forced one-hint answers; a coaching turn (method +
+        # worked micro-example + modeled rewrite of the student's attempt) needs room,
+        # and gpt-oss models also spend hidden reasoning tokens against this budget.
+        "TUTOR_CHAT": 1200, "ANSWER_EVALUATION": 2200, "MISTAKE_ANALYSIS": 3000, "TRANSLATION": 2500,
         "ANSWER_DIAGNOSIS": 2600, "DIAGNOSIS_VERIFICATION": 300, "QUESTION_GENERATION": 1200,
         "LESSON_GENERATION": 2200, "QUIZ_GENERATION": 600,
         # Both were capped below what their own prompts demand, so the model ran out
@@ -255,7 +264,10 @@ def configure_app(app, environment: str | None = None) -> str:
         "ASSISTANT_CHAT": 2000,
     }
     input_budgets = {
-        "TUTOR_CHAT": 1800, "ANSWER_EVALUATION": 5000, "MISTAKE_ANALYSIS": 6000, "TRANSLATION": 9000,
+        # TUTOR_CHAT carries the lesson state (~2k tokens), a 4k-char source excerpt,
+        # a 1.5k-token history window and a 4k-char student message; 1800 rejected
+        # ordinary turns as "material too large".
+        "TUTOR_CHAT": 6000, "ANSWER_EVALUATION": 5000, "MISTAKE_ANALYSIS": 6000, "TRANSLATION": 9000,
         "ANSWER_DIAGNOSIS": 7000, "DIAGNOSIS_VERIFICATION": 4000, "QUESTION_GENERATION": 6000,
         "LESSON_GENERATION": 9000, "QUIZ_GENERATION": 6000,
         "PROJECT_SECTION_GENERATION": 16000, "FINAL_EXAM_GENERATION": 20000,
@@ -539,7 +551,12 @@ def configure_app(app, environment: str | None = None) -> str:
         "EXAM_DIAGNOSIS_LIMIT": 3,
         "LESSON_TOKEN_LIMIT": 2200,
         "ANSWER_TOKEN_LIMIT": 2200,
-        "CHAT_TOKEN_LIMIT": 350,
+        # Chat replies were capped at 350 tokens ("at most 120 words"), which made the
+        # tutor a hint widget; a teaching turn needs room for a method + one example.
+        "CHAT_TOKEN_LIMIT": 1100,
+        # How much of the tutor-chat input budget the conversation history may use;
+        # the newest turns always survive (learnova/assistant/conversation.py).
+        "TUTOR_CHAT_HISTORY_TOKEN_BUDGET": 1500,
         "TRANSLATE_TOKEN_LIMIT": 2500,
         "PROJECT_TOKEN_LIMIT": 5000,
         "FLASHCARD_TOKEN_LIMIT": 4000,

@@ -143,7 +143,7 @@ class GatewayResponse:
 
 
 DEFAULT_OUTPUT_TOKEN_BUDGETS = {
-    "tutor_chat": 200,
+    "tutor_chat": 1200,
     "answer_evaluation": 250,
     "mistake_analysis": 3000,
     "answer_diagnosis": 2600,
@@ -174,7 +174,7 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
-    "tutor_chat": 1800,
+    "tutor_chat": 6000,
     "answer_evaluation": 5000,
     "mistake_analysis": 6000,
     "answer_diagnosis": 7000,

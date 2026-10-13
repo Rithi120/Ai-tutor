@@ -401,10 +401,18 @@ class AIObservabilityTests(unittest.TestCase):
     def test_routine_tasks_never_leave_groq_even_with_premium_configured(self):
         self.premium()
         with stub_provider("valid") as provider:
-            self.call("tutor_chat", model="openai/gpt-oss-20b")
+            self.call("translation", model="openai/gpt-oss-20b")
             self.call("flashcard_generation", model="openai/gpt-oss-20b")
         for call in provider.call_args_list:
             self.assertNotIn("anthropic", call.kwargs["model"])
+
+    def test_the_lesson_coach_uses_the_premium_reasoning_model_when_configured(self):
+        # tutor_chat joined the premium-eligible tasks: the in-lesson coach is the surface
+        # students compare with frontier chatbots, so a configured reasoning model leads.
+        self.premium()
+        with stub_provider("valid") as provider:
+            self.call("tutor_chat", model="openai/gpt-oss-120b")
+        self.assertEqual(provider.call_args.kwargs["model"], "anthropic:claude-x")
 
     def test_a_paid_model_named_directly_is_refused_until_it_has_a_cap(self):
         # The router skips an unbudgeted paid provider; an owner naming one in a setting
@@ -497,7 +505,8 @@ class AIObservabilityTests(unittest.TestCase):
         routing_rows = {row["task_type"]: row for row in summary["routing"]}
         self.assertEqual(routing_rows["mistake_analysis"]["tier"], "strong")
         self.assertEqual(routing_rows["mistake_analysis"]["premium_slot"], "reasoning")
-        self.assertEqual(routing_rows["tutor_chat"]["premium_slot"], "")
+        self.assertEqual(routing_rows["tutor_chat"]["premium_slot"], "reasoning")
+        self.assertEqual(routing_rows["translation"]["premium_slot"], "")
         self.assertEqual(routing_rows["ocr_document_recognition"]["fallback"], "")
         self.assertIn("coalesced_requests", summary)
 

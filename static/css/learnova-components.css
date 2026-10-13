@@ -56,6 +56,58 @@ progress::-moz-progress-bar { border-radius: 99px; background: var(--ln-gradient
 .cards-empty, .empty-state { border: 1px dashed var(--ln-line-strong); border-radius: var(--ln-radius-lg); background: color-mix(in srgb, var(--ln-surface) 62%, transparent); text-align: center; }
 .toast { border: 1px solid var(--ln-line); border-radius: 14px; background: var(--ln-surface-raised); color: var(--ln-ink); box-shadow: var(--ln-shadow-md); }
 .global-footer { border-color: var(--ln-line); color: var(--ln-muted); }
+.global-footer a { color: var(--ln-violet); font-weight: 600; text-decoration: none; }
+.global-footer a:hover { text-decoration: underline; }
+
+/* XP feedback (static/js/xp.js): the "+N XP" pill and the one-time explainer note. */
+.xp-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 86px;
+  z-index: 1200;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--ln-violet);
+  color: #fff;
+  font: 800 14px "Manrope", sans-serif;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--ln-violet) 45%, transparent);
+  opacity: 0;
+  transform: translate(-50%, 14px);
+  pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.xp-toast-show { opacity: 1; transform: translate(-50%, 0); }
+.xp-toast-levelup { font-size: 16px; padding: 12px 24px; }
+.xp-intro {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 1190;
+  width: min(420px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 30%, transparent);
+  border-radius: 16px;
+  background: var(--ln-surface-raised, var(--ln-surface-solid));
+  color: var(--ln-ink);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .18);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.xp-intro p { margin: 0 0 10px; }
+.xp-intro-actions { display: flex; gap: 14px; align-items: center; }
+.xp-intro-actions a { color: var(--ln-violet); font-weight: 700; text-decoration: none; }
+.xp-intro-actions button {
+  margin-left: auto;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ln-violet);
+  color: #fff;
+  font: 700 13px "DM Sans", sans-serif;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) { .xp-toast { transition: none; } }
 img, svg, video, canvas { max-width: 100%; }
 .header-actions, .form-actions, .set-actions, .editor-actions, .study-controls, .study-summary-actions, .detail-actions, .review-actions, .row-actions, .generation-settings, .page-review-actions {
   min-width: 0;

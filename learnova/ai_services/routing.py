@@ -69,6 +69,7 @@ PREMIUM_SLOTS: dict[str, str] = {
     "answer_diagnosis": "reasoning",
     "mistake_analysis": "reasoning",
     "assistant_chat": "reasoning",
+    "tutor_chat": "reasoning",
 }
 PREMIUM_ELIGIBLE = frozenset(PREMIUM_SLOTS)
 
@@ -231,6 +232,10 @@ def premium_justified(context: RoutingContext) -> str | None:
         if context.preset == "research":
             return "research_preset"
         return None
+    if task == "tutor_chat":
+        # The in-lesson coach is the surface students compare with frontier chatbots;
+        # when the owner names a premium reasoning model, every coaching turn earns it.
+        return "lesson_coaching"
     return None
 
 

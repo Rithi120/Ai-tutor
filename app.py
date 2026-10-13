@@ -111,7 +111,9 @@ from learnova.diagnostics import (
 from learnova.config import configure_app
 from learnova.extensions import csrf, db, limiter, login_manager
 from learnova.ai_services import service as ai_service
-from learnova.ai_services.prompts import PROMPT_VERSIONS, TUTOR_RULES
+from learnova.ai_services.prompts import (
+    ARGUMENT_DIVERSITY_RULE, PROMPT_VERSIONS, TUTOR_CHAT_COACHING, TUTOR_RULES,
+)
 from learnova import media_enrichment as media
 from learnova.flashcards import service as flashcards
 from learnova.flashcards import imports as flashcard_imports
@@ -177,6 +179,7 @@ login_manager.session_protection = "strong"
 VISION_MODEL = app.config["GROQ_VISION_MODEL"]
 TUTOR_MODEL = app.config["GROQ_TUTOR_MODEL"]
 FAST_MODEL = app.config["GROQ_FAST_MODEL"]
+TUTOR_CHAT_MODEL = app.config["AI_TUTOR_CHAT_MODEL"]
 ANALYSIS_MODEL = app.config["GROQ_ANALYSIS_MODEL"]
 DIAGNOSIS_MODEL = app.config["GROQ_DIAGNOSIS_MODEL"]
 DIAGNOSIS_VERIFY_MODEL = app.config["GROQ_DIAGNOSIS_VERIFY_MODEL"]
@@ -2837,6 +2840,27 @@ def inject_i18n():
     }
 
 
+@app.context_processor
+def inject_xp_chip():
+    """A tiny read-only snapshot for the navbar XP chip.
+
+    Deliberately never creates rows (unlike gamification_profile): a brand-new user
+    gets a level-1 chip from zeros, and the first learning event creates the profile."""
+    if not app.config.get("FEATURE_GAMIFICATION") or not current_user.is_authenticated:
+        return {"xp_chip": None}
+    profile = db.session.get(UserGamificationProfile, current_user.id)
+    progress = gamification.level_progress(profile.total_xp if profile else 0)
+    streak = 0
+    if profile:
+        try:
+            today = datetime.now(ZoneInfo(profile.timezone or "Europe/Berlin")).date()
+        except ZoneInfoNotFoundError:
+            today = utcnow().date()
+        streak = gamification.effective_streak(
+            profile.current_streak, profile.last_qualifying_date, today)
+    return {"xp_chip": {**progress, "streak": streak}}
+
+
 def require_feature(config_key: str):
     """Guard an API view behind a feature flag; returns 404 when the feature is off."""
 
@@ -4435,7 +4459,7 @@ def update_grade():
 
 
 # Paths exempt from the one-time grade prompt (APIs, auth, static, the prompt itself).
-_GRADE_GATE_EXEMPT = ("/static", "/api", "/onboarding", "/settings", "/logout", "/login", "/register", "/health")
+_GRADE_GATE_EXEMPT = ("/static", "/api", "/onboarding", "/settings", "/logout", "/login", "/register", "/health", "/about")
 
 
 @app.before_request
@@ -4482,8 +4506,11 @@ def complete_tour():
 
 
 @app.get("/")
-@login_required
 def index():
+    if not current_user.is_authenticated:
+        # The site root is the shop window: visitors land on the About page instead
+        # of a bare login form. Deep links to protected pages still go through /login.
+        return redirect(url_for("about"))
     session_id = request.args.get("session_id", "")
     session = owned_session(session_id) if session_id else None
     bootstrap = None
@@ -4505,6 +4532,12 @@ def index():
 @app.get("/health")
 def health():
     return jsonify(ok=True, status="ok")
+
+
+@app.get("/about")
+def about():
+    """Public About page: what Learnova is, for visitors and logged-in students alike."""
+    return render_template("about.html")
 
 
 @app.route("/projects", methods=["GET", "POST"])
@@ -5772,6 +5805,7 @@ Return JSON as {{"sections":[{{"title":"...","main_topic":"...","simple_explanat
 
 
 @app.post("/projects/<int:project_id>/sections/<int:section_id>/recall/<int:card_id>")
+@limiter.limit("60 per minute")
 @login_required
 def answer_recall_card(project_id, section_id, card_id):
     section = owned_section(project_id, section_id)
@@ -5825,11 +5859,16 @@ def answer_recall_card(project_id, section_id, card_id):
         section.project.user_id, activity_kind="review", score=score,
         subject=section.project.subject, concepts=concepts, section_id=section.id,
     )
+    # Keyed by outcome, not by attempt count: the old key grew with every POST, which
+    # paid 5 XP per request forever. Now a card pays its first-correct and its
+    # mistake-corrected bonus at most once each; wrong tries count as activity once.
+    fixed = bool(correct and retry_count)
     record_learning_event(
-        current_user.id, "mistake_corrected" if correct and retry_count else "practice_question_completed",
-        f"recall:{card.id}:{card.attempts}", source_type="recall_card", source_id=card.id,
+        current_user.id, "mistake_corrected" if fixed else "practice_question_completed",
+        f"recall-fixed:{card.id}" if fixed else f"recall:{card.id}:{'correct' if correct else 'incorrect'}",
+        source_type="recall_card", source_id=card.id,
         subject=section.project.subject, metadata={"correct": correct, "score": score},
-        xp=(gamification.XP_VALUES["mistake_corrected"] if correct and retry_count
+        xp=(gamification.XP_VALUES["mistake_corrected"] if fixed
             else gamification.XP_VALUES["practice_answer"] if correct else 0))
     db.session.commit()
     return jsonify(
@@ -6860,7 +6899,10 @@ def gamification_snapshot(user_id: int) -> dict[str, Any]:
     recent_events = db.session.scalars(db.select(LearningEvent).where(
         LearningEvent.user_id == user_id).order_by(LearningEvent.created_at.desc()).limit(8)).all()
     return {
-        **progress, "current_streak": profile.current_streak,
+        # The stored streak only changes when the user studies; effective_streak shows
+        # 0 after missed days instead of a stale number.
+        **progress, "current_streak": gamification.effective_streak(
+            profile.current_streak, profile.last_qualifying_date, today),
         "longest_streak": profile.longest_streak,
         "goal": goal, "missions": missions, "recent_badges": recent_badges,
         "recent_events": recent_events,
@@ -7595,6 +7637,9 @@ Images: a picture is allowed ONLY when seeing the thing IS the point - you canno
 Media decision: rate from 0 to 10 how much media would improve understanding, in "video_usefulness" and "image_usefulness" (integers). These ratings only cap how many items may appear (videos: 0-4 none, 5-7 one, 8-10 up to three; images: 0-3 none, 4-6 one, 7-10 up to two). They do not make an item acceptable - every picture is verified against Wikipedia afterwards and dropped if it cannot be confirmed, so proposing a weak one gains nothing. List strongest first.
 Never invent URLs or link text; only provide search phrases and Wikipedia article titles.
 The demonstration must use many small steps rather than combining ideas. Never write 'obviously', 'simply', or 'just'.
+First decide silently whether the study goal is mainly a SKILL (producing something: writing, argumentation, text analysis, a problem-solving technique, speaking) or mainly KNOWLEDGE (facts, concepts, rules).
+For a SKILL goal: "explanation" must teach ONE named, reusable method the student can apply to any topic of this kind - a short memorable name, numbered steps, and one sentence per step saying what to do and why. "worked_example" must apply that exact method step by step to one concrete case from a school student's everyday world (class chat, phone rules at school, school events, sports, pocket money). "teacher_tips" must include what to do when stuck at step 1 and how to self-check the result. The first question must make the student USE the first step of the method on a tiny new case - an application choice, never recall of the method's name.
+For a KNOWLEDGE goal, keep the behaviour described in the rest of these instructions.
 Give 2 to 4 teacher_tips that an excellent classroom teacher would actually use. Mention common traps and quick ways to check an answer.
 For exceptions, state the exact condition and give a tiny example. Do not invent exceptions unrelated to the uploaded material.
 The first question must be easy, check understanding of the explanation, and not copy the worked example exactly. It must have exactly one correct option."""
@@ -7779,8 +7824,10 @@ def finish_test():
         if section:
             update_section_mastery(section, completed=True)
     save_session_state(session_id, commit=False)
-    record_learning_event(
-        current_user.id, "quiz_completed", f"finish:{session_id}", source_type="study_session",
+    _, finish_xp = record_learning_event(
+        # The same key as the gate-complete award in /api/answer: finishing early and
+        # completing normally are one quiz, never two bonuses.
+        current_user.id, "quiz_completed", f"quiz-complete:{session_id}", source_type="study_session",
         source_id=lesson_record.id if lesson_record else "", session_id=session_id, subject=subject,
         metadata={"finished_early": True, "answered": answered},
         xp=gamification.XP_VALUES["quiz_completed"])
@@ -7788,7 +7835,8 @@ def finish_test():
     average = round(sum(item["score"] for item in session["history"]) / max(1, answered))
     mastery = mastery_snapshot(session)
     practice_results = adaptive_session_results(session) if session.get("planned_concepts") else None
-    return jsonify(ok=True, complete=True, summary=test_summary(None, decision), progress={
+    return jsonify(ok=True, complete=True, summary=test_summary(None, decision),
+                   xp_earned=finish_xp, xp=xp_status(current_user.id), progress={
         "answered": answered, "total": session.get("test_total", maximum), "minimum": minimum,
         "maximum": maximum, "average_score": average, "mastery": mastery,
         "weakest_concept": mastery[0]["concept"] if mastery else None, "knowledge": decision.as_dict(),
@@ -7930,6 +7978,7 @@ Write all student-facing JSON values in response_language.
 The teacher_tip must be concrete and immediately usable. Only provide exception_note when it is relevant to the current concept.
 For mathematics or physics, write every equation, transformation, and unit conversion as its own $$...$$ LaTeX line in feedback and correction; never write formulas as plain text and never compress a multi-step calculation into one paragraph.
 For multiple_choice and dropdown use exactly one correct option and 4 options. For checkboxes use 4 or 5 options with 2 or 3 correct answers. For ordering provide 4 items in a shuffled order. For text, options must be an empty list.
+{ARGUMENT_DIVERSITY_RULE}
 {photo_rule}
 When next_target is present: if the answer is wrong, the next question is about next_target.if_wrong (the same concept, new wording, aimed at the misconception); if it is correct, the next question is about next_target.if_correct. The knowledge list shows what the student has demonstrated so far; a concept marked known needs no further questions. Otherwise target the weakest relevant concept. When uploaded_source is present, it is the only factual source for evaluation and new questions; never introduce facts outside it.
 Follow the exact null/object structure shown above. Do not replace a required object with null."""
@@ -8219,10 +8268,13 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                 number=next_question_number, question_type=next_question_type,
                 lesson_subject=lesson_record.subject)
         save_session_state(payload.get("session_id"), commit=False)
-        record_learning_event(
+        _, answer_xp = record_learning_event(
             current_user.id,
             "quiz_completed" if is_final else "practice_question_completed",
-            f"attempt:{attempt.id}", source_type="attempt", source_id=attempt.id,
+            # One quiz completion per lesson session: the attempt id is new on every
+            # POST, so re-submitting after the gate closed re-earned the bonus forever.
+            f"quiz-complete:{payload.get('session_id')}" if is_final else f"attempt:{attempt.id}",
+            source_type="attempt", source_id=attempt.id,
             session_id=payload.get("session_id"), subject=question_subject,
             metadata={"correct": score >= 80, "score": score},
             xp=(gamification.XP_VALUES["quiz_completed"] if is_final
@@ -8243,6 +8295,7 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                              "difficulty_delta": plan.difficulty_delta, "reason": plan.reason},
                        complete=is_final,
                        summary=test_summary(result.get("summary"), decision) if is_final else None,
+                       xp_earned=answer_xp, xp=xp_status(current_user.id),
                        progress={
             "answered": len(session["history"]),
             "total": session["test_total"],
@@ -8305,6 +8358,12 @@ def tutor_chat():
                     if not item.get("completed")
                 ],
             }
+    # The grading fields never reach the chat model: a prompt rule alone should not be
+    # the only thing between "give me a hint" and the test answer.
+    safe_question = {
+        key: value for key, value in (session.get("current_question") or {}).items()
+        if key not in {"expected_answer", "solution_steps", "rubric"}
+    }
     chat_context = {
         "subject": session.get("subject", "Other"),
         "lesson_title": session["lesson"]["lesson_title"],
@@ -8313,51 +8372,75 @@ def tutor_chat():
         "teacher_tips": session["lesson"].get("teacher_tips", [])[:2],
         "exceptions": session["lesson"].get("exceptions", [])[:2],
         "mastery": mastery_snapshot(session),
-        "current_question": session["current_question"],
+        "current_question": safe_question,
         "recent_results": session["history"][-3:],
-        "recent_chat": session["chat_history"][-4:],
-        "student_message": message,
+        "source_excerpt": (session.get("source_context") or "")[:4000],
         "response_language": session["language"],
         "scheduled_study_plan": scheduled_context,
     }
+    # History goes in as a labelled transcript within its own token budget: newest turns
+    # survive, oldest are dropped (learnova/assistant/conversation.py). The new message is
+    # appended to chat_history only after the reply, so it is never sent twice.
+    window = assistant.build_window(
+        [
+            {"role": "user" if item.get("role") == "student" else "assistant",
+             "content": str(item.get("content") or "")}
+            for item in session.get("chat_history", [])
+        ],
+        token_budget=int(app.config.get("TUTOR_CHAT_HISTORY_TOKEN_BUDGET", 1500)),
+    )
+    transcript = assistant.render_transcript(window, speaker="Student", responder="Tutor")
     prompt = f"""Tutor the student using this lesson state:
 {json.dumps(chat_context, ensure_ascii=False)}
 
-Reply only in response_language in at most 120 words. Be accurate and use small, explicit steps.
-Use the saved context and today's scheduled_study_plan when present. Explain recommendations from its mastery/reason/date evidence instead of suggesting a random topic. For question help, give one useful hint, not the final answer.
-Verify calculations; allow valid interpretations in humanities/languages. Mention an exception only when relevant.
-Treat a short reply as an answer to the latest chat question. End with one short checking question."""
+Conversation so far:
+{transcript or "(none - this is the student's first message)"}
+
+Student's new message:
+{message}
+
+Reply only in response_language. Keep the reply as short as the task allows; exactly one small task or one checking question per turn.
+Ground every study recommendation in the saved evidence - mastery, recent_results, and today's scheduled_study_plan when present - and name that evidence; never suggest a random topic.
+For help on current_question, coach with one hint or one guiding question toward the idea; never state, confirm, or eliminate down to the final answer.
+When source_excerpt is present it is the factual source for this lesson; stay inside it.
+Verify calculations; allow valid interpretations in humanities and languages. Mention an exception only when relevant.
+Treat a short or fragmentary reply as the student's attempt at your last question - respond to it as an attempt, never as a new topic, and never criticise its form."""
 
     try:
         response = create_response(
             task_type="tutor_chat",
             language=session["language"],
-            model=FAST_MODEL,
-            instructions=(
-                "You are a careful, friendly Socratic tutor across school subjects. "
-                "Teach complex ideas in respectful baby steps without removing their real difficulty. "
-                f"Factual accuracy and internal consistency are mandatory. {language_instruction()} "
-                f"{learner_profile_instruction()}"
-            ).strip(),
+            model=TUTOR_CHAT_MODEL,
+            instructions=f"{tutor_instructions(session.get('subject'))}\n\n{TUTOR_CHAT_COACHING}",
             input=prompt,
             max_output_tokens=CHAT_TOKEN_LIMIT,
-            temperature=0.2,
+            temperature=0.3,
         )
         reply = response.output_text.strip()
+        # A reply may end with a "CHIPS: a | b" line the browser turns into tap buttons.
+        # Only the clean text is stored: the history page shows content literally, and a
+        # transcript carrying old chips would teach the model to parrot them.
+        stored_reply = re.sub(r"\n\s*CHIPS:[^\n]*$", "", reply).rstrip() or reply
         session["chat_history"].extend([
             {"role": "student", "content": message},
-            {"role": "tutor", "content": reply},
+            {"role": "tutor", "content": stored_reply},
         ])
         lesson_record = db.session.scalar(db.select(Lesson).where(
             Lesson.session_id == payload.get("session_id"), Lesson.user_id == current_user.id))
         if lesson_record:
             db.session.add_all([
                 ChatMessage(lesson_id=lesson_record.id, role="student", content=message),
-                ChatMessage(lesson_id=lesson_record.id, role="tutor", content=reply),
+                ChatMessage(lesson_id=lesson_record.id, role="tutor", content=stored_reply),
             ])
             save_session_state(payload.get("session_id"), commit=False)
             db.session.commit()
         return jsonify(ok=True, reply=reply, mastery=mastery_snapshot(session))
+    except ai_service.AITokenLimitError:
+        # Must precede AIGatewayError (its parent): the generic mapping says "the
+        # uploaded material is too large", which is nonsense for a typed chat message.
+        db.session.rollback()
+        return api_error(tr("This message is too long for your tutor. Shorten it and send it again."),
+                         413, "chat_input_too_large")
     except (ai_service.AIGatewayError, ai_service.AIValidationError) as error:
         db.session.rollback()
         return ai_failure_response(error)
@@ -8444,6 +8527,21 @@ def award_xp(
     db.session.add(transaction)
     profile.total_xp += transaction.amount
     return transaction.amount
+
+
+def xp_status(user_id: int) -> dict[str, int] | None:
+    """Level and totals for the client's XP chip and toast, read after any award.
+
+    None when gamification is off, so the flag genuinely controls the whole surface."""
+    if not app.config.get("FEATURE_GAMIFICATION"):
+        return None
+    profile = gamification_profile(user_id)
+    progress = gamification.level_progress(profile.total_xp)
+    return {
+        "total_xp": progress["total_xp"], "level": progress["level"],
+        "current_level_xp": progress["current_level_xp"],
+        "next_level_xp": progress["next_level_xp"],
+    }
 
 
 def ensure_user_missions(user_id: int, now: datetime) -> list[UserMission]:
@@ -8536,18 +8634,24 @@ def record_learning_event(
     )
     db.session.add(event)
     db.session.flush()
-    if event_type in {"match_completed", "blast_completed", "blocks_completed"}:
+    cap_group = gamification.xp_cap_group(event_type)
+    if cap_group and xp > 0:
+        # Every repeatable event draws from its group's daily budget (DAILY_XP_CAPS):
+        # a fresh session always has fresh idempotency keys, so without a budget the
+        # same set replayed forever would mint XP forever. This generalises the old
+        # 60-XP-per-day cap that only the three games had.
         try:
             local_zone = ZoneInfo(gamification_profile(user_id).timezone or "Europe/Berlin")
         except ZoneInfoNotFoundError:
             local_zone = timezone.utc
         local_today = datetime.now(local_zone).date()
-        game_xp_today = db.session.scalar(db.select(func.coalesce(func.sum(XPTransaction.amount), 0)).where(
+        group_xp_today = db.session.scalar(db.select(func.coalesce(func.sum(XPTransaction.amount), 0)).where(
             XPTransaction.user_id == user_id,
-            XPTransaction.event_type.in_(("match_completed", "blast_completed", "blocks_completed")),
+            XPTransaction.event_type.in_(gamification.capped_group_events(cap_group)),
             func.date(XPTransaction.created_at) == local_today.isoformat(),
         )) or 0
-        xp = min(max(0, 60 - int(game_xp_today)), xp)
+        budget = gamification.DAILY_XP_CAPS[cap_group]
+        xp = min(max(0, budget - int(group_xp_today)), xp)
     earned = award_xp(
         user_id, event_type, xp, f"xp:{idempotency_key}", source_type=source_type,
         source_id=str(source_id), session_id=str(session_id), reason=event_type)
@@ -8722,7 +8826,9 @@ def start_flashcard_session(set_id):
     objective = str(payload.get("objective") or "all")
     if objective not in {"all", "due", "weak", "starred", "new", "quick", "words", "sentences"}:
         objective = "all"
-    count = max(1, min(30, int(payload.get("count") or (5 if objective == "quick" else 20))))
+    requested_count = int(payload.get("count") or 0)
+    # 0 means "all cards": the student chose every card in the set rather than a number.
+    count = max(1, min(500, requested_count)) if requested_count > 0 else max(1, len(flashcard_set.cards))
     if mode == "match":
         count = min(6, count)
     cards = flashcard_modes.select_cards(
@@ -8791,7 +8897,8 @@ def answer_flashcard_session_item(session_id, item_id):
     answer_key = str(payload.get("request_id") or request.headers.get("Idempotency-Key") or "")[:100]
     if item.answered_at and session.mode != "test":
         return jsonify(ok=True, duplicate=True, correct=item.correct,
-                       correct_answer=item.correct_answer, xp_earned=item.xp_earned)
+                       correct_answer=item.correct_answer, xp_earned=item.xp_earned,
+                       xp=xp_status(current_user.id))
     response_ms = max(0, min(600_000, int(payload.get("response_ms") or 0)))
     if session.mode in {"blast", "blocks"} and item.attempts and response_ms < 150:
         return api_error(tr("Please wait before answering again."), 429, "answer_cooldown")
@@ -8842,7 +8949,8 @@ def answer_flashcard_session_item(session_id, item_id):
     return jsonify(
         ok=True, correct=correct, correct_answer=item.correct_answer,
         student_answer=student, explanation=item.card.explanation,
-        mastery_before=before, mastery_after=after, xp_earned=earned)
+        mastery_before=before, mastery_after=after, xp_earned=earned,
+        xp=xp_status(current_user.id))
 
 
 @app.post("/api/flashcards/sessions/<session_id>/complete")
@@ -8943,7 +9051,8 @@ def complete_flashcard_session(session_id):
         "recommended": "learn" if weak_cards else "test",
     })
     db.session.commit()
-    return jsonify(ok=True, session=serialize_flashcard_session(session))
+    return jsonify(ok=True, session=serialize_flashcard_session(session),
+                   xp=xp_status(current_user.id))
 
 
 @app.post("/api/flashcards/sessions/<session_id>/miss")
@@ -9636,16 +9745,26 @@ def generate_vocabulary_cards(import_id):
     ]
     if not directions:
         return api_error(tr("Choose at least one card direction."), 400, "missing_direction")
+    all_entries = json_value(item.entries_json, [])
     raw_entries = [
-        entry for entry in json_value(item.entries_json, [])
+        entry for entry in all_entries
         if entry.get("included", True) and entry.get("source_term") and entry.get("target_translation")
     ]
     if not raw_entries:
         return api_error(tr("Confirm at least one complete vocabulary entry."), 400, "no_entries")
     if any(not entry.get("user_confirmed") for entry in raw_entries):
-        return api_error(
-            tr("Confirm every included vocabulary entry before creating cards."),
-            400, "confirmation_required")
+        # The import form sends auto_confirm: the student lands directly in the card
+        # editor, where every pair is still visible and editable before anything is
+        # saved, instead of passing through a separate review screen. Flagged entries
+        # keep their original reading - a suggestion is never silently accepted.
+        if payload.get("auto_confirm"):
+            for entry in raw_entries:
+                entry["user_confirmed"] = True
+            item.entries_json = json.dumps(all_entries, ensure_ascii=False)
+        else:
+            return api_error(
+                tr("Confirm every included vocabulary entry before creating cards."),
+                400, "confirmation_required")
     source_document = (
         db.session.get(FlashcardImport, item.flashcard_import_id)
         if item.flashcard_import_id else None)
@@ -10259,9 +10378,10 @@ def answer_vocabulary_practice(list_id, entry_id):
     direction = str(payload.get("direction") or "source_to_target")
     if direction not in {"source_to_target", "target_to_source", "article", "spelling", "example"}:
         return api_error(tr("Choose a valid practice direction."), 400, "invalid_direction")
-    request_key = str(
-        payload.get("request_id") or request.headers.get("Idempotency-Key") or uuid.uuid4())[:100]
-    event_key = f"vocabulary-answer:{item.id}:{entry.id}:{direction}:{request_key}"
+    # Keyed by day, not by the client's request_id: a fresh id on every POST earned
+    # 3 XP per request forever. An entry/direction pair now pays once per day, which
+    # matches how spaced repetition schedules it.
+    event_key = f"vocabulary-answer:{item.id}:{entry.id}:{direction}:{utcnow().date().isoformat()}"
     if db.session.scalar(db.select(LearningEvent.id).where(
             LearningEvent.idempotency_key == event_key)):
         return jsonify(ok=True, duplicate=True)
@@ -11198,6 +11318,7 @@ def flashcard_publication_state(set_id):
 
 
 @app.post("/api/flashcards/cards/<int:card_id>/review")
+@limiter.limit("60 per minute")
 @login_required
 @require_feature("FEATURE_PRIVATE_FLASHCARDS")
 def review_flashcard(card_id):
@@ -11214,12 +11335,11 @@ def review_flashcard(card_id):
     correct = grade != "again"
     response_ms = max(0, min(600_000, int(payload.get("response_ms") or 0)))
     before, after = update_flashcard_performance(card, correct, response_ms, grade)
-    request_key = str(
-        payload.get("request_id") or request.headers.get("Idempotency-Key")
-        or f"{card.id}:{card.correct_count + card.incorrect_count}"
-    )[:100]
+    # Keyed by card and day: the old key used the client's request_id or the ever-growing
+    # review count, so every POST paid again. The SRS update above still runs each time.
     _, earned = record_learning_event(
-        current_user.id, "flashcard_reviewed", f"legacy-fc-review:{current_user.id}:{request_key}",
+        current_user.id, "flashcard_reviewed",
+        f"legacy-fc-review:{current_user.id}:{card.id}:{utcnow().date().isoformat()}",
         source_type="flashcard", source_id=card.id, subject=card.set.subject,
         active_seconds=min(120, response_ms // 1000),
         metadata={"correct": correct, "mode": "flashcards"},

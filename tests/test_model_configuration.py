@@ -24,7 +24,7 @@ from learnova.config import RETIRED_GROQ_MODELS, _bare_model, configure_app
 MODEL_SETTINGS = ("GROQ_VISION_MODEL", "GROQ_TUTOR_MODEL", "GROQ_ANALYSIS_MODEL",
                   "GROQ_FAST_MODEL", "GROQ_DIAGNOSIS_MODEL", "GROQ_DIAGNOSIS_VERIFY_MODEL",
                   "GROQ_QUESTION_MODEL", "GROQ_MODERATION_MODEL",
-                  "GROQ_MODERATION_ESCALATION_MODEL")
+                  "GROQ_MODERATION_ESCALATION_MODEL", "AI_TUTOR_CHAT_MODEL")
 # Clearing these makes configure_app fall back to its coded defaults, whatever the
 # developer's own .env says.
 NO_OVERRIDES = {name: "" for name in MODEL_SETTINGS}
@@ -69,6 +69,14 @@ class DefaultModelTests(unittest.TestCase):
     def test_the_vision_model_is_the_one_the_account_is_served(self):
         self.assertEqual(fresh_app().config["GROQ_VISION_MODEL"], "qwen/qwen3.8-27b")
 
+    def test_the_lesson_tutor_chat_defaults_to_the_strong_model(self):
+        # The in-lesson coach is the surface students compare with frontier chatbots;
+        # it follows the analysis tier, not the fast one, and accepts provider:model.
+        application = fresh_app()
+        self.assertEqual(application.config["AI_TUTOR_CHAT_MODEL"],
+                         application.config["GROQ_ANALYSIS_MODEL"])
+        self.assertEqual(application.config["AI_TUTOR_CHAT_MODEL"], "openai/gpt-oss-120b")
+
     def test_nothing_is_pinned_at_startup_when_defaults_are_used(self):
         self.assertEqual(fresh_app().config["RETIRED_MODEL_SETTINGS"], {})
 
@@ -88,6 +96,10 @@ class StalePinWarningTests(unittest.TestCase):
         # checked - and .env.example pinned a retired one for it.
         application = fresh_app(ASSISTANT_DEEP_MODEL="llama-3.3-70b-versatile")
         self.assertIn("ASSISTANT_DEEP_MODEL", application.config["RETIRED_MODEL_SETTINGS"])
+
+    def test_a_stale_tutor_chat_pin_is_named_at_startup(self):
+        application = fresh_app(AI_TUTOR_CHAT_MODEL="llama-3.3-70b-versatile")
+        self.assertIn("AI_TUTOR_CHAT_MODEL", application.config["RETIRED_MODEL_SETTINGS"])
 
     def test_a_provider_prefix_does_not_hide_a_retired_id(self):
         application = fresh_app(GROQ_ANALYSIS_MODEL="groq:llama-3.3-70b-versatile")

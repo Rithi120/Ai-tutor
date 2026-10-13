@@ -1,11 +1,11 @@
 /* Direct assistant chat.
  *
- * Assistant output is untrusted text. It is escaped first and only then given the small
- * set of tags this file introduces itself, so nothing the model writes can become markup.
- * The renderer below is deliberately tiny for that reason: every construct it supports is
- * one it builds, not one it passes through.
+ * Assistant output is untrusted text; the shared escape-first renderer in markdown.js
+ * turns it into the small set of tags that module builds itself, so nothing the model
+ * writes can become markup.
  */
 import { escapeHtml } from "./dom.js";
+import { renderMarkdown } from "./markdown.js";
 import { withRetryHint } from "./ai-limit-rules.js";
 import { renderMath } from "./math.js";
 import { t } from "./i18n.js";
@@ -48,87 +48,6 @@ async function api(url, { method = "GET", body } = {}) {
 }
 
 /* ----------------------------------------------------------------- rendering */
-
-function renderInline(text) {
-  // `text` is already escaped. Each replacement introduces only tags built here.
-  return text
-    .replace(/`([^`\n]+)`/g, (_m, code) => `<code>${code}</code>`)
-    .replace(/\*\*([^*\n]+)\*\*/g, (_m, bold) => `<strong>${bold}</strong>`)
-    .replace(/(^|[\s(])\*([^*\n]+)\*/g, (_m, lead, italic) => `${lead}<em>${italic}</em>`)
-    // Only http(s) becomes a link, and only after escaping, so a "javascript:" URL
-    // cannot be produced here. Trailing punctuation is left outside the link.
-    .replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g, (url) =>
-      `<a href="${url}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>`);
-}
-
-function renderMarkdown(source) {
-  const lines = String(source || "").split("\n");
-  const out = [];
-  let paragraph = [];
-  let list = null;          // "ul" | "ol"
-  let code = null;          // accumulated code-block lines
-  let codeLanguage = "";
-
-  const flushParagraph = () => {
-    if (paragraph.length) {
-      out.push(`<p>${renderInline(paragraph.join("<br>"))}</p>`);
-      paragraph = [];
-    }
-  };
-  const flushList = () => {
-    if (list) {
-      out.push(`</${list}>`);
-      list = null;
-    }
-  };
-
-  for (const raw of lines) {
-    const fence = raw.match(/^\s*```(\w*)\s*$/);
-    if (fence) {
-      if (code === null) {
-        flushParagraph(); flushList();
-        code = []; codeLanguage = escapeHtml(fence[1] || "");
-      } else {
-        const label = codeLanguage
-          ? `<span class="code-lang">${codeLanguage}</span>` : "";
-        out.push(`<pre class="asst-code">${label}<code>${escapeHtml(code.join("\n"))}</code></pre>`);
-        code = null; codeLanguage = "";
-      }
-      continue;
-    }
-    if (code !== null) { code.push(raw); continue; }
-
-    const line = raw.trimEnd();
-    if (!line.trim()) { flushParagraph(); flushList(); continue; }
-
-    const heading = line.match(/^(#{1,4})\s+(.*)$/);
-    if (heading) {
-      flushParagraph(); flushList();
-      const level = Math.min(6, heading[1].length + 2);   // "#" renders as <h3>
-      out.push(`<h${level}>${renderInline(escapeHtml(heading[2]))}</h${level}>`);
-      continue;
-    }
-    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
-    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
-    if (bullet || numbered) {
-      flushParagraph();
-      const wanted = bullet ? "ul" : "ol";
-      if (list !== wanted) { flushList(); list = wanted; out.push(`<${wanted}>`); }
-      out.push(`<li>${renderInline(escapeHtml((bullet || numbered)[1]))}</li>`);
-      continue;
-    }
-    flushList();
-    paragraph.push(escapeHtml(line));
-  }
-  if (code !== null) {
-    // An unterminated fence: render what there is rather than dropping it.
-    out.push(`<pre class="asst-code"><code>${escapeHtml(code.join("\n"))}</code></pre>`);
-  }
-  flushParagraph(); flushList();
-  return out.join("\n");
-}
-
-
 
 function messageNode(message) {
   const article = document.createElement("article");
@@ -186,6 +105,27 @@ function messageNode(message) {
   }
   renderMath(body);
   return article;
+}
+
+/* Under the newest reply the assistant offers to turn the question into a short lesson
+ * on the New Lesson page - explanation, practice questions, tutor chat - with the
+ * question already filled in as the study goal. One tap, no retyping. */
+function offerLessonUnder(article, goal) {
+  document.querySelectorAll(".asst-lesson-offer").forEach((node) => node.remove());
+  const topic = String(goal || "").trim();
+  if (!topic || !article) return;
+  const offer = document.createElement("div");
+  offer.className = "asst-lesson-offer";
+  const text = document.createElement("span");
+  text.textContent = t("asstLessonOffer");
+  const start = document.createElement("button");
+  start.type = "button";
+  start.textContent = t("asstLessonStart");
+  start.addEventListener("click", () => {
+    window.location.href = `/?goal=${encodeURIComponent(topic.slice(0, 400))}`;
+  });
+  offer.append(text, start);
+  article.appendChild(offer);
 }
 
 function scrollToEnd() {
@@ -262,6 +202,12 @@ async function openConversation(conversationId) {
     thread.innerHTML = "";
     for (const message of data.conversation.messages) thread.appendChild(messageNode(message));
     if (!data.conversation.messages.length) thread.appendChild(welcomeNode());
+    const history = data.conversation.messages;
+    const last = history[history.length - 1];
+    if (last && last.role === "assistant" && !last.error) {
+      const lastUser = [...history].reverse().find((item) => item.role === "user");
+      offerLessonUnder(thread.lastElementChild, lastUser && lastUser.content);
+    }
     setThreadControls(data.conversation);
     renderList();
     scrollToEnd();
@@ -324,7 +270,9 @@ async function send(text) {
     const data = await api(`/api/assistant/conversations/${state.activeId}/messages`, {
       method: "POST", body: { message, deep: el("asstDeep").checked },
     });
-    pending.replaceWith(messageNode(data.reply));
+    const replyNode = messageNode(data.reply);
+    pending.replaceWith(replyNode);
+    if (!data.reply.error) offerLessonUnder(replyNode, message);
     const index = state.conversations.findIndex((item) => item.id === data.conversation.id);
     if (index >= 0) state.conversations[index] = data.conversation;
     else state.conversations.unshift(data.conversation);

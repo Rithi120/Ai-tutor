@@ -83,7 +83,12 @@ def build_items(
     for position, card in enumerate(chosen):
         item_direction = direction
         if item_direction == "mixed":
-            item_direction = "back_to_front" if mode in {"learn", "test"} and position % 4 == 3 else "front_to_back"
+            if mode == "flashcards":
+                # The student chose "Mixed" in the session settings: alternate the sides
+                # evenly, so a vocabulary set is asked in both directions.
+                item_direction = "back_to_front" if position % 2 else "front_to_back"
+            else:
+                item_direction = "back_to_front" if mode in {"learn", "test"} and position % 4 == 3 else "front_to_back"
         prompt, expected = (
             (card.back, card.front) if item_direction == "back_to_front"
             else (card.front, card.back)

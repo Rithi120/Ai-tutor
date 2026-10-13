@@ -415,6 +415,132 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(mastery.attempts, 2)
 
 
+class TutorChatCoachingTests(unittest.TestCase):
+    """What the in-lesson tutor chat actually sends to the model, and how it fails.
+
+    The chat used to be a 120-word hint widget; these tests pin its coaching contract:
+    the priorities block rides along, the grading answer never reaches the model, the
+    conversation arrives as a labelled transcript, and an over-budget turn is reported
+    as a too-long message rather than "the uploaded material is too large".
+    """
+
+    def setUp(self):
+        application.app.config.update(TESTING=True)
+        application.SESSIONS.clear()
+        with application.app.app_context():
+            application.db.drop_all()
+            application.db.create_all()
+        self.client = application.app.test_client()
+        self.client.post("/register", data={
+            "username": "alice", "email": "alice@example.com",
+            "password": "correct-horse-battery"}, follow_redirects=True)
+        with patch.object(application, "create_response", return_value=FakeResponse(LESSON)):
+            analyzed = self.client.post("/api/analyze", data={"study_goal": "Learn fractions", "subject": "Math"})
+        self.session_id = analyzed.get_json()["session_id"]
+
+    def chat(self, message, reply="Good thinking - what multiplies both parts?"):
+        captured = {}
+
+        def capture(**kwargs):
+            captured.update(kwargs)
+            # Chat replies are prose, not JSON: hand the text through verbatim so
+            # newlines (e.g. a trailing CHIPS line) survive like a real reply's would.
+            fake = FakeResponse({})
+            fake.output_text = reply
+            return fake
+
+        with patch.object(application, "create_response", side_effect=capture):
+            response = self.client.post("/api/chat", json={"session_id": self.session_id, "message": message})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        captured["reply"] = response.get_json()["reply"]
+        return captured
+
+    def test_coaching_priorities_and_level_rules_ride_along(self):
+        sent = self.chat("ich finde keine argumente")
+        self.assertEqual(sent["model"], application.TUTOR_CHAT_MODEL)
+        instructions = sent["instructions"]
+        self.assertIn("PRIORITIES", instructions)
+        self.assertIn("never state, confirm, or eliminate options", instructions)
+        self.assertIn("ONE small task per turn", instructions)
+        self.assertIn("improved version of the student's own attempt", instructions)
+        # The chat shares the tutor spine (subject/notation/level rules), not a bespoke prompt.
+        self.assertIn("patient expert tutor", instructions)
+        self.assertLess(instructions.index("PRIORITIES"), instructions.index("HOW TO TEACH"),
+                        "conflict resolution must come before the coaching rules")
+
+    def test_the_grading_answer_never_reaches_the_chat_model(self):
+        sent = self.chat("Give me a hint")
+        self.assertNotIn("expected_answer", sent["input"])
+        self.assertIn("Which fraction equals 1/2?", sent["input"], "the question itself is still sent")
+
+    def test_history_arrives_as_a_labelled_transcript(self):
+        first = self.chat("Why?")
+        self.assertIn("(none - this is the student's first message)", first["input"])
+        second = self.chat("is it because of the multiplier?")
+        self.assertIn("Student: Why?", second["input"])
+        self.assertIn("Tutor:", second["input"])
+        self.assertIn("Student's new message:\nis it because of the multiplier?", second["input"])
+
+    def test_section_source_material_reaches_the_chat(self):
+        application.SESSIONS[self.session_id]["source_context"] = "Seite 12: Die Zelle besteht aus..."
+        sent = self.chat("Was steht auf Seite 12?")
+        self.assertIn("Die Zelle besteht aus", sent["input"])
+
+    def test_the_chips_line_reaches_the_browser_but_never_the_stored_history(self):
+        sent = self.chat("ich bin unsicher", reply="Wähle eine Seite.\nCHIPS: Pro | Contra")
+        self.assertIn("CHIPS: Pro | Contra", sent["reply"], "the browser parses the chips")
+        with application.app.app_context():
+            stored = application.db.session.scalars(application.db.select(
+                application.ChatMessage).where(application.ChatMessage.role == "tutor")).all()
+            self.assertEqual(len(stored), 1)
+            self.assertNotIn("CHIPS", stored[0].content, "history shows content literally")
+            self.assertIn("Wähle eine Seite.", stored[0].content)
+        # The transcript built for the next turn must not parrot old chips either.
+        follow_up = self.chat("Pro")
+        self.assertNotIn("CHIPS", follow_up["input"])
+
+    def test_an_over_budget_turn_is_reported_as_a_too_long_message(self):
+        with patch.object(application, "create_response",
+                          side_effect=application.ai_service.AITokenLimitError("too large")):
+            response = self.client.post("/api/chat", json={"session_id": self.session_id, "message": "hi"})
+        self.assertEqual(response.status_code, 413)
+        payload = response.get_json()
+        self.assertEqual(payload["code"], "chat_input_too_large")
+        self.assertNotIn("material", payload["error"].lower(),
+                         "the student typed a message; nothing was uploaded")
+
+    def test_lesson_generation_distinguishes_skill_goals_from_knowledge_goals(self):
+        captured = {}
+
+        def capture(**kwargs):
+            captured.update(kwargs)
+            return FakeResponse(LESSON)
+
+        with patch.object(application, "create_response", side_effect=capture):
+            self.client.post("/api/analyze", data={
+                "study_goal": "Argumente für Erörterungen finden", "subject": "German"})
+        text = captured["input"][0]["content"][0]["text"]
+        self.assertIn("SKILL", text)
+        self.assertIn("ONE named, reusable method", text)
+        self.assertIn("USE the first step of the method", text)
+
+    def test_the_argument_diversity_rule_rides_with_answer_evaluation(self):
+        from learnova.ai_services.prompts import ARGUMENT_DIVERSITY_RULE
+        captured = []
+
+        def capture(**kwargs):
+            captured.append(kwargs)
+            return FakeResponse(EVALUATION)
+
+        with patch.object(application, "create_response", side_effect=capture):
+            answered = self.client.post("/api/answer", json={"session_id": self.session_id, "answer": "a"})
+        self.assertEqual(answered.status_code, 200, answered.get_data(as_text=True))
+        evaluations = [call for call in captured if call.get("task_type") == "answer_evaluation"]
+        self.assertTrue(evaluations)
+        self.assertIn(ARGUMENT_DIVERSITY_RULE, evaluations[0]["input"],
+                      "the production prompt must carry the exact shared rule text")
+
+
 def tearDownModule():
     with application.app.app_context():
         application.db.session.remove()

@@ -1,0 +1,252 @@
+/* about.css — public About page. Loaded in {% block head %}, which sits BEFORE the
+ * shared learnova sheets, so every selector here uses .about- prefixed classes that
+ * nothing else defines. Colors come from the --ln-* tokens, so dark mode works without
+ * a single override in learnova-dark.css. */
+
+.about-shell {
+  width: min(1060px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 80px;
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ------------------------------------------------------------------ hero */
+.about-hero {
+  text-align: center;
+  padding: 72px 16px 64px;
+  border-radius: 28px;
+  background:
+    radial-gradient(640px 300px at 18% 0%, color-mix(in srgb, var(--ln-violet) 14%, transparent), transparent 70%),
+    radial-gradient(640px 300px at 85% 10%, color-mix(in srgb, var(--ln-coral, #ff7a59) 10%, transparent), transparent 70%);
+}
+.about-hero h1 {
+  max-width: 17em;
+  margin: 14px auto 0;
+  font: 800 clamp(30px, 5.2vw, 52px)/1.12 Manrope, sans-serif;
+  letter-spacing: -.015em;
+  color: var(--ln-ink);
+}
+.about-lead {
+  max-width: 44em;
+  margin: 22px auto 0;
+  font-size: clamp(16px, 2vw, 19px);
+  line-height: 1.65;
+  color: var(--ln-muted);
+}
+.about-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  margin-top: 34px;
+}
+.about-secondary-link {
+  color: var(--ln-violet);
+  font-weight: 700;
+  text-decoration: none;
+}
+.about-secondary-link:hover { text-decoration: underline; }
+
+/* -------------------------------------------------------------- sections */
+.about-section { margin-top: 84px; }
+.about-section h2 {
+  margin: 0;
+  font: 800 clamp(24px, 3.4vw, 34px)/1.2 Manrope, sans-serif;
+  letter-spacing: -.01em;
+  color: var(--ln-ink);
+}
+.about-section-lead { margin: 10px 0 0; color: var(--ln-muted); font-size: 17px; }
+
+.about-grid { display: grid; gap: 18px; margin-top: 30px; }
+.about-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.about-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.about-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.about-card {
+  padding: 24px 22px;
+  border: 1px solid var(--ln-line);
+  border-radius: 20px;
+  background: var(--ln-surface-solid);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.about-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--ln-ink) 10%, transparent);
+}
+.about-card-icon { display: block; font-size: 26px; margin-bottom: 12px; }
+.about-card h3 { margin: 0 0 8px; font: 700 17px/1.3 Manrope, sans-serif; color: var(--ln-ink); }
+.about-card p { margin: 0; line-height: 1.6; color: var(--ln-muted); }
+
+.about-resolution, .about-fairness {
+  max-width: 54em;
+  margin: 28px 0 0;
+  padding: 18px 22px;
+  border-inline-start: 3px solid var(--ln-violet);
+  border-radius: 0 14px 14px 0;
+  background: color-mix(in srgb, var(--ln-violet) 7%, transparent);
+  line-height: 1.65;
+  color: var(--ln-ink);
+}
+
+.about-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.about-chip-row li {
+  padding: 8px 15px;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ln-violet) 8%, transparent);
+  color: var(--ln-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------- steps */
+.about-steps {
+  counter-reset: about-step;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.about-step {
+  padding: 24px 22px;
+  border: 1px solid var(--ln-line);
+  border-radius: 20px;
+  background: var(--ln-surface-solid);
+}
+.about-step-number {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ln-violet) 14%, transparent);
+  color: var(--ln-violet);
+  font: 800 17px Manrope, sans-serif;
+}
+.about-step h3 { margin: 0 0 8px; font: 700 16px/1.3 Manrope, sans-serif; color: var(--ln-ink); }
+.about-step p { margin: 0; line-height: 1.6; color: var(--ln-muted); }
+
+/* ------------------------------------------------------------ comparison */
+.about-table-wrap {
+  margin-top: 30px;
+  overflow-x: auto;              /* the table scrolls inside on phones */
+  border: 1px solid var(--ln-line);
+  border-radius: 18px;
+}
+.about-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+.about-table th, .about-table td {
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--ln-line);
+  text-align: center;
+  vertical-align: middle;
+  color: var(--ln-ink);
+}
+.about-table thead th {
+  background: color-mix(in srgb, var(--ln-ink) 4%, transparent);
+  font: 700 14px Manrope, sans-serif;
+}
+.about-table tbody th[scope="row"] {
+  text-align: start;
+  font-weight: 600;
+  max-width: 17em;
+}
+.about-table tbody tr:last-child th,
+.about-table tbody tr:last-child td { border-bottom: 0; font-size: 13px; }
+.about-table-self { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
+.about-mark { font-size: 16px; font-weight: 700; }
+.about-mark-yes { color: var(--ln-success, #2c9f6b); }
+.about-mark-part { color: var(--ln-violet); }
+.about-mark-no { color: var(--ln-muted); }
+
+.about-table-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 14px 2px 0;
+  color: var(--ln-muted);
+  font-size: 13.5px;
+}
+.about-fine-print { margin: 14px 2px 0; color: var(--ln-muted); font-size: 13.5px; line-height: 1.6; }
+.about-fine-print a { color: var(--ln-violet); }
+
+/* ------------------------------------------------------------------- faq */
+.about-faq { display: grid; gap: 10px; margin-top: 30px; max-width: 760px; }
+.about-faq details {
+  border: 1px solid var(--ln-line);
+  border-radius: 16px;
+  background: var(--ln-surface-solid);
+  padding: 0 20px;
+}
+.about-faq summary {
+  padding: 17px 0;
+  cursor: pointer;
+  font: 700 15.5px/1.4 Manrope, sans-serif;
+  color: var(--ln-ink);
+  list-style: none;
+  position: relative;
+  padding-inline-end: 28px;
+}
+.about-faq summary::-webkit-details-marker { display: none; }
+.about-faq summary::after {
+  content: "⌄";
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 15px;
+  color: var(--ln-muted);
+  transition: transform .18s ease;
+}
+.about-faq details[open] summary::after { transform: rotate(180deg); }
+.about-faq details p { margin: 0 0 18px; line-height: 1.65; color: var(--ln-muted); }
+
+/* ------------------------------------------------------------- final CTA */
+.about-final-cta {
+  margin-top: 90px;
+  padding: 56px 24px;
+  border-radius: 28px;
+  text-align: center;
+  background:
+    radial-gradient(520px 240px at 50% 0%, color-mix(in srgb, var(--ln-violet) 16%, transparent), transparent 75%);
+}
+.about-final-cta h2 {
+  margin: 0 0 26px;
+  font: 800 clamp(23px, 3.4vw, 32px)/1.25 Manrope, sans-serif;
+  color: var(--ln-ink);
+}
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width: 960px) {
+  .about-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .about-steps { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+  .about-grid-3, .about-grid-2 { grid-template-columns: 1fr; }
+  .about-section { margin-top: 60px; }
+  .about-hero { padding: 48px 12px 44px; }
+}
+@media (max-width: 520px) {
+  .about-grid-4, .about-steps { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-card, .about-faq summary::after { transition: none; }
+  .about-card:hover { transform: none; }
+}

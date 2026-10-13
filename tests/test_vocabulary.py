@@ -135,6 +135,13 @@ class VocabularyWorkflowTests(unittest.TestCase):
             json={"direction": "source_to_target", "answer": "Umwelt",
                   "strictness": "normal", "request_id": "practice-one"})
         self.assertTrue(duplicate.get_json()["duplicate"])
+        # The dedupe key is per entry/direction/day now, not the client's request_id -
+        # inventing a fresh id used to mint 3 XP per POST forever.
+        fresh_id = self.client.post(
+            f"/api/vocabulary/lists/{list_id}/practice/{first['entry_id']}/answer",
+            json={"direction": "source_to_target", "answer": "Umwelt",
+                  "strictness": "normal", "request_id": "practice-two"})
+        self.assertTrue(fresh_id.get_json()["duplicate"])
 
     def test_image_upload_ownership_and_private_preview(self):
         image = Image.new("RGB", (800, 600), "white")

@@ -40,24 +40,34 @@ def grade_label(grade: str) -> str:
 def grade_descriptor(grade: str) -> str:
     """Neutral English descriptor injected into AI prompts to calibrate depth/difficulty.
 
-    Returns "" when no grade is set, so prompts stay unchanged for unknown learners."""
+    Always returns guidance: an unknown level gets a calibration fallback, because
+    injecting nothing makes models default to adult-level explanations."""
     grade = normalize_grade(grade)
     if grade in NUMERIC_GRADES:
         number = int(grade)
         approx_age = number + 5  # rough school-year to age mapping
         return (
             f"The learner is in grade {number} (approximately {approx_age} years old). "
-            "Match vocabulary, examples, depth and question difficulty to that level."
+            f"Speak to that level: short sentences, everyday examples from a {approx_age}-year-old's "
+            "world (school, friends, phone, sports, family), and define any term above that level "
+            "the first time it appears. Match question difficulty to that grade. When you name the "
+            "student's level, write it in the response language - for German say "
+            f"'Klasse {number}', never 'grade {number}'."
         )
     if grade == "university":
         return (
             "The learner is a university/higher-education student. Use rigorous, "
-            "in-depth explanations and advanced difficulty."
+            "in-depth explanations and advanced difficulty; technical vocabulary needs no softening."
         )
     if grade == "vocational":
         return (
-            "The learner is in vocational training. Prefer practical, applied examples "
-            "and clear, concrete explanations."
+            "The learner is in vocational training. Prefer practical, applied examples from work "
+            "and daily life, and clear, concrete explanations over theory."
         )
-    # "other" or unset: no level-specific guidance.
-    return ""
+    # "other" or unset: calibrate instead of guessing high.
+    return (
+        "The learner's level is not set. Start simple - short sentences, concrete everyday "
+        "examples - and calibrate upward from the student's own messages (their vocabulary, "
+        "spelling, and the questions they ask). Raise the level as soon as the student shows "
+        "it; never condescend."
+    )

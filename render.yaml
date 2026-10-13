@@ -26,6 +26,17 @@ services:
         value: "true"
       - key: FEATURE_COMMUNITY_PUBLISHING
         value: "true"
+      # Gamification was dark in production while XP silently accrued: no /progress
+      # page, no nav chip, no dashboard widget. User testing said nobody noticed the
+      # system - these make its read surfaces visible.
+      - key: FEATURE_GAMIFICATION
+        value: "true"
+      - key: FEATURE_MISSIONS
+        value: "true"
+      - key: FEATURE_BADGES
+        value: "true"
+      - key: FEATURE_DAILY_GOALS
+        value: "true"
       # The safety gate for everything published to the public library. configure_app
       # forces this on in production while publishing is enabled, so the value here is a
       # statement of intent rather than the thing keeping it on.
@@ -100,6 +111,10 @@ services:
         value: openai/gpt-oss-20b
       - key: GROQ_FAST_MODEL
         value: openai/gpt-oss-20b
+      # The in-lesson tutor chat leads with the strong model; the fast one stays behind
+      # it in the route plan as the rate-limit fallback.
+      - key: AI_TUTOR_CHAT_MODEL
+        value: openai/gpt-oss-120b
       # Adaptive diagnostics: the diagnosis runs on the strongest available model, the
       # optional second opinion on the cheapest, and question generation on the tutor model.
       - key: GROQ_ANALYSIS_MODEL
@@ -129,7 +144,7 @@ services:
       - key: ANSWER_TOKEN_LIMIT
         value: "1100"
       - key: CHAT_TOKEN_LIMIT
-        value: "350"
+        value: "1100"
       - key: TRANSLATE_TOKEN_LIMIT
         value: "2500"
       - key: PROJECT_TOKEN_LIMIT

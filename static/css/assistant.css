@@ -235,6 +235,72 @@
   overflow-x: auto;      /* long lines scroll instead of widening the page */
 }
 .asst-code code { background: none; padding: 0; color: inherit; }
+
+/* Comparison tables the renderer builds from pipe rows. display:block keeps a wide
+   table scrolling inside the message instead of widening the page on a phone. */
+.asst-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: .8rem 0;
+  border-collapse: collapse;
+  font-size: .92em;
+}
+.asst-body th, .asst-body td {
+  padding: .45rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--ln-ink) 14%, transparent);
+  text-align: start;
+  vertical-align: top;
+  line-height: 1.5;
+}
+.asst-body th {
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  font-weight: 600;
+}
+.asst-body tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--ln-ink) 3%, transparent);
+}
+.asst-body blockquote {
+  margin: .7rem 0;
+  padding: .35rem .9rem;
+  border-inline-start: 3px solid color-mix(in srgb, var(--ln-violet) 45%, transparent);
+  background: color-mix(in srgb, var(--ln-violet) 6%, transparent);
+  border-radius: 0 10px 10px 0;
+  color: color-mix(in srgb, var(--ln-ink) 82%, transparent);
+}
+.asst-body hr {
+  margin: 1rem 0;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--ln-ink) 12%, transparent);
+}
+
+/* Offered under the newest reply: one tap turns the question into a short lesson. */
+.asst-lesson-offer {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-top: .15rem;
+  font-size: .82rem;
+  color: var(--ln-muted);
+}
+.asst-lesson-offer button {
+  padding: .4rem .9rem;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  color: var(--ln-violet);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.asst-lesson-offer button:hover {
+  background: color-mix(in srgb, var(--ln-violet) 18%, transparent);
+}
+
 .code-lang {
   position: absolute;
   top: .45rem;

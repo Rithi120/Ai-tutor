@@ -7,6 +7,9 @@
 .cards-toolbar { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
 .cards-toolbar input, .cards-toolbar select { padding: .5rem .7rem; border-radius: 10px; border: 1px solid #d9d3ee; background: #fff; font: inherit; }
 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+/* The explicit `display: grid` above would otherwise defeat the `hidden` attribute the
+   library script toggles - the loading skeleton shimmered on forever next to the sets. */
+.cards-grid[hidden], .cards-skeleton[hidden] { display: none; }
 .set-card { background: #fff; border: 1px solid #ece7fb; border-radius: 16px; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .5rem; }
 .set-card h3 { margin: 0; font-size: 1.05rem; }
 .set-meta { margin: 0; font-size: .85rem; opacity: .7; }
@@ -68,7 +71,31 @@ button.danger, .danger-button { color: #b3261e; }
 .study-card-note { margin-top: .8rem; font-size: .9rem; opacity: .75; }
 .study-controls { display: flex; gap: .5rem; justify-content: center; align-items: center; flex-wrap: wrap; }
 .study-hint { text-align: center; background: #fff8e6; padding: .5rem; border-radius: 10px; }
-.study-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-top: 1rem; }
+/* Two honest buttons - Wrong / Correct - centred under the card. */
+.study-grades { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; margin: 1rem auto 0; max-width: 420px; }
+.flashcard-tappable { cursor: pointer; }
+/* After grading, the page waits and "Next" transforms into the Learnova violet to
+   carry the student forward. The ID keeps this above .ghost-button in specificity. */
+.flashcard-controls #nextCard {
+  transition: background .35s ease, color .35s ease, border-color .35s ease,
+              box-shadow .35s ease, transform .35s ease;
+}
+.flashcard-controls #nextCard.next-ready {
+  background: var(--ln-violet);
+  border-color: var(--ln-violet);
+  color: #fff;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--ln-violet) 40%, transparent);
+  animation: nextReadyPop .45s ease;
+}
+@keyframes nextReadyPop {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flashcard-controls #nextCard { transition: none; }
+  .flashcard-controls #nextCard.next-ready { animation: none; }
+}
 .grade { padding: .7rem; border-radius: 12px; border: 1px solid #e0daf3; cursor: pointer; font-weight: 600; background: #fff; }
 .grade-again { color: #b3261e; } .grade-hard { color: #b06a00; } .grade-good { color: #1a7f4b; } .grade-easy { color: #1560c4; }
 .study-summary { text-align: center; background: #fff; border: 1px solid #ece7fb; border-radius: 18px; padding: 1.6rem; }

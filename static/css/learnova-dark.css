@@ -197,3 +197,82 @@
 :root[data-theme="dark"] :is(.listen-control, .listen-control select, .listen-control button) {
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
+
+/* ===== styles.css: in-lesson tutor chat panel =====
+   The panel hardcodes light surfaces (white panel, white tutor bubble, #fbfaf7 thread)
+   and the student bubble is `background: var(--ink)` with white text - in dark mode
+   --ink flips near-white, so the student's own words were white on white. */
+:root[data-theme="dark"] .chat-panel { background: var(--ln-surface-solid); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .chat-header { border-bottom-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .chat-header strong { color: var(--ln-ink); }
+:root[data-theme="dark"] .chat-avatar { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
+:root[data-theme="dark"] .chat-messages { background: var(--ln-canvas); }
+:root[data-theme="dark"] .tutor-message {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .student-message { background: rgba(110, 92, 255, .3); color: var(--ln-ink); }
+:root[data-theme="dark"] .chat-suggestions button {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-violet);
+}
+:root[data-theme="dark"] .chat-form textarea {
+  background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+/* Markdown blocks inside tutor replies (tables, quotes, code bake light hues in styles.css) */
+:root[data-theme="dark"] .tutor-message code { background: rgba(149, 136, 255, .2); }
+:root[data-theme="dark"] .tutor-message th,
+:root[data-theme="dark"] .tutor-message td { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .tutor-message th { background: rgba(149, 136, 255, .18); }
+:root[data-theme="dark"] .tutor-message tbody tr:nth-child(even) td { background: rgba(190, 205, 235, .07); }
+:root[data-theme="dark"] .tutor-message blockquote {
+  background: rgba(149, 136, 255, .14); border-inline-start-color: var(--ln-violet);
+}
+:root[data-theme="dark"] .tutor-message hr { border-top-color: var(--ln-line-strong); }
+
+/* ===== styles.css: dashboard, lesson history, mistake notebook =====
+   These cards hardcode white/light backgrounds while the body text colour flips to
+   near-white - without overrides the text is invisible in dark mode. */
+:root[data-theme="dark"] .dashboard-card {
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, .35);
+}
+:root[data-theme="dark"] :is(.saved-lesson, .metric-row, .mistake) { border-bottom-color: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(
+  .saved-lesson span, .saved-lesson small, .metric-row small,
+  .mistake small, .mistake span, .history-message small) { color: var(--ln-muted); }
+:root[data-theme="dark"] .history-message.student { background: rgba(126, 210, 170, .14); }
+:root[data-theme="dark"] .history-message.tutor { background: var(--fc-muted-surface); }
+:root[data-theme="dark"] .mistake-list .mistake { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .mistake-actions button { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: #7ed2aa; }
+:root[data-theme="dark"] :is(.saved-actions a, .saved-actions button) { color: #7ed2aa; }
+:root[data-theme="dark"] .language-switch a { border-color: var(--ln-line-strong); color: var(--ln-muted); }
+:root[data-theme="dark"] .language-switch a.active { background: var(--ln-ink); border-color: var(--ln-ink); color: #0b1220; }
+:root[data-theme="dark"] .settings-shell select { background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .settings-button { background: var(--ln-surface-raised); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+
+/* ===== navigation.css: top bar, dropdowns, mobile menu (light glass hardcoded) ===== */
+:root[data-theme="dark"] .app-nav {
+  background: rgba(10, 17, 31, .88); border-bottom-color: var(--ln-line-strong);
+}
+:root[data-theme="dark"] :is(.app-nav-link, .app-menu-trigger) { color: var(--ln-muted); }
+:root[data-theme="dark"] :is(.app-nav-link:hover, .app-menu-trigger:hover) {
+  background: rgba(149, 136, 255, .14); color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.app-nav-link.is-active, .app-menu-trigger.is-active,
+  .app-nav-link.nav-primary-action) { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
+:root[data-theme="dark"] .profile-avatar { background: rgba(149, 136, 255, .2); color: var(--ln-violet); }
+:root[data-theme="dark"] :is(.app-dropdown, .mobile-app-menu, .global-nav-links) {
+  background: var(--ln-surface-raised); border-color: var(--ln-line-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
+}
+:root[data-theme="dark"] :is(.app-dropdown a, .app-dropdown .nav-logout,
+  .mobile-app-menu a, .mobile-app-menu .nav-logout) { color: var(--ln-ink); }
+:root[data-theme="dark"] :is(
+  .app-dropdown a:hover, .app-dropdown a:focus-visible, .app-dropdown a.is-active,
+  .app-dropdown .nav-logout:hover, .app-dropdown .nav-logout:focus-visible,
+  .mobile-app-menu a:hover, .mobile-app-menu a:focus-visible, .mobile-app-menu .is-active,
+  .mobile-app-menu .nav-logout:hover, .mobile-app-menu .nav-logout:focus-visible) {
+  background: rgba(149, 136, 255, .16); color: var(--ln-violet);
+}
+:root[data-theme="dark"] .mobile-nav-toggle { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .mobile-menu-head button { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .mobile-menu-divider { background: var(--ln-line-strong); }

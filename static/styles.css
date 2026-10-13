@@ -1664,6 +1664,54 @@ body:before {
   background: white;
   border: 1px solid #e9e5dc;
   border-bottom-left-radius: 4px;
+  /* Tutor replies are rendered markdown: real block elements carry the spacing, so the
+     pre-line inherited from .message would double every gap. */
+  white-space: normal;
+  line-height: 1.55;
+}
+.tutor-message > *:first-child { margin-top: 0; }
+.tutor-message > *:last-child { margin-bottom: 0; }
+.tutor-message p { margin: 7px 0; }
+.tutor-message ul, .tutor-message ol { margin: 7px 0; padding-inline-start: 19px; }
+.tutor-message li { margin: 4px 0; }
+.tutor-message h3, .tutor-message h4, .tutor-message h5, .tutor-message h6 {
+  margin: 11px 0 4px;
+  font-size: 13px;
+}
+.tutor-message code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: .9em;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #f1eefc;
+}
+.tutor-message table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;   /* a wide comparison scrolls inside the bubble on a phone */
+  margin: 9px 0;
+  border-collapse: collapse;
+}
+.tutor-message th, .tutor-message td {
+  padding: 6px 9px;
+  border: 1px solid #e3ddd1;
+  text-align: start;
+  vertical-align: top;
+}
+.tutor-message th { background: #f6f3ff; font-weight: 600; }
+.tutor-message tbody tr:nth-child(even) td { background: #faf8f4; }
+.tutor-message blockquote {
+  margin: 8px 0;
+  padding: 4px 11px;
+  border-inline-start: 3px solid #c8bdf0;
+  background: #f8f6ff;
+  border-radius: 0 8px 8px 0;
+}
+.tutor-message hr {
+  margin: 11px 0;
+  border: none;
+  border-top: 1px solid #e9e5dc;
 }
 
 .student-message {
