@@ -55,6 +55,23 @@ class AboutPageTests(unittest.TestCase):
             self.assertIn(competitor, page)
         self.assertIn("official pages in October 2026".encode(), page)
 
+    def test_adsense_verification_script_renders_once_on_shared_pages(self):
+        script = (
+            b'<script async src="https://pagead2.googlesyndication.com/pagead/js/'
+            b'adsbygoogle.js?client=ca-pub-5205912301427741"\n'
+            b'     crossorigin="anonymous"></script>'
+        )
+        pages = [self.client.get("/about").data,
+                 self.client.get("/login").data,
+                 self.client.get("/register").data]
+        self.client.post("/register", data={
+            "username": "homepage", "email": "homepage@example.com",
+            "password": "correct-horse-battery", "grade": "8",
+        }, follow_redirects=True)
+        pages.append(self.client.get("/").data)
+        for page in pages:
+            self.assertEqual(page.count(script), 1)
+
     def test_anonymous_visitors_get_registration_ctas(self):
         page = self.client.get("/about").data
         self.assertIn(b'href="/register"', page)

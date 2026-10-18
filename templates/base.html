@@ -29,6 +29,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css', v=static_version) }}">
   {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css', v=static_version) }}">{% endif %}
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5205912301427741"
+     crossorigin="anonymous"></script>
 </head>
 <body class="{{ 'authenticated-app' if current_user.is_authenticated else '' }} {% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main-content">{{ _('Skip to main content') }}</a>
