@@ -143,6 +143,13 @@
 
 /* ------------------------------------------------------------ comparison */
 .about-table-wrap {
+  /* max-width: the wrapper itself used to grow to the table's 680px minimum, so the
+     whole page scrolled sideways instead of the table scrolling inside it. */
+  max-width: 100%;
+  min-width: 0;
+  /* Containing block for the cells' absolutely positioned screen-reader labels: without
+     it they were placed against the page, escaped the scroller and widened it to 663px. */
+  position: relative;
   margin-top: 30px;
   overflow-x: auto;              /* the table scrolls inside on phones */
   border: 1px solid var(--ln-line);

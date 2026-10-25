@@ -1388,7 +1388,7 @@ def diagnostics_summary() -> dict[str, Any]:
         "coalesced_requests": sum(record.get("event_kind") == "coalesced" for record in records),
         "most_expensive_tasks": sorted(
             ({"task_type": task, **values} for task, values in by_task.items()),
-            key=lambda item: (-item["cost"], -item["tokens"], item["task_type"]),
+            key=lambda item: (-float(item["cost"]), -int(item["tokens"]), str(item["task_type"])),
         )[:10],
         "prompt_versions": prompt_versions, "recent_failures": failed,
     }

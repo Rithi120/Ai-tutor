@@ -48,11 +48,13 @@ def grade_descriptor(grade: str) -> str:
         approx_age = number + 5  # rough school-year to age mapping
         return (
             f"The learner is in grade {number} (approximately {approx_age} years old). "
-            f"Speak to that level: short sentences, everyday examples from a {approx_age}-year-old's "
+            f"Use words, sentence length and everyday examples that fit a {approx_age}-year-old's "
             "world (school, friends, phone, sports, family), and define any term above that level "
-            "the first time it appears. Match question difficulty to that grade. When you name the "
-            "student's level, write it in the response language - for German say "
-            f"'Klasse {number}', never 'grade {number}'."
+            "the first time it appears. The grade sets the curriculum range; how deep to go on a "
+            "topic follows the EXPLANATION LEVEL when one is given (a gap in an earlier topic is "
+            "taught at its own level, an older student's mastery is not held back), otherwise the "
+            "grade. When you name the student's level, write it in the response language - for "
+            f"German say 'Klasse {number}', never 'grade {number}'."
         )
     if grade == "university":
         return (

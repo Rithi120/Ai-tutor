@@ -61,15 +61,30 @@
       <button class="theme-toggle" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-label="{{ _('Use dark mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span></button>
       <a class="app-nav-link guest-nav-about {{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %}>{{ _('About') }}</a>
       <a class="app-nav-link settings-link guest-nav-settings" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
-      <a class="app-nav-link" href="{{ url_for('login') }}">{{ _('Log in') }}</a>
-      <a class="app-nav-link nav-primary-action" href="{{ url_for('register') }}">{{ _('Create account') }}</a>
+      <a class="app-nav-link guest-nav-login" href="{{ url_for('login') }}">{{ _('Log in') }}</a>
+      <a class="app-nav-link nav-primary-action guest-nav-register" href="{{ url_for('register') }}">{{ _('Create account') }}</a>
+      <button class="mobile-nav-toggle" type="button" aria-controls="mobileGuestMenu" aria-expanded="false" aria-label="{{ _('Open navigation') }}"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
     </div>
     {% endif %}
   </div>
+  {% if not current_user.is_authenticated %}
+  {# Phones: everything the guest bar drops for lack of room is here, so nothing is lost. #}
+  <div class="mobile-nav-backdrop" data-mobile-nav-close></div>
+  <nav id="mobileGuestMenu" class="mobile-app-menu guest-mobile-menu" aria-label="{{ _('Main navigation') }}" aria-hidden="true" tabindex="-1">
+    <div class="mobile-menu-head"><span>{{ _('Menu') }}</span><button type="button" data-mobile-nav-close aria-label="{{ _('Close navigation') }}">×</button></div>
+    <a class="nav-primary-action" href="{{ url_for('register') }}">{{ _('Create account') }}</a>
+    <a href="{{ url_for('login') }}">{{ _('Log in') }}</a>
+    <a class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %}>{{ _('About') }}</a>
+    <a class="settings-link" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }}</a>
+    <div class="mobile-menu-divider"></div>
+    <button class="mobile-menu-theme" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span><span data-theme-label>{{ _('Use dark mode') }}</span></button>
+  </nav>
+  {% endif %}
   {% if current_user.is_authenticated %}
   <div class="mobile-nav-backdrop" data-mobile-nav-close></div>
   <nav id="mobileAppMenu" class="mobile-app-menu" aria-label="{{ _('Main navigation') }}" aria-hidden="true" tabindex="-1">
     <div class="mobile-menu-head"><span>{{ _('Menu') }}</span><button type="button" data-mobile-nav-close aria-label="{{ _('Close navigation') }}">×</button></div>
+    <button class="mobile-menu-theme" type="button" data-theme-toggle data-label-dark="{{ _('Use dark mode') }}" data-label-light="{{ _('Use light mode') }}" aria-pressed="false"><span class="theme-toggle-icon" aria-hidden="true"></span><span data-theme-label>{{ _('Use dark mode') }}</span></button>
     <a class="{{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %}>{{ _('Overview') }}</a>
     <a class="nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('index') }}" {% if lesson_creation_active %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
     <a class="{{ 'is-active' if projects_active }}" href="{{ url_for('projects') }}" {% if projects_active %}aria-current="page"{% endif %}>{{ _('Projects') }}</a>

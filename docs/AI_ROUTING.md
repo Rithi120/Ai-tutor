@@ -150,7 +150,8 @@ student can act on.
 | Setting | Scope | Unset means |
 | --- | --- | --- |
 | `AI_BUDGET_USER_TOKENS_PER_DAY` / `_PER_MONTH` | one learner | no limit |
-| `AI_BUDGET_GLOBAL_TOKENS_PER_DAY` / `_PER_MONTH` | the whole site | no limit |
+| `AI_BUDGET_GLOBAL_TOKENS_PER_DAY` | the whole site | 2,000,000 tokens per UTC day (emergency ceiling; an explicit blank disables it) |
+| `AI_BUDGET_GLOBAL_TOKENS_PER_MONTH` | the whole site | no limit |
 | `AI_BUDGET_<PROVIDER>_TOKENS_PER_DAY` / `_PER_MONTH` | one provider | Groq: no limit; **any other provider: not permitted** |
 | `AI_RATE_<PROVIDER>_REQUESTS_PER_MINUTE` | one provider | no limit |
 | `AI_COST_<PROVIDER>_INPUT_PER_MILLION` / `_OUTPUT_PER_MILLION` | prices | fall back to `AI_INPUT/OUTPUT_COST_PER_MILLION`, else 0 |

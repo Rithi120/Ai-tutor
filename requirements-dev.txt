@@ -2,3 +2,6 @@
 pytest==8.4.1
 ruff==0.12.2
 pyright==1.1.403
+# Rendered-layout tests and scripts/mobile_audit.py; drives the installed Chrome or Edge
+# (channel="chrome"/"msedge"), so no browser download is needed.
+playwright==1.61.0

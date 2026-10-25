@@ -33,6 +33,13 @@
   --ln-radius-lg: 26px;
   --ln-radius-xl: 34px;
   --ln-page: min(1180px, calc(100% - 40px));
+  /* Responsive scale (mobile first): side gutter, touch target, reading text. */
+  --ln-gutter: clamp(16px, 4.5vw, 20px);
+  --ln-tap: 44px;
+  --ln-text-body: clamp(1rem, .97rem + .25vw, 1.0625rem);
+  --ln-text-small: clamp(.875rem, .86rem + .1vw, .9375rem);
+  --ln-leading-read: 1.65;
+  --ln-heading-page: clamp(1.625rem, 1.2rem + 2.2vw, 2.25rem);
   --ln-ease: cubic-bezier(.2, .8, .2, 1);
   --ink: var(--ln-ink);
   --muted: var(--ln-muted);

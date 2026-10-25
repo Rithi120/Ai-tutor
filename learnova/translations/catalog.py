@@ -368,7 +368,6 @@ GERMAN = {
     "Dashboard": "Lernübersicht",
     "Overview": "Übersicht",
     "New Lesson": "Neue Lektion",
-    "More": "Mehr",
     "Account": "Konto",
     "Menu": "Menü",
     "You have reached your limit. Please try again later. Your saved lessons, flashcards and vocabulary still work.": "Du hast dein Limit erreicht. Bitte versuche es später noch einmal. Deine gespeicherten Lektionen, Karteikarten und Vokabeln funktionieren weiterhin.",

@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 TEST_DATABASE = Path(tempfile.gettempdir()) / "learnova_curriculum_test.db"
@@ -108,7 +109,7 @@ class ExtractionTests(unittest.TestCase):
             "3.3 Klassen 9/10\nDie Schülerinnen und Schüler können Potenzgesetze anwenden.",
         ]
         for number, body in enumerate(bodies, start=1):
-            page = pdf.new_page()
+            page = pdf.new_page()  # pyright: ignore[reportAttributeAccessIssue]
             page.insert_text((72, 60), "Bildungsplan Testfassung")
             page.insert_text((72, 120), body)
             page.insert_text((72, 800), f"Seite {number}")
@@ -306,13 +307,13 @@ class CurriculumIntegrationTests(unittest.TestCase):
         self.client = application.app.test_client()
 
     def _import(self, **overrides):
-        values = dict(content=FIXTURE.encode(), fmt="text", source_url="Testfixture",
+        values: dict[str, Any] = dict(content=FIXTURE.encode(), fmt="text", source_url="Testfixture",
                       rights_note="Written for the test suite", plan="gymnasium", subject="mathematik",
                       title="Mathematik Testplan", citation="Testplan Mathematik", grades=(5, 10))
         values.update(overrides)
         with application.app.app_context():
             document, created = application.import_curriculum_document(**values)
-            return document.id, created, len(document.chunks)
+            return document.id, created, len(document.chunks)  # pyright: ignore[reportArgumentType]
 
     def _student(self, grade="8", school_type="gymnasium"):
         self.client.post("/register", data={"username": "lina", "email": "lina@example.com",

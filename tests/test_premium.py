@@ -34,7 +34,7 @@ class PremiumTests(unittest.TestCase):
         raw = "LN-PREM-test-key-" + str(application.uuid.uuid4())
         record = application.PremiumKey(
             key_hash=hashlib.sha256(raw.encode()).hexdigest(),
-            created_by_id=application.User.query.filter_by(username="admin").first().id,
+            created_by_id=application.User.query.filter_by(username="admin").one().id,
             created_at=application.utcnow(),
             expires_at=expires or application.utcnow() + timedelta(days=365),
             revoked_at=application.utcnow() if revoked else None,
@@ -160,7 +160,7 @@ class PremiumTests(unittest.TestCase):
         free_page = self.client.get("/about").data
         self.assertEqual(free_page.count(b"pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"), 1)
         with application.app.app_context():
-            user = application.User.query.filter_by(username="student").first()
+            user = application.User.query.filter_by(username="student").one()
             application.db.session.add(application.PremiumEntitlement(
                 user_id=user.id, starts_at=application.utcnow(),
                 expires_at=application.utcnow() + timedelta(days=30)))

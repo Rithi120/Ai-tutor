@@ -108,10 +108,12 @@ def learner_pattern(evidence: dict[str, Any] | None, *, diagnoses: list[str] | N
         return "conceptual_gap"
     if sum(tag in EXECUTION_TAGS for tag in recent) >= 2:
         return "execution_errors"
-    if label == "advanced" and int((evidence or {}).get("consecutive_correct") or 0) >= 2:
-        return "mastered"
+    # Hint reliance is checked first: success that leaned on hints is not *independent*
+    # success, and only independent success earns the extension level.
     if hint_rate is not None and hint_rate >= 0.5:
         return "needs_independence"
+    if label == "advanced" and int((evidence or {}).get("consecutive_correct") or 0) >= 2:
+        return "mastered"
     return "progressing"
 
 
@@ -148,6 +150,10 @@ _REQUEST_PATTERNS = (
         r"\b(i\s+(?:still\s+)?(?:don'?t|do\s+not)\s+(?:get|understand)|confus|makes?\s+no\s+sense|"
         r"(?:versteh|kapier)\w*\s+(?:\w+\s+){0,3}(?:nicht|nichts|kein)|check\s+ich\s+nicht|zu\s+schwer|"
         r"too\s+hard|no\s+idea|keine\s+ahnung)", re.IGNORECASE)),
+    ("direct_answer", re.compile(
+        r"\b(just\s+(?:tell|give)\s+me|tell\s+me\s+the\s+(?:answer|solution)|what'?s\s+the\s+answer|"
+        r"(?:full|complete|whole)\s+solution|sag\s+(?:mir\s+)?(?:einfach\s+)?die\s+(?:l[öo]sung|antwort)|"
+        r"(?:gib|zeig)\s+mir\s+(?:einfach\s+)?die\s+(?:l[öo]sung|antwort)|komplette\s+l[öo]sung)", re.IGNORECASE)),
     ("simpler", re.compile(r"\b(simpler|easier|einfacher|leichter|simple\s+words|einfache\s+worte)", re.IGNORECASE)),
     ("harder", re.compile(r"\b(harder|more\s+(?:advanced|challenging|difficult)|challenge\s+me|schwieriger|"
                           r"anspruchsvoller|schwerer|herausforderung)", re.IGNORECASE)),
@@ -168,9 +174,12 @@ def detect_request(message: str) -> str | None:
 
 REQUEST_DIRECTIVES = {
     "confused": "The student said they do not understand. Do NOT repeat or rephrase the previous "
-                "explanation. Name the most likely point of confusion, switch to a simpler "
-                "representation or analogy, show fewer steps at once, use a smaller example, go back "
-                "to a prerequisite if needed, and check understanding before going on.",
+                "explanation. Name the most likely point of confusion, show fewer steps at once, and "
+                "check understanding before going on.",
+    "direct_answer": "The student asked for the answer directly. If it is the open test question "
+                     "(current_question), keep assessment integrity: say in one friendly line why you "
+                     "won't give it and give the single most useful hint. Otherwise give the answer "
+                     "first, then the shortest explanation of why it is right.",
     "simpler": "The student asked for a simpler explanation: simplify now - smaller example, fewer "
                "steps at once, everyday words - without repeating the previous wording.",
     "step_by_step": "The student asked for step by step: number each step, one operation per step, "
@@ -184,8 +193,9 @@ REQUEST_DIRECTIVES = {
 FOCUS_DIRECTIVES = {
     "calculation_check": "Their last answer had a calculation slip, not a misunderstanding: fix that step "
                          "and show how to check it; do not reteach the whole topic.",
-    "reteach_concept": "Their last answer showed a misunderstanding of the idea: explain it differently "
-                       "than before.",
+    "reteach_concept": "Their last answer showed a misunderstanding of the idea (see the diagnosis in "
+                       "recent_results): name that specific misconception, contrast it with the correct "
+                       "idea on one tiny example, then ask one short question that checks it is fixed.",
     "prerequisite": "Their last answer pointed to a missing prerequisite: rebuild that briefly first.",
     "simplify_and_diagnose": "Several answers in a row were wrong: simplify, find which prerequisite is "
                              "missing, and give one small targeted practice task.",
@@ -196,6 +206,45 @@ FOCUS_DIRECTIVES = {
 }
 
 _OFFSET_LIMIT = 2
+
+# What to switch to on the 1st, 2nd, 3rd... "I don't understand" about one topic. The
+# model cannot be trusted to vary on its own - a paraphrase is the easy way out - so the
+# code names a different representation every time.
+REPRESENTATIONS = (
+    "Try this representation: something concrete the student can picture - objects, a drawing, a "
+    "number line or a small table - before any formula.",
+    "Try this representation: a much smaller example with easy numbers, one step per line, and ask "
+    "which step is the unclear one.",
+    "Try this representation: go back to the prerequisite this idea rests on, check it with one tiny "
+    "question, then rebuild the idea on top of it.",
+    "Try this representation: ask the student to say in a few words what they think happens, then "
+    "correct exactly that part.",
+)
+
+
+def topic_key(concept: str | None) -> str:
+    return " ".join(str(concept or "").casefold().split())[:120]
+
+
+def topic_state(teaching: dict[str, Any] | None, concept: str | None) -> dict[str, Any]:
+    """The session adjustments for one topic. A request or a graded answer about one topic
+    must not move the level of another topic in the same session."""
+
+    topics = (teaching or {}).get("topics")
+    if not isinstance(topics, dict):
+        return {}  # also drops the old flat (whole-session) format
+    state = topics.get(topic_key(concept))
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def with_topic_state(teaching: dict[str, Any] | None, concept: str | None,
+                     state: dict[str, Any]) -> dict[str, Any]:
+    topics = (teaching or {}).get("topics")
+    topics = dict(topics) if isinstance(topics, dict) else {}
+    topics[topic_key(concept)] = state
+    if len(topics) > 40:  # a long practice session must not grow the saved state forever
+        topics = dict(list(topics.items())[-40:])
+    return {"topics": topics}
 
 
 @dataclass
@@ -208,6 +257,7 @@ class TeachingPlan:
     focus: str | None = None
     prerequisites: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
+    representation: str = ""
 
     @property
     def level_name(self) -> str:
@@ -252,9 +302,15 @@ def choose_level(*, grade: str | None, evidence: dict[str, Any] | None, pattern:
             level = min(level, base)
         reasons.append("harder +1")
     level = max(1, min(band.ceiling, level))
+    representation = ""
+    if request in {"simpler", "confused"}:
+        # The n-th time on this topic gets the n-th representation, so a second "I still
+        # don't understand" can never be answered with the first explanation reworded.
+        attempt = int((state or {}).get("confusions") or 0)
+        representation = REPRESENTATIONS[attempt % len(REPRESENTATIONS)]
     return TeachingPlan(level=level, mastery=label, pattern=pattern, band=band, request=request,
                         focus=(state or {}).get("focus"), prerequisites=list(prerequisites or [])[:3],
-                        reasons=reasons)
+                        reasons=reasons, representation=representation)
 
 
 def record_request(state: dict[str, Any] | None, request: str | None) -> dict[str, Any]:
@@ -267,6 +323,8 @@ def record_request(state: dict[str, Any] | None, request: str | None) -> dict[st
     elif request == "harder":
         offset += 1
     state["offset"] = max(-_OFFSET_LIMIT, min(_OFFSET_LIMIT, offset))
+    if request in {"simpler", "confused"}:
+        state["confusions"] = int(state.get("confusions") or 0) + 1
     if request:
         state["last_request"] = request
     return state
@@ -314,6 +372,8 @@ def after_answer(state: dict[str, Any] | None, *, score: int, tag: str = "", hin
             focus = "simplify_and_diagnose"
     state.update(offset=max(-_OFFSET_LIMIT, min(_OFFSET_LIMIT, offset)), correct_streak=correct_streak,
                  wrong_streak=wrong_streak, focus=focus)
+    if score >= 80 and not hints_used:
+        state["confusions"] = 0  # understood: the next confusion starts the rotation again
     return state
 
 
@@ -333,12 +393,15 @@ def instruction(plan: TeachingPlan, *, concept: str = "") -> str:
     ]
     if plan.request:
         lines.append(REQUEST_DIRECTIVES[plan.request])
+    if plan.representation:
+        lines.append(plan.representation)
     if plan.focus in FOCUS_DIRECTIVES and plan.request not in {"confused", "simpler"}:
         lines.append(FOCUS_DIRECTIVES[plan.focus])
     lines.append(
-        "Teaching loop: name the concept, check the prerequisite it rests on, explain at this level, "
-        "show a worked example with the intermediate steps and WHY each step is done, then (when it "
-        "helps) one short check question. Never conclude mastery from one correct answer, and never "
-        "judge ability from age, grade, spelling or writing style."
+        "Size the reply to the need: a simple factual question gets the answer and one line of why; a "
+        "concept gets the key idea and one example at this level; only a hard idea, or a request for it, "
+        "gets a full worked example, one step at a time with WHY each step is done. Ask a check question "
+        "only when the answer would tell you something new. Never conclude mastery from one correct "
+        "answer, and never judge ability from age, grade, spelling or writing style."
     )
     return "\n".join(lines)

@@ -14,7 +14,7 @@
  * show mathematics - settings, the library, most of the dashboard - pay nothing for it.
  */
 
-import { hasMath, splitMath } from "./math-rules.js";
+import { hasBarePower, hasMath, powerSegments, readableTex, splitMath } from "./math-rules.js";
 
 const KATEX_VERSION = "0.16.11";
 const KATEX_BASE = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist`;
@@ -70,10 +70,12 @@ function textNodesWithMath(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const value = node.nodeValue;
-      if (!value || (!value.includes("$") && !value.includes("\\"))) {
-        return NodeFilter.FILTER_REJECT;
-      }
-      if (skip(node) || !hasMath(value)) return NodeFilter.FILTER_REJECT;
+      if (!value) return NodeFilter.FILTER_REJECT;
+      const delimited = (value.includes("$") || value.includes("\\")) && hasMath(value);
+      // A power the model wrote without $...$ ("4^2·4^3") is raised too, so the caret
+      // never reaches the student.
+      if (!delimited && !(value.includes("^") && hasBarePower(value))) return NodeFilter.FILTER_REJECT;
+      if (skip(node)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -96,14 +98,38 @@ function formulaElement(katex, tex, display) {
   return span;
 }
 
+/** Text with plain-text powers raised: "a^{m+n}" becomes a<sup>m+n</sup>. */
+function appendWithPowers(parent, text) {
+  for (const piece of powerSegments(text)) {
+    if (piece.type === "sup") {
+      const sup = document.createElement("sup");
+      sup.textContent = piece.value;
+      parent.appendChild(sup);
+    } else {
+      parent.appendChild(document.createTextNode(piece.value));
+    }
+  }
+}
+
+/** Readable stand-in for a formula when KaTeX is unavailable (offline, CDN blocked). */
+function fallbackElement(tex, display) {
+  const span = document.createElement("span");
+  span.className = display ? "ln-math-fallback ln-math-display" : "ln-math-fallback";
+  span.dataset.lnMath = tex;
+  appendWithPowers(span, readableTex(tex));
+  return span;
+}
+
 function replaceNode(katex, node) {
   const segments = splitMath(node.nodeValue);
-  if (!segments.some(segment => segment.type === "math")) return;
   const fragment = document.createDocumentFragment();
   for (const segment of segments) {
-    fragment.appendChild(segment.type === "math"
-      ? formulaElement(katex, segment.value, segment.display)
-      : document.createTextNode(segment.value));
+    if (segment.type === "math") {
+      fragment.appendChild(katex ? formulaElement(katex, segment.value, segment.display)
+                                 : fallbackElement(segment.value, segment.display));
+    } else {
+      appendWithPowers(fragment, segment.value);
+    }
   }
   node.parentNode?.replaceChild(fragment, node);
 }
@@ -119,8 +145,13 @@ export function renderMath(root) {
   if (!element || !element.querySelectorAll) return;
   const nodes = textNodesWithMath(element);
   if (!nodes.length) return;
+  if (!nodes.some(node => hasMath(node.nodeValue))) {
+    // Only plain-text powers: no renderer needed, raise them now.
+    for (const node of nodes) replaceNode(null, node);
+    return;
+  }
   loadKatex().then((katex) => {
-    if (!katex) return;                       // offline or blocked: the source text stays
+    // Offline or blocked: a readable fallback (2⁵ = 32, (1)/(2)) instead of raw LaTeX.
     // Checked after the await: the page may have moved on while KaTeX was loading.
     for (const node of nodes) if (node.isConnected) replaceNode(katex, node);
   });

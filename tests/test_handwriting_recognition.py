@@ -102,7 +102,8 @@ class PreprocessingTests(unittest.TestCase):
         landscape = Image.new("RGB", (900, 600), "white")
         exif = landscape.getexif()
         exif[274] = 6  # Orientation = rotate 90° CW on display -> becomes portrait
-        buf = io.BytesIO(); landscape.save(buf, format="JPEG", exif=exif)
+        buf = io.BytesIO()
+        landscape.save(buf, format="JPEG", exif=exif)
         processed = preprocess_document_image(buf.getvalue(), {"autocrop": False})
         self.assertGreater(processed.height, processed.width)  # orientation applied -> portrait
 

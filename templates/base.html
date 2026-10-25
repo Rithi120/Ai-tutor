@@ -28,6 +28,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css', v=static_version) }}">
+  {# Last on purpose: sizing and containment for phones (see the file header). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-responsive.css', v=static_version) }}">
   {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css', v=static_version) }}">{% endif %}
 {% if not current_user.is_authenticated or not has_active_premium(current_user) %}<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5205912301427741"
      crossorigin="anonymous"></script>

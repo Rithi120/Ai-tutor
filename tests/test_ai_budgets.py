@@ -75,12 +75,17 @@ class PolicyFromConfigTests(unittest.TestCase):
     def test_everything_unset_means_no_limits_and_only_groq_permitted(self):
         policy = policy_from_env()
         self.assertEqual(dict(policy.user_tokens), {"day": None, "month": None})
-        self.assertEqual(dict(policy.global_tokens), {"day": None, "month": None})
+        # The one deliberate default: an emergency site-wide daily ceiling (docs/PREMIUM.md).
+        self.assertEqual(dict(policy.global_tokens), {"day": 2_000_000, "month": None})
         self.assertIsNone(policy.global_spend_month)
         self.assertEqual(policy.rates, {})
         self.assertTrue(budgets.provider_permitted(policy, "groq"))
         for provider in ("openai", "anthropic", "gemini"):
             self.assertFalse(budgets.provider_permitted(policy, provider), provider)
+
+    def test_an_explicit_blank_disables_the_global_daily_ceiling(self):
+        policy = policy_from_env(AI_BUDGET_GLOBAL_TOKENS_PER_DAY="")
+        self.assertEqual(dict(policy.global_tokens), {"day": None, "month": None})
 
     def test_every_documented_key_is_read(self):
         policy = policy_from_env(

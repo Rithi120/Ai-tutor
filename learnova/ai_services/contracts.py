@@ -10,7 +10,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, NoReturn
 
 from .prompts import STRUCTURED_TASKS
 
@@ -96,21 +96,27 @@ def repair_latex_json(text: str) -> str:
         nxt = text[i + 1] if i + 1 < n else ""
         after = text[i + 2] if i + 2 < n else ""
         if nxt in "\\\"/":
-            out.append(c + nxt); i += 2                 # already-escaped  \  "  /
+            out.append(c + nxt)                 # already-escaped  \  "  /
+            i += 2
         elif nxt == "n":
-            out.append(c + nxt); i += 2                 # newline - always preserve
+            out.append(c + nxt)                 # newline - always preserve
+            i += 2
         elif nxt == "u" and len(text[i + 2:i + 6]) == 4 and all(ch in "0123456789abcdefABCDEF" for ch in text[i + 2:i + 6]):
-            out.append(c + nxt); i += 2                 # \uXXXX unicode escape
+            out.append(c + nxt)                 # \uXXXX unicode escape
+            i += 2
         elif nxt in "bfrt" and after.isalpha():
-            out.append("\\\\"); i += 1                  # LaTeX word (\frac \times \beta \right) -> double
+            out.append("\\\\")                  # LaTeX word (\frac \times \beta \right) -> double
+            i += 1
         elif nxt in "bfrtu":
-            out.append(c + nxt); i += 2                 # genuine control escape (\b \f \r \t)
+            out.append(c + nxt)                 # genuine control escape (\b \f \r \t)
+            i += 2
         else:
-            out.append("\\\\"); i += 1                  # lone LaTeX backslash (\sqrt \pm \cdot) -> double
+            out.append("\\\\")                  # lone LaTeX backslash (\sqrt \pm \cdot) -> double
+            i += 1
     return "".join(out)
 
 
-def _fail(summary: str, category: str = "schema_validation") -> None:
+def _fail(summary: str, category: str = "schema_validation") -> NoReturn:
     raise AIValidationError(category, summary)
 
 
@@ -392,7 +398,7 @@ def _exam(data: Any, context: dict[str, Any]) -> None:
         item = _dict(value, f"questions[{index}]")
         section_id = item.get("section_id")
         try:
-            section_id = int(section_id)
+            section_id = int(section_id if section_id is not None else "")  # None -> ValueError
         except (TypeError, ValueError):
             _fail(f"questions[{index}].section_id is invalid", "source_reference_validation")
         if section_ids and section_id not in section_ids:
@@ -436,7 +442,8 @@ def _exam_evaluation(data: Any, context: dict[str, Any]) -> None:
     for index, value in enumerate(results):
         item = _dict(value, f"results[{index}]")
         try:
-            question_id = int(item.get("question_id"))
+            raw_question_id = item.get("question_id")
+            question_id = int(raw_question_id if raw_question_id is not None else "")  # None -> ValueError
         except (TypeError, ValueError):
             _fail(f"results[{index}].question_id is invalid", "source_reference_validation")
         seen.add(question_id)
@@ -490,9 +497,8 @@ def _flashcard_review(data: Any, context: dict[str, Any]) -> None:
     fields = ("overallScore", "accuracyScore", "clarityScore", "usefulnessScore",
               "coverageScore", "difficultyScore", "originalityScore")
     numeric = [
-        root.get(field) for field in fields
-        if isinstance(root.get(field), (int, float)) and not isinstance(root.get(field), bool)
-        and 0 <= float(root.get(field)) <= 5
+        value for value in (root.get(field) for field in fields)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 5
     ]
     if not numeric:
         _fail("AI review must include at least one 0-5 score")

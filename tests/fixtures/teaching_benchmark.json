@@ -1,0 +1,227 @@
+{
+  "about": "Teaching-quality benchmark. 'good' and 'weak' replies are hand-written reference answers used to validate the rubric; live runs replace them with model output (scripts/teaching_benchmark.py).",
+  "lessons": {
+    "addition": {
+      "lesson_title": "Adding numbers up to 20", "detected_level": "Klasse 2",
+      "concepts": [{"name": "Addition", "evidence": "goal"}],
+      "explanation": "Adding means putting two groups together and counting how many there are.",
+      "worked_example": {"problem": "6 + 3", "steps": ["Start at 6", "Count on 3: 7, 8, 9"], "answer": "9"},
+      "teacher_tips": ["Count on from the bigger number."], "exceptions": [],
+      "question": {"id": "q1", "concept": "Addition", "difficulty": 1, "type": "multiple_choice",
+                   "prompt": "What is 8 + 6?", "hint": "Count on from 8.",
+                   "options": [{"id": "a", "label": "14"}, {"id": "b", "label": "12"}], "expected_answer": "a"}
+    },
+    "negative": {
+      "lesson_title": "Subtracting negative numbers", "detected_level": "Klasse 9",
+      "concepts": [{"name": "Negative numbers", "evidence": "goal"}],
+      "explanation": "Subtracting a negative number is the same as adding its opposite.",
+      "worked_example": {"problem": "$4 - (-2)$", "steps": ["$4 - (-2) = 4 + 2$", "$4 + 2 = 6$"], "answer": "$6$"},
+      "teacher_tips": ["Two minus signs next to each other become a plus."], "exceptions": [],
+      "question": {"id": "q1", "concept": "Negative numbers", "difficulty": 1, "type": "multiple_choice",
+                   "prompt": "What is $-5 - (-2)$?", "hint": "Turn the subtraction into an addition.",
+                   "options": [{"id": "a", "label": "-3"}, {"id": "b", "label": "-7"}], "expected_answer": "a"}
+    },
+    "fractions": {
+      "lesson_title": "Adding fractions", "detected_level": "Klasse 11",
+      "concepts": [{"name": "Fractions", "evidence": "goal"}],
+      "explanation": "Fractions can be added once they have the same denominator.",
+      "worked_example": {"problem": "$\\frac{1}{3} + \\frac{1}{6}$", "steps": ["$\\frac{1}{3} = \\frac{2}{6}$", "$\\frac{2}{6} + \\frac{1}{6} = \\frac{3}{6}$"], "answer": "$\\frac{1}{2}$"},
+      "teacher_tips": ["Only the numerators are added."], "exceptions": [],
+      "question": {"id": "q1", "concept": "Fractions", "difficulty": 1, "type": "multiple_choice",
+                   "prompt": "What is $\\frac{1}{3} + \\frac{1}{3}$?", "hint": "Same denominator.",
+                   "options": [{"id": "a", "label": "2/3"}, {"id": "b", "label": "2/6"}], "expected_answer": "a"}
+    },
+    "distributive": {
+      "lesson_title": "The distributive property", "detected_level": "Klasse 8",
+      "concepts": [{"name": "Distributive property", "evidence": "goal"}],
+      "explanation": "A factor in front of a bracket multiplies every term inside the bracket.",
+      "worked_example": {"problem": "$4(x + 2)$", "steps": ["$4 \\cdot x = 4x$", "$4 \\cdot 2 = 8$"], "answer": "$4x + 8$"},
+      "teacher_tips": ["Draw an arrow from the factor to every term."], "exceptions": [],
+      "question": {"id": "q1", "concept": "Distributive property", "difficulty": 1, "type": "multiple_choice",
+                   "prompt": "Expand $2(x + 5)$.", "hint": "Multiply both terms.",
+                   "options": [{"id": "a", "label": "2x + 10"}, {"id": "b", "label": "2x + 5"}], "expected_answer": "a"}
+    },
+    "linear": {
+      "lesson_title": "Linear equations", "detected_level": "Klasse 9",
+      "concepts": [{"name": "Linear equations", "evidence": "goal"}],
+      "explanation": "Undo the addition first, then the multiplication, doing the same on both sides.",
+      "worked_example": {"problem": "$3x + 2 = 14$", "steps": ["subtract 2 on both sides: $3x = 12$", "divide both sides by 3: $x = 4$"], "answer": "$x = 4$"},
+      "teacher_tips": ["Put your answer back into the equation to check it."], "exceptions": [],
+      "question": {"id": "q1", "concept": "Linear equations", "difficulty": 1, "type": "multiple_choice",
+                   "prompt": "Solve $2x + 3 = 11$.", "hint": "Subtract 3 first.",
+                   "options": [{"id": "a", "label": "x = 4"}, {"id": "b", "label": "x = 7"}], "expected_answer": "a"}
+    }
+  },
+  "scenarios": [
+    {
+      "id": "A1_class2_addition", "group": "A", "grade": "2", "lesson": "addition",
+      "measure": {"message": "What is 7 + 5?"},
+      "prompt_expect": {"level": 1, "instructions_contain": ["Concrete foundations", "young child", "simple factual question"]},
+      "expect": {"answers": ["12"], "max_words": 70, "max_sentence_words": 12,
+                 "avoid_terms": ["commutative", "integer", "variable", "algebra"], "must_mention": ["7", "5", "12"]},
+      "replies": {
+        "good": "You have 7 apples. You get 5 more.\n\nCount on from 7: 8, 9, 10, 11, 12.\n\nSo 7 + 5 = 12.",
+        "weak": "Addition is a commutative binary operation on the integers, so 7 + 5 = 5 + 7. In algebra we write a + b for any variable values, and the sum of the two integers here, after applying the standard algorithm with carrying in base ten, is 12."
+      }
+    },
+    {
+      "id": "A2_class9_negative_numbers", "group": "A", "grade": "9", "lesson": "negative",
+      "measure": {"message": "How do I calculate -7 - (-3)?"},
+      "prompt_expect": {"level": 3, "instructions_contain": ["Standard school level", "proper terminology"]},
+      "expect": {"answers": ["-4"], "wrong_values": ["-10"], "must_mention": ["negative", "add"], "latex": true,
+                 "elementary_markers": ["apples", "count on your fingers"], "max_words": 120},
+      "replies": {
+        "good": "Subtracting a negative number is the same as adding its positive value.\n\n$$-7 - (-3) = -7 + 3$$\n\n$$-7 + 3 = -4$$\n\nOn a number line: start at $-7$ and move 3 steps to the right, to $-4$.",
+        "weak": "Imagine you have 7 apples and someone takes away 3 apples, so you count on your fingers: -7 - (-3) = -10."
+      }
+    },
+    {
+      "id": "B1_class11_weak_fractions", "group": "B", "grade": "11", "lesson": "fractions",
+      "mastery": [{"concept": "Fractions", "score": 20}],
+      "measure": {"message": "How do I add fractions? I always get them wrong."},
+      "prompt_expect": {"level": 2, "instructions_contain": ["Guided basics", "adult language"],
+                        "instructions_absent": ["young child"]},
+      "expect": {"answers": ["3/4", "\\frac{3}{4}"], "must_mention": ["denominator", "numerator"], "latex": true,
+                 "max_words": 170, "needs_check_question": true},
+      "replies": {
+        "good": "The **denominator** (bottom) says how many equal parts the whole has; the **numerator** (top) says how many of them you have.\n\nYou can only add parts of the same size, so the denominators must match first.\n\n$$\\frac{1}{2} + \\frac{1}{4}$$\n\n$\\frac{1}{2}$ is the same as $\\frac{2}{4}$, because $\\frac{1 \\cdot 2}{2 \\cdot 2} = \\frac{2}{4}$.\n\n$$\\frac{2}{4} + \\frac{1}{4} = \\frac{3}{4}$$\n\nYou will use exactly this when you add rational terms in Analysis. What is $\\frac{1}{3} + \\frac{1}{6}$?",
+        "weak": "To add rational expressions you factor each denominator into irreducible polynomials, find the least common multiple and rewrite every term over it, so 1/2 + 1/4 = 2/6."
+      }
+    },
+    {
+      "id": "B2_class11_mastered_fractions", "group": "B", "grade": "11", "lesson": "fractions",
+      "mastery": [{"concept": "Fractions", "score": 95, "consecutive_correct": 3}],
+      "measure": {"message": "How do I add fractions?"},
+      "prompt_expect": {"level": 5, "instructions_contain": ["Extension", "skip elementary steps"]},
+      "expect": {"must_mention": ["denominator"], "elementary_markers": ["pizza", "slices", "the bottom number"],
+                 "max_words": 160, "latex": true},
+      "replies": {
+        "good": "Bring both to a common denominator - the least common multiple keeps the numbers small:\n\n$$\\frac{a}{b} + \\frac{c}{d} = \\frac{ad + cb}{bd}$$\n\nThe same idea adds rational terms: $\\frac{1}{x} + \\frac{1}{x+1} = \\frac{2x + 1}{x(x+1)}$.\n\nTry: $\\frac{2}{x-1} + \\frac{3}{x+1}$.",
+        "weak": "Think of a pizza cut into slices. The bottom number tells you how many slices the pizza has, and the top number how many slices you ate. If two pizzas have the same number of slices you can just count all the slices you ate. Let's practise with 1/4 + 1/4: one slice plus one slice is two slices, so 2/4. Now let's do another one together with pizza slices, slowly, one slice at a time, so it really sticks and you can do it on your own next time in class."
+      }
+    },
+    {
+      "id": "C_distributive_misconception", "group": "C", "grade": "8", "lesson": "distributive",
+      "answers": [{"tag": "conceptual_misconception", "score": 30, "quote": "2x + 5",
+                   "statement": "Only the first term was multiplied: 2(x + 5) was written as 2x + 5.",
+                   "intervention": "contrast_misconception"}],
+      "measure": {"message": "What did I do wrong?"},
+      "prompt_expect": {"level": 2, "instructions_contain": ["name that specific misconception"],
+                        "input_contain": ["Only the first term was multiplied"]},
+      "expect": {"must_mention": ["both", "5", "10"], "needs_check_question": true, "max_words": 130,
+                 "wrong_values": ["2x + 5 is correct"]},
+      "replies": {
+        "good": "You multiplied only the $x$ by 2, but the 2 multiplies **both** terms in the bracket.\n\n$$2 \\cdot x = 2x$$\n\n$$2 \\cdot 5 = 10$$\n\nSo $2(x + 5) = 2x + 10$, not $2x + 5$. Quick check with $x = 1$: $2 \\cdot 6 = 12$ and $2 + 10 = 12$.\n\nWhat is $3(x + 4)$?",
+        "weak": "The distributive property is an important law of algebra. It says a(b + c) = ab + ac. It is used everywhere in mathematics, for example when factoring, and it is related to the commutative and associative laws. Read the lesson explanation again carefully."
+      }
+    },
+    {
+      "id": "D_calculation_slip", "group": "D", "grade": "9", "lesson": "linear",
+      "answers": [{"tag": "arithmetic_or_transcription_error", "score": 40, "quote": "2x = 11 - 3 = 7",
+                   "statement": "The method was right, but 11 - 3 was calculated as 7.",
+                   "intervention": "worked_example"}],
+      "measure": {"message": "Where is my mistake?"},
+      "prompt_expect": {"level": 3, "instructions_contain": ["calculation slip", "do not reteach the whole topic"]},
+      "expect": {"answers": ["8"], "needs_check_technique": true, "max_words": 90, "must_mention": ["11", "3", "8"]},
+      "replies": {
+        "good": "Your method is right - only one subtraction slipped.\n\n$$11 - 3 = 8$$\n\nso $2x = 8$ and $x = 4$.\n\nCheck by putting it back in: $2 \\cdot 4 + 3 = 11$. What do you get for $x$ in $2x + 5 = 13$?",
+        "weak": "Let's start again from the beginning. An equation is like a balance. Whatever you do on one side you must do on the other side. First we look at the equation and identify the terms. Then we subtract 3 from both sides: 11 - 3 = 7. Then we divide by 2. Linear equations appear in many areas of mathematics and science, so it is important to understand every part of the method before moving on to the next topic in the unit."
+      }
+    },
+    {
+      "id": "E1_control_simpler", "group": "E", "grade": "9", "lesson": "linear",
+      "turns": [{"message": "How do I solve it?", "reply": "Undo the +3 first, then the times 2."}],
+      "measure": {"control": "simpler"},
+      "prompt_expect": {"level": 2, "instructions_contain": ["asked for a simpler explanation", "Try this representation"]},
+      "expect": {"answers": ["4"], "max_words": 110, "needs_check_question": true, "compare_previous": true},
+      "replies": {
+        "good": "Picture a scale: on the left $2x + 3$, on the right $11$.\n\nTake 3 away on both sides:\n\n$$2x = 8$$\n\nNow two equal boxes weigh 8, so one box is 4: $x = 4$.\n\nWhat would one box be if two boxes weigh 10?",
+        "weak": "Undo the +3 first, then the times 2."
+      }
+    },
+    {
+      "id": "E2_control_step_by_step", "group": "E", "grade": "9", "lesson": "linear",
+      "measure": {"control": "step_by_step"},
+      "prompt_expect": {"level": 3, "instructions_contain": ["number each step"]},
+      "expect": {"answers": ["x = 4"], "must_mention": ["1", "2", "both sides"], "max_words": 140},
+      "replies": {
+        "good": "1. Subtract 3 on both sides, because that undoes the $+3$: $$2x = 8$$\n2. Divide both sides by 2, because that undoes the $\\cdot 2$: $$x = 4$$\n3. Check: $2 \\cdot 4 + 3 = 11$.",
+        "weak": "Just solve it, x is 7."
+      }
+    },
+    {
+      "id": "E3_control_another_example", "group": "E", "grade": "9", "lesson": "linear",
+      "measure": {"control": "another_example"},
+      "prompt_expect": {"level": 3, "instructions_contain": ["NEW example"]},
+      "expect": {"answers": ["x = 3"], "max_words": 120, "wrong_values": ["x = 5"]},
+      "replies": {
+        "good": "New example: $5x + 4 = 19$.\n\nSubtract 4 on both sides: $$5x = 15$$\n\nDivide by 5: $$x = 3$$\n\nCheck: $5 \\cdot 3 + 4 = 19$.",
+        "weak": "New example: 5x + 4 = 19. Subtract 4: 5x = 15. Divide by 5: x = 5."
+      }
+    },
+    {
+      "id": "E4_control_harder", "group": "E", "grade": "9", "lesson": "linear",
+      "measure": {"control": "harder"},
+      "prompt_expect": {"level": 4, "instructions_contain": ["more challenge"]},
+      "expect": {"elementary_markers": ["a scale", "boxes"], "max_words": 120, "needs_check_question": true},
+      "replies": {
+        "good": "Harder: the unknown is on both sides.\n\n$$5x - 7 = 2x + 8$$\n\nBring the $x$ terms together first. What do you get after subtracting $2x$ on both sides?",
+        "weak": "Picture a scale with boxes. Take away 3 from both sides of $2x + 3 = 11$."
+      }
+    },
+    {
+      "id": "F1_follow_up_why", "group": "F", "grade": "9", "lesson": "linear",
+      "turns": [{"message": "How do I start?", "reply": "First subtract 3 on both sides: $2x = 8$."}],
+      "measure": {"message": "why?"},
+      "prompt_expect": {"level": 3, "input_contain": ["First subtract 3 on both sides", "\"worked_example\""]},
+      "expect": {"must_mention": ["3", "both sides"], "max_words": 80},
+      "replies": {
+        "good": "Because the $+3$ is attached to $2x$. Subtracting 3 undoes it, and doing it on **both sides** keeps the equation true:\n\n$$2x + 3 - 3 = 11 - 3$$",
+        "weak": "Linear equations are equations of the form ax + b = c. They are called linear because their graph is a straight line. In this lesson you will learn to solve them."
+      }
+    },
+    {
+      "id": "F2_still_dont_understand", "group": "F", "grade": "9", "lesson": "linear",
+      "turns": [{"message": "I don't understand", "reply": "Think of the equation as a balance scale: whatever you take from one side you take from the other. Take 3 from both sides to get $2x = 8$."}],
+      "measure": {"message": "I still don't understand"},
+      "prompt_expect": {"level": 1, "instructions_contain": ["Try this representation: a much smaller example"]},
+      "expect": {"compare_previous": true, "max_words": 110, "needs_check_question": true},
+      "replies": {
+        "good": "Let's make it tiny: $x + 3 = 5$.\n\nWhich number plus 3 gives 5? It is 2, so $x = 2$.\n\nThat is the same as $5 - 3 = 2$.\n\nWhich step of $2x + 3 = 11$ is the unclear one - the minus 3, or the dividing by 2?",
+        "weak": "Think of the equation as a balance scale: whatever you take from one side you take from the other side. Take 3 from both sides to get $2x = 8$."
+      }
+    },
+    {
+      "id": "G1_integrity_direct_answer", "group": "G", "grade": "9", "lesson": "linear",
+      "measure": {"message": "Just tell me the answer"},
+      "prompt_expect": {"level": 3, "instructions_contain": ["asked for the answer directly"],
+                        "input_absent": ["\"expected_answer\"", "\"solution_steps\"", "\"rubric\""]},
+      "expect": {"forbidden_answer": "x = 4", "max_words": 70},
+      "replies": {
+        "good": "I won't give the test answer away - you can get this one.\n\nHint: what do you get on the right side after subtracting 3 on both sides?",
+        "weak": "The answer is x = 4."
+      }
+    },
+    {
+      "id": "G2_no_invented_curriculum", "group": "G", "grade": "9", "lesson": "linear",
+      "measure": {"message": "Is this something I have to know in class 9?"},
+      "prompt_expect": {"instructions_contain": ["Never claim that a topic is required by an official curriculum"],
+                        "instructions_absent": ["BADEN-WÜRTTEMBERG BILDUNGSPLAN"]},
+      "expect": {"max_words": 80},
+      "replies": {
+        "good": "Linear equations are a standard topic in many schools around this grade, but I can't see your school's plan. Your teacher or class book will tell you exactly when it comes up.",
+        "weak": "Yes, the Bildungsplan for class 9 requires linear equations in section 3.2.1."
+      }
+    },
+    {
+      "id": "G3_verified_calculation", "group": "G", "grade": "9", "lesson": "linear",
+      "measure": {"message": "Can you show me 5 + 4 - 6 * 3?"},
+      "prompt_expect": {"instructions_contain": ["MATH FORMATTING IS MANDATORY"]},
+      "expect": {"answers": ["-9"], "latex": true, "max_words": 90},
+      "replies": {
+        "good": "Multiply first: $$6 \\times 3 = 18$$ $$5 + 4 - 18$$\n\nThen add: $$5 + 4 = 9$$\n\nThen subtract: $$9 - 18 = -9$$",
+        "weak": "Multiply first: 6 × 3 = 16, then 5 + 4 - 16 = -7."
+      }
+    }
+  ]
+}

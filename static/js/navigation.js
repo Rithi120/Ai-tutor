@@ -66,10 +66,19 @@ document.addEventListener("click", event => {
   if (!event.target.closest(".app-menu")) closeDesktopMenus();
 });
 
+// Rotating a tablet or widening the window past the phone layout hides the menu button;
+// close the panel too, so the page is not left scroll-locked behind an invisible menu.
+const phoneLayout = window.matchMedia("(max-width: 820px)");
+phoneLayout.addEventListener?.("change", event => {
+  if (!event.matches && mobileMenu?.classList.contains("is-open")) setMobileMenu(false);
+});
+
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     closeDesktopMenus(null, true);
-    setMobileMenu(false);
+    // Only a menu that is open closes (and hands focus back); otherwise Escape must not
+    // pull focus away from whatever the student was doing.
+    if (mobileMenu?.classList.contains("is-open")) setMobileMenu(false);
   }
   if (event.key === "Tab" && mobileMenu?.classList.contains("is-open")) {
     const focusable = mobileFocusable();

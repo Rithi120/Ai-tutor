@@ -34,7 +34,7 @@ DIAGNOSIS_VERSION = "diagnosis:v2"
 # Tags that are a statement about the student's understanding and therefore require at
 # least one resolvable evidence reference. `correct`/`partially_correct` describe the
 # answer itself and are already backed by the score, so they are exempt.
-EVIDENCE_REQUIRED_TAGS = DIAGNOSIS_TAG_SET - {"correct", "partially_correct", "insufficient_evidence"}
+EVIDENCE_REQUIRED_TAGS = DIAGNOSIS_TAG_SET.difference({"correct", "partially_correct", "insufficient_evidence"})
 
 _MAX_EVIDENCE = 8
 _MAX_QUOTE = 400

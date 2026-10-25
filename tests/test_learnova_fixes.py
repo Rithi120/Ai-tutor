@@ -182,7 +182,8 @@ class OcrPipelineTests(unittest.TestCase):
         from PIL import Image
         from learnova.ocr.service import preprocess_document_image
         src = Image.new("RGB", (900, 700), (200, 40, 40))  # strongly red
-        buf = io.BytesIO(); src.save(buf, format="PNG")
+        buf = io.BytesIO()
+        src.save(buf, format="PNG")
         processed = preprocess_document_image(buf.getvalue(), {"grayscale": True})
         out = Image.open(io.BytesIO(processed.data)).convert("RGB")
         r, g, b = out.getpixel((10, 10))

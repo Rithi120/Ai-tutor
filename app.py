@@ -272,6 +272,9 @@ class PremiumKey(db.Model):
     creator = db.relationship("User", foreign_keys=[created_by_id])
     redeemer = db.relationship("User", foreign_keys=[redeemed_by_id])
 
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
 
 class PremiumEntitlement(db.Model):
     __tablename__ = "premium_entitlement"
@@ -284,6 +287,9 @@ class PremiumEntitlement(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     user = db.relationship("User")
 
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
 
 class PremiumRedemption(db.Model):
     __tablename__ = "premium_redemption"
@@ -293,6 +299,9 @@ class PremiumRedemption(db.Model):
     redeemed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     premium_key = db.relationship("PremiumKey")
     user = db.relationship("User")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
 
 
 class Lesson(db.Model):
@@ -1845,7 +1854,7 @@ def import_curriculum_document(*, content: bytes, fmt: str, source_url: str, pla
         plan=plan, subject=subject, grade_min=grades[0], grade_max=grades[1], source_format=fmt,
         content_hash=content_hash,
     )
-    document.chunks = [
+    document.chunks = [  # pyright: ignore[reportAttributeAccessIssue]
         CurriculumChunk(ordinal=chunk.ordinal, heading_path=chunk.heading_path, text=chunk.text,
                         page=chunk.page, grade_min=chunk.grade_min, grade_max=chunk.grade_max)
         for chunk in chunks
@@ -1888,7 +1897,7 @@ def _run_curriculum_import(**kwargs) -> None:
     except (curriculum.SourceNotCleared, ValueError) as error:
         raise click.ClickException(str(error)) from error
     if created:
-        click.echo(f"Imported #{document.id} {document.title!r}: {len(document.chunks)} chunks.")
+        click.echo(f"Imported #{document.id} {document.title!r}: {len(document.chunks)} chunks.")  # pyright: ignore[reportArgumentType]
     else:
         click.echo(f"Already imported as #{document.id} {document.title!r}; nothing changed.")
 
@@ -1932,7 +1941,7 @@ def curriculum_list_command():
     for document in documents:
         band = curriculum.band_label(document.grade_min, document.grade_max) or "-"
         click.echo(f"#{document.id}  {document.plan}/{document.subject}  {band}  "
-                   f"{len(document.chunks)} chunks  {document.title}  <{document.source_url}>")
+                   f"{len(document.chunks)} chunks  {document.title}  <{document.source_url}>")  # pyright: ignore[reportArgumentType]
 
 
 @curriculum_cli.command("remove")
@@ -2799,21 +2808,34 @@ CHAT_CONTROL_LABELS = {
 }
 
 
+def _worked_example_context(worked) -> dict:
+    """The lesson's worked example, bounded, for chat follow-ups (it is teaching content,
+    not an assessment item, so it carries no answer key)."""
+
+    if not isinstance(worked, dict):
+        return {}
+    return {
+        "problem": str(worked.get("problem") or "")[:600],
+        "steps": [str(step)[:300] for step in (worked.get("steps") or [])[:8]],
+        "answer": str(worked.get("answer") or "")[:300],
+    }
+
+
 def topic_mastery_record(subject: str | None, concept: str | None = None, topic_text: str = ""):
     """The learner's ConceptMastery row for this topic, read-only (None when unknown).
 
-    An exact concept wins. Without one (a new lesson has no concept yet), the stored
-    concept whose words best overlap the study goal is used, and only when most of its
-    words appear there: guessing a loosely related topic would mislead more than help."""
+    A known concept is looked up exactly and only exactly: no row means the topic is not
+    assessed yet. (Falling back to the words of the chat message let a weak "Fractions"
+    record lower an unassessed "Linear equations" lesson whenever fractions were mentioned.)
+    Without a concept (a new lesson has none yet), the stored concept whose words best
+    overlap the study goal is used, and only when most of its words appear there."""
 
     if not current_user.is_authenticated or not subject:
         return None
     if concept:
-        record = db.session.scalar(db.select(ConceptMastery).where(
+        return db.session.scalar(db.select(ConceptMastery).where(
             ConceptMastery.user_id == current_user.id, ConceptMastery.subject == subject,
             func.lower(ConceptMastery.concept) == str(concept).strip().lower()))
-        if record or not topic_text:
-            return record
     wanted = set(curriculum.tokens(topic_text))
     if not wanted:
         return None
@@ -3199,7 +3221,7 @@ def safe_internal_url(value: str | None) -> str | None:
 def inject_i18n():
     language = get_current_language()
     ai_mode = app.config.get("AI_MODE", "cached")
-    static_version = app.config.get("STATIC_VERSION", "20261018")
+    static_version = app.config.get("STATIC_VERSION", "20261025")
     return {
         "_": lambda message, **values: translate(message, language, **values),
         "has_active_premium": has_active_premium,
@@ -4878,11 +4900,15 @@ def redeem_premium_key():
             db.session.rollback()
             flash(tr("That Premium key has expired."), "error")
             return redirect(url_for("settings"))
+        # The database decides the claim atomically. synchronize_session=False: the default
+        # re-evaluates the WHERE in Python against the loaded key, and SQLite returns a naive
+        # expires_at, so `expires_at > now` raised TypeError and no key could be redeemed.
         claimed = db.session.execute(db.update(PremiumKey).where(
             PremiumKey.id == key.id, PremiumKey.redeemed_at.is_(None),
             PremiumKey.revoked_at.is_(None), PremiumKey.expires_at > now
-        ).values(redeemed_at=now, redeemed_by_id=current_user.id))
-        if claimed.rowcount != 1:
+        ).values(redeemed_at=now, redeemed_by_id=current_user.id)
+         .execution_options(synchronize_session=False))
+        if claimed.rowcount != 1:  # pyright: ignore[reportAttributeAccessIssue]
             db.session.rollback()
             flash(tr("That Premium key is no longer available."), "error")
             return redirect(url_for("settings"))
@@ -8203,7 +8229,7 @@ def analyze_material():
   "lesson_title": "short specific title",
   "detected_level": "estimated school level",
   "concepts": [{"name": "concept", "evidence": "what in the images shows it"}],
-  "explanation": "a complete step-by-step explanation using the uploaded examples; define every symbol and explain why each step follows",
+  "explanation": "an explanation of the required concept at the EXPLANATION LEVEL given in the instructions, using the uploaded examples; define every symbol and explain why each step follows; when the concept rests on a prerequisite the student may be missing, name it in one sentence first",
   "worked_example": {"problem": "specific demonstration, example, text analysis, timeline task, or calculation matching the subject", "steps": ["small teaching step"], "answer": "clear conclusion or answer"},
   "teacher_tips": ["specific useful technique, mental check, shortcut, or memory aid for this exact material"],
   "exceptions": ["important case where a visible rule does not apply, needs a condition, or changes; use an empty list only if genuinely none exist"],
@@ -8218,7 +8244,7 @@ Videos: put 1 to 3 entries in "videos" ONLY when ALL of these hold - a visual ex
 Images: a picture is allowed ONLY when seeing the thing IS the point - you cannot understand it from words alone. Give each entry a "kind" from exactly this list: diagram, map, anatomy, apparatus, artwork, artifact, graph, structure. If the topic does not fit one of those kinds, it gets no picture: a process, a definition, a grammar rule, a method, a calculation and most arithmetic are all learned from text. Never propose decoration - stock photos, backgrounds, smiling people, unrelated landscapes, or anything added to make the page look nicer. "term" must be the exact title of a real Wikipedia article in the content language, not a search phrase: the app looks the title up directly and shows nothing if it does not resolve to that exact article. Never name a person as the term - a portrait of the scientist does not explain the law. Use an EMPTY list whenever you are unsure.
 Media decision: rate from 0 to 10 how much media would improve understanding, in "video_usefulness" and "image_usefulness" (integers). These ratings only cap how many items may appear (videos: 0-4 none, 5-7 one, 8-10 up to three; images: 0-3 none, 4-6 one, 7-10 up to two). They do not make an item acceptable - every picture is verified against Wikipedia afterwards and dropped if it cannot be confirmed, so proposing a weak one gains nothing. List strongest first.
 Never invent URLs or link text; only provide search phrases and Wikipedia article titles.
-The demonstration must use many small steps rather than combining ideas. Never write 'obviously', 'simply', or 'just'.
+The demonstration uses as many steps as the explanation level needs and never combines ideas into one unexplained jump; leave out material the study goal does not need. Never write 'obviously', 'simply', or 'just'.
 First decide silently whether the study goal is mainly a SKILL (producing something: writing, argumentation, text analysis, a problem-solving technique, speaking) or mainly KNOWLEDGE (facts, concepts, rules).
 For a SKILL goal: "explanation" must teach ONE named, reusable method the student can apply to any topic of this kind - a short memorable name, numbered steps, and one sentence per step saying what to do and why. "worked_example" must apply that exact method step by step to one concrete case from a school student's everyday world (class chat, phone rules at school, school events, sports, pocket money). "teacher_tips" must include what to do when stuck at step 1 and how to self-check the result. The first question must make the student USE the first step of the method on a tiny new case - an application choice, never recall of the method's name.
 For a KNOWLEDGE goal, keep the behaviour described in the rest of these instructions.
@@ -8282,6 +8308,7 @@ The first question must be easy, check understanding of the explanation, and not
             "chat_history": [],
             "language": language,
             "subject": subject,
+            "learning_objective": study_goal[:300],
             "test_total": test_range()["maximum"],
             "min_questions": test_range()["minimum"],
             "max_questions": test_range()["maximum"],
@@ -8585,7 +8612,8 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             instructions=tutor_instructions(
                 question_subject, topic=f"{question.get('concept', '')} {question.get('prompt', '')}",
                 teaching=topic_teaching_plan(
-                    question_subject, question.get("concept"), state=session.get("teaching"))[1]),
+                    question_subject, question.get("concept"),
+                    state=explanation_level.topic_state(session.get("teaching"), question.get("concept")))[1]),
             input=prompt,
             max_output_tokens=ANSWER_TOKEN_LIMIT,
             temperature=0.1,
@@ -8704,14 +8732,20 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             "response_confidence": response_confidence,
             "evidence_weights": {},
             "diagnosis": str(diagnosis.get("primary_diagnosis", {}).get("tag", "")),
+            # Student-facing wording only (never the internal summary): lets the chat tutor
+            # target the specific misconception instead of a generic reteach.
+            "diagnosis_note": str(diagnosis.get("student_facing_explanation") or "")[:240],
         })
         # How the next explanation should change after this answer (a slip, a
         # misconception, a run of correct answers) - see explanation_level.after_answer.
         # An answer that does not count (flawed question) moves nothing, as for mastery.
         if score_counts:
-            session["teaching"] = explanation_level.after_answer(
-                session.get("teaching"), score=score, tag=session["history"][-1]["diagnosis"],
-                hints_used=hints_used, response_confidence=response_confidence)
+            session["teaching"] = explanation_level.with_topic_state(
+                session.get("teaching"), question["concept"],
+                explanation_level.after_answer(
+                    explanation_level.topic_state(session.get("teaching"), question["concept"]),
+                    score=score, tag=session["history"][-1]["diagnosis"],
+                    hints_used=hints_used, response_confidence=response_confidence))
         for concept_name in question_concepts:
             concept_record = session["mastery"].setdefault(
                 concept_name, {"attempts": 0, "total_score": 0}
@@ -8970,7 +9004,11 @@ def tutor_chat():
     chat_context = {
         "subject": session.get("subject", "Other"),
         "lesson_title": session["lesson"]["lesson_title"],
+        "learning_objective": str(session.get("learning_objective") or "")[:300],
         "explanation": session["lesson"]["explanation"][:2500],
+        # "Why is step 2 like that?" refers to the worked example; without it the model
+        # answered about text it had never been given.
+        "worked_example": _worked_example_context(session["lesson"].get("worked_example")),
         "concepts": [item.get("name", "") for item in session["lesson"]["concepts"]],
         "teacher_tips": session["lesson"].get("teacher_tips", [])[:2],
         "exceptions": session["lesson"].get("exceptions", [])[:2],
@@ -9001,10 +9039,13 @@ def tutor_chat():
         or next((item.get("concept") for item in session.get("focus_concepts") or [] if item.get("concept")), None)
         or next(iter(chat_context["concepts"]), None)
     )
+    # Mastery is keyed by the question's own subject in /api/answer (adaptive practice
+    # mixes subjects), so the chat must look it up the same way.
+    focus_subject = (session.get("current_question") or {}).get("subject") or chat_context["subject"]
     teaching_request = control or explanation_level.detect_request(message)
     teaching_plan, teaching_block = topic_teaching_plan(
-        chat_context["subject"], focus_concept, topic_text=curriculum_topic,
-        request=teaching_request, state=session.get("teaching"))
+        focus_subject, focus_concept, topic_text=curriculum_topic, request=teaching_request,
+        state=explanation_level.topic_state(session.get("teaching"), focus_concept))
     prompt = f"""Tutor the student using this lesson state:
 {json.dumps(chat_context, ensure_ascii=False)}
 
@@ -9044,7 +9085,10 @@ Treat a short or fragmentary reply as the student's attempt at your last questio
         ])
         # Only a delivered reply moves the level: a failed call must not make the next
         # attempt simpler than the student asked for.
-        session["teaching"] = explanation_level.record_request(session.get("teaching"), teaching_request)
+        session["teaching"] = explanation_level.with_topic_state(
+            session.get("teaching"), focus_concept,
+            explanation_level.record_request(
+                explanation_level.topic_state(session.get("teaching"), focus_concept), teaching_request))
         lesson_record = db.session.scalar(db.select(Lesson).where(
             Lesson.session_id == payload.get("session_id"), Lesson.user_id == current_user.id))
         if lesson_record:
