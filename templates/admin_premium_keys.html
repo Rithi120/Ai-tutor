@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Premium keys') }} — Learnova{% endblock %}
+{% block content %}
+<main class="account-shell">
+  <section class="account-card">
+    <div class="eyebrow">LEARNOVA</div>
+    <h1>{{ _('Premium key management') }}</h1>
+    <p>{{ _('Generate a key only after confirming the in-person cash payment. Keys grant 30 days and expire if unused after one year.') }}</p>
+    {% if issued_key %}
+    <div role="status" class="notice notice-success">
+      <p>{{ _('Copy this key now. It is shown only once.') }}</p>
+      <code id="issued-premium-key">{{ issued_key }}</code>
+    </div>
+    {% endif %}
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="payment-amount">{{ _('Payment amount') }}</label>
+      <input id="payment-amount" name="payment_amount" inputmode="decimal" maxlength="30" required>
+      <label for="payment-date">{{ _('Payment date') }}</label>
+      <input id="payment-date" name="payment_date" type="date" required>
+      <label for="payment-reference">{{ _('Non-sensitive order or reference number') }}</label>
+      <input id="payment-reference" name="payment_reference" maxlength="100" autocomplete="off" required>
+      <label><input name="payment_confirmed" type="checkbox" value="yes" required> {{ _('I have confirmed receiving this cash payment in person.') }}</label>
+      <button class="primary-button" type="submit">{{ _('Generate 30-day key') }}</button>
+    </form>
+  </section>
+  <section class="account-card">
+    <h2>{{ _('Issued keys') }}</h2>
+    <div class="table-scroll"><table>
+      <thead><tr><th>{{ _('Status') }}</th><th>{{ _('Payment') }}</th><th>{{ _('Created') }}</th><th>{{ _('Key expires') }}</th><th>{{ _('Redeemed') }}</th><th>{{ _('Account') }}</th><th></th></tr></thead>
+      <tbody>{% for key in keys %}
+      <tr>
+        <td>{{ key_status(key) }}</td>
+        <td>{{ key.payment_amount }}{% if key.payment_date %} · {{ key.payment_date.isoformat() }}{% endif %}{% if key.payment_reference %}<br>{{ key.payment_reference }}{% endif %}</td>
+        <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+        <td>{{ key.expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+        <td>{% if key.redeemed_at %}{{ key.redeemed_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}</td>
+        <td>{% if key.redeemer %}{{ key.redeemer.username }} ({{ key.redeemer.email }}){% endif %}</td>
+        <td>{% if key_status(key) == 'unused' %}<form method="post" action="{{ url_for('revoke_premium_key', key_id=key.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">{{ _('Revoke') }}</button></form>{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="7">{{ _('No Premium keys have been issued.') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</main>
+{% endblock %}

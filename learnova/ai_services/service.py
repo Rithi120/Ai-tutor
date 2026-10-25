@@ -919,7 +919,7 @@ def _limits_enforced() -> bool:
     return not (current_app.testing and not current_app.config.get("AI_ENFORCE_LIMITS", False))
 
 
-def _assert_usage_limits(user_ref: str, mode: str) -> None:
+def _assert_usage_limits(user_ref: str, mode: str, *, premium: bool = False) -> None:
     """The per-user request counters and the development live cap, as before.
 
     These run before the cache is consulted, exactly as they always have: they are abuse
@@ -937,7 +937,7 @@ def _assert_usage_limits(user_ref: str, mode: str) -> None:
             "Hourly AI request limit reached.", scope="user_hour", resets_at=now + timedelta(hours=1),
             retry_after_seconds=3600)
     daily_cap = int(current_app.config.get("AI_MAX_REQUESTS_PER_USER_DAY", 250))
-    if ledger.count_requests(user_reference=user_ref, since=day_ago) >= daily_cap:
+    if not premium and ledger.count_requests(user_reference=user_ref, since=day_ago) >= daily_cap:
         raise AIRequestLimitError(
             "Daily AI request limit reached.", scope="user_day", resets_at=now + timedelta(days=1),
             retry_after_seconds=86400)
@@ -948,7 +948,8 @@ def _assert_usage_limits(user_ref: str, mode: str) -> None:
                 "Development live-request limit reached.", scope="development_live")
 
 
-def _reserve_for_call(entry: UsageEntry, *, anticipated_cost: float) -> str:
+def _reserve_for_call(entry: UsageEntry, *, anticipated_cost: float,
+                      premium_entitled: bool = False) -> str:
     """Check every token ceiling for one provider call and reserve its anticipated tokens.
 
     Under the accounting lock, so the check and the reservation are one step: between
@@ -985,7 +986,9 @@ def _reserve_for_call(entry: UsageEntry, *, anticipated_cost: float) -> str:
 
             decision = budgets.evaluate(
                 policy, totals_for, provider=entry.provider,
-                has_user=entry.user_reference != "anonymous",
+                # Premium skips account-level token quotas too. Site and provider
+                # budgets plus session and request-rate safeguards still apply.
+                has_user=entry.user_reference != "anonymous" and not premium_entitled,
                 anticipated_tokens=entry.reserved_tokens, anticipated_cost=anticipated_cost, now=now)
             if not decision.allowed and decision.blocking is not None:
                 blocking = decision.blocking
@@ -1403,6 +1406,7 @@ def create_response(
     deep: bool = False,
     preset: str | None = None,
     previous_failure: str | None = None,
+    premium_entitled: bool = False,
     **provider_kwargs: Any,
 ) -> GatewayResponse:
     """Execute, measure, validate, and cost-control one centralized AI task.
@@ -1545,7 +1549,7 @@ def create_response(
         handle = _reserve_for_call(
             entry, anticipated_cost=_estimated_cost(
                 GatewayUsage(input_tokens_estimate, anticipated - input_tokens_estimate, anticipated),
-                candidate.provider))
+                candidate.provider), premium_entitled=premium_entitled)
         provider_called = True
         call_started = time.perf_counter()
         try:
@@ -1641,8 +1645,9 @@ def create_response(
     try:
         if input_tokens_estimate > _task_budget(task_type, "input"):
             raise AITokenLimitError("The relevant input is too large for this AI task.")
-        _assert_user_cooldown(user_ref)
-        _assert_usage_limits(user_ref, mode)
+        if not premium_entitled:
+            _assert_user_cooldown(user_ref)
+        _assert_usage_limits(user_ref, mode, premium=premium_entitled)
         if mode == "cached":
             response = _read_cache(key)
             cache_hit = response is not None

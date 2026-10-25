@@ -15,6 +15,7 @@
   </div>
 
   <section class="auth-card" data-auth-mode="{{ mode }}">
+    <a class="auth-back" href="{{ url_for('about') }}"><span aria-hidden="true">←</span> {{ _('Back to About') }}</a>
     <a class="auth-brand auth-reveal" href="{{ url_for('login') }}" aria-label="Learnova">
       <img src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span>
     </a>

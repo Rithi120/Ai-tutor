@@ -261,7 +261,12 @@ function renderLesson(data) {
   document.querySelector("#levelBadge").textContent = lesson.detected_level;
   document.querySelector("#explanation").textContent = lesson.explanation;
   document.querySelector("#exampleProblem").textContent = lesson.worked_example.problem;
-  document.querySelector("#exampleSteps").innerHTML = lesson.worked_example.steps.map(step => `<li>${escapeHtml(step)}</li>`).join("");
+  // The <ol> numbers the steps; models often number them too ("1. 1. Das Problem ...").
+  // Only a leading "N." / "N)" / "Schritt N:" followed by a space is removed, so "4.5 kg"
+  // and "2 + 3 = 5" stay intact.
+  const ownNumber = /^\s*(?:(?:Schritt|Step|Étape|Paso|Passo|Stap)\s*)?\d{1,2}\s*[.):]\s+/i;
+  document.querySelector("#exampleSteps").innerHTML = lesson.worked_example.steps
+    .map(step => `<li>${escapeHtml(String(step).replace(ownNumber, ""))}</li>`).join("");
   document.querySelector("#exampleAnswer").dataset.answer = lesson.worked_example.answer;
   document.querySelector("#exampleAnswer").textContent = `${t("answer")}: ${lesson.worked_example.answer}`;
   const tips = lesson.teacher_tips || [];
@@ -488,18 +493,29 @@ function addChatMessage(text, role, extraClass = "") {
   return message;
 }
 
-chatForm.addEventListener("submit", async event => {
+// Explanation controls send a control token with their label, so the tutor adapts the
+// next reply to the current topic without the student retyping the question.
+document.querySelector(".chat-controls")?.addEventListener("click", event => {
+  const button = event.target.closest("button[data-control]");
+  if (button) sendChat(button.textContent.trim(), button.dataset.control);
+});
+
+chatForm.addEventListener("submit", event => {
   event.preventDefault();
   const message = chatInput.value.trim();
+  chatInput.value = "";
+  sendChat(message);
+});
+
+async function sendChat(message, control = null) {
   if (!message || !sessionId) return;
   addChatMessage(message, "student");
-  chatInput.value = "";
   const typing = addChatMessage(t("thinking"), "tutor", "typing-message");
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message })
+      body: JSON.stringify(control ? { session_id: sessionId, message, control } : { session_id: sessionId, message })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
@@ -515,7 +531,7 @@ chatForm.addEventListener("submit", async event => {
     addChatMessage(t("chatFailed"), "tutor");
     showError(error.message || t("chatError"));
   }
-});
+}
 
 const bootstrapElement = document.querySelector("#lessonBootstrap");
 const lessonBootstrap = bootstrapElement ? JSON.parse(bootstrapElement.textContent) : null;

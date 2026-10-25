@@ -211,7 +211,8 @@
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
 :root[data-theme="dark"] .student-message { background: rgba(110, 92, 255, .3); color: var(--ln-ink); }
-:root[data-theme="dark"] .chat-suggestions button {
+:root[data-theme="dark"] .chat-suggestions button,
+:root[data-theme="dark"] .chat-controls button {
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-violet);
 }
 :root[data-theme="dark"] .chat-form textarea {

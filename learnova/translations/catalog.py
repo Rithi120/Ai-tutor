@@ -1200,6 +1200,10 @@ FRONTEND_MESSAGES = {
     "chatWelcome": "I’m here while you practice. Ask me to explain a step, give a hint, or help you understand a mistake.",
     "giveHint": "Give me a hint",
     "whatPractice": "What should I practice?",
+    "simplerExplanation": "Simpler explanation",
+    "explainStepByStep": "Explain step by step",
+    "anotherExample": "Give me another example",
+    "makeItHarder": "Make it harder",
     "chatPlaceholder": "Ask about this lesson…",
     "selectAnswer": "Choose an answer",
     "selectAll": "Choose every correct answer",
@@ -2011,6 +2015,33 @@ GERMAN.update({
     "Got it": "Verstanden",
     "Level {level} · {xp} XP — view your progress": "Stufe {level} · {xp} XP – deinen Fortschritt ansehen",
 })
+
+# Bildungsplan school type (settings). Start of block.
+GERMAN.update({
+    "Please choose your school type.": "Bitte wähle deine Schulart.",
+    "Your school type was saved.": "Deine Schulart wurde gespeichert.",
+    "School type": "Schulart",
+    "Learnova follows the Baden-Württemberg Bildungsplan for your school type.": "Learnova richtet sich nach dem Bildungsplan Baden-Württemberg für deine Schulart.",
+    "Select your school type": "Wähle deine Schulart",
+    "Save school type": "Schulart speichern",
+    "Primary school (Grundschule)": "Grundschule",
+    "Werkrealschule / Hauptschule": "Werkrealschule / Hauptschule",
+    "Realschule": "Realschule",
+    "Gemeinschaftsschule": "Gemeinschaftsschule",
+    "Gymnasium": "Gymnasium",
+    "Vocational school (berufliche Schule)": "Berufliche Schule",
+    "School outside Baden-Württemberg": "Schule außerhalb Baden-Württembergs",
+})
+# End of block: Bildungsplan school type.
+
+# Chat explanation controls. Start of block.
+GERMAN.update({
+    "Simpler explanation": "Einfacher erklären",
+    "Explain step by step": "Schritt für Schritt erklären",
+    "Give me another example": "Noch ein Beispiel",
+    "Make it harder": "Schwieriger, bitte",
+})
+# End of block: chat explanation controls.
 
 REQUIRED_KEYS = frozenset(GERMAN.keys())
 

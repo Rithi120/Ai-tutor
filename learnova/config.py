@@ -318,8 +318,18 @@ def configure_app(app, environment: str | None = None) -> str:
             raise RuntimeError(f"{name} must be a non-negative number") from error
 
     for name in ("AI_BUDGET_USER_TOKENS_PER_DAY", "AI_BUDGET_USER_TOKENS_PER_MONTH",
-                 "AI_BUDGET_GLOBAL_TOKENS_PER_DAY", "AI_BUDGET_GLOBAL_TOKENS_PER_MONTH"):
+                 "AI_BUDGET_GLOBAL_TOKENS_PER_MONTH"):
         optional_int(name)
+    # Emergency global ceiling applies to free and Premium accounts alike. An operator
+    # may tune it in production; an explicit blank disables it only by choice.
+    raw_global_daily = os.getenv("AI_BUDGET_GLOBAL_TOKENS_PER_DAY", "2000000").strip()
+    if raw_global_daily:
+        try:
+            app.config["AI_BUDGET_GLOBAL_TOKENS_PER_DAY"] = max(0, int(raw_global_daily))
+        except ValueError as error:
+            raise RuntimeError("AI_BUDGET_GLOBAL_TOKENS_PER_DAY must be a non-negative integer") from error
+    else:
+        app.config["AI_BUDGET_GLOBAL_TOKENS_PER_DAY"] = None
     for provider in ("GROQ", "OPENAI", "ANTHROPIC", "GEMINI"):
         optional_int(f"AI_BUDGET_{provider}_TOKENS_PER_DAY")
         optional_int(f"AI_BUDGET_{provider}_TOKENS_PER_MONTH")
@@ -531,6 +541,13 @@ def configure_app(app, environment: str | None = None) -> str:
     # default; a switch exists because it is the one feature that reaches a third
     # party on the request path.
     app.config["FEATURE_LESSON_MEDIA"] = _feature_flag("FEATURE_LESSON_MEDIA", True)
+    # Baden-Württemberg Bildungsplan grounding (learnova/curriculum). On by default but a
+    # no-op until documents are imported; the cleared-hosts list starts empty on purpose,
+    # because confirming a source's usage terms is the operator's decision.
+    app.config["FEATURE_CURRICULUM"] = _feature_flag("FEATURE_CURRICULUM", True)
+    app.config["CURRICULUM_CLEARED_SOURCES"] = os.getenv("CURRICULUM_CLEARED_SOURCES", "")
+    app.config["CURRICULUM_CONTEXT_MAX_CHARS"] = max(
+        400, min(4000, int(os.getenv("CURRICULUM_CONTEXT_MAX_CHARS", "1800"))))
     app.config["HANDWRITING_SECOND_LOOK_MAX_REGIONS"] = max(
         1, min(12, int(os.getenv("HANDWRITING_SECOND_LOOK_MAX_REGIONS", "8"))))
     app.config["GAMIFICATION_MIN_DAILY_EVENTS"] = max(
@@ -538,6 +555,11 @@ def configure_app(app, environment: str | None = None) -> str:
     app.config["AI_DIAGNOSTICS_ADMINS"] = {
         item.strip().casefold()
         for item in os.getenv("AI_DIAGNOSTICS_ADMINS", "").split(",")
+        if item.strip()
+    }
+    app.config["PREMIUM_ADMIN_IDENTIFIERS"] = {
+        item.strip().casefold()
+        for item in os.getenv("PREMIUM_ADMIN_IDENTIFIERS", "").split(",")
         if item.strip()
     }
     for name, default in {

@@ -133,7 +133,7 @@ class RetiredListShapeTests(unittest.TestCase):
 
 
 class BudgetSettingTests(unittest.TestCase):
-    """Budget keys are optional, unset means unset, and bad values fail at startup."""
+    """Global daily guard has a safe default; optional budgets remain unset."""
 
     BUDGET_KEYS = (
         "AI_BUDGET_USER_TOKENS_PER_DAY", "AI_BUDGET_USER_TOKENS_PER_MONTH",
@@ -147,7 +147,10 @@ class BudgetSettingTests(unittest.TestCase):
         application = fresh_app()
         for name in self.BUDGET_KEYS:
             self.assertIn(name, application.config, name)
-            self.assertIsNone(application.config[name], name)
+            if name == "AI_BUDGET_GLOBAL_TOKENS_PER_DAY":
+                self.assertEqual(application.config[name], 2_000_000, name)
+            else:
+                self.assertIsNone(application.config[name], name)
 
     def test_budget_keys_parse_as_numbers(self):
         application = fresh_app(AI_BUDGET_GLOBAL_TOKENS_PER_DAY="123",

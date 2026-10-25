@@ -1726,14 +1726,21 @@ body:before {
   font-style: italic;
 }
 
-.chat-suggestions {
+.chat-suggestions,
+.chat-controls {
   padding: 10px 13px 3px;
   display: flex;
   gap: 6px;
   overflow-x: auto;
 }
 
-.chat-suggestions button {
+/* Explanation controls stay put; the suggestion row below is replaced by tutor chips. */
+.chat-controls {
+  padding-bottom: 0;
+}
+
+.chat-suggestions button,
+.chat-controls button {
   border: 1px solid #ded9ef;
   background: #f8f6ff;
   color: #5d50ae;

@@ -1573,5 +1573,22 @@
   "You earn XP for real studying: answers, sessions and daily goals. Watch your level grow on the progress page.": "Tu gagnes des XP en étudiant vraiment : réponses, sessions et objectifs quotidiens. Regarde ton niveau grandir sur la page de progression.",
   "View progress": "Voir la progression",
   "Got it": "Compris",
-  "Level {level} · {xp} XP — view your progress": "Niveau {level} · {xp} XP — voir ta progression"
+  "Level {level} · {xp} XP — view your progress": "Niveau {level} · {xp} XP — voir ta progression",
+  "Please choose your school type.": "Veuillez choisir votre type d'école.",
+  "Your school type was saved.": "Votre type d'école a été enregistré.",
+  "School type": "Type d'école",
+  "Learnova follows the Baden-Württemberg Bildungsplan for your school type.": "Learnova suit le Bildungsplan du Bade-Wurtemberg pour votre type d'école.",
+  "Select your school type": "Choisissez votre type d'école",
+  "Save school type": "Enregistrer le type d'école",
+  "Primary school (Grundschule)": "École primaire (Grundschule)",
+  "Werkrealschule / Hauptschule": "Werkrealschule / Hauptschule",
+  "Realschule": "Realschule",
+  "Gemeinschaftsschule": "Gemeinschaftsschule",
+  "Gymnasium": "Gymnasium",
+  "Vocational school (berufliche Schule)": "École professionnelle (berufliche Schule)",
+  "School outside Baden-Württemberg": "École hors du Bade-Wurtemberg",
+  "Simpler explanation": "Explication plus simple",
+  "Explain step by step": "Expliquer étape par étape",
+  "Give me another example": "Donne-moi un autre exemple",
+  "Make it harder": "Plus difficile"
 }

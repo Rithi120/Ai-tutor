@@ -23,7 +23,38 @@
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <button class="primary-button" type="submit">{{ _('Save grade') }}</button>
     </form>
+    <form method="post" action="{{ url_for('update_school_type') }}" class="settings-grade">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="school_type">{{ _('School type') }}</label>
+      <p>{{ _('Learnova follows the Baden-Württemberg Bildungsplan for your school type.') }}</p>
+      <select id="school_type" name="school_type" required>
+        <option value="" {{ 'selected' if not current_school_type }} disabled hidden>{{ _('Select your school type') }}</option>
+        {% for choice in school_type_choices %}
+        <option value="{{ choice.value }}" {{ 'selected' if current_school_type == choice.value }}>{{ _(choice.label) }}</option>
+        {% endfor %}
+      </select>
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <button class="primary-button" type="submit">{{ _('Save school type') }}</button>
+    </form>
     {% endif %}
+    <section class="settings-grade" id="premium">
+      <h2>{{ _('Premium') }}</h2>
+      {% if premium_active and premium_entitlement %}
+      <p role="status">{{ _('Premium is active.') }}</p>
+      <p>{{ _('Expires') }}: <time datetime="{{ premium_expiry.isoformat() }}">{{ premium_expiry.strftime('%Y-%m-%d %H:%M UTC') }}</time>
+        ({{ premium_remaining_days }} {{ _('days remaining') }})</p>
+      {% else %}
+      <p>{{ _('Premium is not active on this account.') }}</p>
+      {% endif %}
+      <p>{{ _('Pay in person and enter the key you received to activate 30 days. Redeeming another key extends active Premium by 30 days. There is no automatic renewal.') }}</p>
+      <form method="post" action="{{ url_for('redeem_premium_key') }}" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="premium-key">{{ _('Redeem key') }}</label>
+        <input id="premium-key" name="premium_key" type="password" maxlength="120" required autocomplete="off">
+        <button class="primary-button" type="submit">{{ _('Redeem key') }}</button>
+      </form>
+      {% if premium_admin %}<p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Manage Premium keys') }}</a></p>{% endif %}
+    </section>
   </section>
 </main>
 {% endblock %}
