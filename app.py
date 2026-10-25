@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -16,7 +17,9 @@ from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import click
 from dotenv import load_dotenv
+from flask.cli import AppGroup
 from flask import Flask, abort, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_file, session as flask_session, url_for
 from flask_login import UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError
@@ -127,6 +130,8 @@ from learnova.vocabulary import layout as vocabulary_layout
 from learnova.vocabulary import translate as vocabulary_translate
 from learnova.ocr import local as local_ocr
 from learnova.community import service as community
+from learnova import curriculum
+from learnova.diagnostics import explanation_level
 from learnova import moderation
 from learnova import assistant
 from learnova.authentication.service import (
@@ -205,6 +210,22 @@ def as_utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def has_active_premium(user) -> bool:
+    """The server-side source of truth for a user's current Premium entitlement."""
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    entitlement = db.session.scalar(db.select(PremiumEntitlement).where(
+        PremiumEntitlement.user_id == user.id))
+    return bool(entitlement and entitlement.status == "active"
+                and as_utc(entitlement.expires_at) > utcnow())
+
+
+def _premium_admin():
+    allowed = app.config.get("PREMIUM_ADMIN_IDENTIFIERS", set())
+    identities = {current_user.username.casefold(), current_user.email.casefold()}
+    return bool(allowed and identities.intersection(allowed))
+
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(30), unique=True, nullable=False, index=True)
@@ -212,6 +233,8 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     preferred_language = db.Column(db.String(8), nullable=False, default="en", index=True)
     grade = db.Column(db.String(20), nullable=False, default="", index=True)
+    # Baden-Württemberg school type (learnova/curriculum/catalog.py); "" = not chosen yet.
+    school_type = db.Column(db.String(30), nullable=False, default="", server_default="")
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     # When the first-time walkthrough was finished or skipped; None = it still opens by itself.
     tour_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -230,6 +253,46 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class PremiumKey(db.Model):
+    __tablename__ = "premium_key"
+    id = db.Column(db.Integer, primary_key=True)
+    key_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    duration_days = db.Column(db.Integer, nullable=False, default=30)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    payment_amount = db.Column(db.String(30), nullable=False, default="")
+    payment_date = db.Column(db.Date, nullable=True)
+    payment_reference = db.Column(db.String(100), nullable=False, default="")
+    redeemed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    redeemed_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    creator = db.relationship("User", foreign_keys=[created_by_id])
+    redeemer = db.relationship("User", foreign_keys=[redeemed_by_id])
+
+
+class PremiumEntitlement(db.Model):
+    __tablename__ = "premium_entitlement"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
+    starts_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)
+    granted_by = db.Column(db.String(30), nullable=False, default="redeemable_key")
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    user = db.relationship("User")
+
+
+class PremiumRedemption(db.Model):
+    __tablename__ = "premium_redemption"
+    id = db.Column(db.Integer, primary_key=True)
+    premium_key_id = db.Column(db.Integer, db.ForeignKey("premium_key.id"), nullable=False, unique=True, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    redeemed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    premium_key = db.relationship("PremiumKey")
+    user = db.relationship("User")
 
 
 class Lesson(db.Model):
@@ -454,6 +517,46 @@ class Competency(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     project = db.relationship(
         "LearningProject", backref=db.backref("competencies", cascade="all, delete-orphan", lazy="select"))
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class CurriculumDocument(db.Model):
+    """One imported Bildungsplan document (or part of one), with where it came from.
+
+    Only sources whose usage terms the operator confirmed are imported; `rights_note`
+    records that decision. See learnova/curriculum/sources.py and docs/CURRICULUM.md."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(300), nullable=False)
+    source_url = db.Column(db.String(1000), nullable=False)
+    rights_note = db.Column(db.Text, nullable=False, default="")
+    citation = db.Column(db.String(200), nullable=False, default="")
+    plan = db.Column(db.String(20), nullable=False, index=True)
+    subject = db.Column(db.String(40), nullable=False, index=True)
+    grade_min = db.Column(db.Integer, nullable=False, default=0)
+    grade_max = db.Column(db.Integer, nullable=False, default=0)
+    source_format = db.Column(db.String(10), nullable=False, default="text")
+    content_hash = db.Column(db.String(64), nullable=False, unique=True)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    chunks = db.relationship(
+        "CurriculumChunk", back_populates="document", cascade="all, delete-orphan", order_by="CurriculumChunk.ordinal")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
+
+
+class CurriculumChunk(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey("curriculum_document.id"), nullable=False, index=True)
+    ordinal = db.Column(db.Integer, nullable=False)
+    heading_path = db.Column(db.String(500), nullable=False, default="")
+    text = db.Column(db.Text, nullable=False)
+    page = db.Column(db.Integer, nullable=True)
+    grade_min = db.Column(db.Integer, nullable=False, default=0)
+    grade_max = db.Column(db.Integer, nullable=False, default=0)
+    document = db.relationship("CurriculumDocument", back_populates="chunks")
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -1713,6 +1816,154 @@ def load_user(user_id):
         return None
 
 
+def import_curriculum_document(*, content: bytes, fmt: str, source_url: str, plan: str, subject: str,
+                               title: str, citation: str = "", rights_note: str = "",
+                               grades: tuple[int, int] = (0, 0)) -> tuple["CurriculumDocument", bool]:
+    """Store one Bildungsplan document as citable chunks; (document, created).
+
+    The provenance gate runs first, so nothing from an uncleared source is even parsed.
+    Re-importing identical bytes returns the existing document."""
+
+    curriculum.check_provenance(
+        source_url, curriculum.parse_cleared(app.config.get("CURRICULUM_CLEARED_SOURCES")),
+        rights_note=rights_note)
+    if plan not in curriculum.PLANS:
+        raise ValueError(f"plan must be one of {', '.join(curriculum.PLANS)}")
+    if subject not in curriculum.SUBJECT_KEYS:
+        raise ValueError(f"subject must be one of {', '.join(sorted(curriculum.SUBJECT_KEYS))}")
+    content_hash = hashlib.sha256(content).hexdigest()
+    existing = db.session.execute(
+        db.select(CurriculumDocument).filter_by(content_hash=content_hash)).scalar_one_or_none()
+    if existing:
+        return existing, False
+    sections = curriculum.extract(content, fmt)
+    chunks = curriculum.chunk_sections(sections, default_band=grades)
+    if not chunks:
+        raise ValueError("No usable text was extracted (a scanned PDF needs OCR first).")
+    document = CurriculumDocument(
+        title=title[:300], source_url=source_url[:1000], rights_note=rights_note, citation=citation[:200],
+        plan=plan, subject=subject, grade_min=grades[0], grade_max=grades[1], source_format=fmt,
+        content_hash=content_hash,
+    )
+    document.chunks = [
+        CurriculumChunk(ordinal=chunk.ordinal, heading_path=chunk.heading_path, text=chunk.text,
+                        page=chunk.page, grade_min=chunk.grade_min, grade_max=chunk.grade_max)
+        for chunk in chunks
+    ]
+    db.session.add(document)
+    db.session.commit()
+    return document, True
+
+
+def _parse_grades(value: str) -> tuple[int, int]:
+    if not value:
+        return 0, 0
+    numbers = [int(part) for part in re.findall(r"\d{1,2}", value)]
+    if not numbers or not all(1 <= number <= 13 for number in numbers):
+        raise ValueError("grades must look like 7-8 or 10")
+    return min(numbers), max(numbers)
+
+
+curriculum_cli = AppGroup("curriculum", help="Import and inspect Bildungsplan documents (docs/CURRICULUM.md).")
+app.cli.add_command(curriculum_cli)
+_CURRICULUM_OPTIONS = [
+    click.option("--plan", required=True, type=click.Choice(curriculum.PLANS)),
+    click.option("--subject", required=True, type=click.Choice(sorted(curriculum.SUBJECT_KEYS))),
+    click.option("--grades", default="", help="Band of the whole document, e.g. 5-10. Band headings inside win."),
+    click.option("--title", default="", help="Document title; defaults to the file or URL name."),
+    click.option("--citation", default="", help='Short citation shown to the model, e.g. "BP2016 BW Mathematik Gymnasium V2".'),
+    click.option("--rights-note", default="", help="Who confirmed the usage terms and when (required for non-web sources)."),
+]
+
+
+def _curriculum_options(function):
+    for option in reversed(_CURRICULUM_OPTIONS):
+        function = option(function)
+    return function
+
+
+def _run_curriculum_import(**kwargs) -> None:
+    try:
+        document, created = import_curriculum_document(**kwargs)
+    except (curriculum.SourceNotCleared, ValueError) as error:
+        raise click.ClickException(str(error)) from error
+    if created:
+        click.echo(f"Imported #{document.id} {document.title!r}: {len(document.chunks)} chunks.")
+    else:
+        click.echo(f"Already imported as #{document.id} {document.title!r}; nothing changed.")
+
+
+@curriculum_cli.command("import")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--source-url", required=True, help="Where the file was downloaded from, or a description of a non-web source.")
+@_curriculum_options
+def curriculum_import_command(path, source_url, plan, subject, grades, title, citation, rights_note):
+    """Import a downloaded PDF, HTML or text file."""
+
+    content = Path(path).read_bytes()
+    _run_curriculum_import(
+        content=content, fmt=curriculum.detect_format(path, "", content), source_url=source_url,
+        plan=plan, subject=subject, title=title or Path(path).name, citation=citation,
+        rights_note=rights_note, grades=_parse_grades(grades))
+
+
+@curriculum_cli.command("fetch")
+@click.argument("url")
+@_curriculum_options
+def curriculum_fetch_command(url, plan, subject, grades, title, citation, rights_note):
+    """Download and import one document from a cleared host (robots.txt is obeyed)."""
+
+    try:
+        download = curriculum.fetch(
+            url, cleared=curriculum.parse_cleared(app.config.get("CURRICULUM_CLEARED_SOURCES")))
+    except (curriculum.SourceNotCleared, curriculum.RobotsDisallowed, ValueError) as error:
+        raise click.ClickException(str(error)) from error
+    _run_curriculum_import(
+        content=download.content, fmt=curriculum.detect_format(url, download.content_type, download.content),
+        source_url=url, plan=plan, subject=subject, title=title or url.rsplit("/", 1)[-1] or url,
+        citation=citation, rights_note=rights_note, grades=_parse_grades(grades))
+
+
+@curriculum_cli.command("list")
+def curriculum_list_command():
+    """List imported documents."""
+
+    documents = db.session.execute(db.select(CurriculumDocument).order_by(CurriculumDocument.id)).scalars()
+    for document in documents:
+        band = curriculum.band_label(document.grade_min, document.grade_max) or "-"
+        click.echo(f"#{document.id}  {document.plan}/{document.subject}  {band}  "
+                   f"{len(document.chunks)} chunks  {document.title}  <{document.source_url}>")
+
+
+@curriculum_cli.command("remove")
+@click.argument("document_id", type=int)
+def curriculum_remove_command(document_id):
+    """Delete one imported document and its chunks."""
+
+    document = db.session.get(CurriculumDocument, document_id)
+    if document is None:
+        raise click.ClickException(f"No curriculum document #{document_id}.")
+    db.session.delete(document)
+    db.session.commit()
+    click.echo(f"Removed #{document_id}.")
+
+
+@curriculum_cli.command("search")
+@click.argument("query")
+@click.option("--school-type", default="", type=click.Choice(("",) + curriculum.SCHOOL_TYPES))
+@click.option("--subject", default="Mathematics", help="Learnova subject name, e.g. Mathematics.")
+@click.option("--grade", type=click.IntRange(1, 13), default=None)
+def curriculum_search_command(query, school_type, subject, grade):
+    """Show what a learner with this profile would get for QUERY."""
+
+    index = curriculum_index()
+    plans = curriculum.plans_for(school_type, grade)
+    hits = index.search(query, plans=plans, subjects=curriculum.subject_keys(subject, grade), grade=grade) if index else []
+    if not hits:
+        click.echo("No matching excerpts.")
+    click.echo(curriculum.build_block(hits, grade=grade, school_type=school_type))
+
+
 @app.cli.command("init-db")
 def init_db_command():
     """Create the application database tables."""
@@ -2306,6 +2557,16 @@ def ensure_database():
         # Two new tables (competency, exam_prep_state); create_all made them above.
         apply_schema_migration("025_exam_autopilot", lambda: None)
         apply_schema_migration("028_vocabulary_scanner", lambda: None)
+        apply_schema_migration("029_premium_keys", lambda: None)
+        if "school_type" not in user_columns:
+            def add_user_school_type():
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        'ALTER TABLE "user" ADD COLUMN school_type VARCHAR(30) NOT NULL DEFAULT \'\''))
+            apply_schema_migration("030_curriculum", add_user_school_type)
+        else:
+            # Fresh database: create_all made the column and the two curriculum tables.
+            apply_schema_migration("030_curriculum", lambda: None)
         badge_rows = (
             ("first_steps", "First Steps", "Complete your first meaningful learning activity.", "spark", "general", 1, "bronze", 10),
             ("flashcard_beginner", "Flashcard Beginner", "Review 10 flashcards.", "cards", "flashcards", 10, "bronze", 15),
@@ -2471,11 +2732,153 @@ def learner_profile_instruction() -> str:
     return grade_descriptor(grade)
 
 
-def tutor_instructions(subject: str | None = None) -> str:
+_curriculum_index_lock = threading.Lock()
+_curriculum_index_cache: dict[str, Any] = {"key": None, "index": None}
+
+
+def curriculum_index() -> "curriculum.CurriculumIndex | None":
+    """The in-process BM25 index over all imported chunks, rebuilt when the corpus changes.
+
+    The freshness check is one aggregate query; the index itself is built once per
+    import, not per request."""
+
+    key = tuple(db.session.execute(
+        db.select(func.count(CurriculumChunk.id), func.max(CurriculumChunk.id))).one())
+    if not key[0]:
+        return None
+    with _curriculum_index_lock:
+        if _curriculum_index_cache["key"] == key:
+            return _curriculum_index_cache["index"]
+        rows = db.session.execute(
+            db.select(CurriculumChunk, CurriculumDocument).join(CurriculumDocument)).all()
+        index = curriculum.CurriculumIndex(
+            curriculum.IndexedChunk(
+                id=chunk.id, document_id=document.id, plan=document.plan, subject=document.subject,
+                grade_min=chunk.grade_min, grade_max=chunk.grade_max, heading_path=chunk.heading_path,
+                text=chunk.text, page=chunk.page, citation=document.citation or document.title,
+            )
+            for chunk, document in rows
+        )
+        _curriculum_index_cache.update(key=key, index=index)
+        return index
+
+
+def curriculum_instruction(subject: str | None, topic: str | None) -> str:
+    """Bildungsplan excerpts for this learner and topic, or "" when nothing applies.
+
+    Never raises: grounding improves a lesson but must not be able to fail one."""
+
+    if not topic or not app.config.get("FEATURE_CURRICULUM", True) or not current_user.is_authenticated:
+        return ""
+    grade = curriculum.grade_number(getattr(current_user, "grade", ""))
+    school_type = curriculum.normalize_school_type(getattr(current_user, "school_type", ""))
+    plans = curriculum.plans_for(school_type, grade)
+    subjects = curriculum.subject_keys(subject, grade)
+    if not plans or not subjects:
+        return ""
+    try:
+        index = curriculum_index()
+        if index is None:
+            return ""
+        hits = index.search(str(topic)[:2000], plans=plans, subjects=subjects, grade=grade, limit=3)
+    except SQLAlchemyError:
+        app.logger.warning("curriculum retrieval unavailable", exc_info=True)
+        return ""
+    return curriculum.build_block(
+        hits, grade=grade, school_type=school_type,
+        max_chars=int(app.config.get("CURRICULUM_CONTEXT_MAX_CHARS", 1800)))
+
+
+# Visible labels of the chat explanation controls (catalogue keys; the frontend uses the
+# same English strings through FRONTEND_MESSAGES).
+CHAT_CONTROL_LABELS = {
+    "simpler": "Simpler explanation",
+    "step_by_step": "Explain step by step",
+    "another_example": "Give me another example",
+    "harder": "Make it harder",
+}
+
+
+def topic_mastery_record(subject: str | None, concept: str | None = None, topic_text: str = ""):
+    """The learner's ConceptMastery row for this topic, read-only (None when unknown).
+
+    An exact concept wins. Without one (a new lesson has no concept yet), the stored
+    concept whose words best overlap the study goal is used, and only when most of its
+    words appear there: guessing a loosely related topic would mislead more than help."""
+
+    if not current_user.is_authenticated or not subject:
+        return None
+    if concept:
+        record = db.session.scalar(db.select(ConceptMastery).where(
+            ConceptMastery.user_id == current_user.id, ConceptMastery.subject == subject,
+            func.lower(ConceptMastery.concept) == str(concept).strip().lower()))
+        if record or not topic_text:
+            return record
+    wanted = set(curriculum.tokens(topic_text))
+    if not wanted:
+        return None
+    best, best_score = None, 0.0
+    for record in db.session.scalars(db.select(ConceptMastery).where(
+            ConceptMastery.user_id == current_user.id, ConceptMastery.subject == subject).limit(300)):
+        words = set(curriculum.tokens(record.concept))
+        if not words:
+            continue
+        score = len(words & wanted) / len(words)
+        if score >= 0.5 and score > best_score:
+            best, best_score = record, score
+    return best
+
+
+def topic_teaching_plan(subject: str | None, concept: str | None = None, *, topic_text: str = "",
+                        request: str | None = None, state: dict | None = None):
+    """Explanation level for the next response on one topic (learnova/diagnostics/explanation_level.py).
+
+    Missing or unreadable mastery data is not an error: the plan then starts from the
+    grade alone, as for a topic the student has never been assessed on."""
+
+    grade = str(getattr(current_user, "grade", "") or "") if current_user.is_authenticated else ""
+    evidence, diagnoses, prerequisites, hint_rate = None, [], [], None
+    try:
+        record = topic_mastery_record(subject, concept, topic_text)
+        if record is not None:
+            evidence = concept_knowledge_state(record)
+            diagnoses = [item["primary_diagnosis"] for item in
+                         recent_diagnosis_history(current_user.id, record.subject, record.concept)]
+            prerequisites = [edge["prerequisite"] for edge in confirmed_prerequisites(
+                stored_prerequisites(current_user.id, record.subject, record.concept))]
+            hints = db.session.scalars(
+                db.select(Attempt.hints_used).join(Lesson).where(
+                    Lesson.user_id == current_user.id, Attempt.concept == record.concept,
+                    func.coalesce(Attempt.subject, Lesson.subject) == record.subject,
+                ).order_by(Attempt.timestamp.desc()).limit(5)).all()
+            hint_rate = (sum(bool(value) for value in hints) / len(hints)) if hints else None
+            concept = record.concept
+    except SQLAlchemyError:
+        app.logger.warning("topic mastery unavailable for the teaching plan", exc_info=True)
+        db.session.rollback()
+        evidence, diagnoses, prerequisites, hint_rate = None, [], [], None
+    pattern = explanation_level.learner_pattern(
+        evidence, diagnoses=diagnoses, prerequisite_gaps=prerequisites, hint_rate=hint_rate)
+    plan = explanation_level.choose_level(
+        grade=grade, evidence=evidence, pattern=pattern, request=request, state=state,
+        prerequisites=prerequisites)
+    return plan, explanation_level.instruction(plan, concept=str(concept or ""))
+
+
+def tutor_instructions(subject: str | None = None, topic: str | None = None, teaching: str = "") -> str:
+    """Shared tutor rules for one subject; `topic` (the student's goal, question or
+    lesson title) also pulls in matching Bildungsplan excerpts when any are imported."""
+
     base = f"{TUTOR_RULES}\n\n{language_instruction()}"
     profile = learner_profile_instruction()
     if profile:
         base = f"{base}\n\n{profile}"
+    # Curriculum excerpts go before the subject rules so the notation mandate (LaTeX for
+    # mathematics) stays the last instruction the model reads.
+    grounding = curriculum_instruction(subject, topic)
+    for block in (grounding, teaching):
+        if block:
+            base = f"{base}\n\n{block}"
     extra = subject_teaching_instruction(subject)
     return f"{base}\n\n{extra}" if extra else base
 
@@ -2796,15 +3199,19 @@ def safe_internal_url(value: str | None) -> str | None:
 def inject_i18n():
     language = get_current_language()
     ai_mode = app.config.get("AI_MODE", "cached")
-    static_version = app.config.get("STATIC_VERSION", "20261004")
+    static_version = app.config.get("STATIC_VERSION", "20261018")
     return {
         "_": lambda message, **values: translate(message, language, **values),
+        "has_active_premium": has_active_premium,
         "current_language": language,
 	"static_version": static_version,
         "interface_direction": language_direction(language),
         "language_options": language_options(),
         "grade_choices": [{"value": value, "label": grade_label(value)} for value in GRADE_CHOICES],
         "current_grade": str(getattr(current_user, "grade", "") or "") if current_user.is_authenticated else "",
+        "school_type_choices": [
+            {"value": value, "label": curriculum.SCHOOL_TYPE_LABELS_EN[value]} for value in curriculum.SCHOOL_TYPES],
+        "current_school_type": str(getattr(current_user, "school_type", "") or "") if current_user.is_authenticated else "",
         "learning_content_language_code": {
             "en": "en-US", "de": "de-DE", "fr": "fr-FR", "es": "es-ES", "it": "it-IT",
             "pt": "pt-PT", "nl": "nl-NL", "ar": "ar-SA",
@@ -3186,6 +3593,11 @@ def create_response(*, task_type: str, language: str | None = None, **kwargs: An
     # whose cache is meant to be shared rather than partitioned per user.
     private_scope = kwargs.pop("private_scope", _SCOPE_UNSET)
     session_scope = kwargs.pop("session_scope", None)
+    # The request cannot assert Premium: discard any caller-supplied value and derive it
+    # from the authenticated account and database entitlement only.
+    kwargs.pop("premium_entitled", None)
+    premium_entitled = bool(
+        has_request_context() and current_user.is_authenticated and has_active_premium(current_user))
     if has_request_context() and current_user.is_authenticated:
         if private_scope is _SCOPE_UNSET:
             private_scope = current_user.get_id()
@@ -3198,6 +3610,7 @@ def create_response(*, task_type: str, language: str | None = None, **kwargs: An
         language=language or learning_content_language(),
         private_scope=private_scope,
         session_scope=session_scope,
+        premium_entitled=premium_entitled,
         **kwargs,
     )
 
@@ -4303,7 +4716,7 @@ Match the requested easy/medium/hard difficulty. Do not duplicate a recent quest
         task_type="adaptive_practice",
         language=session["language"],
         validation_context={"recent_questions": recent_questions},
-        model=TUTOR_MODEL, instructions=tutor_instructions(target["subject"]), input=prompt,
+        model=TUTOR_MODEL, instructions=tutor_instructions(target["subject"], topic=target.get("concept")), input=prompt,
         max_output_tokens=ANSWER_TOKEN_LIMIT, temperature=0.15,
         **quality_options(),
     )
@@ -4421,11 +4834,151 @@ def logout():
 
 
 @app.get("/settings")
+@login_required
 def settings():
+    entitlement = db.session.scalar(db.select(PremiumEntitlement).where(
+        PremiumEntitlement.user_id == current_user.id))
     return render_template(
         "settings.html",
         next_url=safe_internal_url(request.args.get("next")),
+        premium_entitlement=entitlement,
+        premium_active=has_active_premium(current_user),
+        premium_expiry=as_utc(entitlement.expires_at) if entitlement else None,
+        premium_remaining_days=(max(0, int((as_utc(entitlement.expires_at) - utcnow()).total_seconds() // 86400))
+                                if entitlement and has_active_premium(current_user) else 0),
+        premium_admin=_premium_admin(),
     )
+
+
+@app.post("/settings/premium/redeem")
+@login_required
+def redeem_premium_key():
+    raw_key = request.form.get("premium_key", "").strip()
+    if not raw_key or len(raw_key) > 120:
+        flash(tr("Enter a valid Premium key."), "error")
+        return redirect(url_for("settings"))
+    key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    now = utcnow()
+    try:
+        key = db.session.scalar(db.select(PremiumKey).where(
+            PremiumKey.key_hash == key_hash).with_for_update())
+        if not key:
+            db.session.rollback()
+            flash(tr("That Premium key is invalid."), "error")
+            return redirect(url_for("settings"))
+        if key.revoked_at:
+            db.session.rollback()
+            flash(tr("That Premium key has been revoked."), "error")
+            return redirect(url_for("settings"))
+        if key.redeemed_at:
+            db.session.rollback()
+            flash(tr("That Premium key has already been redeemed."), "error")
+            return redirect(url_for("settings"))
+        if as_utc(key.expires_at) <= now:
+            db.session.rollback()
+            flash(tr("That Premium key has expired."), "error")
+            return redirect(url_for("settings"))
+        claimed = db.session.execute(db.update(PremiumKey).where(
+            PremiumKey.id == key.id, PremiumKey.redeemed_at.is_(None),
+            PremiumKey.revoked_at.is_(None), PremiumKey.expires_at > now
+        ).values(redeemed_at=now, redeemed_by_id=current_user.id))
+        if claimed.rowcount != 1:
+            db.session.rollback()
+            flash(tr("That Premium key is no longer available."), "error")
+            return redirect(url_for("settings"))
+        entitlement = db.session.scalar(db.select(PremiumEntitlement).where(
+            PremiumEntitlement.user_id == current_user.id).with_for_update())
+        if entitlement and entitlement.status == "active" and as_utc(entitlement.expires_at) > now:
+            entitlement.expires_at = as_utc(entitlement.expires_at) + timedelta(days=key.duration_days)
+        else:
+            if entitlement:
+                entitlement.starts_at = now
+                entitlement.expires_at = now + timedelta(days=key.duration_days)
+                entitlement.status = "active"
+            else:
+                entitlement = PremiumEntitlement(
+                    user_id=current_user.id, starts_at=now,
+                    expires_at=now + timedelta(days=key.duration_days), status="active")
+                db.session.add(entitlement)
+        entitlement.updated_at = now
+        db.session.add(PremiumRedemption(
+            premium_key_id=key.id, user_id=current_user.id, redeemed_at=now))
+        db.session.commit()
+    except (IntegrityError, SQLAlchemyError):
+        db.session.rollback()
+        app.logger.exception("Premium key redemption failed")
+        flash(tr("We could not redeem that key right now. Please try again."), "error")
+        return redirect(url_for("settings"))
+    flash(tr("Premium is active until {date}.", date=entitlement.expires_at.strftime("%Y-%m-%d %H:%M UTC")), "success")
+    return redirect(url_for("settings"))
+
+
+def _premium_key_status(key, now=None):
+    now = now or utcnow()
+    if key.revoked_at:
+        return "revoked"
+    if key.redeemed_at:
+        return "redeemed"
+    if as_utc(key.expires_at) <= now:
+        return "expired"
+    return "unused"
+
+
+def _premium_admin_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not _premium_admin():
+            abort(404)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/admin/premium-keys", methods=["GET", "POST"])
+@_premium_admin_required
+def admin_premium_keys():
+    issued_key = None
+    if request.method == "POST":
+        amount = request.form.get("payment_amount", "").strip()[:30]
+        payment_date_raw = request.form.get("payment_date", "").strip()
+        reference = request.form.get("payment_reference", "").strip()[:100]
+        try:
+            if request.form.get("payment_confirmed") != "yes":
+                raise ValueError
+            if not amount or not re.fullmatch(r"\d{1,8}(?:[.,]\d{1,2})?", amount):
+                raise ValueError
+            payment_date = date.fromisoformat(payment_date_raw)
+            if not reference:
+                raise ValueError
+        except ValueError:
+            flash(tr("Enter a valid payment amount and date."), "error")
+            return redirect(url_for("admin_premium_keys"))
+        issued_key = "LN-PREM-" + secrets.token_urlsafe(24)
+        record = PremiumKey(
+            key_hash=hashlib.sha256(issued_key.encode("utf-8")).hexdigest(),
+            duration_days=30, created_at=utcnow(),
+            expires_at=utcnow() + timedelta(days=365), created_by_id=current_user.id,
+            payment_amount=amount, payment_date=payment_date,
+            payment_reference=reference,
+        )
+        db.session.add(record)
+        db.session.commit()
+    keys = db.session.scalars(db.select(PremiumKey).order_by(PremiumKey.created_at.desc()).limit(200)).all()
+    return render_template("admin_premium_keys.html", keys=keys,
+                           key_status=_premium_key_status, issued_key=issued_key)
+
+
+@app.post("/admin/premium-keys/<int:key_id>/revoke")
+@_premium_admin_required
+def revoke_premium_key(key_id):
+    key = db.session.get(PremiumKey, key_id)
+    if key and _premium_key_status(key) == "unused":
+        key.revoked_at = utcnow()
+        db.session.commit()
+        flash(tr("The unused key was revoked."), "success")
+    else:
+        flash(tr("Only unused Premium keys can be revoked."), "error")
+    return redirect(url_for("admin_premium_keys"))
 
 
 @app.post("/settings/language")
@@ -4458,8 +5011,22 @@ def update_grade():
     return redirect(destination)
 
 
+@app.post("/settings/school-type")
+@login_required
+def update_school_type():
+    school_type = curriculum.normalize_school_type(request.form.get("school_type", ""))
+    destination = safe_internal_url(request.form.get("next")) or url_for("settings")
+    if not school_type:
+        flash(tr("Please choose your school type."), "error")
+        return redirect(destination)
+    current_user.school_type = school_type
+    db.session.commit()
+    flash(tr("Your school type was saved."), "success")
+    return redirect(destination)
+
+
 # Paths exempt from the one-time grade prompt (APIs, auth, static, the prompt itself).
-_GRADE_GATE_EXEMPT = ("/static", "/api", "/onboarding", "/settings", "/logout", "/login", "/register", "/health", "/about")
+_GRADE_GATE_EXEMPT = ("/static", "/api", "/onboarding", "/settings", "/logout", "/login", "/register", "/health", "/about", "/ads.txt")
 
 
 @app.before_request
@@ -4532,6 +5099,15 @@ def index():
 @app.get("/health")
 def health():
     return jsonify(ok=True, status="ok")
+
+
+# Google AdSense authorised-seller record; must be served from the site root as plain text.
+ADS_TXT = "google.com, pub-5205912301427741, DIRECT, f08c47fec0942fa0\n"
+
+
+@app.get("/ads.txt")
+def ads_txt():
+    return app.response_class(ADS_TXT, mimetype="text/plain")
 
 
 @app.get("/about")
@@ -6235,7 +6811,11 @@ Return exactly {count} questions and follow each section's question_count propor
                 str(item.id): section_source_text(item)[:300] for item in included
             },
         },
-        model=TUTOR_MODEL, instructions=tutor_instructions(), input=prompt,
+        model=TUTOR_MODEL, input=prompt,
+        instructions="\n\n".join(filter(None, [
+            tutor_instructions(),
+            curriculum_instruction(project.subject, " ".join(item.title for item in included)),
+        ])),
         max_output_tokens=max(PROJECT_TOKEN_LIMIT, count * 350), temperature=0.1,
         **quality_options(),
     )
@@ -7169,7 +7749,9 @@ def start_saved_practice(prompt, subject, log_task, test_total, adaptive_plan=No
             if adaptive_plan else {"subject": subject}
         ),
         model=TUTOR_MODEL,
-        instructions=tutor_instructions(adaptive_plan[0]["subject"] if adaptive_plan else subject),
+        instructions=tutor_instructions(
+            adaptive_plan[0]["subject"] if adaptive_plan else subject,
+            topic=adaptive_plan[0].get("concept") if adaptive_plan else None),
         input=prompt,
         max_output_tokens=LESSON_TOKEN_LIMIT,
         temperature=0.2,
@@ -7652,7 +8234,10 @@ The first question must be easy, check understanding of the explanation, and not
             task_type="lesson_generation",
             language=language,
             model=VISION_MODEL if uploads else TUTOR_MODEL,
-            instructions=tutor_instructions(subject),
+            instructions=tutor_instructions(
+                subject, topic=study_goal,
+                teaching=topic_teaching_plan(subject, topic_text=study_goal,
+                                             request=explanation_level.detect_request(study_goal))[1]),
             input=[{"role": "user", "content": content}],
             max_output_tokens=LESSON_TOKEN_LIMIT,
             temperature=0.2,
@@ -7996,7 +8581,11 @@ Follow the exact null/object structure shown above. Do not replace a required ob
                 "difficulty": (adaptive_plan[0] if adaptive_plan else {}).get("difficulty"),
             },
             model=TUTOR_MODEL,
-            instructions=tutor_instructions(question_subject),
+            # Feedback and the correction are explanations too: pitched at this topic's level.
+            instructions=tutor_instructions(
+                question_subject, topic=f"{question.get('concept', '')} {question.get('prompt', '')}",
+                teaching=topic_teaching_plan(
+                    question_subject, question.get("concept"), state=session.get("teaching"))[1]),
             input=prompt,
             max_output_tokens=ANSWER_TOKEN_LIMIT,
             temperature=0.1,
@@ -8114,7 +8703,15 @@ Follow the exact null/object structure shown above. Do not replace a required ob
             "retry_count": retry_count,
             "response_confidence": response_confidence,
             "evidence_weights": {},
+            "diagnosis": str(diagnosis.get("primary_diagnosis", {}).get("tag", "")),
         })
+        # How the next explanation should change after this answer (a slip, a
+        # misconception, a run of correct answers) - see explanation_level.after_answer.
+        # An answer that does not count (flawed question) moves nothing, as for mastery.
+        if score_counts:
+            session["teaching"] = explanation_level.after_answer(
+                session.get("teaching"), score=score, tag=session["history"][-1]["diagnosis"],
+                hints_used=hints_used, response_confidence=response_confidence)
         for concept_name in question_concepts:
             concept_record = session["mastery"].setdefault(
                 concept_name, {"attempts": 0, "total_score": 0}
@@ -8328,8 +8925,14 @@ def tutor_chat():
     payload = request.get_json(silent=True) or {}
     session = owned_session(payload.get("session_id"))
     message = str(payload.get("message", "")).strip()
+    # Explanation controls ("Simpler explanation", ...) arrive as a control token; the
+    # visible label is the message, so the transcript reads naturally either way.
+    control = str(payload.get("control") or "").strip()
+    control = control if control in explanation_level.CONTROLS else None
     if not session:
         return api_error(tr("This lesson expired. Upload the material again."), 404, "lesson_expired")
+    if not message and control:
+        message = tr(CHAT_CONTROL_LABELS[control])
     if not message:
         return api_error(tr("Write a message for your tutor."), 400, "message_required")
     if len(message) > 4000:
@@ -8390,6 +8993,18 @@ def tutor_chat():
         token_budget=int(app.config.get("TUTOR_CHAT_HISTORY_TOKEN_BUDGET", 1500)),
     )
     transcript = assistant.render_transcript(window, speaker="Student", responder="Tutor")
+    # The lesson topic anchors retrieval; the new message alone ("und warum?") rarely names it.
+    curriculum_topic = " ".join([chat_context["lesson_title"], *chat_context["concepts"], message])
+    # The topic being taught right now: the open question's concept, else the lesson's focus.
+    focus_concept = (
+        (session.get("current_question") or {}).get("concept")
+        or next((item.get("concept") for item in session.get("focus_concepts") or [] if item.get("concept")), None)
+        or next(iter(chat_context["concepts"]), None)
+    )
+    teaching_request = control or explanation_level.detect_request(message)
+    teaching_plan, teaching_block = topic_teaching_plan(
+        chat_context["subject"], focus_concept, topic_text=curriculum_topic,
+        request=teaching_request, state=session.get("teaching"))
     prompt = f"""Tutor the student using this lesson state:
 {json.dumps(chat_context, ensure_ascii=False)}
 
@@ -8411,7 +9026,9 @@ Treat a short or fragmentary reply as the student's attempt at your last questio
             task_type="tutor_chat",
             language=session["language"],
             model=TUTOR_CHAT_MODEL,
-            instructions=f"{tutor_instructions(session.get('subject'))}\n\n{TUTOR_CHAT_COACHING}",
+            instructions=(
+                f"{tutor_instructions(session.get('subject'), topic=curriculum_topic, teaching=teaching_block)}"
+                f"\n\n{TUTOR_CHAT_COACHING}"),
             input=prompt,
             max_output_tokens=CHAT_TOKEN_LIMIT,
             temperature=0.3,
@@ -8425,6 +9042,9 @@ Treat a short or fragmentary reply as the student's attempt at your last questio
             {"role": "student", "content": message},
             {"role": "tutor", "content": stored_reply},
         ])
+        # Only a delivered reply moves the level: a failed call must not make the next
+        # attempt simpler than the student asked for.
+        session["teaching"] = explanation_level.record_request(session.get("teaching"), teaching_request)
         lesson_record = db.session.scalar(db.select(Lesson).where(
             Lesson.session_id == payload.get("session_id"), Lesson.user_id == current_user.id))
         if lesson_record:
@@ -8434,7 +9054,7 @@ Treat a short or fragmentary reply as the student's attempt at your last questio
             ])
             save_session_state(payload.get("session_id"), commit=False)
             db.session.commit()
-        return jsonify(ok=True, reply=reply, mastery=mastery_snapshot(session))
+        return jsonify(ok=True, reply=reply, mastery=mastery_snapshot(session), teaching=teaching_plan.summary())
     except ai_service.AITokenLimitError:
         # Must precede AIGatewayError (its parent): the generic mapping says "the
         # uploaded material is too large", which is nonsense for a typed chat message.
@@ -10869,7 +11489,7 @@ Return JSON exactly as {{"title":"short title","cards":[{{"type":"question_answe
         response = create_response(
             task_type="flashcard_generation", language=language,
             validation_context={"card_count": count}, model=TUTOR_MODEL,
-            instructions=tutor_instructions(subject), input=prompt,
+            instructions=tutor_instructions(subject, topic=f"{document.original_filename} {source_text[:1500]}"), input=prompt,
             max_output_tokens=FLASHCARD_TOKEN_LIMIT, temperature=0.2,
             **quality_options(),
         )
