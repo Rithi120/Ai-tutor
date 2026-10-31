@@ -773,6 +773,16 @@ def normalize_recognition(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Shared with every other image reader (learnova/vision/prompts.py imports these), so a
+# project page, a chat photo and a photographed answer follow one set of reading rules.
+CONFUSABLE_CHARACTERS = "1/7/9, 0/O/6, 5/S, 2/Z, 4/9, u/v, x/×/+, a comma/a decimal point, a minus/a dash"
+MATH_RULES = (
+    "Mathematics keeps its structure: fractions, negative signs, exponents, roots, parentheses, = < > ≤ ≥ ≠, "
+    "units, and decimal separators exactly as written (a German decimal comma stays a comma). A calculation "
+    "is one line per written line, in the original order, with every intermediate step; matrices and "
+    "systems of equations row by row. Never solve, simplify or fix the mathematics while reading it.")
+
+
 def recognition_instructions(subject: str, page_order: int) -> str:
     schema = {
         "blocks": [{
@@ -803,5 +813,9 @@ def recognition_instructions(subject: str, page_order: int) -> str:
         "candidate for student confirmation. Leave nearby_text empty except on diagram "
         "blocks and suggested_correction empty unless you have a genuinely better "
         "reading: nothing else reads them, and every extra character is output you "
-        "are charged for."
+        "are charged for. "
+        f"Characters that are easily confused ({CONFUSABLE_CHARACTERS}) are read from the stroke itself; when "
+        "the image does not settle which one it is, keep the literal reading in 'content', lower 'confidence', "
+        "and put the alternative in 'suggested_correction' - never silently pick the one that makes sense. "
+        + MATH_RULES
     )

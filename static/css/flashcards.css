@@ -372,6 +372,35 @@ a.ghost-button { text-decoration: none; display: inline-block; }
 .mod-section ul { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
 .mod-content { max-height: 16rem; overflow-y: auto; border: 1px solid #ece7fb; border-radius: 10px; padding: .6rem .8rem; font-size: .85rem; background: #fbfaff; }
 .mod-stale { color: #9b1c1c; font-weight: 600; font-size: .85rem; }
+.mod-reports { margin-top: 2rem; }
+.mod-reports-header { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.mod-finding { border-top: 1px dashed #ece7fb; padding-top: .5rem; }
+.mod-correct { margin-top: .6rem; }
+.mod-correct .field-row { display: flex; gap: .6rem; flex-wrap: wrap; margin: .4rem 0; }
+.mod-correct input[type="text"] { width: 100%; }
+
+/* Report form: which entry. A native select is the shortest path on a phone. */
+.report-entry-label { font-size: .85rem; font-weight: 600; }
+.report-entry { width: 100%; max-width: 100%; border: 1px solid #ece7fb; border-radius: 10px; padding: .45rem .6rem; font: inherit; }
+
+/* Per-entry quality suggestions. Amber and dotted, so they read as "please check" and
+   are never confused with the safety outcome, which is its own block above them. The
+   explanation is visible text, not a hover tooltip, so touch and keyboard users get it. */
+.entry-warnings { margin-top: 1rem; padding: .9rem 1rem; border: 1px solid #f3dfb4; border-radius: 14px; background: #fffaf0; }
+.entry-warnings h4 { margin: .3rem 0; }
+.entry-warnings-badge { display: inline-block; margin: 0; padding: .15rem .55rem; border-radius: 999px; background: #fff0d1; color: #7a4f00; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.entry-warning-list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .6rem; }
+.entry-warning { padding: .6rem .75rem; border-radius: 10px; background: #fff; border: 1px solid #f3dfb4; min-width: 0; }
+.entry-warning p { margin: .15rem 0; overflow-wrap: anywhere; }
+.entry-warning-where { font-size: .78rem; opacity: .75; }
+.entry-warning-mark { background: transparent; color: inherit; font-weight: 600; text-decoration: underline dotted #c27c00 2px; text-underline-offset: 3px; }
+.entry-warning-message { font-size: .9rem; }
+.entry-warning-note, .entry-warning-suggestion { font-size: .85rem; }
+.entry-warning-state { font-size: .82rem; font-weight: 600; color: #1b6b3a; }
+.entry-warning:not([data-state="open"]) { opacity: .85; }
+.entry-warning-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
+.entry-warning-actions > * { min-height: 40px; }
+.quality-pending { font-weight: 600; }
 
 /* Maths preview under an editor field: the field keeps the LaTeX source, the preview shows the card. */
 .card-math-preview { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(110, 92, 255, .07); color: var(--ln-ink); font-size: 15px; line-height: 1.5; overflow-x: auto; }

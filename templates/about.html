@@ -61,7 +61,7 @@
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🎯</span>
         <h3>{{ _('Tests that know when to stop') }}</h3>
-        <p>{{ _('Practice tests adapt between 3 and 15 questions and end once you have shown you know each concept — no busywork on material you already mastered.') }}</p>
+        <p>{{ _('Practice tests adapt between {min} and {max} questions and end once you have shown you know each concept — no busywork on material you already mastered.', min=about_facts.min_questions, max=about_facts.max_questions) }}</p>
       </article>
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">💬</span>
@@ -76,12 +76,27 @@
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🃏</span>
         <h3>{{ _('Flashcards and community sets') }}</h3>
-        <p>{{ _('Create flashcards yourself or generate them from your material, review them with spaced repetition, and browse sets other students published.') }}</p>
+        <p>{{ _('Create flashcards yourself or generate them from your material, review them with spaced repetition, and browse sets other students published. Every shared set is checked before it goes public, and you can report a problem.') }}</p>
       </article>
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🎓</span>
-        <h3>{{ _('Exam preparation with a plan') }}</h3>
-        <p>{{ _('Upload a whole project — notes, scans, PDFs — and Learnova structures it into sections, section tests, final exams and a day-by-day study plan toward your exam date.') }}</p>
+        <h3>{{ _('Project Mode') }}</h3>
+        <p>{{ _('Upload notes, a Kompetenzraster or just type your topics. Learnova finds the topics, teaches and tests them, and plans every day — toward your exam date, or as a flexible plan without one.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🗣️</span>
+        <h3>{{ _('Vocabulary Trainer') }}</h3>
+        <p>{{ _('Photograph a vocabulary page from your textbook and practise the words in both directions until they stick.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">✨</span>
+        <h3>{{ _('An assistant for quick questions') }}</h3>
+        <p>{{ _('Ask anything in a direct chat — no lesson needed. Add a photo of a task and pick a style for how it answers.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🏆</span>
+        <h3>{{ _('XP, challenges and weekly leagues') }}</h3>
+        <p>{{ _('Earn XP for real learning, unlock avatars, complete daily and weekly challenges and climb a weekly league — or switch the league off in Settings.') }}</p>
       </article>
     </div>
     <ul class="about-chip-row" aria-label="{{ _('Also good to know') }}">
@@ -166,7 +181,7 @@
           </tr>
           <tr>
             <th scope="row">{{ _('Price') }}</th>
-            <td class="about-table-self">{{ _('Free with fair-use AI limits') }}</td>
+            <td class="about-table-self">{{ _('Free plan with limits; Premium {price} € a month', price=about_facts.price) }}</td>
             <td>{{ _('Free with ads; paid plans remove limits') }}</td>
             <td>{{ _('Free core; paid tier for unlimited AI') }}</td>
             <td>{{ _('Small free tier; paid plans') }}</td>
@@ -218,12 +233,12 @@
         <p>{{ _('AI-generated answers can be wrong or incomplete. For anything important — especially before an exam — double-check against your class material.') }}</p>
       </article>
       <article class="about-card">
-        <h3>{{ _('Free to use') }}</h3>
-        <p>{{ _('Learnova is currently free. There are no paid plans; fair-use limits on AI help keep the service available for everyone.') }}</p>
+        <h3>{{ _('Free, with an optional Premium') }}</h3>
+        <p>{{ _('The free plan includes every feature, with limits: new projects ({projects} every {days} days), {lessons} new lessons a day outside projects and an allowance for the AI chat. Lessons and tests inside your projects are unlimited. Premium costs {price} € a month, removes these limits and never shows ads. It does not change which AI model you get.', projects=about_facts.projects, days=about_facts.project_days, lessons=about_facts.lessons, price=about_facts.price) }}</p>
       </article>
       <article class="about-card">
         <h3>{{ _('Your material stays yours') }}</h3>
-        <p>{{ _('Uploads, lessons, attempts and progress are stored in your account and used to build your study materials. Nothing is shared with other students unless you publish a flashcard set yourself.') }}</p>
+        <p>{{ _('Uploads, lessons, attempts and progress are stored in your account and used to build your study materials. Other students see your username, avatar and Premium badge — your level and achievements only while your profile is public, and your weekly XP if you take part in a league. Flashcard sets become public only when you publish them.') }}</p>
       </article>
     </div>
   </section>
@@ -237,7 +252,7 @@
       </details>
       <details>
         <summary>{{ _('Is Learnova free?') }}</summary>
-        <p>{{ _('Yes. All features are free; AI help has fair-use limits so the service stays available for everyone.') }}</p>
+        <p>{{ _('Yes. The free plan includes every feature, with limits on new projects, new lessons outside projects and AI chat. Lessons and tests inside a project are unlimited. Premium ({price} € a month) removes these limits.', price=about_facts.price) }}</p>
       </details>
       <details>
         <summary>{{ _('How is Learnova different from ChatGPT?') }}</summary>
@@ -249,7 +264,11 @@
       </details>
       <details>
         <summary>{{ _('Can Learnova prepare me for exams?') }}</summary>
-        <p>{{ _('Yes — upload your material as a project, set the exam date, and work through sections, section tests, final exams and a day-by-day plan.') }}</p>
+        <p>{{ _('Yes. In Project Mode, create a learning project from your notes, a Kompetenzraster or just the topics, and add your exam date. Learnova plans each day, repeats your weak spots and lets you write practice exams. Without a date you get a flexible learning plan.') }}</p>
+      </details>
+      <details>
+        <summary>{{ _('Who can see my profile?') }}</summary>
+        <p>{{ _('Other students see your username and avatar, for example in your weekly league and next to flashcard sets you publish under your name. Your level, streak and achievements are shown only while your profile is public, and your email is never shown. You can make your profile private or leave the league in Settings.') }}</p>
       </details>
       <details>
         <summary>{{ _('Can the AI make mistakes?') }}</summary>

@@ -160,9 +160,9 @@ student can act on.
 A paid provider is **off until it has a cap**. That is the one asymmetry, and it is
 deliberate: a provider that bills must be switched on by a decision, never by omission.
 
-The older per‑user *request* caps (`AI_MAX_REQUESTS_PER_USER_HOUR` / `_DAY`) and the
-per‑session token cap (`AI_MAX_TOKENS_PER_SESSION`) still apply; they are abuse protection
-and run before the cache is consulted.
+The older per‑user *request* caps (`AI_MAX_REQUESTS_PER_USER_HOUR` / `_DAY`) still apply;
+they are abuse protection and run before the cache is consulted. There is no per‑session
+token cap: it stopped long Projektmodus tests partway and was removed on 2026-10-31.
 
 ### Never silently exceeded
 

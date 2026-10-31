@@ -1,0 +1,14 @@
+{# Project Mode on the Overview: one next action, today's combined workload, exams. #}
+{% set overview = learning_overview %}
+<section class="pm-home reveal-card" aria-labelledby="pmHomeTitle">
+  <span class="eyebrow">{{ _('YOUR LEARNING PLAN') }}</span>
+  {% if overview.next %}{% set day, next_project, task = overview.next %}
+  <h2 id="pmHomeTitle">{{ next_project.title }}: {% if task.kind == 'learn' %}{{ _('Learn') }} {{ task.title }}{% elif task.kind == 'review' %}{{ _('Review') }} {{ task.title }}{% elif task.kind == 'mock_exam' %}{{ _('Practice exam') }}{% elif task.kind == 'reteach' %}{{ _('Explained differently') }}: {{ task.title }}{% else %}{{ _('Mixed practice') }}{% endif %}</h2>
+  <p>{{ _('Today: {count} tasks, {minutes} of {budget} minutes', count=overview.today_count, minutes=overview.today_minutes, budget=overview.daily_minutes) }}</p>
+  <form method="post" action="{{ url_for('project_next', project_id=next_project.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="primary-button" type="submit">{{ _('Next') }} <span aria-hidden="true">→</span></button></form>
+  {% else %}
+  <h2 id="pmHomeTitle">{{ _('Everything planned is done') }}</h2>
+  {% endif %}
+  {% for warning in overview.warnings %}<p class="pm-warning" role="alert">{{ warning.project.title }}: {{ _('{count} topic(s) do not fit before the exam.', count=warning.count) }}</p>{% endfor %}
+  {% if overview.exams %}<ul class="pm-exams">{% for project in overview.exams %}<li><a href="{{ url_for('project_dashboard', project_id=project.id) }}">{{ project.title }}</a><span>{{ project.exam_date.strftime('%d.%m.') }} · {{ _('{days} days left', days=(project.exam_date - overview.today).days) }}</span></li>{% endfor %}</ul>{% endif %}
+</section>

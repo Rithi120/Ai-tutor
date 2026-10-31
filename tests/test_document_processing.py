@@ -126,12 +126,16 @@ class DocumentWorkflowTests(unittest.TestCase):
 
     def test_camera_fallback_combined_capture_review_correction_restart_and_ownership(self):
         projects_page = self.client.get("/projects")
-        self.assertIn(b"Upload PDF", projects_page.data)
-        self.assertIn(b"Upload Images", projects_page.data)
+        # One file input takes photos and PDFs together; the camera scanner sits beside it.
+        self.assertIn(b"Photos or PDFs", projects_page.data)
+        self.assertIn(b"application/pdf,image/jpeg", projects_page.data)
         self.assertIn(b"Scan with Camera", projects_page.data)
         scanner = self.client.get("/static/scanner.js")
         self.assertIn(b"getUserMedia", scanner.data)
-        self.assertIn(b"Upload Images", scanner.data)
+        # Without a live camera the scanner falls back to the phone's own camera app.
+        self.assertIn(b"nativeCameraInput", scanner.data)
+        self.assertIn(b"cameraUnavailableNative", scanner.data)
+        self.assertIn(b'id="nativeCameraInput"', projects_page.data)
         self.assertIn(b"getTracks", scanner.data)
         scanner.close()
 

@@ -24,10 +24,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +39,37 @@ STUDENT_PAGES = [
     "/dashboard", "LESSON", "/assistant", "/settings", "/flashcards", "/flashcards/create",
     "/flashcards/import", "/progress", "/projects", "/practice/today", "/study-plans", "/study-plans/new",
     "/vocabulary", "/vocabulary/import", "/community", "/insights/mistakes", "/onboarding/grade",
+    "PROJECT_REVIEW", "PROJECT", "LESSON_WRITTEN", "EXAM",
+    # Pages that need data first; created in login_and_create_lesson. A key whose data
+    # could not be made is skipped, never audited as a 404.
+    "PROJECT_START", "PROJECT_SECTION", "EXAM_SETUP", "EXAM_RESULTS",
+    "STUDY_PLAN_CALENDAR", "STUDY_SESSION", "LESSON_SAVED", "CONCEPT",
+    "FLASHCARD_SET", "FLASHCARD_STUDY", "FLASHCARD_LEARN", "FLASHCARD_TEST", "FLASHCARD_MATCH",
+    "FLASHCARD_BLAST", "FLASHCARD_BLOCKS", "FLASHCARD_EDIT", "FLASHCARD_PUBLISH",
+    "ADMIN_CODES", "INTERNAL_DIAGNOSTICS", "INTERNAL_MODERATION",
+    "/profile", "/leaderboard", "PUBLIC_PROFILE",
 ]
+# A photo is attached on these pages, so the photo tray and sent-photo thumbnails are
+# measured too: (file input, send button or None, what to wait for after sending).
+PHOTO_STEPS = {
+    "LESSON": ("#chatGallery", None, None),
+    "/assistant": ("#asstGallery", "#asstSend", ".asst-msg-assistant:not(.asst-pending)"),
+}
+PHOTO_PATH: Path | None = None
+# --ignore-console REGEX: console errors matching it are reported but do not fail a page.
+IGNORED_CONSOLE: "re.Pattern[str] | None" = None
+# Pages that forward elsewhere on purpose (the vocabulary hub lives on the import page;
+# onboarding is done once a grade is set, which the audit account has).
+EXPECTED_REDIRECTS = {"/vocabulary": "/vocabulary/import", "/onboarding/grade": "/",
+                      # One Projektmodus: the old planner entry points lead to the projects.
+                      "/study-plans": "/projects", "/study-plans/new": "/projects"}
+# Pages whose test is started first, so the question card (and its photo buttons) is measured.
+START_TEST_PAGES = {"LESSON_WRITTEN"}
+READING = {"images": [{"index": 1, "kind": "handwritten_notes"}],
+           "blocks": [{"image": 1, "type": "formula", "text": "4^2 · 4^3 = [?4^5]", "latex": "4^2 \\cdot 4^3 = 4^5",
+                       "author": "student", "confidence": 0.9}],
+           "uncertain": [{"image": 1, "text": "4^5", "alternatives": ["4^6"], "affects_answer": True}],
+           "clarification_question": "Steht im Exponenten 5 oder 6?", "summary": "Eine Potenzrechnung."}
 
 LESSON = {
     "lesson_title": "Potenzgesetze: Produkte von Potenzen mit gleicher Basis",
@@ -145,6 +177,44 @@ AUDIT_JS = r"""
   }
   const lead = document.querySelector('main p, .prose, main li');
   out.bodyFont = lead ? parseFloat(getComputedStyle(lead).fontSize) : null;
+  // Dark mode: text whose colour and painted background are both light is invisible.
+  // The background is the nearest ancestor that actually paints one. Light surfaces
+  // with dark text are only listed (a callout may be light on purpose).
+  out.invisibleText = [];
+  out.lightSurfaces = [];
+  if (document.documentElement.dataset.theme === 'dark') {
+    const rgb = value => {
+      const m = String(value).match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const parts = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+      return {lum: (0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]) / 255, alpha: parts.length > 3 ? parts[3] : 1};
+    };
+    const paintedBackground = el => {
+      for (let node = el; node && node !== document.documentElement; node = node.parentElement) {
+        const colour = rgb(getComputedStyle(node).backgroundColor);
+        if (colour && colour.alpha >= 0.6) return {colour, node};
+        if (getComputedStyle(node).backgroundImage !== 'none') return null;  // gradients: not judged
+      }
+      return null;
+    };
+    for (const el of document.body.querySelectorAll('*')) {
+      if (!visible(el) || el.closest('[aria-hidden="true"], .hidden, template, script, style, ins.adsbygoogle, .ai-mode-badge, .katex')) continue;
+      const own = [...el.childNodes].some(node => node.nodeType === 3 && node.textContent.trim());
+      const painted = paintedBackground(el);
+      if (!painted || painted.colour.lum < 0.82) continue;
+      const surface = describe(painted.node) + (painted.node.parentElement ? ' in ' + describe(painted.node.parentElement) : '');
+      if (own) {
+        const text = rgb(getComputedStyle(el).color);
+        if (text && text.lum > 0.62) out.invisibleText.push(`${describe(el)} on ${surface}`);
+      }
+      if (painted.node === el && !['IMG', 'VIDEO', 'CANVAS', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) {
+        const r = el.getBoundingClientRect();
+        if (r.width * r.height >= 900) out.lightSurfaces.push(surface);
+      }
+    }
+    out.invisibleText = [...new Set(out.invisibleText)].slice(0, 12);
+    out.lightSurfaces = [...new Set(out.lightSurfaces)].slice(0, 20);
+  }
   return out;
 }
 """
@@ -163,12 +233,163 @@ def _prepare_environment() -> Path:
     return scratch
 
 
+PROJECT_TOPICS = [
+    "Gleichförmige Bewegung", "Geschwindigkeit und Durchschnittsgeschwindigkeit", "Beschleunigung",
+    "Freier Fall", "Kraft und Gegenkraft", "Energieerhaltungssatzanwendungsaufgaben",
+]
+
+
 def _fake_response(**kwargs):
+    import re
+
+    task = kwargs.get("task_type")
+    if task == "ocr_document_recognition":
+        payload = {"blocks": [{"type": "handwriting", "content": "Gleichförmige Bewegung: v = s / t. " * 30,
+                               "bbox": [0.05, 0.05, 0.95, 0.9], "confidence": 0.9, "crossed_out": False,
+                               "important_candidate": False, "teacher_highlight_candidate": False, "nearby_text": ""}],
+                   "detected_page_number": "1", "warning": ""}
+    elif task == "project_section_generation":
+        pages = [int(value) for value in re.findall(r'"page_id": (\d+)', str(kwargs.get("input", "")))] or [1]
+        payload = {"sections": [{"title": title, "source_page_ids": pages, "learning_goals": [f"{title} erklären"],
+                                 "standard_explanation": title, "estimated_minutes": 15,
+                                 "difficulty": "hard" if index % 3 == 2 else "medium"}
+                                for index, title in enumerate(PROJECT_TOPICS)]}
+    elif task == "final_exam_generation":
+        payload = _fake_exam(str(kwargs.get("input", "")))
+    elif task == "final_exam_evaluation":
+        payload = {"results": [{"question_id": question_id, "score": 70, "evaluation": "Teilweise richtig: die Einheit fehlt."}
+                               for question_id in (kwargs.get("validation_context") or {}).get("question_ids", [])]}
+    elif task in ("tutor_chat", "assistant_chat"):
+        payload = CHAT_REPLY
+    elif task == "image_understanding":
+        payload = READING
+    elif "Schriftlich" in json.dumps(kwargs.get("input", ""), ensure_ascii=False):
+        # The same lesson with a written-answer question, so "Photo of my working" shows.
+        payload = {**LESSON, "question": {**LESSON["question"], "type": "text", "options": [],
+                                          "prompt": "Berechne $4^2 \\cdot 4^3$ und schreibe den Rechenweg auf.",
+                                          "expected_answer": "1024"}}
+    else:
+        payload = LESSON
+
+    class Usage:
+        input_tokens = output_tokens = total_tokens = 0
+
     class Reply:
-        usage = None
+        usage = Usage()
         model = "audit"
-        output_text = CHAT_REPLY if kwargs.get("task_type") == "tutor_chat" else json.dumps(LESSON)
+        output_text = payload if isinstance(payload, str) else json.dumps(payload)
     return Reply()
+
+
+def _data_pages(page, base: str, project_id: int) -> dict:
+    """URLs of pages that need records: a flashcard set, a submitted exam, a study plan,
+    a saved lesson and a concept. Looked up in the app's own database (same process)."""
+
+    import app as application
+
+    urls: dict[str, str] = {}
+    cards = [{"type": "question_answer", "front": f"Begriff {number}: Gleichförmige Bewegung",
+              "back": f"Erklärung {number}: Geschwindigkeit ist Weg durch Zeit, v = s / t."}
+             for number in range(1, 9)]
+    created = page.request.post(f"{base}/api/flashcards/sets", data=json.dumps({
+        "title": "Physik – Bewegung", "subject": "Physics", "cards": cards}),
+        headers={"Content-Type": "application/json"})
+    if created.ok:
+        set_id = created.json()["id"]
+        for key, suffix in (("FLASHCARD_SET", ""), ("FLASHCARD_STUDY", "/study"), ("FLASHCARD_LEARN", "/learn"),
+                            ("FLASHCARD_TEST", "/test"), ("FLASHCARD_MATCH", "/match"), ("FLASHCARD_BLAST", "/blast"),
+                            ("FLASHCARD_BLOCKS", "/blocks"), ("FLASHCARD_EDIT", "/edit"),
+                            ("FLASHCARD_PUBLISH", "/publish")):
+            urls[key] = f"/flashcards/{set_id}{suffix}"
+    # A second exam, submitted, for the results page; the first stays open for EXAM.
+    second = page.request.post(f"{base}/projects/{project_id}/exam/new", max_redirects=0, form={
+        "question_count": "5", "duration_minutes": "30", "difficulty": "mixed"})
+    location = second.headers.get("location", "")
+    if "/exams/" in location:
+        exam_id = location.split("/exams/")[1].split("?")[0].split("/")[0]
+        with application.app.app_context():
+            questions = application.db.session.scalars(application.db.select(application.ExamQuestion).where(
+                application.ExamQuestion.exam_id == int(exam_id))).all()
+            form = {f"question_{question.id}": ("a" if question.question_type == "multiple_choice" else "v = s / t")
+                    for question in questions}
+        submitted = page.request.post(f"{base}/exams/{exam_id}/submit", form=form, max_redirects=0)
+        if "/results" in submitted.headers.get("location", ""):
+            urls["EXAM_RESULTS"] = f"/exams/{exam_id}/results"
+    with application.app.app_context():
+        session = application.db.session
+        plan = session.scalar(application.db.select(application.StudyPlan).where(
+            application.StudyPlan.project_id == project_id))
+        if plan is not None:
+            urls["STUDY_PLAN_CALENDAR"] = f"/study-plans/{plan.id}/calendar"
+            if plan.sessions:
+                urls["STUDY_SESSION"] = f"/study-plans/{plan.id}/sessions/{plan.sessions[0].id}"
+        section = session.scalar(application.db.select(application.LearningSection).where(
+            application.LearningSection.project_id == project_id))
+        if section is not None:
+            urls["PROJECT_SECTION"] = f"/projects/{project_id}/sections/{section.id}"
+        lesson = session.scalar(application.db.select(application.Lesson).order_by(application.Lesson.id))
+        if lesson is not None:
+            urls["LESSON_SAVED"] = f"/lessons/{lesson.id}"
+        user = session.scalar(application.db.select(application.User).where(application.User.username == "mobileaudit"))
+        if user is not None:
+            # A concept exists only once a question was answered; make one directly.
+            concept = application.get_or_create_mastery(user.id, "Physics", "Gleichförmige Bewegung")
+            session.commit()
+            urls["CONCEPT"] = f"/concepts/{concept.id}"
+            # Real rival accounts so the league table, Premium badge and a public profile
+            # render with content: long names, a Premium member, and the audit account.
+            application.award_xp(user.id, "audit", 60, "audit:xp:self")
+            for index, name in enumerate(("rival.one", "a_very_long_username_29chars", "rival.three", "rival.four")):
+                rival = application.User(username=name, email=f"{name}@example.com", avatar_id="explorer")
+                rival.set_password("correct-horse-battery")
+                session.add(rival)
+                session.flush()
+                application.award_xp(rival.id, "audit", 30 + 25 * index, f"audit:xp:{name}")
+                if index == 1:
+                    session.add(application.PremiumEntitlement(
+                        user_id=rival.id, status="active",
+                        expires_at=application.utcnow() + application.timedelta(days=30)))
+            session.commit()
+            urls["PUBLIC_PROFILE"] = "/u/a_very_long_username_29chars"
+    urls["ADMIN_CODES"] = "/admin/premium-keys"
+    urls["INTERNAL_DIAGNOSTICS"] = "/internal/ai-diagnostics"
+    urls["INTERNAL_MODERATION"] = "/internal/moderation"
+    return urls
+
+
+def _fake_exam(prompt: str) -> dict:
+    """A practice exam the app accepts: real section and page ids, an excerpt that is on the page."""
+
+    start = prompt.index("Sections and sources: ") + len("Sections and sources: ")
+    sections = json.loads(prompt[start:prompt.index("\nSettings:", start)])
+    count = int(re.search(r"question_count=(\d+)", prompt).group(1))  # type: ignore[union-attr]
+    questions = []
+    for index in range(count):
+        section = sections[index % len(sections)]
+        choice = index % 2 == 0
+        questions.append({
+            "id": f"q{index + 1}", "section_id": section["section_id"], "concepts": [section["title"]],
+            "source_page_ids": section["source_page_ids"][:1],
+            "supporting_text": "Gleichförmige Bewegung: v = s / t.",
+            "difficulty": ("easy", "medium", "hard")[index % 3],
+            "question_type": "multiple_choice" if choice else "short_answer",
+            "prompt": f"Frage {index + 1}: Wie lautet die Formel für die Geschwindigkeit bei einer gleichförmigen Bewegung?",
+            "options": [{"id": "a", "label": "v = s / t"}, {"id": "b", "label": "v = s · t"},
+                        {"id": "c", "label": "v = t / s"}] if choice else [],
+            "expected_answer": "a" if choice else "v = s / t",
+            "explanation": "Geschwindigkeit ist Weg durch Zeit.",
+        })
+    return {"questions": questions}
+
+
+def _note_png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    output = io.BytesIO()
+    Image.new("RGB", (900, 1200), "white").save(output, format="PNG")
+    return output.getvalue()
 
 
 def start_server(port: int):
@@ -178,6 +399,11 @@ def start_server(port: int):
     saved = {key: application.app.config.get(key) for key in ("WTF_CSRF_ENABLED", "RATELIMIT_ENABLED")}
     saved_limiter = application.limiter.enabled
     application.app.config.update(WTF_CSRF_ENABLED=False, RATELIMIT_ENABLED=False)
+    saved.update({key: application.app.config.get(key) for key in (
+        "PREMIUM_ADMIN_IDENTIFIERS", "AI_DIAGNOSTICS_ADMINS", "COMMUNITY_MODERATORS")})
+    application.app.config.update(
+        PREMIUM_ADMIN_IDENTIFIERS={"mobileaudit"}, AI_DIAGNOSTICS_ADMINS={"mobileaudit"},
+        COMMUNITY_MODERATORS={"mobileaudit"})
     application.limiter.enabled = False
     with application.app.app_context():
         application.db.drop_all()
@@ -224,7 +450,7 @@ def block_external(context, base: str) -> None:
     context.route("**/*", handle)
 
 
-def login_and_create_lesson(context, base: str) -> str:
+def login_and_create_lesson(context, base: str) -> dict:
     page = context.new_page()
     page.goto(f"{base}/register")
     page.fill("input[name=username]", "mobileaudit")
@@ -238,20 +464,98 @@ def login_and_create_lesson(context, base: str) -> str:
     response = page.request.post(f"{base}/api/analyze", multipart={"study_goal": "Potenzgesetze", "subject": "Mathematics"})
     session_id = response.json()["session_id"]
     page.request.post(f"{base}/api/tour/complete")
+    urls = {"LESSON": f"/?session_id={session_id}"}
+    written = page.request.post(f"{base}/api/analyze", multipart={"study_goal": "Potenzgesetze Schriftlich",
+                                                                  "subject": "Mathematics"})
+    urls["LESSON_WRITTEN"] = f"/?session_id={written.json()['session_id']}"
+    # Two learning projects: one waiting for its topics to be confirmed, one being learned.
+    from datetime import date, timedelta
+    learned_project = 0
+    for key, exam in (("PROJECT_REVIEW", None), ("PROJECT", (date.today() + timedelta(days=6)).isoformat())):
+        form = {"subject": "Physics", "title": "Physik – Mechanik und Energieerhaltung",
+                "materials": {"name": "notes.png", "mimeType": "image/png", "buffer": _note_png()}}
+        if exam:
+            form["exam_date"] = exam
+        created = page.request.post(f"{base}/projects", multipart=form, max_redirects=0)
+        project_id = created.headers["location"].split("/projects/")[1].split("/")[0]
+        page.request.post(f"{base}/projects/{project_id}/quick-start", headers={"Accept": "application/json"})
+        if key == "PROJECT":
+            page.request.post(f"{base}/projects/{project_id}/topics/confirm", form={"choice": "auto"})
+            # A practice exam on the learned project, so the exam page is measured too.
+            started = page.request.post(f"{base}/projects/{project_id}/exam/new", max_redirects=0, form={
+                "question_count": "5", "duration_minutes": "30", "difficulty": "mixed"})
+            location = started.headers.get("location", "")
+            if "/exams/" in location:
+                urls["EXAM"] = "/exams/" + location.split("/exams/")[1].split("?")[0]
+            else:
+                print(f"practice exam not created: HTTP {started.status} -> {location or 'no redirect'}")
+            urls["PROJECT_START"] = f"/projects/{project_id}/start"
+            urls["EXAM_SETUP"] = f"/projects/{project_id}/exam/new"
+            learned_project = int(project_id)
+        urls[key] = f"/projects/{project_id}"
+    urls.update(_data_pages(page, base, learned_project))
     page.close()
-    return f"/?session_id={session_id}"
+    return urls
+
+
+def attach_photo(page, step) -> None:
+    """Put a photo in the tray (and send it, where the step says so)."""
+
+    selector, send, settled = step
+    if PHOTO_PATH is None or not page.locator(selector).count():
+        return
+    page.set_input_files(selector, str(PHOTO_PATH))
+    page.wait_for_selector(".attach-item.is-ready", timeout=8000)
+    if send:
+        page.fill("#asstInput", "Ist mein Rechenweg richtig?", timeout=4000)
+        page.click(send, timeout=4000)
+        page.wait_for_selector(".sent-photos img", timeout=8000)
+        if settled:
+            page.wait_for_selector(settled, timeout=8000)
+    page.wait_for_timeout(300)
 
 
 def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screenshot: Path | None,
-               full_page: bool = True) -> dict:
+               full_page: bool = True, photo_step=None, start_test: bool = False) -> dict:
     page = context.new_page()
-    page.goto(url, wait_until="load")
+    # JavaScript errors are layout faults too: a script that throws leaves a control dead.
+    # Load failures of what block_external aborts on purpose (ads, web fonts) are not.
+    script_errors: list[str] = []
+    page.on("pageerror", lambda error: script_errors.append(f"uncaught: {str(error)[:160]}"))
+    page.on("console", lambda message: script_errors.append(f"console: {message.text[:160]}")
+            if message.type == "error" and not message.text.startswith("Failed to load resource")
+            and not (IGNORED_CONSOLE and IGNORED_CONSOLE.search(message.text)) else None)
+    try:
+        response = page.goto(url, wait_until="load")
+    except Exception as error:
+        # One retry: on a loaded machine the first navigation occasionally exceeds 30 s,
+        # which says nothing about the page.
+        if "Timeout" not in str(error):
+            raise
+        response = page.goto(url, wait_until="load", timeout=60000)
+    # The page actually audited: an error status, or a redirect elsewhere, means the
+    # numbers below describe some other page.
+    landed = {"status": response.status if response else 0, "url": page.url}
     page.wait_for_timeout(400)
     chat_error = None
+    if start_test and page.locator("#startTest").count():
+        try:
+            page.click("#startTest", timeout=4000)
+            page.wait_for_selector("#writtenAnswer", timeout=5000)
+            page.wait_for_timeout(300)
+        except Exception as error:
+            chat_error = "start test: " + str(error).splitlines()[0][:160]
+    if photo_step and not open_chat:
+        try:
+            attach_photo(page, photo_step)
+        except Exception as error:
+            chat_error = "photo: " + str(error).splitlines()[0][:160]
     if open_chat and page.locator("#chatToggle").count():
         # A real tap, so a control hidden under another element fails here as it would on a phone.
         try:
             page.click("#chatToggle", timeout=4000)
+            if photo_step:
+                attach_photo(page, photo_step)
             page.fill("#chatInput", "Warum addiert man die Exponenten?", timeout=4000)
             page.click("#chatForm [type=submit]", timeout=4000)
             page.wait_for_selector(".tutor-message >> nth=1", timeout=5000)
@@ -264,6 +568,9 @@ def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screens
                     break
     result = page.evaluate(AUDIT_JS)
     result["chat_error"] = chat_error
+    result["script_errors"] = script_errors
+    result["landed"] = landed
+    result["requested"] = url
     result["menu"] = None
     if mobile_menu:
         toggle = page.locator(".mobile-nav-toggle, .guest-nav-toggle").first
@@ -304,6 +611,18 @@ def blocking(result: dict, width: int, *, logged_in: bool) -> list[str]:
     problems = []
     if result.get("chat_error"):
         problems.append(f"chat unusable: {result['chat_error']}")
+    landed = result.get("landed") or {}
+    if landed.get("status", 200) >= 400:
+        problems.append(f"HTTP {landed['status']}")
+    elif result.get("requested") and landed.get("url"):
+        requested = urlsplit(result["requested"]).path
+        actual = urlsplit(landed["url"]).path
+        if actual != requested and EXPECTED_REDIRECTS.get(requested) != actual:
+            problems.append(f"redirected to {landed['url']}")
+    if result.get("invisibleText"):
+        problems.append("light text on a light surface (dark mode): " + "; ".join(result["invisibleText"][:4]))
+    if result.get("script_errors"):
+        problems.append("script errors: " + " | ".join(dict.fromkeys(result["script_errors"]))[:400])
     if result["scrollWidth"] > result["vw"] + 1:
         problems.append(f"page scrolls sideways ({result['scrollWidth']} > {result['vw']})")
     if result["offscreen"]:
@@ -334,9 +653,18 @@ def main() -> int:
     parser.add_argument("--fold", action="store_true", help="screenshots of the first screen only (plus the open menu)")
     parser.add_argument("--json", type=Path)
     parser.add_argument("--port", type=int, default=5057)
+    parser.add_argument("--ignore-console", help="regex of console errors to set aside for this run")
+    parser.add_argument("--list-light-surfaces", action="store_true",
+                        help="dark mode: also print light surfaces that carry dark text (for review)")
     args = parser.parse_args()
+    global IGNORED_CONSOLE
+    IGNORED_CONSOLE = re.compile(args.ignore_console) if args.ignore_console else None
 
-    _prepare_environment()
+    global PHOTO_PATH
+    workspace = _prepare_environment()
+    from learnova.evaluation.vision_fixtures import build_cases
+    PHOTO_PATH = workspace / "photo.jpg"
+    PHOTO_PATH.write_bytes(next(case.data for case in build_cases(include_large=False) if case.name == "math_handwritten"))
     from playwright.sync_api import sync_playwright
 
     _, server = start_server(args.port)
@@ -348,12 +676,15 @@ def main() -> int:
             browser = launch(playwright)
             student = browser.new_context()
             block_external(student, base)
-            lesson_url = login_and_create_lesson(student, base)
+            special = login_and_create_lesson(student, base)
+            missing = [path for path in STUDENT_PAGES if path.isupper() and path not in special]
+            if missing:
+                print(f"not audited (their data could not be created): {', '.join(missing)}")
             student_state = student.storage_state()
             student.close()
             plan = [(path, False) for path in GUEST_PAGES] + [(path, True) for path in STUDENT_PAGES]
             if args.pages:
-                plan = [(path, logged) for path, logged in plan if path in args.pages or (path == "LESSON" and "LESSON" in args.pages)]
+                plan = [(path, logged) for path, logged in plan if path in args.pages]
             for theme in args.themes:
                 for width, height in viewports:
                     mobile = width <= 430
@@ -367,12 +698,15 @@ def main() -> int:
                         for path, needs_login in plan:
                             if needs_login != logged_in:
                                 continue
-                            url = base + (lesson_url if path == "LESSON" else path)
-                            name = "lesson" if path == "LESSON" else path.strip("/").replace("/", "_") or "root"
+                            if path.isupper() and path not in special:
+                                continue  # its data could not be created; reported once below
+                            url = base + special.get(path, path)
+                            name = path.lower() if path in special else path.strip("/").replace("/", "_") or "root"
                             shot = (args.screenshots / f"{theme}-{width}x{height}-{name}.png") if args.screenshots else None
                             try:
                                 result = audit_page(context, url, mobile_menu=width < 1024, open_chat=path == "LESSON", screenshot=shot,
-                                                    full_page=not args.fold)
+                                                    full_page=not args.fold, photo_step=PHOTO_STEPS.get(path),
+                                                    start_test=path in START_TEST_PAGES)
                             except Exception as error:  # keep auditing the other pages
                                 result = {"error": str(error)[:200], "vw": width, "scrollWidth": 0, "offscreen": [], "smallTargets": [], "smallText": 0}
                             problems = blocking(result, width, logged_in=logged_in) if "error" not in result else [f"error: {result['error']}"]
@@ -383,6 +717,8 @@ def main() -> int:
                             flag = "FAIL" if problems else "ok  "
                             print(f"{flag} {theme:5} {width}x{height} {name:22} targets<44:{len(result.get('smallTargets', [])):3} "
                                   f"text<14:{result.get('smallText', 0):3} {'; '.join(problems)[:300]}")
+                            if args.list_light_surfaces and result.get("lightSurfaces"):
+                                print(f"      light surfaces: {', '.join(result['lightSurfaces'])[:600]}")
                         context.close()
             browser.close()
     finally:

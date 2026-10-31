@@ -113,6 +113,6 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script>window.LEARNOVA_SET_ID={{ set_id|tojson }};window.LEARNOVA_MODE={{ mode|tojson }};window.LEARNOVA_RESULT_SESSION={{ (result_session_id|default(None))|tojson }};</script>
-  <script type="module" src="{{ url_for('static', filename='js/flashcards/mode-engine.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_SET_ID={{ set_id|tojson }};window.LEARNOVA_MODE={{ mode|tojson }};window.LEARNOVA_RESULT_SESSION={{ (result_session_id|default(None))|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/flashcards/mode-engine.js') }}"></script>
 {% endblock %}

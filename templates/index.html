@@ -62,6 +62,7 @@
             data-i18n="finding">Finding concepts and building your lesson</span>
         </div>
         <div id="lessonContent">
+          <p id="materialNotes" class="material-notes hidden" role="note"></p>
           <div id="testProgress" class="test-progress hidden">
             <div class="progress-copy"><strong id="progressLabel">Question 1 of 5</strong><span><button id="finishTest" class="finish-test" type="button" hidden data-i18n="finishTest">{{ _('Finish test') }}</button> <span id="progressPercent">0%</span></span></div>
             <div class="progress-track"><i id="progressFill"></i></div>
@@ -122,7 +123,7 @@
               <div id="questionMedia" class="question-media hidden"></div>
               <p id="hint" class="hint hidden"></p>
               {{ listen_control('#hint', 'hintListenControl', true) }}
-              <form id="answerForm"><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
+              <form id="answerForm"{% if chat_images %} data-photo-answers="1"{% endif %}><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
               <div id="feedback" class="feedback hidden"></div>
               {{ listen_control('#feedbackSpeechText', 'feedbackListenControl', true) }}
             </div>
@@ -158,8 +159,9 @@
         </div>
         <div class="chat-suggestions"><button data-i18n="giveHint">Give me a hint</button><button
             data-i18n="whatPractice">What should I practice?</button></div>
-        <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" placeholder="Ask about this lesson…"
-            data-i18n-placeholder="chatPlaceholder" required></textarea>{{ microphone_control('#chatInput', 'chatMicrophoneControl') }}<button type="submit"
+        {% if chat_images %}<div class="chat-attach"><div id="chatAttachTray" class="attach-tray hidden" aria-live="polite" aria-label="{{ _('Attached photos') }}"></div></div>{% endif %}
+        <form id="chatForm" class="chat-form{% if chat_images %} has-photos{% endif %}">{% if chat_images %}<label class="attach-button chat-camera" title="{{ _('Take a photo') }}"><input id="chatCamera" class="attach-input" type="file" accept="image/*" capture="environment"><span aria-hidden="true">📷</span><span class="visually-hidden">{{ _('Take a photo') }}</span></label><label class="attach-button chat-gallery" title="{{ _('Add photos') }}"><input id="chatGallery" class="attach-input" type="file" accept="image/*" multiple><span aria-hidden="true">🖼</span><span class="visually-hidden">{{ _('Add photos') }}</span></label>{% endif %}<textarea id="chatInput" rows="1" placeholder="Ask about this lesson…"
+            data-i18n-placeholder="chatPlaceholder"></textarea>{{ microphone_control('#chatInput', 'chatMicrophoneControl') }}<button type="submit"
             aria-label="Send">➤</button></form>
       </aside>
     </section>
@@ -167,6 +169,6 @@
   <div id="toast" class="toast hidden"></div>
 {% endblock %}
 {% block scripts %}
-  <script id="lessonBootstrap" type="application/json">{{ bootstrap|tojson }}</script>
-  <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" id="lessonBootstrap" type="application/json">{{ bootstrap|tojson }}</script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

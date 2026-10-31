@@ -110,15 +110,26 @@ INJECTION_PATTERNS = (
     re.compile(r"\bneue\s+anweisungen\b", re.I),
 )
 
-# Contact and identity patterns. Reliable enough to act on because the consequence is a
-# revision request, never a rejection, so a false positive costs an author one edit.
+# Contact and identity patterns. A hit asks the author for one edit (a revision request),
+# so a false positive still blocks an ordinary set - which is why each pattern requires
+# what a contact actually looks like, not just something resembling one:
+# - a phone number starts with + or 0 and has at least 9 digits; dates (14.07.1789) and
+#   decimals (3,14159) are removed first, so a history or maths set is not a phone book;
+# - a messaging app counts only next to a contact cue (a handle, a number, "add me"): the
+#   bare word is ordinary vocabulary ("das Signal", the telegram of Ems);
+# - a link is not personal information at all - URL is kept for the leet exclusion and
+#   the classifier still sees every link.
 EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]{2,}\b")
 URL = re.compile(r"\b(?:https?://|www\.)\S{4,}", re.I)
 HANDLE = re.compile(r"(?:^|\s)@[A-Za-z][\w.]{2,29}\b")
-PHONE = re.compile(r"(?<!\d)(?:\+\d{1,3}[\s./-]?)?(?:\(?\d{2,4}\)?[\s./-]?){2,4}\d{2,4}(?!\d)")
+PHONE = re.compile(r"(?<![\w+])(?:\+\d{1,3}|0)[\d\s./()-]{7,}\d(?!\d)")
+DATE_OR_DECIMAL = re.compile(
+    r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d+[.,]\d+\b")
 MESSAGING = re.compile(
     r"\b(?:whatsapp|telegram|snapchat|insta(?:gram)?|discord|tiktok|signal|kik)\b"
-    r"(?:\s*(?:me|mich|:|@|is|ist))?", re.I)
+    r"\s*(?::|-|=|an|at|unter|on|bei)?\s*(?:@[A-Za-z][\w.]{2,}|\+?\d[\d\s-]{5,}\d)"
+    r"|\b(?:add|text|dm|message|schreib|adde|folg)\s+(?:me|mir|mich)\b"
+    r"[^.\n]{0,30}\b(?:whatsapp|telegram|snapchat|insta(?:gram)?|discord|tiktok|signal|kik)\b", re.I)
 LONG_DIGITS = re.compile(r"(?<!\d)\d{9,}(?!\d)")
 
 REPEATED_CHARACTER = re.compile(r"(\w)\1{4,}")
@@ -322,17 +333,18 @@ def _contact_markers(text: str) -> tuple[str, ...]:
 
     found = []
     for name, pattern in (
-        ("email", EMAIL), ("url", URL), ("handle", HANDLE),
+        ("email", EMAIL), ("handle", HANDLE),
         ("messaging_app", MESSAGING), ("long_number", LONG_DIGITS),
     ):
         if pattern.search(text):
             found.append(name)
     # Phone is checked last and only on text without long digit runs already reported, so
-    # an ISBN or a year range does not read as a telephone number twice.
-    if "long_number" not in found and PHONE.search(text):
-        digits = sum(character.isdigit() for character in text)
-        if digits >= 7:
-            found.append("phone")
+    # an ISBN does not read as a telephone number twice. Dates and decimals go first.
+    if "long_number" not in found:
+        for match in PHONE.finditer(DATE_OR_DECIMAL.sub(" ", text)):
+            if sum(character.isdigit() for character in match.group(0)) >= 9:
+                found.append("phone")
+                break
     return tuple(found)
 
 
@@ -352,7 +364,10 @@ def analyze(value: str, *, source: str = "typed") -> TextSignals:
     normalized = normalize_text(working)
     folded = fold_text(working)
 
-    confusable = sum(character in CONFUSABLES for character in normalized)
+    # A look-alike letter is evidence only inside a word that mixes scripts - "pаypal" with
+    # a Cyrillic а. A word written wholly in Cyrillic or Greek is just a word: counting its
+    # letters held every Russian or Greek vocabulary list as "obfuscation".
+    confusable = 0
     scripts: set[str] = set()
     mixed_words = 0
     leet_words = 0
@@ -362,6 +377,7 @@ def analyze(value: str, *, source: str = "typed") -> TextSignals:
         scripts |= word_scripts
         if len(word_scripts - {"unknown", "other"}) > 1:
             mixed_words += 1
+            confusable += sum(character in CONFUSABLES for character in word)
     # Leet means a substitution *inside* a word, not a digit next to one. Addresses,
     # links and encoded runs are excluded: an email contains a letter-@-letter sequence
     # by definition, and counting that as disguised spelling would flag every author who

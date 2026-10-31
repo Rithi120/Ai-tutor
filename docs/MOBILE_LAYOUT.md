@@ -33,22 +33,43 @@ primary action), *Log in*, *About*, *Settings* and the theme switch.
 
 ```bash
 pip install -r requirements-dev.txt
-python scripts/mobile_audit.py                         # 20 pages x 7 viewports x light/dark
+python scripts/mobile_audit.py                         # every page x 7 viewports x light/dark
 python scripts/mobile_audit.py --pages /about LESSON --widths 320 390 --screenshots out/ --fold
+python scripts/mobile_audit.py --list-light-surfaces   # also list light panels in dark mode
+python scripts/mobile_audit.py --ignore-console REGEX  # set a known console error aside
 python -m pytest tests/test_mobile_layout.py           # the same checks inside the test suite
 ```
 
 In Git Bash, set `MSYS_NO_PATHCONV=1` first, or `/about` is rewritten into a Windows path.
 
-The audit runs the app on a temporary SQLite database and creates one lesson with the AI
-mocked. It renders each page in the installed Chrome or Edge and fails on any of these:
+The audit runs the app on a temporary SQLite database with the AI mocked and creates what
+the data-dependent pages need:
+- lessons (one with a written question);
+- two projects;
+- a study plan;
+- an open and a submitted practice exam;
+- a flashcard set;
+- a concept.
+
+It also attaches a photo in both chats. It covers every page the app renders, including
+the admin and internal ones, for which the audit account is made an admin on the
+throwaway server. It renders each page in the installed Chrome or Edge and fails on any of
+these:
 
 - the page scrolls sideways;
 - a control is clipped;
 - header controls overlap;
-- the menu is missing or broken.
+- the menu is missing or broken;
+- a JavaScript error: an uncaught exception or a console error (load failures of what the
+  audit blocks on purpose are excluded);
+- an HTTP error, or a redirect somewhere other than the page asked for (two intentional
+  redirects are listed in `EXPECTED_REDIRECTS`);
+- in dark mode, light text on a light surface (the background of the nearest ancestor
+  that paints one).
 
-It also reports, without failing, tap targets under 44 px and text under 14 px.
+A page whose data could not be created is named as "not audited", never measured as a
+404. The audit also reports, without failing, tap targets under 44 px and text under
+14 px.
 
 Web fonts and ads are blocked during audits, so pages render with the fallback font stack.
 That stack is also what a student on a slow connection sees first.

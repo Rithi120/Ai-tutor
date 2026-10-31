@@ -266,9 +266,11 @@ class DeterministicCachingTests(unittest.TestCase):
 
     def test_only_deterministic_tasks_are_cached(self):
         # The vocabulary page reader joined the set for the same reason: the same page
-        # read twice must give the same rows, so paying twice for it is waste.
+        # read twice must give the same rows, so paying twice for it is waste. So did the
+        # shared image reader: a photo re-sent after a failed reply is the same photo.
         self.assertEqual(ai_service.DETERMINISTIC_TASKS,
-                         {"ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction"})
+                         {"ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction",
+                          "image_understanding"})
 
     def _age_every_cache_entry(self, days):
         import json

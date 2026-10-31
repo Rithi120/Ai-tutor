@@ -1,0 +1,72 @@
+/* Settings -> Subscription (templates/components/_subscription.html) and the admin code
+ * page. Colours, radii and type come from learnova-tokens.css only, so light and dark
+ * mode follow automatically - no hardcoded light surfaces (see learnova-dark.css). */
+
+.sub-section {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--ln-line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  color: var(--ln-ink);
+}
+.sub-section h2, .sub-section h3 { margin: 0; font-family: var(--ln-font-display); color: var(--ln-ink); }
+.sub-section h3 { font-size: 1.1rem; }
+.sub-section p { margin: 0; line-height: 1.55; }
+.sub-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sub-badge {
+  padding: 5px 12px; border-radius: 999px; font-weight: 800; font-size: .9rem;
+  border: 1px solid var(--ln-line-strong); color: var(--ln-muted);
+}
+.sub-badge.is-premium {
+  border-color: color-mix(in srgb, var(--ln-violet) 45%, transparent);
+  background: color-mix(in srgb, var(--ln-violet) 14%, transparent);
+  color: var(--ln-violet);
+}
+
+.sub-status { display: grid; gap: 6px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--ln-line); background: var(--ln-surface-solid); }
+.sub-status.is-premium { border-color: color-mix(in srgb, var(--ln-violet) 35%, var(--ln-line)); background: color-mix(in srgb, var(--ln-violet) 6%, var(--ln-surface-solid)); }
+.sub-usage { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.sub-usage li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.sub-usage li > span { flex: 1 1 12rem; min-width: 0; }
+.sub-usage small { flex-basis: 100%; color: var(--ln-muted); }
+
+.sub-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
+.sub-plan { padding: 16px; border-radius: 16px; border: 1px solid var(--ln-line); background: var(--ln-surface-solid); min-width: 0; }
+.sub-plan.is-highlight { border-color: color-mix(in srgb, var(--ln-violet) 40%, var(--ln-line)); }
+.sub-plan.is-current { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ln-violet) 55%, transparent); }
+.sub-plan h3 { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin-bottom: 10px; }
+.sub-price { font-family: var(--ln-font-body, inherit); font-size: 1rem; font-weight: 800; color: var(--ln-violet); }
+.sub-plan ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 6px; line-height: 1.45; }
+.sub-current { margin-top: 10px !important; font-weight: 700; color: var(--ln-violet); }
+.sub-note { color: var(--ln-muted); font-size: var(--ln-text-small, .9rem); }
+
+.sub-activate { display: grid; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--ln-violet) 30%, var(--ln-line)); background: color-mix(in srgb, var(--ln-violet) 5%, var(--ln-surface-solid)); }
+.sub-instructions { white-space: pre-line; }
+.sub-form { display: grid; gap: 6px; margin: 4px 0 0; }
+.sub-form label { font-weight: 700; }
+.sub-form input {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; min-height: 48px; padding: 10px 12px;
+  border: 1px solid var(--ln-line-strong); border-radius: 12px; background: var(--ln-surface-solid); color: var(--ln-ink);
+  font: 600 1.05rem/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; text-transform: uppercase;
+}
+.sub-form input::placeholder { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ln-muted); }
+.sub-form small { color: var(--ln-muted); }
+.sub-form button { margin-top: 6px; min-height: 48px; width: 100%; justify-content: center; }
+.sub-form button:disabled { opacity: .7; cursor: progress; }
+
+.sub-history ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.sub-history li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sub-hint { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+.sub-version { color: var(--ln-muted); font-size: var(--ln-text-small, .9rem); }
+
+.alert-link { margin-left: 6px; font-weight: 700; color: inherit; text-decoration: underline; }
+
+/* Admin code page. */
+.issued-code { display: grid; gap: 10px; padding: 16px; border-radius: 14px; border: 2px solid var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 8%, var(--ln-surface-solid)); color: var(--ln-ink); }
+.issued-code code { font: 800 clamp(1rem, .8rem + 2vw, 1.5rem)/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .05em; overflow-wrap: anywhere; user-select: all; }
+.admin-code-form { display: grid; gap: 8px; }
+.admin-code-form :is(input, select) { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.admin-code-form .sub-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 600; }
+.admin-code-form .sub-check input { flex: 0 0 auto; width: 22px; height: 22px; margin-top: 2px; }

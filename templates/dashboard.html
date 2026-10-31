@@ -64,16 +64,18 @@
   </section>
   {% endif %}
 
-  {% if autopilot %}{% with card=autopilot %}{% include 'components/_autopilot_card.html' %}{% endwith %}{% endif %}
+  {% if learning_overview %}{% include 'components/_learning_overview.html' %}{% endif %}
+  {% if not learning_overview %}
   <section class="dashboard-planner-widget reveal-card">
     {% if study_planner %}{% set coach = study_planner %}
     <div class="planner-widget-heading"><div><span class="eyebrow">{{ _('AI STUDY COACH') }}</span><h2>{{ _('Today’s Study') }}</h2><p>{{ coach.plan.project.subject }} · {{ coach.plan.project.title }}</p></div><div class="mini-progress-ring" style="--progress:{{ coach.planner_metrics.readiness }}"><strong>{{ coach.planner_metrics.readiness }}%</strong><span>{{ _('ready') }}</span></div></div>
     {% if coach.planner_reminders %}<div class="planner-widget-reminders" role="status">{% for reminder in coach.planner_reminders[:2] %}<span>{{ reminder }}</span>{% endfor %}</div>{% endif %}
     <div class="planner-widget-grid"><div><span>{{ _('Exam countdown') }}</span><strong>{{ coach.planner_metrics.countdown }} {{ _('days') }}</strong></div><div><span>{{ _('Plan progress') }}</span><strong>{{ coach.planner_metrics.progress }}%</strong></div><div><span>{{ _('Remaining lessons') }}</span><strong>{{ coach.planner_metrics.remaining_lessons }}</strong></div><div><span>{{ _('Next review') }}</span><strong>{{ coach.next_review.next_review_at.strftime('%d.%m.') if coach.next_review else '—' }}</strong></div></div>
     {% if coach.today_session %}<ul class="planner-widget-tasks">{% for task in json_value(coach.today_session.tasks_json)[:3] %}<li><span>{{ planner_task_title(task) }}</span><small>{{ task.minutes }} {{ _('min') }}</small></li>{% endfor %}</ul>{% else %}<p>{{ _('No session scheduled today. Review a due concept or enjoy the planned rest day.') }}</p>{% endif %}
-    <div class="planner-widget-actions"><a class="secondary-button" href="{{ url_for('study_plan_calendar', plan_id=coach.plan.id) }}">{{ _('Calendar') }}</a><a class="primary-button" href="{{ url_for('study_plan_session_detail', plan_id=coach.plan.id, session_id=coach.today_session.id) if coach.today_session else url_for('study_plan_detail', plan_id=coach.plan.id) }}">{{ _('Continue learning') }} →</a></div>
-    {% else %}<div><span class="eyebrow">{{ _('AI STUDY COACH') }}</span><h2>{{ _('Build your personal exam schedule') }}</h2><p>{{ _('Learnova can balance lessons, weak concepts, reviews, quizzes, and mock exams around your available time.') }}</p></div><a class="primary-button" href="{{ url_for('new_study_plan') }}">{{ _('Create study plan') }} →</a>{% endif %}
+    <div class="planner-widget-actions"><a class="secondary-button" href="{{ url_for('study_plan_calendar', plan_id=coach.plan.id) }}">{{ _('Calendar') }}</a><a class="primary-button" href="{{ url_for('project_dashboard', project_id=coach.plan.project_id) }}">{{ _('Continue learning') }} →</a></div>
+    {% else %}<div><span class="eyebrow">{{ _('AI STUDY COACH') }}</span><h2>{{ _('Build your personal exam schedule') }}</h2><p>{{ _('Learnova can balance lessons, weak concepts, reviews, quizzes, and mock exams around your available time.') }}</p></div><a class="primary-button" href="{{ url_for('projects') }}#projectCreateForm">{{ _('Create a new learning project') }} →</a>{% endif %}
   </section>
+  {% endif %}
 
   <section class="learning-overview reveal-card">
     <div><span>{{ _('Due today') }}</span><strong>{{ due_today }}</strong></div>

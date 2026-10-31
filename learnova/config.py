@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from pathlib import Path
 from typing import Type
@@ -76,6 +77,134 @@ def _bare_model(value):
 
     text = str(value or "").strip()
     return text.partition(":")[2].strip() if ":" in text else text
+
+
+def _configure_vision(app, selected: str) -> None:
+    """Image intake and reading (learnova/vision, docs/VISION.md). All optional."""
+
+    def bounded(name: str, default: int, low: int, high: int) -> int:
+        raw = os.getenv(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+        if not low <= value <= high:
+            raise RuntimeError(f"{name} must be between {low} and {high}")
+        return value
+
+    # What a student may upload, per image, before anything is decoded.
+    app.config["VISION_MAX_UPLOAD_BYTES"] = bounded("VISION_MAX_UPLOAD_BYTES", 15 * 1024 * 1024, 1_000_000, 40 * 1024 * 1024)
+    app.config["VISION_MAX_PIXELS"] = bounded("VISION_MAX_PIXELS", 40_000_000, 1_000_000, 80_000_000)
+    # What is kept (enough for a close-up re-read of one word) and what a provider gets.
+    # Groq documents 4 MB for a base64 image; 2.9 MB raw is 3.87 MB once encoded.
+    app.config["VISION_STORAGE_EDGE_PX"] = bounded("VISION_STORAGE_EDGE_PX", 2560, 1024, 6000)
+    app.config["VISION_PROVIDER_EDGE_PX"] = bounded("VISION_PROVIDER_EDGE_PX", 2048, 768, 4096)
+    app.config["VISION_PROVIDER_MAX_BYTES"] = bounded("VISION_PROVIDER_MAX_BYTES", 2_900_000, 300_000, 15_000_000)
+    # Optional second vision model ("provider:model") for when the Groq one fails, and
+    # any further models the owner vouches can see images. Both empty by default.
+    app.config["AI_VISION_FALLBACK_MODEL"] = os.getenv("AI_VISION_FALLBACK_MODEL", "").strip()
+    app.config["AI_VISION_MODELS"] = os.getenv("AI_VISION_MODELS", "").strip()
+    # Images in chats and photographed answers.
+    app.config["FEATURE_CHAT_IMAGES"] = os.getenv("FEATURE_CHAT_IMAGES", "true").strip().lower() in {
+        "1", "true", "yes", "on"}
+    app.config["CHAT_IMAGES_PER_MESSAGE"] = bounded("CHAT_IMAGES_PER_MESSAGE", 4, 1, 4)
+    # Unsent attachments are deleted after a day; sent ones keep their picture this many
+    # days (the reading stays with the conversation until it is deleted).
+    app.config["CHAT_ATTACHMENT_RETENTION_DAYS"] = bounded("CHAT_ATTACHMENT_RETENTION_DAYS", 30, 1, 365)
+    app.config["CHAT_ATTACHMENT_UPLOADS_PER_HOUR"] = bounded("CHAT_ATTACHMENT_UPLOADS_PER_HOUR", 60, 1, 1000)
+    # Turn sideways photos upright with the local OCR engine before any model sees them
+    # (landscape photos without a rotation tag only; about half a second each). Off under
+    # the test runner, where tests switch it on explicitly. No effect without RapidOCR.
+    app.config["VISION_LOCAL_ORIENTATION"] = os.getenv(
+        "VISION_LOCAL_ORIENTATION", "false" if selected == "testing" else "true").strip().lower() in {
+        "1", "true", "yes", "on"}
+
+
+ADSENSE_CMPS = {"google_privacy_messaging"}
+
+# Where community reports and review findings are emailed. The address is not a secret;
+# the SMTP credentials that send to it are, and they only ever come from the environment.
+DEFAULT_COMMUNITY_ALERT_EMAIL = "maheswariskillbridge@gmail.com"
+
+
+def _configure_community_alerts(app, selected: str) -> None:
+    """Email delivery for administrator alerts, and the cost limits on report re-reviews.
+
+    Email is off until MAIL_SMTP_HOST and MAIL_FROM are set. Without them every alert is
+    still stored (status not_configured) and listed on the moderation page, so a report
+    is never lost because nobody configured a mail server.
+    """
+
+    app.config["COMMUNITY_ALERT_EMAIL"] = (
+        os.getenv("COMMUNITY_ALERT_EMAIL", DEFAULT_COMMUNITY_ALERT_EMAIL).strip()
+        or DEFAULT_COMMUNITY_ALERT_EMAIL)
+    app.config["MAIL_SMTP_HOST"] = os.getenv("MAIL_SMTP_HOST", "").strip()
+    app.config["MAIL_SMTP_PORT"] = os.getenv("MAIL_SMTP_PORT", "").strip()
+    app.config["MAIL_SMTP_USERNAME"] = os.getenv("MAIL_SMTP_USERNAME", "").strip()
+    app.config["MAIL_SMTP_PASSWORD"] = os.getenv("MAIL_SMTP_PASSWORD", "")
+    app.config["MAIL_SMTP_SECURITY"] = os.getenv("MAIL_SMTP_SECURITY", "starttls").strip().lower()
+    app.config["MAIL_FROM"] = os.getenv("MAIL_FROM", "").strip()
+    # Links in alert emails need an absolute address, and a background thread has no
+    # request to take one from. Without it the email names the set id and the page path.
+    app.config["PUBLIC_BASE_URL"] = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    for name, default in (("MAIL_TIMEOUT_SECONDS", "10"),):
+        try:
+            app.config[name] = max(1.0, float(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a positive number") from error
+    for name, default in (
+        ("MAIL_MAX_ATTEMPTS", "3"),
+        # Paid re-reviews: per set per day, and across the whole site per hour.
+        ("REPORT_REVIEW_MAX_PER_SET_DAY", "5"),
+        ("REPORT_REVIEW_MAX_PER_HOUR", "60"),
+        # A failed re-review is retried this many times in total before an administrator
+        # is told it keeps failing.
+        ("REPORT_REVIEW_MAX_ATTEMPTS", "3"),
+        # Automatic re-checks of a set whose moderation could not run, before it waits
+        # for a person instead.
+        ("MODERATION_RETRY_MAX_ATTEMPTS", "3"),
+    ):
+        try:
+            app.config[name] = max(1, int(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a positive integer") from error
+    # Report re-reviews and email run on a background thread so a report or a publish
+    # never waits on a provider or a mail server. Tests run them inline.
+    raw = os.getenv("COMMUNITY_BACKGROUND_JOBS")
+    app.config["COMMUNITY_BACKGROUND_JOBS"] = (
+        selected != "testing" if raw is None else raw.strip().lower() in {"1", "true", "yes", "on"})
+
+
+def _configure_ads(app) -> None:
+    """Google AdSense (docs/ADSENSE.md). Ads load only once a certified consent message is
+    confirmed; the defaults load no ad code at all."""
+
+    def flag(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        return default if raw is None else raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    # The publisher id already used in ads.txt and the original ad tag; not a new one.
+    client = os.getenv("ADSENSE_CLIENT_ID", "ca-pub-5205912301427741").strip()
+    if client and not re.fullmatch(r"ca-pub-\d{10,20}", client):
+        raise RuntimeError("ADSENSE_CLIENT_ID must look like ca-pub-<digits>, or be empty")
+    app.config["ADSENSE_CLIENT_ID"] = client
+    # Which certified consent management platform shows the EEA/UK/CH consent message.
+    # Only Google's own "Privacy & messaging" European regulations message is supported,
+    # and only the operator can confirm it is set up in the AdSense account for this site.
+    # Empty = no ad code is loaded anywhere.
+    cmp = os.getenv("ADSENSE_CMP", "").strip().lower()
+    if cmp and cmp not in ADSENSE_CMPS:
+        raise RuntimeError(f"ADSENSE_CMP must be one of {sorted(ADSENSE_CMPS)} or empty")
+    app.config["ADSENSE_CMP"] = cmp
+    # Learnova's students are often under 16, the age of digital consent in Germany. Ads
+    # for signed-in students stay off until the operator has decided how to handle that.
+    app.config["ADSENSE_SHOW_TO_STUDENTS"] = flag("ADSENSE_SHOW_TO_STUDENTS", False)
+    # Part of Google's only supported AdSense policy; off only to test without it.
+    app.config["ADSENSE_CSP_UNSAFE_EVAL"] = flag("ADSENSE_CSP_UNSAFE_EVAL", True)
+    report_uri = os.getenv("CSP_REPORT_URI", "").strip()
+    if report_uri and not report_uri.startswith("https://"):
+        raise RuntimeError("CSP_REPORT_URI must be an https:// URL, or empty")
+    app.config["CSP_REPORT_URI"] = report_uri
 
 
 def configure_app(app, environment: str | None = None) -> str:
@@ -223,7 +352,6 @@ def configure_app(app, environment: str | None = None) -> str:
         "AI_MAX_REQUESTS_PER_USER_HOUR": 60,
         "AI_MAX_REQUESTS_PER_USER_DAY": 250,
         "AI_MAX_LIVE_REQUESTS_DEVELOPMENT": 1000,
-        "AI_MAX_TOKENS_PER_SESSION": 60000,
         "AI_MAX_OUTPUT_CHARACTERS": 200000,
     }
     for name, default in integer_settings.items():
@@ -251,6 +379,9 @@ def configure_app(app, environment: str | None = None) -> str:
         "OCR_DOCUMENT_RECOGNITION": 4000, "HANDWRITING_REGION_REVIEW": 900,
         # A whole textbook page as rows (word, translation, examples) in one call.
         "VOCABULARY_PAGE_EXTRACTION": 3000,
+        # The shared image reader (learnova/vision): up to four images, every line, LaTeX
+        # for formulas and an uncertainty list, plus the vision model's hidden reasoning.
+        "IMAGE_UNDERSTANDING": 5000,
         "ADAPTIVE_PRACTICE": 2200,
         # Grades every open exam answer in one call, with partial credit; the call site
         # asks for 5000 and was being cut to 600, i.e. a few words per answer.
@@ -266,13 +397,15 @@ def configure_app(app, environment: str | None = None) -> str:
     input_budgets = {
         # TUTOR_CHAT carries the lesson state (~2k tokens), a 4k-char source excerpt,
         # a 1.5k-token history window and a 4k-char student message; 1800 rejected
-        # ordinary turns as "material too large".
-        "TUTOR_CHAT": 6000, "ANSWER_EVALUATION": 5000, "MISTAKE_ANALYSIS": 6000, "TRANSLATION": 9000,
+        # ordinary turns as "material too large". 8000 since a turn may also carry what
+        # was read from up to four photos (capped at 6000 characters, ~1500 tokens).
+        "TUTOR_CHAT": 8000, "ANSWER_EVALUATION": 5000, "MISTAKE_ANALYSIS": 6000, "TRANSLATION": 9000,
         "ANSWER_DIAGNOSIS": 7000, "DIAGNOSIS_VERIFICATION": 4000, "QUESTION_GENERATION": 6000,
         "LESSON_GENERATION": 9000, "QUIZ_GENERATION": 6000,
         "PROJECT_SECTION_GENERATION": 16000, "FINAL_EXAM_GENERATION": 20000,
         "OCR_DOCUMENT_RECOGNITION": 8000, "HANDWRITING_REGION_REVIEW": 6000,
         "VOCABULARY_PAGE_EXTRACTION": 8000,
+        "IMAGE_UNDERSTANDING": 10000,
         "ADAPTIVE_PRACTICE": 6000,
         "FINAL_EXAM_EVALUATION": 8000, "FLASHCARD_GENERATION": 10000,
         "FLASHCARD_BACK_SUGGESTION": 800,
@@ -429,6 +562,7 @@ def configure_app(app, environment: str | None = None) -> str:
         for item in os.getenv("COMMUNITY_MODERATORS", "").split(",")
         if item.strip()
     }
+    _configure_community_alerts(app, selected)
 
     import_limits = {
         "MAX_FLASHCARD_PDF_SIZE": 10 * 1024 * 1024,
@@ -514,6 +648,12 @@ def configure_app(app, environment: str | None = None) -> str:
         app.logger.warning(
             "COMMUNITY_MODERATORS is empty: escalated community content will be held "
             "unpublished and no one can review it. Set COMMUNITY_MODERATORS.")
+    if (app.config["FEATURE_COMMUNITY_PUBLISHING"] and selected != "testing"
+            and not (app.config["MAIL_SMTP_HOST"] and app.config["MAIL_FROM"])):
+        # Also not fatal: alerts are stored and listed on /internal/moderation either way.
+        app.logger.warning(
+            "Community alert email is not configured (MAIL_SMTP_HOST, MAIL_FROM): reports and "
+            "review findings for %s are stored but not emailed.", app.config["COMMUNITY_ALERT_EMAIL"])
     app.config["FEATURE_FLASHCARD_PDF_IMPORT"] = (
         _feature_flag("FEATURE_FLASHCARD_PDF_IMPORT", not is_production))
     app.config["FEATURE_FLASHCARD_IMAGE_IMPORT"] = (
@@ -524,9 +664,21 @@ def configure_app(app, environment: str | None = None) -> str:
         "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
         "FEATURE_FLASHCARD_BLOCKS_GAME", "FEATURE_GAMIFICATION",
         "FEATURE_MISSIONS", "FEATURE_BADGES", "FEATURE_DAILY_GOALS",
-        "FEATURE_VOCABULARY_TRAINER",
+        "FEATURE_VOCABULARY_TRAINER", "FEATURE_LEAGUES",
     ):
         app.config[config_name] = _feature_flag(config_name, completed_feature_defaults)
+    # Learnova Leagues (learnova/gamification/leagues.py). Places that promote and demote
+    # per group at the end of each week, and the most learners in one group.
+    for name, default, low in (("LEAGUE_PROMOTE", "10", 0), ("LEAGUE_DEMOTE", "10", 0),
+                               ("LEAGUE_GROUP_SIZE", "30", 2),
+                               # Days between two username changes, and how long a released
+                               # name stays unavailable to everyone else.
+                               ("USERNAME_CHANGE_COOLDOWN_DAYS", "30", 0),
+                               ("USERNAME_HOLD_DAYS", "90", 0)):
+        try:
+            app.config[name] = max(low, int(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be an integer") from error
     app.config["FEATURE_FLASHCARD_GAMES"] = all(app.config[name] for name in (
         "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
         "FEATURE_FLASHCARD_BLOCKS_GAME",
@@ -550,6 +702,8 @@ def configure_app(app, environment: str | None = None) -> str:
         400, min(4000, int(os.getenv("CURRICULUM_CONTEXT_MAX_CHARS", "1800"))))
     app.config["HANDWRITING_SECOND_LOOK_MAX_REGIONS"] = max(
         1, min(12, int(os.getenv("HANDWRITING_SECOND_LOOK_MAX_REGIONS", "8"))))
+    _configure_vision(app, selected)
+    _configure_ads(app)
     app.config["GAMIFICATION_MIN_DAILY_EVENTS"] = max(
         1, int(os.getenv("GAMIFICATION_MIN_DAILY_EVENTS", "3")))
     app.config["AI_DIAGNOSTICS_ADMINS"] = {
@@ -562,6 +716,10 @@ def configure_app(app, environment: str | None = None) -> str:
         for item in os.getenv("PREMIUM_ADMIN_IDENTIFIERS", "").split(",")
         if item.strip()
     }
+    # Plans, prices, free allowances and activation-code policy (learnova/subscriptions,
+    # docs/SUBSCRIPTIONS.md). Validated here so a bad value stops the deploy.
+    from learnova.subscriptions.plans import load_settings
+    app.config["SUBSCRIPTION_SETTINGS"] = load_settings()
     for name, default in {
         # The knowledge gate (learnova/quizzes/mastery_gate.py): a test runs between MIN and
         # MAX questions and stops once every concept is known at KNOWLEDGE_TARGET percent.
@@ -580,7 +738,6 @@ def configure_app(app, environment: str | None = None) -> str:
         # the newest turns always survive (learnova/assistant/conversation.py).
         "TUTOR_CHAT_HISTORY_TOKEN_BUDGET": 1500,
         "TRANSLATE_TOKEN_LIMIT": 2500,
-        "PROJECT_TOKEN_LIMIT": 5000,
         "FLASHCARD_TOKEN_LIMIT": 4000,
         "FLASHCARD_SUGGESTION_TOKEN_LIMIT": 400,
         "REGION_REVIEW_TOKEN_LIMIT": 900,

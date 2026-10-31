@@ -179,7 +179,7 @@ class LanguageSystemTests(unittest.TestCase):
         lesson = self.client.get("/")
         self.assertIn(b"window.LEARNOVA_LANGUAGE = \"de\"", lesson.data)
         self.assertIn(b'"checkAnswer": "Antwort pr\\u00fcfen"', lesson.data)
-        self.assertIn("Prüfungsmodus".encode(), lesson.data)
+        self.assertIn("Projektmodus".encode(), lesson.data)
         dashboard = self.client.get("/dashboard")
         self.assertIn("Fehlernotizbuch".encode(), dashboard.data)
         self.assertNotIn(b"language-switch", dashboard.data)

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="theme-color" content="#6e5cff">
-  <script>
+  <script nonce="{{ csp_nonce() }}">
     try {
       const savedTheme = localStorage.getItem("learnova:theme");
       document.documentElement.dataset.theme = savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -26,14 +26,21 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-study.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-pages.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-content.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/project-workspace.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/subscription.css', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/attachments.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-dark.css', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css', v=static_version) }}">
   {# Last on purpose: sizing and containment for phones (see the file header). #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-responsive.css', v=static_version) }}">
   {% if interface_direction == 'rtl' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/learnova-rtl.css', v=static_version) }}">{% endif %}
-{% if not current_user.is_authenticated or not has_active_premium(current_user) %}<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5205912301427741"
-     crossorigin="anonymous"></script>
-{% endif %}
+  {# AdSense (docs/ADSENSE.md). The meta tag verifies the site and loads nothing. The ad
+     code - which also shows Google's certified consent message - loads only when
+     ads_enabled() allows it: a confirmed consent message, never for Premium, and for
+     signed-in students only when the operator has switched that on. #}
+  {% if adsense_client() %}<meta name="google-adsense-account" content="{{ adsense_client() }}">{% endif %}
+  {% if ads_enabled() %}<script nonce="{{ csp_nonce() }}" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client() }}"
+     crossorigin="anonymous"></script>{% endif %}
 </head>
 <body class="{{ 'authenticated-app' if current_user.is_authenticated else '' }} {% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main-content">{{ _('Skip to main content') }}</a>
@@ -46,23 +53,23 @@
   {% include 'components/_loading_overlay.html' %}
   {% include 'components/_modals.html' %}
   {% if current_user.is_authenticated %}{% include 'components/_tour.html' %}{% endif %}
-  <script>
+  <script nonce="{{ csp_nonce() }}">
     window.LEARNOVA_LANGUAGE = {{ current_language|tojson }};
     window.LEARNOVA_CONTENT_LANGUAGE = {{ learning_content_language_code|tojson }};
     window.LEARNOVA_I18N = {{ frontend_translations|tojson }};
     window.LEARNOVA_FLAGS = {{ feature_flags|tojson }};
   </script>
-  <script type="module" src="{{ url_for('static', filename='js/core.js') }}"></script>
-  <script type="module" src="{{ url_for('static', filename='js/navigation.js') }}"></script>
-  {% if current_user.is_authenticated %}<script type="module" src="{{ url_for('static', filename='js/tour.js') }}"></script>{% endif %}
-  <script type="module" src="{{ url_for('static', filename='js/motion.js') }}"></script>
-  <script type="module" src="{{ url_for('static', filename='js/theme.js') }}"></script>
-  <script type="module" src="{{ url_for('static', filename='js/study-planner.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/core.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/navigation.js') }}"></script>
+  {% if current_user.is_authenticated %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/tour.js') }}"></script>{% endif %}
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/motion.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/study-planner.js') }}"></script>
   <!-- One formula renderer for every page. KaTeX itself is fetched lazily, only once a
        page turns out to contain a formula, so pages without mathematics pay nothing. -->
-  <script type="module" src="{{ url_for('static', filename='js/math.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/math.js') }}"></script>
   {% block scripts %}{% endblock %}
-  <script type="module" src="{{ url_for('static', filename='js/speech-to-text.js') }}"></script>
-  <script type="module" src="{{ url_for('static', filename='js/text-to-speech.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/speech-to-text.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/text-to-speech.js') }}"></script>
 </body>
 </html>

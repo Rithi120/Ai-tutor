@@ -1198,7 +1198,7 @@
           "text": "Mein Wochenende | Am Wochenende war ich im Kino und habe einen guten Film gesehen, der nichts mit Chemie zu tun hat."
         }
       ],
-      "expected_decision": "revision_required",
+      "expected_decision": "allow",
       "model_output": {
         "recommendation": "revision_required",
         "dimensions": {
@@ -1226,7 +1226,8 @@
         "suggested_revision": "Ergänze den Chemie-Inhalt, zu dem dieses Set gehört.",
         "requires_review": false
       },
-      "expected_relevance": "flag"
+      "expected_relevance": "flag",
+      "notes": "Policy v2: a harmless set filed under the wrong subject publishes with an off-topic note for the author (quality is not a gate); readers can still report it as misleading."
     },
     {
       "id": "privacy-contact",

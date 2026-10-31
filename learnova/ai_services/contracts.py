@@ -36,6 +36,10 @@ QUESTION_TYPES = {
 # The types whose pictures are part of the question rather than decoration.
 PHOTO_QUESTION_TYPES = {"photo_response", "photo_ordering"}
 DIFFICULTY_WORDS = {"easy", "medium", "hard"}
+# What a model actually writes for a question's level. All of it means 1-3 and the app
+# clamps it (app.question_level); refusing "2" or "Medium" failed whole lessons.
+_LEVEL_WORDS = DIFFICULTY_WORDS | {"leicht", "einfach", "mittel", "schwer", "facile", "moyen", "difficile",
+                                   "fácil", "medio", "difícil", "low", "high"}
 SKILL_STATUSES = {"needs_practice", "developing", "mastered", "weak", "learning", "strong"}
 # The block types a recognition response may use. This is the single definition:
 # learnova/ocr/service.py imports it, and the OCR prompt is built from it, so the thing
@@ -169,21 +173,143 @@ def _validate_references(values: Any, allowed: set[int], name: str) -> None:
         _fail(f"{name} contains an unknown identifier", "source_reference_validation")
 
 
+def _is_level(value: Any) -> bool:
+    """1-5 as a number or numeric text, or a level word; never a boolean."""
+
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        text = value.strip().casefold()
+        if text in _LEVEL_WORDS:
+            return True
+        try:
+            value = float(text)
+        except ValueError:
+            return False
+    return isinstance(value, (int, float)) and 0 <= value <= 5
+
+
+_TYPE_ALIASES = {
+    "multiple choice": "multiple_choice", "multiple-choice": "multiple_choice", "mcq": "multiple_choice",
+    "single_choice": "multiple_choice", "single choice": "multiple_choice", "choice": "multiple_choice",
+    "true/false": "true_false", "truefalse": "true_false", "true-false": "true_false", "boolean": "true_false",
+    "open": "short_answer", "open_question": "short_answer", "free_text": "short_answer",
+    "fill-in-the-blank": "fill_blank", "fill_in_the_blank": "fill_blank", "cloze": "fill_blank",
+}
+_ANSWER_ALIASES = ("answer", "correct_answer", "correctAnswer", "correct_option", "correct", "solution",
+                   "right_answer")
+
+
+def _first_text(item: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def repair_question(value: Any, concepts: Any = (), subject: Any = None) -> Any:
+    """A practice question in the one shape the app reads, from the variants models write.
+
+    Seen live on 2026-10-31 (gpt-oss-20b, Projektmodus): "answer": "B" instead of
+    expected_answer, options as {"option": "A", "text": ...} or bare strings, and no
+    concept, difficulty or hint - on the retry too, so the student could not start the
+    lesson. Names are mapped, a missing level becomes 1, a missing concept the lesson's
+    first one, and an answer written as the option's text or letter becomes its id.
+    Nothing is guessed: a choice question whose correct option cannot be identified
+    keeps no expected_answer and still fails validation. Returns a repaired copy.
+    """
+
+    if not isinstance(value, dict):
+        return value
+    question = dict(value)
+    if not _first_text(question, ("id",)):
+        question["id"] = "q1"
+    if not _first_text(question, ("prompt",)):
+        prompt = _first_text(question, ("question", "text", "stem"))
+        if prompt:
+            question["prompt"] = prompt
+    qtype = str(question.get("type") or question.get("question_type") or "").strip().casefold()
+    qtype = _TYPE_ALIASES.get(qtype, qtype.replace(" ", "_").replace("-", "_"))
+    if not qtype:
+        qtype = "multiple_choice" if question.get("options") else "short_answer"
+    question["type"] = qtype
+    question.pop("question_type", None)
+    if not _is_level(question.get("difficulty")):
+        question["difficulty"] = 1
+    if not _first_text(question, ("concept",)):
+        for concept in concepts if isinstance(concepts, (list, tuple)) else ():
+            name = concept.get("name") if isinstance(concept, dict) else concept
+            if isinstance(name, str) and name.strip():
+                question["concept"] = name.strip()
+                break
+    if not isinstance(question.get("hint"), str):
+        question["hint"] = ""
+    if isinstance(subject, str) and subject.strip() and not _first_text(question, ("subject",)):
+        question["subject"] = subject.strip()
+
+    options = question.get("options")
+    correct_ids: list[str] = []
+    if isinstance(options, list):
+        repaired = []
+        for index, option in enumerate(options):
+            if isinstance(option, dict):
+                identifier = _first_text(option, ("id", "key", "option", "letter", "choice"))
+                label = _first_text(option, ("label", "text", "content", "value", "answer", "option_text"))
+                if not identifier and "label" in option and _first_text(option, ("text", "content")):
+                    identifier, label = _first_text(option, ("label",)), _first_text(option, ("text", "content"))
+                identifier = identifier or "abcdefghij"[index % 10]
+                if option.get("correct") is True or option.get("is_correct") is True:
+                    correct_ids.append(identifier)
+                option = {**option, "id": identifier, "label": label or identifier}
+            repaired.append(option)
+        question["options"] = options = repaired
+    else:
+        options = []
+
+    if "expected_answer" not in question or question["expected_answer"] in (None, ""):
+        for key in _ANSWER_ALIASES:
+            if key in question and question[key] not in (None, "") and not isinstance(question[key], bool):
+                question["expected_answer"] = question[key]
+                break
+        else:
+            if correct_ids:
+                question["expected_answer"] = correct_ids[0] if len(correct_ids) == 1 else correct_ids
+
+    if options and "expected_answer" in question:
+        def option_id(answer: Any) -> Any:
+            if not isinstance(answer, (str, int)) or isinstance(answer, bool):
+                return answer
+            text = str(answer).strip().casefold()
+            for option in options:
+                if isinstance(option, dict):
+                    if text in (option["id"].casefold(), str(option["label"]).strip().casefold()):
+                        return option["id"]
+                elif isinstance(option, str) and text == option.strip().casefold():
+                    return option
+            # A letter for bare-string options: "B" is the second one.
+            if len(text) == 1 and "a" <= text <= "j" and all(isinstance(item, str) for item in options):
+                position = ord(text) - ord("a")
+                if position < len(options):
+                    return options[position]
+            return answer
+
+        expected = question["expected_answer"]
+        question["expected_answer"] = (
+            [option_id(item) for item in expected] if isinstance(expected, list) else option_id(expected))
+    return question
+
+
 def _question(value: Any, name: str = "question", *, require_subject: bool = False) -> dict[str, Any]:
     question = _dict(value, name)
-    _text(question.get("id"), f"{name}.id")
+    identifier = question.get("id")
+    if isinstance(identifier, bool) or not isinstance(identifier, (str, int)) or not str(identifier).strip():
+        _fail(f"{name}.id must be non-empty text")
     _text(question.get("prompt"), f"{name}.prompt")
     _text(question.get("concept"), f"{name}.concept")
     if require_subject:
         _text(question.get("subject"), f"{name}.subject")
-    difficulty = question.get("difficulty")
-    if isinstance(difficulty, str):
-        if difficulty not in DIFFICULTY_WORDS:
-            _fail(f"{name}.difficulty is unsupported")
-    elif isinstance(difficulty, int) and not isinstance(difficulty, bool):
-        if difficulty not in {1, 2, 3}:
-            _fail(f"{name}.difficulty is unsupported")
-    else:
+    if not _is_level(question.get("difficulty")):
         _fail(f"{name}.difficulty is unsupported")
     qtype = _text(question.get("type", question.get("question_type")), f"{name}.type")
     if qtype not in QUESTION_TYPES:
@@ -231,13 +357,25 @@ def _lesson(data: Any, context: dict[str, Any]) -> None:
     for field in ("lesson_title", "explanation"):
         _text(root.get(field), field)
     concepts = _list(root.get("concepts"), "concepts", nonempty=True)
+    # A concept is {"name": ...}; models also send the bare name ("concepts": ["Brüche"]),
+    # which app.repair_lesson turns into the object. Seven lessons failed on that alone.
+    # A blank entry is dropped there too; at least one usable concept must remain.
+    usable = 0
     for index, concept in enumerate(concepts):
-        _text(_dict(concept, f"concepts[{index}]").get("name"), f"concepts[{index}].name")
-    worked = _dict(root.get("worked_example"), "worked_example")
-    _text(worked.get("problem"), "worked_example.problem")
-    _list(worked.get("steps"), "worked_example.steps", nonempty=True)
-    _text(worked.get("answer"), "worked_example.answer")
-    _question(root.get("question"))
+        if isinstance(concept, str):
+            usable += bool(concept.strip())
+        else:
+            _text(_dict(concept, f"concepts[{index}]").get("name"), f"concepts[{index}].name")
+            usable += 1
+    if not usable:
+        _fail("concepts must name at least one concept")
+    # The worked example supports the lesson; the explanation and the question are the
+    # lesson. A model that leaves the example's problem empty (common for topics where a
+    # "worked problem" is unnatural, and repeated on the corrective retry) used to fail
+    # the whole lesson, so a student could not learn the topic at all. The example is
+    # therefore never validated here: repair_worked_example keeps what is usable and
+    # drops an empty or malformed one, and the lesson page hides the missing card.
+    _question(repair_question(root.get("question"), root.get("concepts"), context.get("subject")))
 
 
 def _quiz(data: Any, context: dict[str, Any]) -> None:
@@ -261,11 +399,12 @@ def _answer(data: Any, context: dict[str, Any]) -> None:
     if status is not None and status not in SKILL_STATUSES:
         _fail("evaluation.skill_status is unsupported")
     if not context.get("is_final", False):
-        _question(root.get("next_question"), "next_question")
+        _question(repair_question(root.get("next_question"), context.get("concepts", ())), "next_question")
 
 
 def _project(data: Any, context: dict[str, Any]) -> None:
-    sections = _list(_dict(data, "project").get("sections"), "sections", nonempty=True)
+    sections = _list(_dict(data, "project").get("sections"), "sections",
+                     nonempty=not context.get("allow_empty"))
     expected = context.get("section_count")
     if expected and context.get("exact_section_count") and len(sections) != int(expected):
         _fail(f"section count must be exactly {int(expected)}")
@@ -274,6 +413,11 @@ def _project(data: Any, context: dict[str, Any]) -> None:
         section = _dict(value, f"sections[{index}]")
         _text(section.get("title"), f"sections[{index}].title")
         if context.get("operation") == "split":
+            continue
+        if context.get("lenient_topics"):
+            # Project Mode topic extraction: the structure is checked here; content is
+            # checked item by item by learnova.projects.topics.normalize_topic, which drops
+            # an unusable card or a topic without a real page instead of failing the batch.
             continue
         for field in ("main_topic", "simple_explanation", "standard_explanation", "detailed_explanation"):
             _text(section.get(field), f"sections[{index}].{field}")
@@ -371,12 +515,29 @@ def _ocr(data: Any, context: dict[str, Any]) -> None:
             _fail("detected_page_number is invalid", "source_reference_validation")
 
 
+def _visual_reading(data: Any, context: dict[str, Any]) -> None:
+    """image_understanding: lenient on purpose. learnova.vision.reading normalises every
+    field; only a shape it cannot use is a failure worth paying a corrective retry for."""
+
+    root = _dict(data, "reading")
+    blocks = _list(root.get("blocks") if root.get("blocks") is not None else [], "blocks")
+    for index, value in enumerate(blocks):
+        block = _dict(value, f"blocks[{index}]")
+        text = block.get("text", block.get("content", ""))
+        if not isinstance(text, str):
+            _fail(f"blocks[{index}].text must be a string")
+    for name in ("images", "diagrams", "uncertain"):
+        if root.get(name) is not None:
+            _list(root.get(name), name)
+
+
 def _adaptive(data: Any, context: dict[str, Any]) -> None:
     if context.get("lesson"):
         _lesson(data, context)
         return
     root = _dict(data, "adaptive practice")
-    question = _question(root.get("question", root.get("next_question")), require_subject=True)
+    question = _question(repair_question(root.get("question", root.get("next_question")), root.get("concepts"),
+                                         context.get("subject")), require_subject=True)
     recent = {re.sub(r"\W+", " ", str(item)).casefold().strip() for item in context.get("recent_questions", [])}
     prompt = re.sub(r"\W+", " ", question["prompt"]).casefold().strip()
     if prompt in recent:
@@ -385,6 +546,13 @@ def _adaptive(data: Any, context: dict[str, Any]) -> None:
 
 def _exam(data: Any, context: dict[str, Any]) -> None:
     questions = _list(_dict(data, "exam").get("questions"), "questions", nonempty=True)
+    if context.get("lenient_exam"):
+        # Project Mode practice exams: the structure is checked here; each question is
+        # checked by the app, which drops an unusable one and keeps the exam (one wrong
+        # count or one unquotable excerpt used to throw the whole exam away).
+        for index, value in enumerate(questions):
+            _dict(value, f"questions[{index}]")
+        return
     count = context.get("question_count")
     if count is not None and len(questions) != int(count):
         _fail(f"question count must be exactly {int(count)}")
@@ -570,6 +738,20 @@ def _content_moderation(data: Any, context: dict[str, Any]) -> None:
         _fail(str(error))
 
 
+def _report_review(data: Any, context: dict[str, Any]) -> None:
+    """The strict report-review contract (learnova.community.reports).
+
+    Structural validation here; grounding the affected span in the reported set needs
+    the content, so it runs in `normalize_report_review` at the call site.
+    """
+
+    from learnova.community.reports import ReportReviewSchemaError, validate_report_review
+    try:
+        validate_report_review(data)
+    except ReportReviewSchemaError as error:
+        _fail(str(error))
+
+
 def _translation(data: Any, context: dict[str, Any]) -> None:
     values = _list(_dict(data, "translation").get("translations"), "translations")
     if context.get("texts") is not None and len(values) != len(context["texts"]):
@@ -592,8 +774,10 @@ VALIDATORS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
     "flashcard_back_suggestion": _flashcard_suggestions,
     "flashcard_review": _flashcard_review,
     "content_moderation": _content_moderation,
+    "report_review": _report_review,
     "competency_extraction": _competencies,
     "vocabulary_page_extraction": _vocabulary_page,
+    "image_understanding": _visual_reading,
 }
 TASK_SCHEMAS = {
     task_type: TaskSchema(name=f"{task_type}_schema", validator=validator)

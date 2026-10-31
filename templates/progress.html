@@ -23,14 +23,14 @@
       </form>
     </article>
     <article><h2>{{ _('Learning totals') }}</h2><p>{{ cards_mastered }} {{ _('mastered cards') }}</p><p>{{ sessions|length }} {{ _('completed flashcard sessions') }}</p><p>{{ events|length }} {{ _('learning events this week') }}</p></article>
-    <article><h2>{{ _('Missions') }}</h2>{% for mission in gamification.missions %}<p>{{ _(mission.mission_key|replace('_',' ')|title) }} — {{ mission.progress }}/{{ mission.target }}</p><progress value="{{ mission.progress }}" max="{{ mission.target }}"></progress>{% endfor %}</article>
+    <article><h2>{{ _('Challenges') }}</h2>{% for mission in gamification.missions %}<p>{{ challenge_title(mission) }} — {{ mission.progress }}/{{ mission.target }}</p><progress value="{{ mission.progress }}" max="{{ mission.target }}"></progress>{% endfor %}</article>
   </section>
   <section class="card-panel"><h2>{{ _('Badges') }}</h2>{% if badges %}<div class="badge-grid">{% for award in badges %}<article><span aria-hidden="true">🏅</span><b>{{ _(award.badge.name) }}</b><p>{{ _(award.badge.description) }}</p><small>{{ _(award.badge.tier|capitalize) }}</small></article>{% endfor %}</div>{% else %}<p>{{ _('Complete meaningful learning activities to unlock badges.') }}</p>{% endif %}</section>
   <section class="card-panel"><h2>{{ _('Recent learning activity') }}</h2>{% if gamification.recent_events %}<ol class="activity-list">{% for event in gamification.recent_events %}<li><b>{{ _(event.event_type|replace('_',' ')|title) }}</b><span>{{ event.subject }}</span><time>{{ event.created_at.strftime('%d.%m.%Y %H:%M') }}</time></li>{% endfor %}</ol>{% else %}<p>{{ _('Your completed learning activity will appear here.') }}</p>{% endif %}</section>
 </main>
 {% endblock %}
 {% block scripts %}
-<script type="module">
+<script nonce="{{ csp_nonce() }}" type="module">
   import { api } from "{{ url_for('static', filename='js/flashcards/common.js') }}";
   const form = document.querySelector("#dailyGoalForm");
   form?.addEventListener("submit", async event => {

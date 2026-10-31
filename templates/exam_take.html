@@ -16,7 +16,7 @@
     </form>
   </main>
 {% endblock %}
-{% block scripts %}<script>
+{% block scripts %}<script nonce="{{ csp_nonce() }}">
   const form = document.querySelector('#examForm'); const status = document.querySelector('#autosaveStatus'); const expiry = {{ expires_epoch }} * 1000; const timers = new Map(); const ui = key => window.LEARNOVA_I18N?.[key] || key;
   function answerFor(card) { const named = card.querySelector('[name^="question_"]:checked'); if (named) return named.value; return card.querySelector('textarea')?.value || ''; }
   async function save(card) { const id = Number(card.dataset.questionId); const state = card.querySelector('.question-save-state'); state.textContent = ui('saving'); status.textContent = ui('saving'); try { const response = await fetch('{{ url_for("autosave_exam", exam_id=exam.id) }}', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({question_id:id, answer:answerFor(card)})}); const data = await response.json(); if (data.redirect) location.href = data.redirect; if (!response.ok) throw new Error(data.error); state.textContent = ui('saved'); status.textContent = ui('allSaved'); } catch (error) { state.textContent = error.message || ui('notSaved'); status.textContent = ui('saveInterrupted'); } }

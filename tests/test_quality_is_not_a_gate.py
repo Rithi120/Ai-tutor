@@ -8,9 +8,9 @@ ordinary three-star set waited for a reviewer who, with COMMUNITY_MODERATORS emp
 does not exist. From the author's side that was "publishing takes forever".
 
 Nothing here loosens what blocks hidden messages or bad meanings: the moderation pass
-still runs first and fails closed, and a safety flag from the quality review still
-rejects. What changes is that a middling *quality* score publishes with its stars and
-the reviewer's suggestions visible.
+still runs first and fails closed. Since v2 no quality score holds a set back - a low
+one publishes with its warnings visible - and a safety flag from the quality review buys
+a stricter moderation pass rather than rejecting on the reviewer's word alone.
 """
 
 import os
@@ -43,15 +43,17 @@ class DecisionTableTests(unittest.TestCase):
             self.assertEqual(decision["status"], "approved", score)
             self.assertEqual(decision["reason"], "approved_with_suggestions", score)
 
-    def test_a_safety_flag_still_rejects_at_any_score(self):
+    def test_without_moderation_a_safety_flag_still_rejects_at_any_score(self):
         for score in (1.0, 3.5, 5.0):
             decision = community.publication_decision(score, ["personal_information"])
             self.assertEqual((decision["status"], decision["reason"]),
                              ("rejected", "safety_violation"), score)
 
-    def test_genuinely_poor_sets_are_still_not_published(self):
-        self.assertEqual(community.publication_decision(2.5, [])["status"], "rejected")
-        self.assertEqual(community.publication_decision(1.0, [])["status"], "rejected")
+    def test_low_scores_publish_with_warnings_instead_of_rejecting(self):
+        for score in (2.5, 1.0, 0.5):
+            decision = community.publication_decision(score, [])
+            self.assertEqual((decision["status"], decision["reason"]),
+                             ("approved", "published_with_warnings"), score)
 
 
 class PublishRouteTests(unittest.TestCase):
@@ -103,16 +105,23 @@ class PublishRouteTests(unittest.TestCase):
         # Moderation decides safety; the badge decides publication. The two were saying
         # different things on the same screen.
         body = self.publish({**QUALITY_REVIEW, "overallScore": 1.0}).get_json()
-        self.assertEqual(body["status"], "rejected")
+        self.assertEqual(body["status"], "approved")
+        self.assertEqual(body["review"]["decision"]["reason"], "published_with_warnings")
         self.assertEqual(body["moderation"]["decision"], "allow")
         self.assertNotIn("published", body["moderation"]["status_message"].casefold())
         self.assertNotEqual(body["moderation"]["decision_label"], "Published")
 
-    def test_a_quality_safety_flag_still_keeps_a_set_out_of_the_library(self):
+    def test_a_quality_safety_flag_is_settled_by_the_stricter_check(self):
+        # The stricter moderation pass (ALLOW here) finds nothing to quote, so the set is
+        # published and an administrator hears about the disagreement.
         flagged = {**QUALITY_REVIEW, "safetyFlags": ["personal_information"]}
         body = self.publish(flagged).get_json()
-        self.assertEqual(body["status"], "rejected")
-        self.assertEqual(len(self.client.get("/api/community/library").get_json()["sets"]), 0)
+        self.assertEqual(body["status"], "approved")
+        self.assertEqual(len(self.client.get("/api/community/library").get_json()["sets"]), 1)
+        with application.app.app_context():
+            kinds = [row.kind for row in application.db.session.scalars(
+                application.db.select(application.AdminNotification)).all()]
+        self.assertEqual(kinds, ["quality_safety_conflict"])
 
 
 if __name__ == "__main__":

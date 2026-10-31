@@ -52,6 +52,9 @@ TASK_TIERS: dict[str, Tier] = {
     "flashcard_review": Tier.standard,
     "answer_evaluation": Tier.standard,
     "content_moderation": Tier.standard,
+    # The safety half of a report re-review goes through content_moderation with the
+    # escalation model; this task is the quality half and needs no premium model.
+    "report_review": Tier.standard,
     "assistant_chat": Tier.standard,
     "competency_extraction": Tier.standard,
     "final_exam_evaluation": Tier.strong,
@@ -60,6 +63,8 @@ TASK_TIERS: dict[str, Tier] = {
     "ocr_document_recognition": Tier.vision,
     "handwriting_region_review": Tier.vision,
     "vocabulary_page_extraction": Tier.vision,
+    # The shared image reader (learnova/vision): a chat photo, a lesson photo, an answer.
+    "image_understanding": Tier.vision,
 }
 
 # Which premium slot a task may draw on, if its signals justify it.
@@ -127,6 +132,12 @@ class RoutingPolicy:
     # upstream, before any emergency provider. Unset = the tier fallback is the slow model.
     slow_model: str | None = None
     max_calls: int = 3
+    # A second vision-capable model, at any provider, tried when the Groq vision model
+    # fails. Unset by default: no image ever goes anywhere it did not go before.
+    vision_fallback_model: str | None = None
+    # Further models the owner vouches can see images. A request carrying an image is
+    # only ever sent to the vision tier model, the vision fallback, or one of these.
+    vision_models: frozenset[str] = frozenset()
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "RoutingPolicy":
@@ -141,8 +152,11 @@ class RoutingPolicy:
         premium = {slot: value for slot, value in (("reasoning", reasoning), ("grading", grading)) if value}
         fallback = str(config.get("AI_FALLBACK_MODEL") or "").strip() or None
         slow = str(config.get("AI_SLOW_MODEL") or "").strip() or None
+        vision_fallback = str(config.get("AI_VISION_FALLBACK_MODEL") or "").strip() or None
+        extra_vision = frozenset(
+            item.strip() for item in str(config.get("AI_VISION_MODELS") or "").split(",") if item.strip())
         return cls(tier_models=tier_models, premium_models=premium, fallback_model=fallback,
-                   slow_model=slow,
+                   slow_model=slow, vision_fallback_model=vision_fallback, vision_models=extra_vision,
                    max_calls=max(1, min(5, int(config.get("AI_MAX_PROVIDER_CALLS_PER_REQUEST") or 3))))
 
 
@@ -200,10 +214,14 @@ def tier_for(task_type: str, context: RoutingContext | None = None) -> Tier:
         tier = TASK_TIERS[task_type]
     except KeyError as error:
         raise ValueError(f"no routing tier for task {task_type!r}") from error
+    if context is not None and context.signals.get("has_images"):
+        # Whatever the task - and before "think harder" picks the strong text model - a
+        # request that carries a picture needs a model that can see it. Before this only
+        # lesson_generation was mapped, and only when the call site remembered the signal;
+        # /api/analyze did not, so its fallbacks were text models.
+        return Tier.vision
     if task_type == "assistant_chat" and context is not None and context.deep:
         return Tier.strong
-    if task_type == "lesson_generation" and context is not None and context.signals.get("has_images"):
-        return Tier.vision
     return tier
 
 
@@ -247,6 +265,8 @@ def plan_route(
     """Order the candidates for one request. The list is never empty of Groq."""
 
     tier = tier_for(context.task_type, context)
+    if tier == Tier.vision:
+        return _vision_route(context, policy, availability)
     candidates: list[Candidate] = []
     premium_slot = premium_reason = None
 
@@ -302,6 +322,35 @@ def plan_route(
     # floor, and the gateway reports a clear error if it fails rather than guessing.
     return RoutePlan(tier=tier, candidates=tuple(candidates), max_calls=policy.max_calls,
                      premium_slot=premium_slot, premium_reason=premium_reason)
+
+
+def _vision_route(context: RoutingContext, policy: RoutingPolicy,
+                  availability: Mapping[str, ProviderAvailability]) -> RoutePlan:
+    """Only models that can see: the requested one if it is known to, the tier's, the fallback.
+
+    No premium and no text fallback - a premium *reasoning* model's image support is not
+    something this code can know, and a text model handed a picture either errors or,
+    worse, answers without having seen it.
+    """
+
+    tier_model = policy.tier_models.get(Tier.vision, "")
+    seeing = {model for model in (tier_model, policy.vision_fallback_model) if model} | set(policy.vision_models)
+    candidates: list[Candidate] = []
+
+    def add(model: str | None, reason: str) -> None:
+        if model and not any(existing.model == model for existing in candidates):
+            candidates.append(Candidate(model=model, provider=split_model(model)[0], reason=reason))
+
+    if context.requested_model and context.requested_model in seeing:
+        add(context.requested_model, "requested")
+    add(tier_model, "tier:vision")
+    fallback = policy.vision_fallback_model
+    if fallback:
+        provider, _ = split_model(fallback)
+        state = availability.get(provider, ProviderAvailability())
+        if provider == DEFAULT_PROVIDER or state.usable:
+            add(fallback, "vision_fallback")
+    return RoutePlan(tier=Tier.vision, candidates=tuple(candidates), max_calls=policy.max_calls)
 
 
 def next_candidate(plan: RoutePlan, index: int, failure_category: str) -> int | None:

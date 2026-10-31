@@ -1,0 +1,15 @@
+# Learnova Leagues - cron alternative to deploy/systemd/learnova-leagues.timer.
+# Template - NOT installed automatically. Install with `crontab -e` as the user that
+# runs Learnova, after replacing <LEARNOVA_DIR> and <LEARNOVA_ENV_FILE>.
+#
+# CRON_TZ makes the schedule follow Learnova's timezone (APP_TIMEZONE, Europe/Berlin by
+# default) including daylight-saving changes. Supported by cronie and most Linux crons.
+CRON_TZ=Europe/Berlin
+SHELL=/bin/bash
+
+# Monday 00:05, just after the competition week ends.
+5 0 * * 1  cd <LEARNOVA_DIR> && set -a && . <LEARNOVA_ENV_FILE> && set +a && .venv/bin/flask --app app leagues process >> <LEARNOVA_DIR>/instance/leagues.log 2>&1
+# Hourly safety net (idempotent): retries a failed run.
+35 * * * *  cd <LEARNOVA_DIR> && set -a && . <LEARNOVA_ENV_FILE> && set +a && .venv/bin/flask --app app leagues process >> <LEARNOVA_DIR>/instance/leagues.log 2>&1
+# Monitoring: exits 2 (and cron mails the output) if a finished week is still open 6 h later.
+15 7 * * 1  cd <LEARNOVA_DIR> && set -a && . <LEARNOVA_ENV_FILE> && set +a && .venv/bin/flask --app app leagues status --check

@@ -186,7 +186,9 @@ class OcrPipelineTests(unittest.TestCase):
         src.save(buf, format="PNG")
         processed = preprocess_document_image(buf.getvalue(), {"grayscale": True})
         out = Image.open(io.BytesIO(processed.data)).convert("RGB")
-        r, g, b = out.getpixel((10, 10))
+        pixel = out.getpixel((10, 10))
+        assert isinstance(pixel, tuple)
+        r, g, b = pixel[:3]
         self.assertTrue(abs(r - g) <= 2 and abs(g - b) <= 2)  # channels equalised -> grayscale
 
 

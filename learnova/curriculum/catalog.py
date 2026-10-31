@@ -133,7 +133,7 @@ def subject_keys(subject: str | None, grade: int | None) -> tuple[str, ...]:
 
 def grade_number(grade: str | None) -> int | None:
     token = str(grade or "").strip()
-    return int(token) if token.isdigit() and 1 <= int(token) <= 13 else None
+    return int(token) if token.isdecimal() and 1 <= int(token) <= 13 else None
 
 
 # Band headings as the plans print them: "Klassen 7/8", "Klassen 7/8/9", "Klasse 10",

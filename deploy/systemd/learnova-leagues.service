@@ -1,0 +1,26 @@
+# Learnova Leagues: close finished competition weeks (promotions and demotions).
+# Template - NOT installed or enabled automatically. See docs/PROFILES_AND_LEAGUES.md,
+# "Scheduling the weekly transition". Replace every <...> placeholder before installing.
+[Unit]
+Description=Learnova weekly league transition
+Documentation=file://<LEARNOVA_DIR>/docs/PROFILES_AND_LEAGUES.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=<LEARNOVA_USER>
+Group=<LEARNOVA_USER>
+WorkingDirectory=<LEARNOVA_DIR>
+# The same environment file the web service uses (DATABASE_URL, APP_TIMEZONE, ...).
+EnvironmentFile=<LEARNOVA_ENV_FILE>
+ExecStart=<LEARNOVA_DIR>/.venv/bin/flask --app app leagues process
+# The command is idempotent: a failed or repeated run is harmless and the next run retries.
+TimeoutStartSec=15min
+Nice=10
+# Output goes to the journal: journalctl -u learnova-leagues.service
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=learnova-leagues
+NoNewPrivileges=true
+PrivateTmp=true

@@ -1,9 +1,11 @@
-"""The exam autopilot inside the app, every model call patched.
+"""Exam preparation in Project Mode v2, every model call patched.
 
 Scan -> exam date -> start: the upload with an exam date lands on the start page, the
-quick start builds sections, reads the competencies (and refuses an unsupported "covered"),
-plans the days and opens the first lesson. The card says what today is, estimates the
-grade honestly, and its button does the next optimal thing without being asked.
+quick start reads the pages and finds the topics, the student confirms them, and the
+first lesson opens with a day-by-day plan behind it (no Kompetenzraster needed). The
+workspace says what today is without inventing a grade, its Next button does the next
+planned thing, a project without an exam date gets an ongoing plan, and the last days
+before an exam lead to a practice exam.
 """
 
 import io
@@ -122,90 +124,75 @@ class ExamAutopilotTests(unittest.TestCase):
             return FakeResponse(payloads[task_type])
         return respond
 
+    def begin(self, project_id, page_ids):
+        with patch.object(application, "create_response", self.route(page_ids)):
+            found = self.client.post(f"/projects/{project_id}/quick-start")
+        self.assertEqual(found.headers["Location"], f"/projects/{project_id}#topics")
+        with patch.object(application, "create_response", self.route(page_ids)):
+            started = self.client.post(f"/projects/{project_id}/topics/confirm", data={"choice": "auto"})
+        self.assertEqual(started.status_code, 302, started.get_data(as_text=True))
+        return started
+
     def test_scan_exam_date_start_builds_the_whole_preparation(self):
         project_id, page_ids = self.upload()
-        with patch.object(application, "create_response", self.route(page_ids)):
-            response = self.client.post(f"/projects/{project_id}/quick-start")
-        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
-        self.assertIn("/?session_id=", response.headers["Location"], "the first lesson opens straight away")
-        self.assertEqual(self.calls.count("competency_extraction"), 1)
+        response = self.begin(project_id, page_ids)
+        self.assertIn("/?session_id=", response.headers["Location"], "the first lesson opens after confirming")
+        self.assertNotIn("competency_extraction", self.calls, "notes alone are enough")
         with application.app.app_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject))
-            rows = sorted(project.competencies, key=lambda item: item.statement)
-            self.assertEqual(len(rows), 3)
-            by_topic = {row.topic: row for row in rows}
-            self.assertEqual(by_topic["Mitochondria"].coverage, "covered")
-            self.assertEqual(by_topic["Cell membrane"].coverage, "missing",
-                             "a covered claim whose quote is not in the notes is not believed")
-            self.assertEqual(by_topic["Cell membrane"].evidence, "")
-            self.assertIsNotNone(by_topic["Mitochondria"].section_id)
-            self.assertIsNone(by_topic["Transport"].section_id, "a requirement with no section stays visible")
-            self.assertIsNotNone(project.exam_prep)
+            self.assertTrue(project.topics_confirmed)
+            self.assertEqual([section.title for section in sorted(project.sections, key=lambda s: s.position)],
+                             ["Mitochondria", "Cell membrane"])
             plan = [p for p in project.study_plans if p.status == "active"]
             self.assertEqual(len(plan), 1)
             self.assertEqual(plan[0].exam_date, self.exam_date)
+            self.assertFalse(plan[0].flexible)
             self.assertTrue(plan[0].sessions, "a day-by-day schedule exists for the reminders and calendar")
+            kinds = {task["kind"] for row in plan[0].sessions for task in json.loads(row.tasks_json)}
+            self.assertLessEqual({"learn", "review", "mock_exam"}, kinds)
+            minutes = [row.planned_minutes for row in plan[0].sessions]
+            self.assertTrue(all(value <= 45 for value in minutes), "never more than the daily budget")
 
-    def test_the_card_says_what_today_is_and_estimates_honestly(self):
+    def test_the_workspace_says_what_today_is_without_inventing_a_grade(self):
         project_id, page_ids = self.upload()
-        with patch.object(application, "create_response", self.route(page_ids)):
-            self.client.post(f"/projects/{project_id}/quick-start")
+        self.begin(project_id, page_ids)
         page = self.client.get(f"/projects/{project_id}").data.decode()
-        self.assertIn("EXAM AUTOPILOT", page)
-        self.assertIn("12 days remaining", page)
-        self.assertIn("Estimated grade", page)
-        self.assertIn("not a guarantee", page)
-        self.assertIn("Your notes cover", page)
+        self.assertIn("12 days left", page)
+        self.assertIn("Learn: Mitochondria", page, "the open first lesson is the next thing")
+        self.assertIn("0 of 2 topics learned", page)
+        self.assertNotIn("Estimated grade", page, "no grade without a documented grading scale")
         overview = self.client.get("/dashboard").data.decode()
-        self.assertIn("EXAM AUTOPILOT", overview)
+        self.assertIn("YOUR LEARNING PLAN", overview)
         self.assertIn("Cells", overview)
-        with application.app.test_request_context():
-            project = application.db.session.scalar(application.db.select(application.LearningProject))
-            card = application.exam_prep_card(project)
-            assert card is not None
-        self.assertEqual(card["grade_label"], "–", "no answers yet means no estimate, not a guess")
-        # The first lesson on topic 1 exists but nothing is known yet: finish topic 1 first.
-        self.assertEqual((card["action"]["kind"], card["action"]["title"]), ("practice", "Mitochondria"))
-        self.assertEqual(card["topics"][0]["title"], "Mitochondria")
-        self.assertTrue(card["topics"][0]["learned"])
-        self.assertFalse(card["topics"][1]["learned"])
-        self.assertEqual(card["coverage"]["covered_percent"], 33)
 
-    def test_the_button_does_the_next_thing_and_the_estimate_explains_itself(self):
+    def test_the_button_does_the_next_thing(self):
         project_id, page_ids = self.upload()
-        with patch.object(application, "create_response", self.route(page_ids)):
-            first = self.client.post(f"/projects/{project_id}/quick-start")
+        first = self.begin(project_id, page_ids)
         session_id = first.headers["Location"].split("session_id=", 1)[1]
-        # The first lesson is open and unfinished: "Start" resumes it rather than starting another.
+        # The first lesson is open and unfinished: Next resumes it rather than starting another.
         application.SESSIONS.clear()
         with patch.object(application, "create_response", self.route(page_ids)):
-            resumed = self.client.post(f"/projects/{project_id}/autopilot/next")
+            resumed = self.client.post(f"/projects/{project_id}/next")
         self.assertEqual(resumed.status_code, 302, resumed.get_data(as_text=True))
         self.assertEqual(resumed.headers["Location"], f"/?session_id={session_id}")
         self.assertEqual(self.calls, [], "nothing regenerated")
-        # Mark topic 1 known in the knowledge model and finish its lesson: the next action moves on.
+        # Topic 1 is learned (its session finished): the next action moves on to topic 2.
         with application.app.test_request_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject))
-            mastery = application.get_or_create_mastery(project.user_id, "Biology", "Mitochondria")
-            mastery.mastery_score, mastery.attempts, mastery.evidence_weight = 92, 4, 4.0
-            mastery.last_practised_at = application.utcnow()
+            first_topic = min(project.sections, key=lambda item: item.position)
+            first_topic.learned_at = application.utcnow()
+            first_topic.next_review_on = date.today() + timedelta(days=1)
             saved = application.db.session.scalar(application.db.select(application.StudySession))
             state = json.loads(saved.state_json)
-            state["knowledge_gate"] = {"complete": True, "reached": True, "reason": "target_reached", "concepts": [
-                    {"concept": "Mitochondria", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"},
-                    {"concept": "Cell membrane", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"}]}
+            state["knowledge_gate"] = {"complete": True, "reached": True}
             saved.state_json = json.dumps(state)
+            application.refresh_project_plans(project.user_id)
             application.db.session.commit()
-            card = application.exam_prep_card(project)
-            assert card is not None
-            self.assertTrue(card["topics"][0]["known"])
-            self.assertEqual((card["action"]["kind"], card["action"]["title"]), ("learn", "Cell membrane"))
-            self.assertNotEqual(card["grade_label"], "–")
-            self.assertIn("untested_topics", card["grade"]["basis"], "one untested topic widens the range")
-            self.assertTrue(card["reasons"], "the first estimate says it is the first")
-            self.assertIsNone(card["weakness"], "a topic never taught is not a weakness yet - it is simply next")
+            _, task = application.project_next_task(project)
+            assert task is not None, "a next task is planned"
+            self.assertEqual((task["kind"], task["title"]), ("learn", "Cell membrane"))
         with patch.object(application, "create_response", self.route(page_ids)):
-            second = self.client.post(f"/projects/{project_id}/autopilot/next")
+            second = self.client.post(f"/projects/{project_id}/next")
         self.assertEqual(second.status_code, 302, second.get_data(as_text=True))
         self.assertIn("/?session_id=", second.headers["Location"])
         self.assertIn("lesson_generation", self.calls, "topic 2 is taught before it is tested")
@@ -214,36 +201,44 @@ class ExamAutopilotTests(unittest.TestCase):
             self.assertEqual(sorted(lesson.section_id for lesson in lessons), sorted(
                 [s.id for s in application.db.session.scalars(application.db.select(application.LearningSection)).all()]))
 
-    def test_a_project_without_an_exam_date_offers_the_one_field_form(self):
+    def test_a_project_without_an_exam_date_gets_an_ongoing_plan_and_one_date_field(self):
         project_id, page_ids = self.upload(with_date=False)
-        with patch.object(application, "create_response", self.route(page_ids)):
-            self.client.post(f"/projects/{project_id}/quick-start")
-        self.assertNotIn("competency_extraction", self.calls, "no exam date, no autopilot - just the lesson")
+        self.begin(project_id, page_ids)
         page = self.client.get(f"/projects/{project_id}").data.decode()
-        self.assertIn("Enter the exam date. Learnova plans the rest.", page)
-        self.assertIn(f"/projects/{project_id}/autopilot", page)
-        with patch.object(application, "create_response", self.route(page_ids)):
-            started = self.client.post(f"/projects/{project_id}/autopilot", data={"exam_date": self.exam_date.isoformat()},
-                                       follow_redirects=True)
-        self.assertEqual(started.status_code, 200)
-        self.assertIn("EXAM AUTOPILOT", started.get_data(as_text=True))
-        self.assertIn("12 days remaining", started.get_data(as_text=True))
-        rejected = self.client.post(f"/projects/{project_id}/autopilot", data={"exam_date": "2001-01-01"}, follow_redirects=True)
+        self.assertIn("No exam date: ongoing plan", page)
+        self.assertIn(f"/projects/{project_id}/plan-settings", page)
+        with application.app.app_context():
+            plan = application.db.session.scalar(application.db.select(application.StudyPlan))
+            self.assertTrue(plan.flexible)
+            self.assertFalse([task for row in plan.sessions for task in json.loads(row.tasks_json)
+                              if task["kind"] == "mock_exam"], "no practice exam without an exam")
+        updated = self.client.post(f"/projects/{project_id}/plan-settings",
+                                   data={"exam_date": self.exam_date.isoformat()}, follow_redirects=True)
+        self.assertEqual(updated.status_code, 200)
+        self.assertIn("12 days left", updated.get_data(as_text=True))
+        rejected = self.client.post(f"/projects/{project_id}/plan-settings", data={"exam_date": "2001-01-01"},
+                                    follow_redirects=True)
         self.assertIn("Choose a future exam date.", rejected.get_data(as_text=True))
-
-    def test_final_days_lead_to_a_mock_exam(self):
-        project_id, page_ids = self.upload()
+        # The former autopilot route still works and leads to the same single plan.
         with patch.object(application, "create_response", self.route(page_ids)):
-            self.client.post(f"/projects/{project_id}/quick-start")
+            self.client.post(f"/projects/{project_id}/autopilot", data={"exam_date": self.exam_date.isoformat()})
+        with application.app.app_context():
+            plans = application.db.session.scalars(application.db.select(application.StudyPlan).where(
+                application.StudyPlan.status == "active")).all()
+            self.assertEqual(len(plans), 1, "never a second plan for one project")
+
+    def test_the_last_days_lead_to_a_practice_exam(self):
+        project_id, page_ids = self.upload()
+        self.begin(project_id, page_ids)
         with application.app.test_request_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject))
-            project.exam_date = date.today() + timedelta(days=1)
+            project.exam_date = date.today() + timedelta(days=2)
+            application.refresh_project_plans(project.user_id)
             application.db.session.commit()
-            card = application.exam_prep_card(project)
-            assert card is not None
-        self.assertEqual(card["phase"], "final")
-        self.assertEqual(card["action"]["kind"], "mock_exam")
-        self.assertIn("mock exam", card["next_label"])
+            rows = application.project_plan_rows(project)
+            mock = [(day, task) for day, task in rows if task["kind"] == "mock_exam"]
+            self.assertEqual(len(mock), 1)
+            self.assertEqual(mock[0][0], date.today() + timedelta(days=1), "the day before the exam")
 
 
 if __name__ == "__main__":

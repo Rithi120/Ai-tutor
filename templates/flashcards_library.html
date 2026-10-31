@@ -47,5 +47,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script type="module" src="{{ url_for('static', filename='js/flashcards/library.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/flashcards/library.js') }}"></script>
 {% endblock %}

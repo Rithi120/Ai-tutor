@@ -191,7 +191,9 @@ class ReliabilityTests(unittest.TestCase):
                     {
                         "email": "legacy@example.com",
                         "password_hash": application.generate_password_hash("legacy-password"),
-                        "created_at": application.utcnow(),
+                        # As SQLAlchemy stores it on SQLite; a datetime object here relies on
+                        # sqlite3's default adapter, deprecated since Python 3.12.
+                        "created_at": application.utcnow().replace(tzinfo=None).isoformat(sep=" "),
                     },
                 )
             application.ensure_database()

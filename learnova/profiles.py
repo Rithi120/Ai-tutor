@@ -37,7 +37,7 @@ def grade_label(grade: str) -> str:
     return GRADE_LABELS_EN.get(normalize_grade(grade), "Not set")
 
 
-def grade_descriptor(grade: str) -> str:
+def grade_descriptor(grade: str | None) -> str:
     """Neutral English descriptor injected into AI prompts to calibrate depth/difficulty.
 
     Always returns guidance: an unknown level gets a calibration fallback, because

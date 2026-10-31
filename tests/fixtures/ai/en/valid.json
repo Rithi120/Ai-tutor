@@ -410,7 +410,8 @@
         "Explain ribosomes more precisely"
       ],
       "flaggedCards": [],
-      "safetyFlags": []
+      "safetyFlags": [],
+      "entryWarnings": []
     }
   },
   "mistake_analysis": {
@@ -653,9 +654,82 @@
       "target_language": "de"
     }
   },
+  "image_understanding": {
+    "output_text": {
+      "images": [
+        {
+          "index": 1,
+          "kind": "handwritten_notes",
+          "rotation": 0,
+          "cut_off": false,
+          "legibility": "partly_unclear"
+        }
+      ],
+      "blocks": [
+        {
+          "image": 1,
+          "type": "formula",
+          "text": "3x + 5 = [?20]",
+          "latex": "3x + 5 = 20",
+          "bbox": [
+            0.1,
+            0.1,
+            0.6,
+            0.18
+          ],
+          "author": "student",
+          "confidence": 0.62
+        },
+        {
+          "image": 1,
+          "type": "formula",
+          "text": "3x = 15",
+          "latex": "3x = 15",
+          "bbox": [
+            0.1,
+            0.2,
+            0.5,
+            0.28
+          ],
+          "author": "student",
+          "confidence": 0.93
+        }
+      ],
+      "diagrams": [],
+      "uncertain": [
+        {
+          "image": 1,
+          "text": "20",
+          "alternatives": [
+            "26"
+          ],
+          "reason": "the last digit is smudged",
+          "affects_answer": true
+        }
+      ],
+      "clarification_question": "Is the number after the equals sign 20 or 26?",
+      "summary": "A handwritten linear equation and its first step.",
+      "language": "en"
+    }
+  },
+  "report_review": {
+    "output_text": {
+      "outcome": "report_valid",
+      "issue_category": "translation",
+      "explanation": "In this entry 'la marche' means a step, so 'die Stufe' fits; 'der Marsch' would be the march.",
+      "affected": {
+        "entry": 1,
+        "side": "back",
+        "text": "der Marsch"
+      },
+      "suggested_correction": "die Stufe",
+      "human_review_recommended": false,
+      "safety_concern": false
+    }
+  },
   "_meta": {
     "prompt_versions": {
-      "lesson_generation": "lesson_generation:v5",
+      "lesson_generation": "lesson_generation:v6",
       "quiz_generation": "quiz_generation:v2",
       "answer_evaluation": "answer_evaluation:v5",
       "mistake_analysis": "mistake_analysis:v1",
@@ -670,13 +744,15 @@
       "final_exam_generation": "final_exam_generation:v3",
       "final_exam_evaluation": "final_exam_evaluation:v2",
       "flashcard_generation": "flashcard_generation:v1",
-      "flashcard_review": "flashcard_review:v1",
-      "content_moderation": "content_moderation:v1",
+      "flashcard_review": "flashcard_review:v2",
+      "content_moderation": "content_moderation:v2",
       "assistant_chat": "assistant_chat:v2",
       "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
       "handwriting_region_review": "handwriting_region_review:v1",
       "competency_extraction": "competency_extraction:v1",
-      "vocabulary_page_extraction": "vocabulary_page_extraction:v1"
+      "vocabulary_page_extraction": "vocabulary_page_extraction:v1",
+      "image_understanding": "image_understanding:v1",
+      "report_review": "report_review:v1"
     }
   }
 }

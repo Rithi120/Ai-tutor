@@ -56,10 +56,23 @@
 
     <form id="asstComposer" class="asst-composer">
       <div class="asst-composer-shell">
+        {% if chat_images %}<div id="asstAttachTray" class="attach-tray hidden" aria-live="polite" aria-label="{{ _('Attached photos') }}"></div>{% endif %}
         <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
         <textarea id="asstInput" rows="1" maxlength="16000"
                   placeholder="{{ _('Send a message…') }}" autocomplete="off"></textarea>
         <div class="asst-composer-actions">
+          {% if chat_images %}
+          <span class="attach-buttons">
+            <label class="attach-button" title="{{ _('Take a photo') }}">
+              <input id="asstCamera" class="attach-input" type="file" accept="image/*" capture="environment">
+              <span aria-hidden="true">📷</span><span class="visually-hidden">{{ _('Take a photo') }}</span>
+            </label>
+            <label class="attach-button" title="{{ _('Add photos') }}">
+              <input id="asstGallery" class="attach-input" type="file" accept="image/*" multiple>
+              <span aria-hidden="true">🖼</span><span class="visually-hidden">{{ _('Add photos') }}</span>
+            </label>
+          </span>
+          {% endif %}
           <label class="asst-deep" title="{{ _('Use the stronger model. Slower, better on hard questions.') }}">
             <input type="checkbox" id="asstDeep"> {{ _('Think harder') }}
           </label>
@@ -68,11 +81,11 @@
                   aria-label="{{ _('Send') }}"><span aria-hidden="true">&uarr;</span></button>
         </div>
       </div>
-      <p class="asst-disclaimer">{{ _('The assistant can be wrong. Check anything that matters.') }}</p>
+      <p class="asst-disclaimer">{{ _('The assistant can be wrong. Check anything that matters.') }}{% if chat_images %} {{ _('Photos are read by AI and kept with this conversation.') }}{% endif %}</p>
     </form>
   </section>
 </main>
 {% endblock %}
 {% block scripts %}
-  <script type="module" src="{{ url_for('static', filename='js/assistant.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/assistant.js') }}"></script>
 {% endblock %}

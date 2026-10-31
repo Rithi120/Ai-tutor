@@ -194,7 +194,8 @@ class ProjectFlowFixTests(unittest.TestCase):
                 FakeResponse(recognition_payload("Mitochondria produce ATP")), FakeResponse(payload), FakeResponse(PROJECT_LESSON)]):
             response = self.client.post(f"/projects/{project_id}/quick-start")
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
-        self.assertIn("/?session_id=", response.headers["Location"], "the lesson still opens")
+        # The analysis still succeeds; the student confirms the topics before the first lesson.
+        self.assertTrue(response.headers["Location"].endswith(f"/projects/{project_id}#topics"))
         with application.app.app_context():
             cards = application.db.session.scalars(application.db.select(application.RecallCard)).all()
             self.assertEqual([card.prompt for card in cards], ["What do mitochondria produce?"], "only the grounded card survives")

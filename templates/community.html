@@ -2,6 +2,7 @@
 {% block title %}{{ _('Community') }} — Learnova{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">
 {% endblock %}
 {% block content %}
 <main class="community-page" id="main-content" data-publishing-enabled="{{ 'true' if feature_flags.community_publishing else 'false' }}" data-moderation-enabled="{{ 'true' if feature_flags.community_moderation else 'false' }}">
@@ -79,6 +80,6 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script>window.LEARNOVA_COMMUNITY_SET_ID={{ (initial_public_set_id|default(None))|tojson }};window.LEARNOVA_AUTHENTICATED={{ current_user.is_authenticated|tojson }};</script>
-  <script type="module" src="{{ url_for('static', filename='js/community.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_COMMUNITY_SET_ID={{ (initial_public_set_id|default(None))|tojson }};window.LEARNOVA_AUTHENTICATED={{ current_user.is_authenticated|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/community.js') }}"></script>
 {% endblock %}

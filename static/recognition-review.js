@@ -243,3 +243,10 @@ if (list) {
     refresh(editor, regions);
   });
 })();
+
+// Confirmation prompts are declared as data-confirm rather than inline onclick handlers,
+// which the nonce-based Content Security Policy does not run.
+document.addEventListener("click", event => {
+  const control = event.target.closest("[data-confirm]");
+  if (control && !window.confirm(control.dataset.confirm)) event.preventDefault();
+});

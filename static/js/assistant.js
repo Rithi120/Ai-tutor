@@ -9,6 +9,7 @@ import { renderMarkdown } from "./markdown.js";
 import { withRetryHint } from "./ai-limit-rules.js";
 import { renderMath } from "./math.js";
 import { t } from "./i18n.js";
+import { createAttachmentTray, photoNotesNode, sentPhotosNode } from "./image-attach.js";
 
 
 const state = {
@@ -17,6 +18,7 @@ const state = {
   sending: false,
   showArchived: false,
   search: "",
+  tray: null,   // photos waiting to be sent with the next message
 };
 
 const el = (id) => document.querySelector(`#${id}`);
@@ -78,6 +80,7 @@ function messageNode(message) {
     body.innerHTML = renderMarkdown(message.content);
   }
   article.appendChild(body);
+  if (message.attachments?.length) article.appendChild(sentPhotosNode(message.attachments));
 
   const notes = [];
   if (message.model) notes.push(escapeHtml(message.model));
@@ -236,20 +239,26 @@ async function newConversation() {
 
 /* --------------------------------------------------------------------- sending */
 
-function pendingNode() {
+function pendingNode(withPhotos = false) {
   const article = document.createElement("article");
   article.className = "asst-msg asst-msg-assistant asst-pending";
+  // With photos the wait is mostly the reading; saying so beats three silent dots.
+  const label = withPhotos ? `<span class="asst-pending-label">${escapeHtml(t("imgReading"))}</span>` : "";
   article.innerHTML =
     `<p class="visually-hidden">${escapeHtml(t("asstAssistant"))}</p>` +
     `<span class="asst-avatar" aria-hidden="true"></span>` +
-    `<div class="asst-body"><span class="asst-dots"><i></i><i></i><i></i></span></div>`;
+    `<div class="asst-body">${label}<span class="asst-dots"><i></i><i></i><i></i></span></div>`;
   return article;
 }
 
 async function send(text) {
   if (state.sending) return;
   const message = text.trim();
-  if (!message) return;
+  const tray = state.tray;
+  if (tray?.busy()) { toast(t("imgStillUploading"), "info"); return; }
+  if (tray?.failed()) { toast(t("imgFixFailed"), "error"); return; }
+  const attachments = tray ? tray.ids() : [];
+  if (!message && !attachments.length) return;
   if (!state.activeId) {
     await newConversation();
     if (!state.activeId) return;
@@ -261,15 +270,22 @@ async function send(text) {
   el("asstInput").value = "";
   updateCount();
 
-  thread.appendChild(messageNode({ id: "pending-user", role: "user", content: message }));
-  const pending = pendingNode();
+  const draft = messageNode({ id: "pending-user", role: "user", content: message || t("imgPhotoOnly") });
+  thread.appendChild(draft);
+  const pending = pendingNode(attachments.length > 0);
   thread.appendChild(pending);
   scrollToEnd();
 
   try {
     const data = await api(`/api/assistant/conversations/${state.activeId}/messages`, {
-      method: "POST", body: { message, deep: el("asstDeep").checked },
+      method: "POST", body: { message, deep: el("asstDeep").checked, attachments },
     });
+    // The stored message is what the server kept: its text and its photos' own URLs.
+    const sent = messageNode(data.message);
+    const notes = photoNotesNode(data.image_notes);
+    if (notes) sent.appendChild(notes);
+    draft.replaceWith(sent);
+    tray?.clear();
     const replyNode = messageNode(data.reply);
     pending.replaceWith(replyNode);
     if (!data.reply.error) offerLessonUnder(replyNode, message);
@@ -280,8 +296,9 @@ async function send(text) {
     renderList();
   } catch (error) {
     pending.remove();
-    // The message is put back in the box rather than lost, so a failure costs nothing
-    // but the wait.
+    draft.remove();
+    // The message (and its photos, still in the tray) is put back rather than lost, so a
+    // failure costs nothing but the wait.
     el("asstInput").value = message;
     updateCount();
     toast(error.message, "error");
@@ -369,6 +386,12 @@ function init() {
       send(input.value);
     }
   });
+  if (el("asstAttachTray")) {
+    state.tray = createAttachmentTray({
+      tray: el("asstAttachTray"), inputs: [el("asstCamera"), el("asstGallery")], purpose: "chat",
+      onError: (message) => toast(message, "error"),
+    });
+  }
   el("asstNew").addEventListener("click", newConversation);
   el("asstRename").addEventListener("click", renameActive);
   el("asstArchive").addEventListener("click", toggleArchiveActive);

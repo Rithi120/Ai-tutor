@@ -126,7 +126,7 @@ class GradeBand:
 
 def grade_band(grade: str | None) -> GradeBand:
     token = str(grade or "").strip().casefold()
-    if token.isdigit():
+    if token.isdecimal():
         number = int(token)
         if number <= 2:
             return GradeBand(1, 2, "a young child: very short sentences, toys, fruit, fingers and counting")

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "components/_identity.html" import premium_badge, avatar_frame with context %}
+{% block title %}{{ _('Your profile') }} — Learnova{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">
+{% endblock %}
+{% block content %}
+<main class="profile-page" id="main-content" data-profile-page>
+  <section class="profile-hero" style="--avatar-accent: {{ avatar.accent }}">
+    <div class="profile-hero-art">
+      {{ avatar_frame(avatar.url, avatar.accent, "xl", _('Your avatar: {name}', name=avatar.name)) }}
+      <span class="rarity-chip rarity-{{ avatar.rarity }}">{{ avatar.rarity_label }}</span>
+    </div>
+    <div class="profile-hero-info">
+      <p class="eyebrow">{{ _('YOUR LEARNOVA PROFILE') }}</p>
+      <h1 class="profile-name"><span>{{ profile_user.username }}</span>{% if premium %}{{ premium_badge() }}{% endif %}</h1>
+      <p class="profile-avatar-name">{{ avatar.name }}</p>
+      {% if gamification %}
+      <div class="profile-level" aria-label="{{ _('Level {level}', level=gamification.level) }}">
+        <span class="level-badge"><small>{{ _('Level') }}</small><b>{{ gamification.level }}</b></span>
+        <div class="level-track">
+          <div class="level-bar"><i style="width: {{ (100 * gamification.current_level_xp / gamification.next_level_xp)|round|int }}%"></i></div>
+          <p>{{ gamification.total_xp }} {{ _('XP') }} · {{ _('{xp} XP to level {level}', xp=gamification.xp_to_next_level, level=gamification.level + 1) }}</p>
+        </div>
+      </div>
+      <ul class="profile-highlights">
+        <li><span aria-hidden="true">🔥</span><b>{{ gamification.current_streak }}</b><small>{{ _('day streak') }}</small></li>
+        <li><span aria-hidden="true">🏆</span><b>{{ stats.challenges }}</b><small>{{ _('challenges done') }}</small></li>
+        <li><span aria-hidden="true">🎭</span><b>{{ unlocked_count }}/20</b><small>{{ _('characters') }}</small></li>
+        <li><span aria-hidden="true">⭐</span><b>{{ gamification.longest_streak }}</b><small>{{ _('best streak') }}</small></li>
+      </ul>
+      {% endif %}
+      <div class="profile-actions">
+        <a class="primary-button" href="{{ url_for('settings') }}#profile">{{ _('Edit profile') }}</a>
+        {% if profile_user.profile_public %}<a class="ghost-button" href="{{ url_for('public_profile', username=profile_user.username) }}" data-view-public>{{ _('View public profile') }}</a>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if gamification %}
+  {% set difficulty_labels = {'easy': _('Easy'), 'medium': _('Medium'), 'hard': _('Hard')} %}
+  <section class="challenge-board" aria-label="{{ _('Challenges') }}">
+    {% for period, items, heading, hint in [
+        ('daily', daily, _('Daily challenges'), _('New challenges every day at midnight.')),
+        ('weekly', weekly, _('Weekly challenges'), _('Bigger rewards for the whole week.'))] %}
+    <article class="challenge-panel challenge-{{ period }}">
+      <header>
+        <div><h2>{{ heading }}</h2><p>{{ hint }}</p></div>
+        {% if items %}<span class="challenge-timer" data-countdown="{{ items[0].ends_at }}" data-countdown-label="{{ _('Resets in {time}') if period == 'daily' else _('Ends in {time}') }}"></span>{% endif %}
+      </header>
+      <ul class="challenge-list">
+        {% for item in items %}
+        <li class="challenge{{ ' is-complete' if item.completed }}" data-difficulty="{{ item.difficulty }}">
+          <span class="challenge-icon" aria-hidden="true">{{ '✓' if item.completed else ('●' if item.difficulty == 'easy' else ('◆' if item.difficulty == 'medium' else '★')) }}</span>
+          <div class="challenge-body">
+            <p class="challenge-title">{{ item.title }}</p>
+            <div class="challenge-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ item.target }}" aria-valuenow="{{ item.progress }}" aria-label="{{ item.title }}">
+              <i style="width: {{ (100 * item.progress / item.target)|round|int }}%"></i>
+            </div>
+            <small>{{ item.progress }}/{{ item.target }} · {{ difficulty_labels.get(item.difficulty, difficulty_labels.easy) }}</small>
+          </div>
+          <span class="challenge-reward">{% if item.completed %}{{ _('+{xp} XP earned', xp=item.reward_xp) }}{% else %}+{{ item.reward_xp }} XP{% endif %}</span>
+        </li>
+        {% else %}
+        <li class="challenge-empty">{{ _('Your challenges appear here after your first learning activity.') }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if league %}
+  <a class="league-card" href="{{ url_for('leaderboard_page') }}" style="--league: {{ league.colour }}; --league-dark: {{ league.colour_dark }}">
+    <span class="league-crest league-{{ league.key }}" aria-hidden="true"></span>
+    <span><small>{{ _('Your league this week') }}</small><b>{{ league.name }}</b>
+      <em>{% if league.joined and league.rank %}{{ _('Rank {rank} of {size}', rank=league.rank, size=league.size) }} · {{ league.message }}{% else %}{{ _('Earn XP this week to join the ranking.') }}{% endif %}</em></span>
+    <span class="league-card-go" aria-hidden="true">→</span>
+  </a>
+  {% endif %}
+
+  <section id="avatars" class="avatar-collection" aria-labelledby="avatarsTitle">
+    <header>
+      <div><h2 id="avatarsTitle">{{ _('Avatar collection') }}</h2>
+        <p>{{ _('{count} of 20 characters unlocked. New ones unlock as you level up.', count=unlocked_count) }}</p></div>
+      {% if next_avatar %}<p class="next-unlock"><img src="{{ next_avatar.url }}" alt="" width="40" height="40" loading="lazy"> {{ _('Next: {name} at level {level}', name=next_avatar.name, level=next_avatar.level) }}</p>{% endif %}
+    </header>
+    <ul class="avatar-grid">
+      {% for item in collection %}
+      <li>
+        <button type="button" class="avatar-tile rarity-{{ item.rarity }}{{ ' is-locked' if not item.unlocked }}{{ ' is-selected' if item.selected }}"
+                style="--avatar-accent: {{ item.accent }}" data-avatar="{{ item.id }}" data-name="{{ item.name }}"
+                data-description="{{ item.description }}" data-rarity="{{ item.rarity_label }}" data-rarity-key="{{ item.rarity }}"
+                data-level="{{ item.unlock_level }}" data-unlocked="{{ 'true' if item.unlocked else 'false' }}" data-url="{{ item.url }}"
+                aria-label="{{ item.name }} · {{ item.rarity_label }} · {{ _('Selected') if item.selected else (_('Unlocked') if item.unlocked else _('Unlocks at level {level}', level=item.unlock_level)) }}">
+          <span class="avatar-tile-art"><img src="{{ item.url }}" alt="" width="256" height="256" loading="lazy" decoding="async"></span>
+          <span class="avatar-tile-name">{{ item.name }}</span>
+          <span class="avatar-tile-meta">{% if item.selected %}{{ _('In use') }}{% elif item.unlocked %}{{ item.rarity_label }}{% else %}<span aria-hidden="true">🔒</span> {{ _('Level {level}', level=item.unlock_level) }}{% endif %}</span>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <dialog id="avatarPreview" class="avatar-preview" aria-labelledby="avatarPreviewName">
+    <form method="dialog" class="avatar-preview-close"><button type="submit" aria-label="{{ _('Close') }}">×</button></form>
+    <span class="avatar-frame avatar-xl" data-preview-frame><img data-preview-img src="" alt="" width="256" height="256"></span>
+    <p class="rarity-chip" data-preview-rarity></p>
+    <h3 id="avatarPreviewName" data-preview-name></h3>
+    <p data-preview-description></p>
+    <p class="avatar-preview-lock" data-preview-lock hidden></p>
+    <button type="button" class="primary-button" data-preview-select hidden>{{ _('Use this avatar') }}</button>
+    <p class="avatar-preview-status" role="status" data-preview-status></p>
+  </dialog>
+
+  <section class="profile-grid">
+    <article class="profile-panel">
+      <h2>{{ _('Recent achievements') }}</h2>
+      {% if badges %}
+      <ul class="achievement-list">{% for award in badges %}<li><span aria-hidden="true">🏅</span><div><b>{{ _(award.badge.name) }}</b><small>{{ _(award.badge.description) }}</small></div></li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ _('Complete meaningful learning activities to unlock badges.') }}</p>{% endif %}
+    </article>
+    <article class="profile-panel">
+      <h2>{{ _('Learning statistics') }}</h2>
+      <dl class="stat-grid">
+        <div><dt>{{ _('Lessons completed') }}</dt><dd>{{ stats.lessons }}</dd></div>
+        <div><dt>{{ _('Correct answers') }}</dt><dd>{{ stats.correct_answers }}</dd></div>
+        <div><dt>{{ _('Flashcards reviewed') }}</dt><dd>{{ stats.flashcards }}</dd></div>
+        <div><dt>{{ _('Tests completed') }}</dt><dd>{{ stats.tests }}</dd></div>
+        <div><dt>{{ _('Cards mastered') }}</dt><dd>{{ stats.cards_mastered }}</dd></div>
+        <div><dt>{{ _('Vocabulary practised') }}</dt><dd>{{ stats.vocabulary }}</dd></div>
+      </dl>
+    </article>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/profile.js', v=static_version) }}"></script>{% endblock %}

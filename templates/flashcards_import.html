@@ -73,5 +73,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script type="module" src="{{ url_for('static', filename='js/flashcards/import.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/flashcards/import.js') }}"></script>
 {% endblock %}

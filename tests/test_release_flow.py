@@ -1,11 +1,12 @@
 """Pre-release checks: the complete flow end to end, and data isolation on the new routes.
 
-Complete flow (every model call patched): upload with an exam date -> one-tap start builds
-sections, competencies and the plan and opens the lesson -> exercises with a wrong answer
-(diagnosis, re-teaching on the same concept) and right answers until the knowledge gate is
-satisfied -> the autopilot moves to the next topic -> once everything is known it generates
-a mock exam -> the exam is taken and submitted -> the results page shows the knowledge
-check and the grade estimate now rests on the mock exam too.
+Complete flow (every model call patched, Project Mode v2): upload with an exam date ->
+one tap reads the pages and finds the topics -> the student confirms the topics and the
+first lesson opens -> exercises with a wrong answer (diagnosis, re-teaching on the same
+concept) and right answers until the knowledge gate is satisfied -> the topic moves onto
+the review ladder and Next teaches topic 2 -> a practice exam is generated, taken and
+submitted -> the results show the knowledge check and every topic's next review date.
+No grade is invented: there is no documented grading scale for a practice exam.
 """
 
 import io
@@ -23,7 +24,6 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
-from study_projects import difficulty_distribution, proportional_section_counts  # noqa: E402
 from tests.test_exam_autopilot_integration import (  # noqa: E402
     LESSON, NOTES, FakeResponse, competencies, image_bytes, recognition, sections,
 )
@@ -109,14 +109,22 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()
 
+    def start(self, project_id, page_ids):
+        """Scan -> topics -> 'Start learning': returns the first lesson's session id."""
+        with patch.object(application, "create_response", self.router(page_ids)):
+            found = self.client.post(f"/projects/{project_id}/quick-start")
+        self.assertEqual(found.status_code, 302, found.get_data(as_text=True))
+        self.assertEqual(found.headers["Location"], f"/projects/{project_id}#topics")
+        with patch.object(application, "create_response", self.router(page_ids)):
+            started = self.client.post(f"/projects/{project_id}/topics/confirm", data={"choice": "auto"})
+        self.assertEqual(started.status_code, 302, started.get_data(as_text=True))
+        return started.headers["Location"].split("session_id=", 1)[1]
+
     def test_the_complete_flow_from_upload_to_mock_exam(self):
         project_id, page_ids = self.upload()
-        # 1. Scan -> exam date -> start.
-        with patch.object(application, "create_response", self.router(page_ids)):
-            started = self.client.post(f"/projects/{project_id}/quick-start")
-        self.assertEqual(started.status_code, 302, started.get_data(as_text=True))
-        session_id = started.headers["Location"].split("session_id=", 1)[1]
-        self.assertEqual(self.calls.count("competency_extraction"), 1)
+        # 1. Scan -> topics -> start. No Kompetenzraster and no competency call are needed.
+        session_id = self.start(project_id, page_ids)
+        self.assertNotIn("competency_extraction", self.calls)
 
         # 2. Exercises: a wrong answer is diagnosed and re-taught on the same concept ...
         wrong = self.answer(session_id, 20)
@@ -137,69 +145,51 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertTrue({"question_generation", "adaptive_practice"} & set(self.calls),
                         "after the mistake the confirming question was regenerated as a transfer task")
 
-        # 3. The autopilot moves on to topic 2 and teaches it before testing it.
+        # 3. The finished topic is on the review ladder; Next teaches topic 2.
         with application.app.test_request_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject).where(
                 application.LearningProject.id == project_id))
             assert project is not None
-            card = application.exam_prep_card(project)
-            assert card is not None
-            self.assertTrue(card["topics"][0]["known"], card["topics"])
-            self.assertEqual((card["action"]["kind"], card["action"]["title"]), ("learn", "Cell membrane"))
-            self.assertNotEqual(card["grade_label"], "–")
+            first = min(project.sections, key=lambda item: item.position)
+            self.assertIsNotNone(first.learned_at)
+            self.assertIsNotNone(first.next_review_on, "a spaced review is scheduled")
+            _, task = application.project_next_task(project)
+            assert task is not None, "a next task is planned"
+            self.assertEqual((task["kind"], task["title"]), ("learn", "Cell membrane"))
         with patch.object(application, "create_response", self.router(page_ids)):
-            second = self.client.post(f"/projects/{project_id}/autopilot/next")
+            second = self.client.post(f"/projects/{project_id}/next")
         self.assertIn("/?session_id=", second.headers["Location"])
 
-        # 4. With every topic known, the next action is a mock exam - generated, grounded, taken.
+        # 4. A practice exam over the chosen topics - generated, grounded, taken, submitted.
         with application.app.test_request_context():
             project = application.db.session.scalar(application.db.select(application.LearningProject).where(
                 application.LearningProject.id == project_id))
             assert project is not None
-            for section in project.sections:
-                mastery = application.get_or_create_mastery(project.user_id, "Biology", section.main_topic)
-                mastery.mastery_score, mastery.attempts, mastery.evidence_weight = 90, 4, 4.0
-                mastery.last_practised_at = application.utcnow()
-            for saved in application.db.session.scalars(application.db.select(application.StudySession)).all():
-                state = json.loads(saved.state_json)
-                state["knowledge_gate"] = {"complete": True, "reached": True, "reason": "target_reached", "concepts": [
-                    {"concept": "Mitochondria", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"},
-                    {"concept": "Cell membrane", "knowledge": 90, "confidence": 0.8, "known": True, "status": "known"}]}
-                saved.state_json = json.dumps(state)
-            application.db.session.commit()
-            card = application.exam_prep_card(project)
-            assert card is not None
-            self.assertEqual(card["action"]["kind"], "mock_exam", card["action"])
             included = sorted([s for s in project.sections if not s.excluded], key=lambda s: s.position)
-            count = max(5, min(50, 4 * len(included) + 4))
-            allocation = proportional_section_counts([{
-                "id": s.id, "mastery_score": s.mastery_score,
-                "importance": len(application.json_value(s.important_facts_json)) + len(application.json_value(s.formulas_json)),
-            } for s in included], count)
-            distribution = difficulty_distribution(count, "mixed")
-            questions, position = [], 0
-            difficulties = [d for d, n in distribution.items() for _ in range(n)]
+            questions = []
             for section in included:
-                for _ in range(allocation[section.id]):
+                for number in range(3):
                     questions.append({
-                        "id": f"q{position + 1}", "section_id": section.id, "concepts": [section.main_topic],
+                        "id": f"q{len(questions) + 1}", "section_id": section.id, "concepts": [section.main_topic],
                         "source_page_ids": application.json_value(section.source_page_ids_json),
-                        "supporting_text": "Mitochondria produce ATP", "difficulty": difficulties[position],
-                        "question_type": "multiple_choice", "prompt": f"Question {position + 1}",
-                        "options": [{"id": "a", "label": "ATP"}, {"id": "b", "label": "DNA"}],
-                        "expected_answer": "a", "explanation": "ATP.",
+                        "supporting_text": "Mitochondria produce ATP", "difficulty": ["easy", "medium", "hard"][number],
+                        "question_type": "multiple_choice", "prompt": f"{section.title}: question {number + 1}",
+                        # plain-string options and a label as the key: normalised to ids
+                        "options": ["ATP", "DNA"], "expected_answer": "ATP", "explanation": "ATP.",
                     })
-                    position += 1
         with patch.object(application, "create_response", self.router(page_ids, final_exam_generation={"questions": questions})):
-            exam_redirect = self.client.post(f"/projects/{project_id}/autopilot/next")
+            exam_redirect = self.client.post(f"/projects/{project_id}/practice-exam")
         self.assertEqual(exam_redirect.status_code, 302, exam_redirect.get_data(as_text=True))
         self.assertIn("/exams/", exam_redirect.headers["Location"], exam_redirect.headers["Location"])
         exam_id = int(exam_redirect.headers["Location"].rstrip("/").split("/")[-1])
-        take = self.client.get(f"/exams/{exam_id}")
-        self.assertEqual(take.status_code, 200)
+        take = self.client.get(f"/exams/{exam_id}").data.decode()
+        self.assertNotIn("Expected answer", take, "the key never reaches the exam page")
         with application.app.app_context():
             ids = application.db.session.scalars(application.db.select(application.ExamQuestion.id).where(
                 application.ExamQuestion.exam_id == exam_id)).all()
+            keys = set(application.db.session.scalars(application.db.select(application.ExamQuestion.expected_answer).where(
+                application.ExamQuestion.exam_id == exam_id)).all())
+        self.assertEqual(keys, {"a"}, "the answer key is the option id the page submits")
         for index, question_id in enumerate(ids):
             self.client.post(f"/exams/{exam_id}/autosave", json={"question_id": question_id, "answer": "a" if index % 4 else "b"})
         submitted = self.client.post(f"/exams/{exam_id}/submit")
@@ -207,19 +197,19 @@ class ReleaseFlowTests(unittest.TestCase):
         results_page = self.client.get(f"/exams/{exam_id}/results").data.decode()
         self.assertIn("KNOWLEDGE CHECK", results_page)
         with application.app.test_request_context():
-            project = application.db.session.scalar(application.db.select(application.LearningProject).where(
-                application.LearningProject.id == project_id))
-            assert project is not None
-            card = application.exam_prep_card(project)
-            assert card is not None
-            self.assertIn("mock_exam", card["grade"]["basis"], "the estimate now rests on the mock exam too")
-            self.assertIsNotNone(card["grade"]["mock_percent"])
+            exam = application.db.session.get(application.FinalExam, exam_id)
+            assert exam is not None
+            result = json.loads(exam.result_json)
+            self.assertEqual(len(result["section_scores"]), 2, "a result per topic")
+            self.assertGreater(exam.score, 50)
+            for section in exam.project.sections:
+                self.assertIsNotNone(section.next_review_on, "the exam result moved every topic's review")
 
     def test_the_new_routes_are_isolated_between_accounts(self):
         project_id, page_ids = self.upload()
-        with patch.object(application, "create_response", self.router(page_ids)):
-            first = self.client.post(f"/projects/{project_id}/quick-start")
-        session_id = first.headers["Location"].split("session_id=", 1)[1]
+        session_id = self.start(project_id, page_ids)
+        with application.app.app_context():
+            section_id = application.db.session.scalars(application.db.select(application.LearningSection.id)).first()
         # A second account must see nothing of it.
         other = application.app.test_client()
         self.register(other, "bob")
@@ -230,11 +220,31 @@ class ReleaseFlowTests(unittest.TestCase):
         blocked = other.post(f"/projects/{project_id}/quick-start", headers={"Accept": "application/json"})
         self.assertEqual(blocked.status_code, 404)
         self.assertEqual(other.post(f"/projects/{project_id}/pages/{page_ids[0]}/recognize").status_code, 404)
+        # Every Project Mode v2 route refuses a project that is not yours.
+        for path, data in (
+            (f"/projects/{project_id}/next", {}),
+            (f"/projects/{project_id}/tasks/start", {"task_id": "learn:section:1:1"}),
+            (f"/projects/{project_id}/topics/confirm", {"choice": "auto"}),
+            (f"/projects/{project_id}/topics/{section_id}/start", {}),
+            (f"/projects/{project_id}/topics/{section_id}/rename", {"title": "Hacked"}),
+            (f"/projects/{project_id}/topics/{section_id}/toggle", {}),
+            (f"/projects/{project_id}/topics/add", {"title": "Hacked"}),
+            (f"/projects/{project_id}/pages/{page_ids[0]}/correct", {"text": "Hacked"}),
+            (f"/projects/{project_id}/reanalyze", {}),
+            (f"/projects/{project_id}/plan-settings", {"daily_minutes": "30"}),
+            (f"/projects/{project_id}/practice-exam", {}),
+        ):
+            self.assertEqual(other.post(path, data=data).status_code, 404, path)
+        with application.app.app_context():
+            titles = set(application.db.session.scalars(application.db.select(application.LearningSection.title)).all())
+            page_text = application.db.session.scalars(application.db.select(application.ProjectPage.extracted_text)).first()
+        self.assertNotIn("Hacked", titles)
+        self.assertNotEqual(page_text, "Hacked")
         self.assertEqual(other.get(f"/?session_id={session_id}").status_code, 200, "the page loads ...")
         self.assertNotIn("Mitochondria lesson", other.get(f"/?session_id={session_id}").data.decode(),
                          "... but another account's session is not resumed into it")
         overview = other.get("/dashboard").data.decode()
-        self.assertNotIn("EXAM AUTOPILOT", overview)
+        self.assertNotIn("YOUR LEARNING PLAN", overview)
         self.assertNotIn("CONTINUE WHERE YOU LEFT OFF", overview)
         with application.app.app_context():
             bob = application.db.session.scalar(application.db.select(application.User).where(application.User.username == "bob"))

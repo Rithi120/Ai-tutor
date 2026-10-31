@@ -1,45 +1,77 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Premium keys') }} — Learnova{% endblock %}
+{% block title %}{{ _('Activation codes') }} — Learnova{% endblock %}
 {% block content %}
 <main class="account-shell">
   <section class="account-card">
     <div class="eyebrow">LEARNOVA</div>
-    <h1>{{ _('Premium key management') }}</h1>
-    <p>{{ _('Generate a key only after confirming the in-person cash payment. Keys grant 30 days and expire if unused after one year.') }}</p>
-    {% if issued_key %}
-    <div role="status" class="notice notice-success">
-      <p>{{ _('Copy this key now. It is shown only once.') }}</p>
-      <code id="issued-premium-key">{{ issued_key }}</code>
+    <h1>{{ _('Premium activation codes') }}</h1>
+    <ol>
+      <li>{{ _('Confirm that you have received the cash payment.') }}</li>
+      <li>{{ _('Issue one code below.') }}</li>
+      <li>{{ _('Give the code to the student privately. They enter it in Settings → Subscription.') }}</li>
+    </ol>
+    <p>{{ _('An unused code expires {days} days after it is issued. Only unused codes can be revoked.', days=settings_value.code_validity_days) }}</p>
+
+    {% if issued %}
+    <div class="issued-code" role="status">
+      <p><strong>{{ _('Copy this code now. It is shown only this once and cannot be retrieved later.') }}</strong></p>
+      <code id="issued-premium-key">{{ issued.code }}</code>
+      <p>{{ _('{count} month(s) of Premium · redeem before {date} · record #{id}', count=issued.months, date=issued.expires_at.strftime('%d.%m.%Y'), id=issued.key_id) }}</p>
+      <button class="secondary-button" type="button" data-copy-target="issued-premium-key" data-copied-label="{{ _('Copied') }}">{{ _('Copy code') }}</button>
     </div>
     {% endif %}
-    <form method="post" autocomplete="off">
+
+    <form method="post" autocomplete="off" class="admin-code-form" data-busy-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label for="payment-amount">{{ _('Payment amount') }}</label>
-      <input id="payment-amount" name="payment_amount" inputmode="decimal" maxlength="30" required>
+      <label for="code-months">{{ _('Months of Premium') }}</label>
+      <select id="code-months" name="months">
+        {% for value in range(1, settings_value.code_max_duration_months + 1) %}
+        <option value="{{ value }}" {{ 'selected' if value == settings_value.code_duration_months }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+      <label for="payment-amount">{{ _('Cash received (€)') }}</label>
+      <input id="payment-amount" name="payment_amount" inputmode="decimal" maxlength="10" value="{{ default_amount }}" required>
       <label for="payment-date">{{ _('Payment date') }}</label>
-      <input id="payment-date" name="payment_date" type="date" required>
-      <label for="payment-reference">{{ _('Non-sensitive order or reference number') }}</label>
-      <input id="payment-reference" name="payment_reference" maxlength="100" autocomplete="off" required>
-      <label><input name="payment_confirmed" type="checkbox" value="yes" required> {{ _('I have confirmed receiving this cash payment in person.') }}</label>
-      <button class="primary-button" type="submit">{{ _('Generate 30-day key') }}</button>
+      <input id="payment-date" name="payment_date" type="date" max="{{ today }}" value="{{ today }}" required>
+      <label for="payment-reference">{{ _('Note (optional, no student names)') }}</label>
+      <input id="payment-reference" name="payment_reference" maxlength="100" autocomplete="off">
+      <label class="sub-check"><input name="payment_confirmed" type="checkbox" value="yes" required> {{ _('I have received this cash payment in person.') }}</label>
+      <button class="primary-button" type="submit" data-busy-label="{{ _('Issuing…') }}">{{ _('Issue code') }}</button>
     </form>
   </section>
+
   <section class="account-card">
-    <h2>{{ _('Issued keys') }}</h2>
+    <h2>{{ _('Issued codes') }}</h2>
     <div class="table-scroll"><table>
-      <thead><tr><th>{{ _('Status') }}</th><th>{{ _('Payment') }}</th><th>{{ _('Created') }}</th><th>{{ _('Key expires') }}</th><th>{{ _('Redeemed') }}</th><th>{{ _('Account') }}</th><th></th></tr></thead>
-      <tbody>{% for key in keys %}
+      <thead><tr><th>{{ _('Code') }}</th><th>{{ _('Status') }}</th><th>{{ _('Grants') }}</th><th>{{ _('Payment') }}</th><th>{{ _('Issued') }}</th><th>{{ _('Code expires') }}</th><th>{{ _('Redeemed') }}</th><th>{{ _('Account') }}</th><th></th></tr></thead>
+      <tbody>{% for key in keys %}{% set status = key_status(key) %}
       <tr>
-        <td>{{ key_status(key) }}</td>
-        <td>{{ key.payment_amount }}{% if key.payment_date %} · {{ key.payment_date.isoformat() }}{% endif %}{% if key.payment_reference %}<br>{{ key.payment_reference }}{% endif %}</td>
-        <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
-        <td>{{ key.expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
-        <td>{% if key.redeemed_at %}{{ key.redeemed_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}</td>
-        <td>{% if key.redeemer %}{{ key.redeemer.username }} ({{ key.redeemer.email }}){% endif %}</td>
-        <td>{% if key_status(key) == 'unused' %}<form method="post" action="{{ url_for('revoke_premium_key', key_id=key.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">{{ _('Revoke') }}</button></form>{% endif %}</td>
+        <td>#{{ key.id }} <span class="sub-hint">{{ '…' ~ key.code_hint if key.code_hint else '' }}</span></td>
+        <td>{{ _(status|capitalize) }}</td>
+        <td>{% if key.duration_months %}{{ _('{count} month(s)', count=key.duration_months) }}{% else %}{{ _('{count} days', count=key.duration_days) }}{% endif %}</td>
+        <td>{{ key.payment_amount }} €{% if key.payment_date %} · {{ key.payment_date.strftime('%d.%m.%Y') }}{% endif %}{% if key.payment_reference %}<br>{{ key.payment_reference }}{% endif %}</td>
+        <td>{{ key.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        <td>{{ key.expires_at.strftime('%d.%m.%Y') }}</td>
+        <td>{% if key.redeemed_at %}{{ key.redeemed_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}</td>
+        <td>{% if key.redeemer %}{{ key.redeemer.username }}{% endif %}</td>
+        <td>{% if status == 'unused' %}<form method="post" action="{{ url_for('revoke_premium_key', key_id=key.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">{{ _('Revoke') }}</button></form>{% endif %}</td>
       </tr>
-      {% else %}<tr><td colspan="7">{{ _('No Premium keys have been issued.') }}</td></tr>{% endfor %}</tbody>
+      {% else %}<tr><td colspan="9">{{ _('No codes have been issued yet.') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="sub-note">{{ _('Times are UTC.') }}</p>
+  </section>
+
+  <section class="account-card">
+    <h2>{{ _('Recent activity') }}</h2>
+    <div class="table-scroll"><table>
+      <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Event') }}</th><th>{{ _('Code') }}</th><th>{{ _('Account') }}</th><th>{{ _('Details') }}</th></tr></thead>
+      <tbody>{% for event in audit %}
+      <tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') }}</td><td>{{ event.action }}</td>
+        <td>{{ '#' ~ event.premium_key_id if event.premium_key_id else '' }}</td>
+        <td>{{ event.subject_user_id or event.actor_user_id or '' }}</td><td><small>{{ event.detail_json }}</small></td></tr>
+      {% else %}<tr><td colspan="5">{{ _('No activity yet.') }}</td></tr>{% endfor %}</tbody>
     </table></div>
   </section>
 </main>
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/subscription.js', v=static_version) }}"></script>{% endblock %}

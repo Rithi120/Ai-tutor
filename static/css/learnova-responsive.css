@@ -211,3 +211,18 @@ main pre, .message pre {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Practice exam (exam_take.html) ----------------------------------------------- */
+/* One column on phones, but a minmax(0, 1fr) one: a plain 1fr track cannot shrink below
+   its content's minimum width, so the eight-wide question nav widened the column to
+   544px on a 390px phone and the centred shell spilled off both edges. The nav keeps
+   its own horizontal scroll inside the column. */
+@media (max-width: 800px) {
+  .exam-shell, .exam-question-list { grid-template-columns: minmax(0, 1fr); }
+  .exam-sidebar, .exam-question-list, .exam-question { min-width: 0; }
+  /* The header wraps instead of pushing the timer off the edge; autosave stays visible
+     below it (it reports whether answers are saved, which matters most on a phone). */
+  .exam-header { flex-wrap: wrap; gap: 4px 12px; min-height: 0; padding: 8px 12px; }
+  .exam-header > div { min-width: 0; }
+  .exam-question-meta { flex-wrap: wrap; }
+}

@@ -29,7 +29,7 @@
     <section class="section-test-callout"><div><span class="eyebrow">{{ _('SECTION CHECK') }}</span><h2>{{ _('Test your understanding') }}</h2><p>{{ _('Your attempts are saved and update this section’s mastery.') }}</p></div><form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=section.id) }}"><button class="primary-button" type="submit">{{ _('Start section test') }} →</button></form></section>
   </main>
 {% endblock %}
-{% block scripts %}<script>
+{% block scripts %}<script nonce="{{ csp_nonce() }}">
   const recallCorrect = {{ _('Correct — retrieve it again later to strengthen memory.')|tojson }};
   const recallNotYet = {{ _('Not yet. Correct answer:')|tojson }};
   const recallSource = {{ _('Source:')|tojson }};

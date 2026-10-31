@@ -56,7 +56,8 @@ class MobileLayoutTests(unittest.TestCase):
             raise unittest.SkipTest(str(error))
         context = cls.browser.new_context()
         cls.audit.block_external(context, cls.base)
-        cls.lesson_url = cls.audit.login_and_create_lesson(context, cls.base)
+        cls.urls = cls.audit.login_and_create_lesson(context, cls.base)
+        cls.lesson_url = cls.urls["LESSON"]
         cls.student_state = context.storage_state()
         context.close()
 
@@ -93,6 +94,22 @@ class MobileLayoutTests(unittest.TestCase):
 
     def test_lesson_page_with_tutor_chat(self):
         self.check(self.lesson_url, logged_in=True, open_chat=True)
+
+    def test_project_topic_review_and_workspace(self):
+        # The two Project Mode screens: confirming topics, then learning with one Next button.
+        self.check(self.urls["PROJECT_REVIEW"], logged_in=True)
+        self.check(self.urls["PROJECT"], logged_in=True)
+        self.check(self.urls["PROJECT"], logged_in=True, theme="dark")
+
+    def test_project_next_button_is_large_and_on_screen_on_a_small_phone(self):
+        page = self.context(320, 568, logged_in=True).new_page()
+        page.goto(self.base + self.urls["PROJECT"], wait_until="load")
+        button = page.locator(".pm-next .pm-primary")
+        box = button.bounding_box()
+        self.assertIsNotNone(box)
+        self.assertGreaterEqual(box["height"], 48)
+        self.assertGreaterEqual(box["x"], 0)
+        self.assertLessEqual(box["x"] + box["width"], 320)
 
     def test_settings_form(self):
         self.check("/settings", logged_in=True)

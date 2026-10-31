@@ -1,0 +1,149 @@
+/* Project Mode workspace (templates/project_workspace.html) and its Overview card.
+ * Mobile first: one column of calm cards, one large primary action; two columns from
+ * tablet width. Colours, radii and type come from learnova-tokens.css, so light and dark
+ * mode follow automatically. */
+
+.pm-shell {
+  width: min(860px, 100% - 2 * var(--ln-gutter, 16px));
+  margin: 0 auto;
+  padding: 20px 0 calc(96px + env(safe-area-inset-bottom));
+  display: grid;
+  /* minmax(0, 1fr): the column never grows to fit a long German compound - the word
+     breaks (with a hyphen where possible) inside its card instead. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.pm-head h1 {
+  margin: 4px 0 6px;
+  font: 800 var(--ln-heading-page, clamp(1.625rem, 1.2rem + 2.2vw, 2.25rem))/1.15 var(--ln-font-display);
+  color: var(--ln-ink);
+}
+.pm-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; color: var(--ln-muted); font-size: var(--ln-text-small, .9rem); }
+
+.pm-card {
+  padding: 18px;
+  border: 1px solid var(--ln-line);
+  border-radius: var(--ln-radius-md, 18px);
+  background: var(--ln-surface-solid);
+  box-shadow: var(--ln-shadow-sm);
+  color: var(--ln-ink);
+}
+.pm-card h2 { margin: 0 0 8px; font: 750 clamp(1.15rem, 1rem + .8vw, 1.4rem)/1.3 var(--ln-font-display); }
+.pm-card p { margin: 0 0 12px; line-height: 1.55; }
+.pm-card details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+.pm-card form { margin: 10px 0 0; }
+.pm-card form > label:not(.pm-check) { display: grid; gap: 6px; margin: 0 0 12px; font-weight: 600; }
+.pm-card input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.pm-card select, .pm-card textarea {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  border: 1px solid var(--ln-line-strong); border-radius: 12px;
+  background: var(--ln-surface-solid); color: var(--ln-ink); font: inherit;
+}
+.pm-note { color: var(--ln-muted); font-size: var(--ln-text-small, .9rem); }
+
+/* The one big action. */
+.pm-next { border-color: color-mix(in srgb, var(--ln-violet) 35%, var(--ln-line)); background: color-mix(in srgb, var(--ln-violet) 6%, var(--ln-surface-solid)); }
+.pm-primary { width: 100%; min-height: 52px; justify-content: center; font-size: 1.05rem; }
+
+.pm-warning, .pm-stale {
+  margin: 0; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ln-amber) 45%, transparent);
+  background: color-mix(in srgb, var(--ln-amber) 12%, var(--ln-surface-solid));
+  color: var(--ln-ink); line-height: 1.5;
+}
+.pm-attention { border-color: color-mix(in srgb, var(--ln-amber) 45%, var(--ln-line)); }
+.pm-page-fix { border-top: 1px solid var(--ln-line); padding-top: 6px; }
+.pm-page-fix img { display: block; width: 100%; max-height: 360px; object-fit: contain; margin: 6px 0 10px; border-radius: 12px; background: var(--ln-canvas-deep); }
+/* Form controls have an intrinsic width (a file input ~300px, a date input ~200px) that
+   overflowed a 320px phone; they shrink with their card instead. */
+.pm-card :is(input, select, textarea) { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.pm-file input[type="file"] { width: 100%; }
+
+/* Topic confirmation and the topic list. */
+.pm-choice { display: grid; gap: 4px; margin: 6px 0 12px; padding: 0; border: 0; }
+.pm-choice label, .pm-card form > .pm-check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; font-weight: 600; }
+.pm-topics, .pm-topic-list, .pm-tasks { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.pm-topic-select span, .pm-topic-title, .pm-tasks li > span { min-width: 0; }
+.pm-topics > li, .pm-topic-list > li { padding: 10px 12px; border: 1px solid var(--ln-line); border-radius: 14px; }
+.pm-topic-select { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; }
+/* German compounds break with a hyphen where the language allows (html lang is set). */
+.pm-topic-select span, .pm-topic-title, .pm-next h2, .pm-tasks li > span { overflow-wrap: break-word; hyphens: auto; }
+.pm-topic-select span, .pm-topic-title { font-weight: 650; }
+.pm-topic-select input { flex: 0 0 auto; width: 22px; height: 22px; }
+/* "Let Learnova choose": the checkboxes do not apply, so they are not shown. */
+.pm-card form:has(.pm-choice input[value="auto"]:checked) .pm-topic-select input { visibility: hidden; width: 0; margin: 0; }
+.pm-topic-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pm-chip { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--ln-violet) 11%, transparent); color: var(--ln-violet); font-size: .85rem; font-weight: 700; }
+.pm-topic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 8px; }
+.pm-topic-actions form { margin: 0; }
+.pm-topic-list > li.is-excluded { opacity: .7; }
+.text-link { border: 0; background: none; padding: 0; color: var(--ln-violet); font: inherit; font-weight: 600; cursor: pointer; min-height: 44px; }
+.pm-inline { display: flex; gap: 8px; align-items: center; }
+.pm-inline input { flex: 1 1 auto; min-width: 0; }
+.pm-edit { margin-top: 6px; }
+
+.pm-tasks li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--ln-line); }
+.pm-tasks li:last-child { border-bottom: 0; }
+.pm-tasks li > span { flex: 1 1 12rem; overflow-wrap: anywhere; }
+.pm-tasks li small { color: var(--ln-muted); }
+.pm-tasks li form { margin: 0; }
+.pm-tasks li.is-done span { color: var(--ln-muted); }
+
+.pm-days { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 0; border: 0; }
+.pm-days legend { margin-bottom: 6px; font-weight: 600; }
+.pm-days label { display: inline-flex; margin: 0; }
+.pm-days input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pm-days span { display: inline-grid; place-items: center; min-width: 48px; min-height: 44px; padding: 0 10px; border: 1px solid var(--ln-line-strong); border-radius: 12px; cursor: pointer; }
+.pm-days input:checked + span { border-color: var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 14%, transparent); color: var(--ln-violet); font-weight: 700; }
+.pm-days input:focus-visible + span { outline: 3px solid var(--ln-focus); outline-offset: 2px; }
+
+/* Overview card. */
+.pm-home { padding: 20px; border: 1px solid color-mix(in srgb, var(--ln-violet) 30%, var(--ln-line)); border-radius: var(--ln-radius-lg, 26px); background: color-mix(in srgb, var(--ln-violet) 6%, var(--ln-surface-solid)); color: var(--ln-ink); }
+.pm-home h2 { margin: 6px 0; font: 750 clamp(1.2rem, 1rem + 1vw, 1.5rem)/1.3 var(--ln-font-display); overflow-wrap: anywhere; }
+.pm-home form { margin: 12px 0; }
+.pm-exams { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.pm-exams li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+
+@media (min-width: 900px) {
+  .pm-shell { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .pm-head, .pm-next, .pm-attention, .pm-stale, .pm-warning, #topics { grid-column: 1 / -1; }
+}
+
+.pm-merge fieldset { display: grid; gap: 8px; margin: 12px 0 0; padding: 12px; border: 1px solid var(--ln-line); border-radius: 14px; }
+.pm-merge legend { padding: 0 4px; font-weight: 700; }
+.pm-merge label { display: grid; gap: 6px; font-weight: 600; }
+
+/* ---- Projektmodus: one dashboard (progress, knowledge, revision) -------------------- */
+.pm-breadcrumb { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 6px; font-size: var(--ln-text-small, .9rem); color: var(--ln-muted); }
+.pm-breadcrumb a { color: var(--ln-violet); font-weight: 700; text-decoration: none; }
+.pm-breadcrumb a:hover, .pm-breadcrumb a:focus-visible { text-decoration: underline; }
+.pm-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.pm-stats > div { display: grid; gap: 2px; padding: 12px; border-radius: 14px; border: 1px solid var(--ln-line); background: var(--ln-surface-raised); min-width: 0; }
+.pm-stats span { font-size: .8rem; color: var(--ln-muted); }
+.pm-stats strong { font: 800 1.3rem/1.2 var(--ln-font-display); color: var(--ln-ink); }
+.pm-stats small { color: var(--ln-muted); }
+.pm-bar { height: 8px; border-radius: 999px; background: var(--ln-line); overflow: hidden; margin-top: 4px; }
+.pm-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--ln-cyan, #18b9bd), var(--ln-violet, #7c5cff)); }
+.pm-growth { display: flex; align-items: flex-end; gap: 4px; height: 72px; margin-top: 12px; }
+.pm-growth i { flex: 1; min-width: 4px; border-radius: 6px 6px 2px 2px; background: color-mix(in srgb, var(--ln-violet, #7c5cff) 70%, transparent); }
+.pm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-chip.difficulty-easy { background: color-mix(in srgb, #22c55e 16%, transparent); }
+.pm-chip.difficulty-medium { background: color-mix(in srgb, #60a5fa 16%, transparent); }
+.pm-chip.difficulty-hard { background: color-mix(in srgb, #f97316 18%, transparent); }
+.pm-review { color: var(--ln-muted); font-size: .8rem; }
+.pm-links { margin: 8px 0 0; }
+.pm-links a { color: var(--ln-violet); font-weight: 700; }
+
+/* ---- Projektmodus: the creation form and the project list --------------------------- */
+.project-more-options { margin: 4px 0 10px; }
+.project-more-options > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.project-more-options textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--ln-line-strong); border-radius: 12px; padding: 10px 12px; font: inherit; background: var(--ln-surface-solid); color: var(--ln-ink); }
+.document-input-option.compact { margin: 6px 0 12px; }
+.project-create-card select { min-width: 0; min-height: 46px; border: 1px solid #d9d5cc; border-radius: 10px; padding: 10px 12px; color: var(--ink); background: #fff; font: inherit; }
+/* "Other" opens a free subject field; browsers without :has() simply keep "Other". */
+.project-create-card .subject-other { display: none; }
+.project-create-card label:has(select[name="subject"] option[value="Other"]:checked) .subject-other { display: block; }
+.field-hint { display: block; color: var(--ln-muted); font-weight: 400; font-size: .82rem; margin-top: 4px; }
+.project-tile-next { font-weight: 650; color: var(--ln-violet); overflow-wrap: anywhere; }
+

@@ -384,31 +384,67 @@ class PolicyRuleTests(unittest.TestCase):
             quotes=[{"dimension": "hate_or_targeted_abuse", "quote": "ambiguous sentence"}]))
         self.assertEqual(decision.decision, "review")
 
-    def test_unknown_safety_dimensions_escalate(self):
+    def test_unknown_safety_dimensions_alone_do_not_hold_content(self):
         decision = self.decide(classifier=classification(
             evidence_sufficiency="limited", dimensions={"threats_or_violence": "unknown"}))
+        self.assertEqual(decision.decision, "allow")
+        self.assertIn("SAFETY_UNCERTAIN", decision.reason_codes)
+
+    def test_unknown_safety_dimensions_with_a_concern_escalate(self):
+        decision = self.decide(classifier=classification(
+            evidence_sufficiency="limited", recommendation="review", requires_review=True,
+            dimensions={"sexual_safety": "unknown"}))
         self.assertEqual(decision.decision, "review")
         self.assertIn("NEEDS_HUMAN_REVIEW", decision.reason_codes)
 
-    def test_low_confidence_alone_escalates_rather_than_publishing(self):
-        self.assertEqual(self.decide(classifier=classification(confidence=0.2)).decision, "review")
+    def test_low_confidence_alone_does_not_hold_content(self):
+        # Policy v2: confidence is not evidence. Unsure about clean text -> published.
+        unsure = self.decide(classifier=classification(confidence=0.2))
+        self.assertEqual(unsure.decision, "allow")
+        self.assertIn("SAFETY_UNCERTAIN", unsure.reason_codes)
         self.assertEqual(self.decide(classifier=classification(confidence=0.9)).decision, "allow")
+
+    def test_low_confidence_with_a_concern_still_escalates(self):
+        concerned = self.decide(classifier=classification(confidence=0.2, recommendation="review"))
+        self.assertEqual(concerned.decision, "review")
+        flagged = self.decide(classifier=classification(
+            confidence=0.3, dimensions={"harassment_or_insult": "flag"}))
+        self.assertEqual(flagged.decision, "review")
 
     def test_fit_flags_can_never_reject_however_many_stack_up(self):
         decision = self.decide(classifier=classification(dimensions={
             "subject_relevance": "flag", "educational_value": "flag",
             "age_appropriateness": "flag", "language_quality": "flag",
             "privacy_or_personal_information": "flag"}))
+        # Privacy still asks for one edit; the quality flags ride along as notes.
         self.assertEqual(decision.decision, "revision_required")
-        self.assertIn("OFF_TOPIC_CONTENT", decision.reason_codes)
         self.assertIn("PRIVACY_RISK", decision.reason_codes)
+        self.assertEqual(set(decision.quality_notes),
+                         {"subject_relevance", "educational_value", "age_appropriateness", "language_quality"})
 
-    def test_off_topic_without_a_declared_subject_asks_for_the_subject(self):
+    def test_quality_flags_alone_publish_with_notes(self):
+        # Policy v2: grammar, level, subject fit and value are suggestions, not holds.
+        decision = self.decide(classifier=classification(dimensions={
+            "subject_relevance": "flag", "age_appropriateness": "flag", "language_quality": "flag"}))
+        self.assertEqual(decision.decision, "allow")
+        self.assertEqual(decision.quality_notes, ("age_appropriateness", "language_quality", "subject_relevance"))
+        self.assertIn("LOW_LANGUAGE_QUALITY", decision.reason_codes)
+
+    def test_confidently_no_study_material_asks_for_a_revision(self):
+        decision = self.decide(classifier=classification(
+            recommendation="revision_required", confidence=0.92, evidence_sufficiency="sufficient",
+            dimensions={"educational_value": "flag"}))
+        self.assertEqual(decision.decision, "revision_required")
+        thin = self.decide(classifier=classification(
+            recommendation="allow", confidence=0.92, dimensions={"educational_value": "flag"}))
+        self.assertEqual(thin.decision, "allow", "a thin set the model would publish is published")
+
+    def test_off_topic_without_a_declared_subject_is_a_note(self):
         decision = self.decide(
             classifier=classification(dimensions={"subject_relevance": "flag"}),
             context=policy.ModerationContext(subject="", grade="8"))
-        self.assertEqual(decision.decision, "revision_required")
-        self.assertIn("INSUFFICIENT_EDUCATIONAL_CONTEXT", decision.reason_codes)
+        self.assertEqual(decision.decision, "allow")
+        self.assertEqual(decision.quality_notes, ("subject_relevance",))
 
     def test_empty_content_is_a_revision_request_not_a_safety_problem(self):
         decision = self.decide("", classification())
@@ -495,14 +531,14 @@ class ThresholdTests(unittest.TestCase):
             policy.Thresholds(safety_reports=0)
 
     def test_the_rules_themselves_are_not_tunable(self):
-        """No threshold can make a fit flag reject, or make uncertainty publish."""
+        """No threshold can make a fit flag reject, or make an unavailable check publish."""
 
         findings = normalize.inspect(CLEAN_MATH)
         context = policy.ModerationContext(subject="Mathematics", grade="8")
         extreme = policy.Thresholds(
             reject_confidence=0.0, reject_confidence_severe=0.0, min_allow_confidence=0.0)
         off_topic = policy.decide(
-            classification(dimensions={"subject_relevance": "flag"}),
+            classification(dimensions={"subject_relevance": "flag", "privacy_or_personal_information": "flag"}),
             findings, context, thresholds=extreme)
         self.assertEqual(off_topic.decision, "revision_required")
         unavailable = policy.decide(
