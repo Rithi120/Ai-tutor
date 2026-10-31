@@ -60,6 +60,42 @@ def normalize_section(section, position, valid_page_ids):
     }
 
 
+_RECALL_FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+_RECALL_STOP = frozenset({"der", "die", "das", "ein", "eine", "the", "a", "an", "is", "ist", "und", "and", "of"})
+
+
+def _recall_words(text):
+    text = str(text or "").casefold().translate(_RECALL_FOLD)
+    return [word for word in re.findall(r"[a-z]+|\d+(?:[.,]\d+)?", text) if word not in _RECALL_STOP]
+
+
+def recall_answer_score(answer, expected):
+    """Deterministic grade for a typed recall answer: 100, 50 (partly right) or 0.
+
+    An exact string match was required before, so "Die Mitochondrien" against
+    "Mitochondrien" - or a missing umlaut - scored 0 and pushed mastery down. Numbers must
+    match exactly; words are compared as sets (order and articles do not matter)."""
+
+    given, wanted = _recall_words(answer), _recall_words(expected)
+    if not given or not wanted:
+        return 0
+    numbers = lambda words: {word.replace(",", ".") for word in words if word[0].isdigit()}  # noqa: E731
+    if numbers(wanted) and numbers(wanted) - numbers(given):
+        return 0
+    if given == wanted:
+        return 100
+    # A spelling slip in a short answer ("Fotosynthese" / "Photosynthese") is still right.
+    from difflib import SequenceMatcher
+    if len(wanted) <= 3 and SequenceMatcher(None, " ".join(given), " ".join(wanted)).ratio() >= 0.85:
+        return 100
+    overlap = len(set(given) & set(wanted))
+    precision, recall = overlap / len(set(given)), overlap / len(set(wanted))
+    f1 = 2 * precision * recall / (precision + recall) if overlap else 0.0
+    if f1 >= 0.8 or (recall == 1.0 and len(set(given)) <= len(set(wanted)) + 2):
+        return 100
+    return 50 if f1 >= 0.5 else 0
+
+
 def difficulty_distribution(count, mode):
     count = max(1, int(count))
     if mode in {"easy", "medium", "hard"}:

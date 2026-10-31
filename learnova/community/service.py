@@ -115,28 +115,122 @@ def ai_stars(overall_score: float) -> tuple[int, str]:
     return 1, "Poor Quality"
 
 
-def publication_decision(overall_score: float, safety_flags: list[str] | None = None) -> dict[str, Any]:
-    """Decide publication status from the AI score; safety/copyright/privacy always override.
+def publication_decision(
+    overall_score: float, safety_flags: list[str] | None = None, *, moderated: bool = False,
+) -> dict[str, Any]:
+    """Decide publication status from the AI quality review. Quality never blocks.
 
-    Quality is information, safety is the gate. Safety has already been decided by the
-    moderation pass before this runs, and a safety flag from this review still rejects.
-    What the score decides is only whether the set is good enough to show at all: a
-    middling set is published with its stars and the reviewer's suggestions visible,
-    not held. The 3.0-4.0 band used to return `pending_manual_review` under the reason
-    `approved_with_suggestions` - its own name said publish - and that parked ordinary
-    three-star sets in a human queue that exists for safety doubts and, on most
-    deployments, has nobody in it.
+    Quality is information, safety is the gate. The 3.0-4.0 band used to be held for a
+    human, and below 3.0 a set was rejected outright - so a short, correct vocabulary
+    list the reviewer found "thin" never reached the library, and a minor grammar slip
+    meant another round of edits. Since v2 every score publishes, with its stars and the
+    reviewer's suggestions shown to the author.
+
+    `safety_flags` are the quality reviewer's own safety remarks. With `moderated` the
+    dedicated moderation pass has already judged safety on quoted evidence, and the
+    caller settles any disagreement with a stricter moderation check, so the flags do
+    not decide here. Without moderation (a test-only configuration) they are the only
+    safety signal there is, and they still reject.
     """
 
-    if safety_flags:
+    if safety_flags and not moderated:
         return {"status": "rejected", "reason": "safety_violation", "correctable": False}
     if overall_score >= 4.0:
         return {"status": "approved", "reason": "auto_approved", "correctable": False}
     if overall_score >= 3.0:
         return {"status": "approved", "reason": "approved_with_suggestions", "correctable": True}
-    if overall_score >= 2.0:
-        return {"status": "rejected", "reason": "needs_correction", "correctable": True}
-    return {"status": "rejected", "reason": "poor_quality", "correctable": False}
+    return {"status": "approved", "reason": "published_with_warnings", "correctable": True}
+
+
+# ---------------------------------------------------------------- entry warnings
+# Per-entry quality remarks ("this translation may depend on the context"). They are
+# suggestions for the author, never a gate, and each one must point at text that is
+# really in the entry it names - a remark about a word the set does not contain is the
+# reviewer imagining a problem, and is dropped rather than shown.
+
+ENTRY_WARNING_KINDS = {
+    "translation": "Please check this translation. It may depend on the context.",
+    "several_meanings": (
+        "This word has several possible meanings. Check whether the selected translation "
+        "fits your example."),
+    "spelling": "Please check the spelling here.",
+    "grammar": "Please check the grammar here.",
+    "fact": "Please check this information. It may not be accurate.",
+    "context": "Please check whether this fits the context of the entry.",
+}
+ENTRY_SIDES = ("front", "back", "explanation")
+ENTRY_WARNING_STATES = ("open", "kept", "accepted", "edited")
+MAX_ENTRY_WARNINGS = 30
+
+
+def _folded(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only warnings that name a real entry and quote text that is in it.
+
+    `entry` is the 1-based card number the reviewer was shown. The stored shape carries
+    the kind (which picks the fixed, translatable message), the quoted text, the
+    reviewer's short note and an optional replacement for the quoted text. No numeric
+    confidence is kept: the reviewer is not calibrated, so a number would be invented.
+    """
+
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[int, str, str]] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            entry = int(item.get("entry"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= entry <= len(cards):
+            continue
+        side = str(item.get("side") or "").strip().lower()
+        if side not in ENTRY_SIDES:
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        if kind not in ENTRY_WARNING_KINDS:
+            kind = "context"
+        quoted = " ".join(str(item.get("text") or "").split())[:200]
+        card = cards[entry - 1] if isinstance(cards[entry - 1], dict) else {}
+        if not quoted or _folded(quoted) not in _folded(card.get(side)):
+            continue
+        key = (entry, side, _folded(quoted))
+        if key in seen:
+            continue
+        seen.add(key)
+        suggestion = " ".join(str(item.get("suggestion") or "").split())[:200]
+        if _folded(suggestion) == _folded(quoted):
+            suggestion = ""
+        result.append({
+            "entry": entry, "side": side, "kind": kind, "text": quoted,
+            "note": " ".join(str(item.get("note") or "").split())[:240],
+            "suggestion": suggestion,
+        })
+        if len(result) >= MAX_ENTRY_WARNINGS:
+            break
+    return result
+
+
+def apply_suggestion(original: str, quoted: str, suggestion: str) -> str | None:
+    """Replace the quoted span in one field with the suggestion, touching nothing else.
+
+    Case-insensitive on the match, exact on everything around it. None when the span is
+    no longer there (the author edited the entry since), so an old suggestion can never
+    overwrite newer text.
+    """
+
+    if not suggestion:
+        return None
+    text = str(original or "")
+    position = text.casefold().find(quoted.casefold())
+    if position < 0:
+        return None
+    return text[:position] + suggestion + text[position + len(quoted):]
 
 
 def bayesian_average(

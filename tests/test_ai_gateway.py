@@ -50,6 +50,11 @@ class AIGatewayTests(unittest.TestCase):
             RUN_LIVE_AI_TEST=False,
             AI_INPUT_COST_PER_MILLION=1.0,
             AI_OUTPUT_COST_PER_MILLION=2.0,
+            # The request ledger lives in the database and outlasts each test; the sample
+            # test alone makes two calls per task type. These tests are not about the
+            # hourly abuse cap (test_ai_budgets is), so it must not decide them.
+            AI_MAX_REQUESTS_PER_USER_HOUR=10_000,
+            AI_MAX_REQUESTS_PER_USER_DAY=10_000,
         )
         self.context = application.app.app_context()
         self.context.push()

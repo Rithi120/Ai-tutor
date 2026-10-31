@@ -1,10 +1,11 @@
-"""The one-tap project flow: upload -> start page -> (read, build, open) -> lesson, and
-coming back to an unfinished lesson instead of starting over.
+"""The project flow: upload -> start page -> (read, find topics) -> confirm topics -> lesson,
+and coming back to an unfinished lesson instead of starting over.
 
 Every model call is patched. What is checked is the chain itself: the upload lands on the
-start page, one request reads the pages, accepts the recognition, builds the sections and
-opens a lesson on the first section; the same request later resumes the saved session;
-and the Overview / New Lesson page offer that session back.
+start page, one request reads the pages, accepts the recognition and finds the topics,
+then shows them for confirmation (Project Mode v2, stage B); "Start learning" opens a
+lesson on the first topic; the same request later resumes the saved session; and the
+Overview / New Lesson page offer that session back.
 """
 
 import io
@@ -98,6 +99,21 @@ class QuickStartTests(unittest.TestCase):
             response = self.client.post(f"/projects/{self.project_and_pages()[0]}/quick-start", headers=headers)
         return response, mocked
 
+    def confirm(self, responses):
+        with patch.object(application, "create_response", side_effect=responses) as mocked:
+            response = self.client.post(f"/projects/{self.project_and_pages()[0]}/topics/confirm",
+                                        data={"choice": "auto"})
+        return response, mocked
+
+    def start_learning(self, page_ids):
+        """Read + find topics, then confirm: the first lesson opens."""
+        found, _ = self.quick_start([FakeResponse(recognition_payload("Mitochondria produce ATP")),
+                                     FakeResponse(section_payload(page_ids))])
+        self.assertEqual(found.status_code, 302, found.get_data(as_text=True))
+        opened, _ = self.confirm([FakeResponse(LESSON)])
+        self.assertEqual(opened.status_code, 302, opened.get_data(as_text=True))
+        return opened
+
     def test_an_upload_needs_nothing_but_pages_and_lands_on_the_start_page(self):
         uploaded = self.upload()
         self.assertEqual(uploaded.status_code, 302)
@@ -113,18 +129,24 @@ class QuickStartTests(unittest.TestCase):
         self.assertIn("Check the scan first (optional)", page)
         self.assertIn("project-start.js", page)
 
-    def test_one_request_reads_builds_and_opens_the_lesson(self):
+    def test_one_request_reads_and_finds_topics_then_confirming_opens_the_lesson(self):
         self.upload(title="Biology notes", subject="Biology")
         project_id, page_ids, _, _ = self.project_and_pages()
-        response, mocked = self.quick_start([
+        found, mocked = self.quick_start([
             FakeResponse(recognition_payload("Mitochondria produce ATP")),
             FakeResponse(section_payload(page_ids)),
-            FakeResponse(LESSON),
         ])
+        self.assertEqual(found.status_code, 302, found.get_data(as_text=True))
+        self.assertEqual(found.headers["Location"], f"/projects/{project_id}#topics")
+        self.assertEqual([call.kwargs["task_type"] for call in mocked.call_args_list],
+                         ["ocr_document_recognition", "project_section_generation"])
+        review = self.client.get(f"/projects/{project_id}").data.decode()
+        self.assertIn("We found 1 topics in your notes", review)
+        self.assertIn("Start learning", review)
+        response, mocked = self.confirm([FakeResponse(LESSON)])
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
         self.assertIn("/?session_id=", response.headers["Location"])
-        self.assertEqual([call.kwargs["task_type"] for call in mocked.call_args_list],
-                         ["ocr_document_recognition", "project_section_generation", "lesson_generation"])
+        self.assertEqual([call.kwargs["task_type"] for call in mocked.call_args_list], ["lesson_generation"])
         session_id = response.headers["Location"].split("session_id=", 1)[1]
         state = application.SESSIONS[session_id]
         self.assertEqual(state["session_kind"], "section_test")
@@ -146,9 +168,7 @@ class QuickStartTests(unittest.TestCase):
     def test_the_second_tap_resumes_the_unfinished_lesson_instead_of_starting_over(self):
         self.upload(subject="Biology")
         project_id, page_ids, _, _ = self.project_and_pages()
-        first, _ = self.quick_start([
-            FakeResponse(recognition_payload("Mitochondria produce ATP")),
-            FakeResponse(section_payload(page_ids)), FakeResponse(LESSON)])
+        first = self.start_learning(page_ids)
         session_id = first.headers["Location"].split("session_id=", 1)[1]
         application.SESSIONS.clear()          # a new process, a closed tab
         second, mocked = self.quick_start([])  # any model call would raise StopIteration
@@ -162,9 +182,7 @@ class QuickStartTests(unittest.TestCase):
     def test_a_finished_lesson_is_not_resumed(self):
         self.upload(subject="Biology")
         project_id, page_ids, _, _ = self.project_and_pages()
-        first, _ = self.quick_start([
-            FakeResponse(recognition_payload("Mitochondria produce ATP")),
-            FakeResponse(section_payload(page_ids)), FakeResponse(LESSON)])
+        first = self.start_learning(page_ids)
         session_id = first.headers["Location"].split("session_id=", 1)[1]
         with application.app.app_context():
             saved = application.db.session.scalar(application.db.select(application.StudySession))
@@ -183,11 +201,15 @@ class QuickStartTests(unittest.TestCase):
         project_id, page_ids, _, _ = self.project_and_pages()
         response, _ = self.quick_start([
             FakeResponse(recognition_payload("Mitochondria produce ATP")),
-            FakeResponse(section_payload(page_ids)), FakeResponse(LESSON)], Accept="application/json")
+            FakeResponse(section_payload(page_ids))], Accept="application/json")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertTrue(body["ok"])
-        self.assertIn("/?session_id=", body["redirect"])
+        self.assertTrue(body["review"])
+        self.assertEqual(body["redirect"], f"/projects/{project_id}#topics")
+        self.confirm([FakeResponse(LESSON)])
+        again, _ = self.quick_start([], Accept="application/json")
+        self.assertIn("/?session_id=", again.get_json()["redirect"])
 
     def test_unreadable_pages_give_a_clear_error_not_a_lesson_about_nothing(self):
         self.upload(subject="Biology")
@@ -199,9 +221,7 @@ class QuickStartTests(unittest.TestCase):
     def test_the_overview_and_new_lesson_page_offer_the_unfinished_lesson_back(self):
         self.upload(subject="Biology")
         project_id, page_ids, _, _ = self.project_and_pages()
-        first, _ = self.quick_start([
-            FakeResponse(recognition_payload("Mitochondria produce ATP")),
-            FakeResponse(section_payload(page_ids)), FakeResponse(LESSON)])
+        first = self.start_learning(page_ids)
         session_id = first.headers["Location"].split("session_id=", 1)[1]
         overview = self.client.get("/dashboard").data.decode()
         self.assertIn("CONTINUE WHERE YOU LEFT OFF", overview)
@@ -218,8 +238,8 @@ class QuickStartTests(unittest.TestCase):
         resumed = self.client.get(f"/?session_id={session_id}").data.decode()
         self.assertNotIn("CONTINUE WHERE YOU LEFT OFF", resumed, "not while that very lesson is open")
         project_page = self.client.get(f"/projects/{project_id}").data.decode()
-        self.assertIn("Continue lesson", project_page)
-        self.assertIn(f"/projects/{project_id}/quick-start", project_page)
+        self.assertIn("Learn: Mitochondria", project_page, "the open lesson is the Next action")
+        self.assertIn(f"/projects/{project_id}/next", project_page)
 
 
 if __name__ == "__main__":

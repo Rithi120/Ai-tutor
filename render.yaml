@@ -37,6 +37,9 @@ services:
         value: "true"
       - key: FEATURE_DAILY_GOALS
         value: "true"
+      # Weekly leagues on the same XP; learners can opt out in Settings.
+      - key: FEATURE_LEAGUES
+        value: "true"
       # The safety gate for everything published to the public library. configure_app
       # forces this on in production while publishing is enabled, so the value here is a
       # statement of intent rather than the thing keeping it on.
@@ -45,6 +48,24 @@ services:
       # Reviewer allowlist for /internal/moderation. Set this before publishing is used in
       # anger: with it empty, escalated content is held safely but nobody can clear it.
       - key: COMMUNITY_MODERATORS
+        sync: false
+      # Report alerts. Stored and shown on /internal/moderation always; emailed only once
+      # MAIL_SMTP_HOST and MAIL_FROM are set. Credentials live in the dashboard, never here.
+      - key: COMMUNITY_ALERT_EMAIL
+        value: maheswariskillbridge@gmail.com
+      - key: MAIL_SMTP_HOST
+        sync: false
+      - key: MAIL_SMTP_PORT
+        sync: false
+      - key: MAIL_SMTP_SECURITY
+        value: starttls
+      - key: MAIL_SMTP_USERNAME
+        sync: false
+      - key: MAIL_SMTP_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: PUBLIC_BASE_URL
         sync: false
       - key: GROQ_MODERATION_MODEL
         value: openai/gpt-oss-safeguard-20b
@@ -140,15 +161,13 @@ services:
       - key: AI_QUESTION_GENERATION_MAX_OUTPUT_TOKENS
         value: "1200"
       - key: LESSON_TOKEN_LIMIT
-        value: "1800"
+        value: "2200"
       - key: ANSWER_TOKEN_LIMIT
-        value: "1100"
+        value: "2200"
       - key: CHAT_TOKEN_LIMIT
         value: "1100"
       - key: TRANSLATE_TOKEN_LIMIT
         value: "2500"
-      - key: PROJECT_TOKEN_LIMIT
-        value: "5000"
 
 databases:
   - name: learnova-db

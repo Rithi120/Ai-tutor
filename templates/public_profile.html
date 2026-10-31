@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "components/_identity.html" import premium_badge, avatar_frame with context %}
+{% block title %}{{ card.username }} — Learnova{% endblock %}
+{% block head %}
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">
+{% endblock %}
+{% block content %}
+<main class="profile-page public-profile" id="main-content">
+  <section class="profile-hero" style="--avatar-accent: {{ avatar.accent }}">
+    <div class="profile-hero-art">
+      {{ avatar_frame(avatar.url, avatar.accent, "xl", avatar.name) }}
+      <span class="rarity-chip rarity-{{ avatar.rarity }}">{{ avatar.rarity_label }}</span>
+    </div>
+    <div class="profile-hero-info">
+      <p class="eyebrow">{{ _('LEARNOVA PROFILE') }}</p>
+      <h1 class="profile-name"><span>{{ card.username }}</span>{% if card.premium %}{{ premium_badge() }}{% endif %}</h1>
+      <p class="profile-avatar-name">{{ avatar.name }}</p>
+      {% if details %}
+      <div class="profile-level">
+        <span class="level-badge"><small>{{ _('Level') }}</small><b>{{ details.level }}</b></span>
+        <div class="level-track">
+          <div class="level-bar"><i style="width: {{ (100 * details.progress.current_level_xp / details.progress.next_level_xp)|round|int }}%"></i></div>
+          <p>{{ details.progress.total_xp }} {{ _('XP') }}</p>
+        </div>
+      </div>
+      <ul class="profile-highlights">
+        <li><span aria-hidden="true">🔥</span><b>{{ details.streak }}</b><small>{{ _('day streak') }}</small></li>
+        <li><span aria-hidden="true">🏆</span><b>{{ details.stats.challenges }}</b><small>{{ _('challenges done') }}</small></li>
+        <li><span aria-hidden="true">🎭</span><b>{{ details.unlocked_count }}/20</b><small>{{ _('characters') }}</small></li>
+        <li><span aria-hidden="true">📚</span><b>{{ details.published }}</b><small>{{ _('published sets') }}</small></li>
+      </ul>
+      {% else %}
+      <p class="profile-private">{{ _('This learner keeps their progress private.') }}</p>
+      {% endif %}
+    </div>
+  </section>
+  {% if details %}
+  <section class="profile-grid">
+    <article class="profile-panel">
+      <h2>{{ _('Recent achievements') }}</h2>
+      {% if details.badges %}
+      <ul class="achievement-list">{% for award in details.badges %}<li><span aria-hidden="true">🏅</span><div><b>{{ _(award.badge.name) }}</b><small>{{ _(award.badge.description) }}</small></div></li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ _('No badges yet.') }}</p>{% endif %}
+    </article>
+    <article class="profile-panel">
+      <h2>{{ _('Learning statistics') }}</h2>
+      <dl class="stat-grid">
+        <div><dt>{{ _('Lessons completed') }}</dt><dd>{{ details.stats.lessons }}</dd></div>
+        <div><dt>{{ _('Correct answers') }}</dt><dd>{{ details.stats.correct_answers }}</dd></div>
+        <div><dt>{{ _('Flashcards reviewed') }}</dt><dd>{{ details.stats.flashcards }}</dd></div>
+        <div><dt>{{ _('Tests completed') }}</dt><dd>{{ details.stats.tests }}</dd></div>
+      </dl>
+    </article>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

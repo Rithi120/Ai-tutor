@@ -28,4 +28,4 @@
     </section>
   </main>
 {% endblock %}
-{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/project-start.js') }}"></script>{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/project-start.js') }}"></script>{% endblock %}

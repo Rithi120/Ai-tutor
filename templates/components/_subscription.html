@@ -1,0 +1,94 @@
+{# Settings -> Subscription. Every value comes from subscription_context() on the server. #}
+{% set price = premium_price %}
+<section class="sub-section" id="subscription" aria-labelledby="subscription-title">
+  <div class="sub-head">
+    <h2 id="subscription-title">{{ _('Subscription') }}</h2>
+    <span class="sub-badge{{ ' is-premium' if plan_premium }}">{{ _('Premium') if plan_premium else _('Free') }}</span>
+  </div>
+
+  {% if plan_premium %}
+  <div class="sub-status is-premium" role="status">
+    <p><strong>{{ _('Premium is active until {date}.', date=premium_expires.strftime('%d.%m.%Y %H:%M')) }}</strong></p>
+    <p>{{ _('{days} days left.', days=premium_days_left) }}{% if premium_starts %} {{ _('Active since {date}.', date=premium_starts.strftime('%d.%m.%Y')) }}{% endif %}</p>
+  </div>
+  {% else %}
+  <div class="sub-status">
+    {% if premium_lapsed %}<p><strong>{{ _('Your Premium ended on {date}.', date=premium_expires.strftime('%d.%m.%Y')) }}</strong></p>{% endif %}
+    <p>{{ _('You are on the Free plan.') }}</p>
+    <ul class="sub-usage">
+      <li><span>{{ _('New projects (last {days} days)', days=free_limits.project_days) }}</span>
+        <b>{{ _('{used} of {limit}', used=subscription.projects.used|int, limit=free_limits.projects) }}</b>
+        {% if subscription.projects.exhausted and allowance_resets.projects %}<small>{{ _('Next one from {date}', date=allowance_resets.projects.strftime('%d.%m.%Y %H:%M')) }}</small>{% endif %}</li>
+      <li><span>{{ _('New lessons today') }}</span>
+        <b>{{ _('{used} of {limit}', used=subscription.lessons.used|int, limit=free_limits.lessons) }}</b>
+        {% if subscription.lessons.exhausted and allowance_resets.lessons %}<small>{{ _('More from {date}', date=allowance_resets.lessons.strftime('%d.%m.%Y %H:%M')) }}</small>{% endif %}</li>
+      <li><span>{{ _('AI assistant') }}</span>
+        {% if subscription.chat.exhausted %}<b>{{ _('Free allowance used') }}</b>{% if allowance_resets.chat %}<small>{{ _('Back at {date}', date=allowance_resets.chat.strftime('%d.%m.%Y %H:%M')) }}</small>{% endif %}
+        {% else %}<b>{{ _('Available') }}</b>{% endif %}</li>
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="sub-plans" role="list">
+    <article class="sub-plan{{ ' is-current' if not plan_premium }}" role="listitem" aria-label="{{ _('Free plan') }}">
+      <h3>{{ _('Free') }} <span class="sub-price">0 €</span></h3>
+      <ul>
+        <li>{% if free_limits.projects == 1 and free_limits.project_days == 7 %}{{ _('One new project per week') }}{% else %}{{ _('{count} new projects every {days} days', count=free_limits.projects, days=free_limits.project_days) }}{% endif %}</li>
+        <li>{{ _('Unlimited lessons and tests in your projects') }}</li>
+        <li>{{ _('{count} new short lessons per day outside projects', count=free_limits.lessons) }}</li>
+        <li>{% if free_limits.chat_period == 'week' %}{{ _('AI assistant with a weekly free allowance') }}{% elif free_limits.chat_period == 'month' %}{{ _('AI assistant with a monthly free allowance') }}{% else %}{{ _('AI assistant with a daily free allowance') }}{% endif %}</li>
+        <li>{{ _('Flashcards, vocabulary, practice and progress tracking') }}</li>
+        <li>{{ _('Shows ads') }}</li>
+      </ul>
+      {% if not plan_premium %}<p class="sub-current">{{ _('Your plan') }}</p>{% endif %}
+    </article>
+    <article class="sub-plan is-highlight{{ ' is-current' if plan_premium }}" role="listitem" aria-label="{{ _('Premium plan') }}">
+      <h3>{{ _('Premium') }} <span class="sub-price">{{ _('{price} € / month', price=price) }}</span></h3>
+      <ul>
+        <li>{{ _('No limit on new projects') }}</li>
+        <li>{{ _('No limit on new short lessons') }}</li>
+        <li>{{ _('AI assistant without the free allowance') }}</li>
+        <li>{{ _('Everything in Free') }}</li>
+        <li>{{ _('No ads') }}</li>
+      </ul>
+      {% if plan_premium %}<p class="sub-current">{{ _('Your plan') }}</p>{% endif %}
+    </article>
+  </div>
+  <p class="sub-note">{{ _('Premium removes the plan limits. Protection against automated or abusive use still applies to every account.') }}</p>
+
+  <div class="sub-activate">
+    <h3>{{ _('Renew Premium') if plan_premium else _('Get Premium') }}</h3>
+    {% if plan_premium %}
+    <p>{{ _('Premium does not renew automatically. To continue, pay {price} € in cash to the Learnova administrator at school and enter the new code here. It adds to your current end date, so no days are lost.', price=price) }}</p>
+    {% else %}
+    <p>{{ _('Premium costs {price} € per month. Pay in cash directly to the Learnova administrator at school, then enter the activation code you receive here. No online payment is required.', price=price) }}</p>
+    {% endif %}
+    {% if payment_instructions %}<p class="sub-instructions">{{ payment_instructions }}</p>{% endif %}
+    <p class="sub-note">{{ _('Learnova does not accept online payments at this time.') }}</p>
+    <form method="post" action="{{ url_for('redeem_premium_key') }}" autocomplete="off" class="sub-form" data-busy-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="activation-code">{{ _('Activation code') }}</label>
+      <input id="activation-code" name="activation_code" type="text" required maxlength="40"
+             autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"
+             placeholder="LN-XXXXX-XXXXX-XXXXX-XXXXX" aria-describedby="activation-code-help">
+      <small id="activation-code-help">{{ _('Capitals, spaces and dashes do not matter.') }}</small>
+      <button class="primary-button" type="submit" data-busy-label="{{ _('Activating…') }}">{{ _('Activate Premium') }}</button>
+    </form>
+  </div>
+
+  {% if redemptions %}
+  <div class="sub-history">
+    <h3>{{ _('Codes used on this account') }}</h3>
+    <ul>
+      {% for item in redemptions %}
+      <li><span class="sub-hint" aria-label="{{ _('Code ending in {hint}', hint=item.hint) if item.hint else _('Code') }}">{{ '…' ~ item.hint if item.hint else '••••' }}</span>
+        <span>{% if item.months %}{{ _('{count} month(s)', count=item.months) }}{% else %}{{ _('{count} days', count=item.days) }}{% endif %}
+          · {{ _('activated {date}', date=item.redeemed_at.strftime('%d.%m.%Y')) }}{% if item.expires_at %} · {{ _('until {date}', date=item.expires_at.strftime('%d.%m.%Y')) }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <p class="sub-version">{{ _('Learnova version {version}', version=app_version) }} · {{ _('Times in {zone}', zone=app_timezone) }}</p>
+  {% if premium_admin %}<p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Manage activation codes') }}</a></p>{% endif %}
+</section>

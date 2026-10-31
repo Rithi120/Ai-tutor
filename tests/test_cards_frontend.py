@@ -12,6 +12,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.typing_helpers import fetch  # noqa: E402
 from learnova import moderation  # noqa: E402
 
 
@@ -150,7 +151,7 @@ class CardsFrontendTests(unittest.TestCase):
 
         # The public original is unchanged
         with application.app.app_context():
-            public = application.db.session.get(application.PublicFlashcardSet, public_id)
+            public = fetch(application.db.session, application.PublicFlashcardSet, public_id)
             public_cards = json.loads(public.cards_json)
         self.assertEqual(len(public_cards), 2)
         self.assertIn("What is a cell?", [c["front"] for c in public_cards])

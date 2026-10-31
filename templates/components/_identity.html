@@ -1,0 +1,17 @@
+{#
+  Shared identity pieces: the framed avatar and the Premium badge.
+  Premium comes only from premium_user_ids() on the server - never from a page field -
+  so an expired or revoked subscription loses the badge on the next render.
+#}
+{% macro premium_badge(compact=False) -%}
+<span class="premium-badge{{ ' is-compact' if compact }}" title="{{ _('Premium member') }}">
+  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 5.2 5 7.6 8 2.5l3 5.1 3-2.4-1.2 7.3H3.2Z" fill="currentColor"/><rect x="3.2" y="13" width="9.6" height="1.6" rx=".8" fill="currentColor"/></svg>
+  {%- if not compact %}<span>{{ _('Premium') }}</span>{% else %}<span class="visually-hidden">{{ _('Premium') }}</span>{% endif -%}
+</span>
+{%- endmacro %}
+
+{% macro avatar_frame(url, accent, size="md", alt="", locked=False) -%}
+<span class="avatar-frame avatar-{{ size }}{{ ' is-locked' if locked }}" style="--avatar-accent: {{ accent or '#7c5cff' }}">
+  <img src="{{ url }}" alt="{{ alt }}" width="256" height="256" loading="lazy" decoding="async">
+</span>
+{%- endmacro %}

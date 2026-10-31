@@ -1,6 +1,5 @@
 """Tests for the student-answer mistake-analysis engine (learnova.analysis) and its wiring."""
 
-import json
 import os
 import tempfile
 import unittest

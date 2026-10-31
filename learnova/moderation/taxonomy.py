@@ -109,6 +109,20 @@ FIT_DIMENSIONS = frozenset({
     "sexual_content_context",
 })
 
+# The fit dimensions that are about *quality*, not about anyone's safety: off-topic,
+# thin, pitched at the wrong level, awkwardly written. Since policy v2 a flag here is a
+# note shown to the author, never a reason to hold the content (minor grammar or an
+# awkward sentence used to block whole sets). Privacy and out-of-context sexual
+# content stay revision requests: the first exposes a real person, the second is
+# unsuitable for the learners who read the library.
+QUALITY_DIMENSIONS = frozenset({
+    "subject_relevance",
+    "educational_value",
+    "age_appropriateness",
+    "language_quality",
+})
+BLOCKING_FIT_DIMENSIONS = FIT_DIMENSIONS - QUALITY_DIMENSIONS
+
 # Dimensions that are evidence about *how* something was written rather than about what
 # it says. A flag here may escalate to human review but can never decide on its own:
 # obfuscation is a reason to look closer, not proof of intent.
@@ -145,6 +159,7 @@ REASON_CODES = (
     "DECEPTION_OR_MANIPULATION",
     "PROMPT_INJECTION_ATTEMPT",
     "LOW_CONFIDENCE",
+    "SAFETY_UNCERTAIN",
     "CONFLICTING_SIGNALS",
     "NEEDS_HUMAN_REVIEW",
     "MODERATION_UNAVAILABLE",
@@ -218,6 +233,13 @@ DECISION_SOURCE_SET = frozenset(DECISION_SOURCES)
 # vocabulary with the safety reasons this pipeline understands.
 REPORT_REASONS = (
     "incorrect",
+    # Added with report re-review. The report form offers these six first: a wrong
+    # translation and a misleading explanation are the quality complaints a vocabulary
+    # library actually gets, and "inappropriate" is the one plain-language safety choice
+    # (the older, finer safety reasons below stay valid for existing reports and clients).
+    "incorrect_translation",
+    "misleading",
+    "inappropriate",
     "spam",
     "offensive",
     "harassment",
@@ -232,7 +254,7 @@ REPORT_REASON_SET = frozenset(REPORT_REASONS)
 
 # Reports that describe a possible safety problem rather than a quality complaint.
 SAFETY_REPORT_REASONS = frozenset({
-    "offensive", "harassment", "sexual", "dangerous", "personal_information",
+    "offensive", "harassment", "sexual", "dangerous", "personal_information", "inappropriate",
 })
 
 
@@ -297,6 +319,7 @@ REASON_LABELS = {
     "DECEPTION_OR_MANIPULATION": "Content that appears designed to mislead readers",
     "PROMPT_INJECTION_ATTEMPT": "Text addressed to the review system rather than to learners",
     "LOW_CONFIDENCE": "The automatic check was not confident enough",
+    "SAFETY_UNCERTAIN": "The automatic check could not judge everything, and nothing pointed to a problem",
     "CONFLICTING_SIGNALS": "The automatic checks disagreed",
     "NEEDS_HUMAN_REVIEW": "A person will look at this",
     "MODERATION_UNAVAILABLE": "The check could not be completed",
@@ -309,6 +332,9 @@ assert set(REASON_LABELS) == REASON_CODE_SET
 
 REPORT_REASON_LABELS = {
     "incorrect": "Incorrect information",
+    "incorrect_translation": "Incorrect translation",
+    "misleading": "Misleading explanation or context",
+    "inappropriate": "Inappropriate or harmful",
     "spam": "Spam or advertising",
     "offensive": "Offensive content",
     "harassment": "Harassment or bullying",

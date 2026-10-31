@@ -60,7 +60,7 @@ The reusable implementation lives in `templates/components/_speech_controls.html
 
 ## Intelligent Exam Study Planner
 
-Open **More → Study Planner** after creating a learning project. Choose the project, future exam date, target grade, available minutes, weekdays, and preferred starting difficulty. Learnova then builds a deterministic daily schedule from the project's unfinished sections, saved concept mastery, overdue spaced-repetition reviews, recent mistakes, and remaining exam preparation. No AI tokens are required to calculate the schedule.
+The planner is part of **Projektmodus** (one entry in the navigation; see `docs/PROJECT_MODE.md`). In a project's overview, under **Exam date and study time**, set an optional exam date, the class, target grade, available minutes, free weekdays, and preferred difficulty. Learnova then builds a deterministic daily schedule from the project's unfinished sections, saved concept mastery, overdue spaced-repetition reviews, recent mistakes, and remaining exam preparation. No AI tokens are required to calculate the schedule.
 
 Each plan shows today's study tasks, exam countdown, readiness estimate, completed sessions, hours studied, streak, weak concepts, next review/quiz, remaining lessons, and upcoming mock exam. The monthly calendar opens every scheduled day. Completing a quiz, recall card, or final exam updates only affected future sessions. A low result adds or advances review and lowers relevant difficulty; a strong result moves forward and removes redundant review. Skipping a day rebalances incomplete work across existing future study days instead of appending it after the plan.
 
@@ -191,7 +191,7 @@ Usage accounting is written to the `ai_usage_event` table (one row per provider 
 Get-Content .\instance\ai_usage.jsonl -Tail 20 | ConvertFrom-Json | Format-Table request_id,timestamp,task_type,prompt_version,ai_mode,total_tokens,cache_status,retry_count,validation_result,error_category
 ```
 
-For estimated cost, configure `AI_INPUT_COST_PER_MILLION` and `AI_OUTPUT_COST_PER_MILLION`. Central request safeguards are configurable with `AI_MAX_REQUESTS_PER_USER_HOUR`, `AI_MAX_REQUESTS_PER_USER_DAY`, `AI_MAX_LIVE_REQUESTS_DEVELOPMENT`, `AI_MAX_TOKENS_PER_SESSION`, and `AI_MAX_OUTPUT_CHARACTERS`.
+For estimated cost, configure `AI_INPUT_COST_PER_MILLION` and `AI_OUTPUT_COST_PER_MILLION`. Central request safeguards are configurable with `AI_MAX_REQUESTS_PER_USER_HOUR`, `AI_MAX_REQUESTS_PER_USER_DAY`, `AI_MAX_LIVE_REQUESTS_DEVELOPMENT`, and `AI_MAX_OUTPUT_CHARACTERS`. There is no per-session token cap.
 
 Task output defaults are tutor chat 200, answer evaluation 250, translation 400, lesson generation 700, quiz generation 600, project generation 1200, exam generation 1200, OCR 1400, adaptive practice 600, and exam evaluation 600 tokens. Override one with `AI_<TASK_NAME>_MAX_OUTPUT_TOKENS`; input budgets use the corresponding `AI_<TASK_NAME>_MAX_INPUT_TOKENS`. The gateway removes duplicate whitespace/repeated long lines, uses only the bounded context supplied by features, then rejects input that still exceeds its task budget. It never silently submits a complete oversized document.
 
@@ -212,7 +212,6 @@ LESSON_TOKEN_LIMIT=1800
 ANSWER_TOKEN_LIMIT=1100
 CHAT_TOKEN_LIMIT=1100
 TRANSLATE_TOKEN_LIMIT=2500
-PROJECT_TOKEN_LIMIT=5000
 ```
 
 To add a fixture, create the same scenario filename under both `tests/fixtures/ai/en/` and `tests/fixtures/ai/de/`. Use a top-level supported task name and an `output_text` value; `output_text` may be a JSON object or a plain string. Fixtures must be sanitized and deterministic. Update the `_meta.prompt_versions` map in each `valid.json`. Normal tests run every valid fixture through the production schema and assert each intentional failure fixture's category.
@@ -260,7 +259,7 @@ The suite verifies:
 - validated section planning, confirmed priority weighting, recall, section testing, and section mastery persistence;
 - hidden exam answers before submission, autosave, deterministic scoring, server-side expiry, idempotent submission, result persistence, and exam/project/section user isolation.
 - direct assistant chat: preset system prompts and the shared honesty standard, context-window trimming (newest turn always sent, whole messages only, oversized turns truncated visibly, never opening on an assistant turn), title derivation, conversation lifecycle, per-account isolation across every route, feature-flag removal of the whole surface, provider-prefix routing, failures stored as turns without being replayed to the model, and the conversation and message ceilings.
-- community moderation: Unicode/homoglyph/encoding preprocessing, obfuscation scoring, strict classification schema, evidence grounding of safety flags, the full decision policy and its configurable thresholds, publication-bypass attempts across every public read path, publish idempotency, the oversized-submission ceiling, re-moderation on edit, stale-approval refusal and stale-state reporting, reporting with per-day ceiling and auto-hide, reviewer authorization and append-only decisions, quote retention and redaction, operational metrics carrying no content, provider-failure fail-closed behaviour, and upgrade of a database that predates the moderation migration.
+- community moderation: Unicode/homoglyph/encoding preprocessing, obfuscation scoring, strict classification schema, evidence grounding of safety flags, the full decision policy and its configurable thresholds, publication-bypass attempts across every public read path, publish idempotency, the oversized-submission ceiling, re-moderation on edit, stale-approval refusal and stale-state reporting, reporting with per-day ceiling and targeted re-review (never auto-hide), reviewer authorization and append-only decisions, quote retention and redaction, operational metrics carrying no content, provider-failure fail-closed behaviour, and upgrade of a database that predates the moderation migration.
 - deterministic study-plan creation, countdowns, due/weak priority, incremental performance adaptation, missed-day redistribution without schedule extension, calendar generation, completion/restart persistence, English/German planner UI, multiple projects, and cross-user plan/session isolation.
 
 ## Manual smoke test
@@ -647,12 +646,15 @@ separate from subject relevance, so reproductive biology in a biology set is pub
 while the same vocabulary attached to a mathematics card asks for a revision, and
 solicitation is rejected. Every safety flag has to quote text that actually appears in the
 submission; one that cannot is discarded and the item goes to a human instead. Obfuscation,
-prompt injection, low confidence and conflicting signals all escalate and never reject on
-their own, and nothing is publicly visible until both gates agree.
+prompt injection and conflicting signals escalate and never reject on their own; low
+confidence escalates only together with a risk signal. Quality (grammar, level, a possibly
+wrong translation) never holds a set: it publishes with per-entry suggestions the author
+can keep, edit or accept. Nothing is publicly visible until both gates agree.
 
-Readers can report published content, two safety reports auto-hide a set pending review,
-and reviewers on the `COMMUNITY_MODERATORS` allowlist work the queue at
-`/internal/moderation`. Full design, thresholds and known limitations are in
+Readers can report published content. A report never hides anything by itself; it triggers
+a targeted AI re-review (the stricter moderation pass for safety reports), whose findings
+go to reviewers on the `COMMUNITY_MODERATORS` allowlist at `/internal/moderation` and,
+when SMTP is configured, by email to `COMMUNITY_ALERT_EMAIL`. Full design, thresholds and known limitations are in
 `docs/COMMUNITY_MODERATION.md`.
 
 ```powershell

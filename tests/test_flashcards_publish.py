@@ -12,6 +12,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.typing_helpers import fetch  # noqa: E402
 from learnova import moderation  # noqa: E402
 
 
@@ -162,7 +163,7 @@ class PublishTests(unittest.TestCase):
         approved_id = self._publish(set_id).get_json()["id"]
         blocked_ids = []
         with application.app.app_context():
-            approved = application.db.session.get(application.PublicFlashcardSet, approved_id)
+            approved = fetch(application.db.session, application.PublicFlashcardSet, approved_id)
             for status in ("pending_ai_review", "pending_manual_review", "rejected",
                            "hidden", "unpublished", "draft"):
                 row = application.PublicFlashcardSet(
@@ -200,7 +201,7 @@ class PublishTests(unittest.TestCase):
         self.assertTrue(state["changed_since_publish"])
         # public snapshot still shows the original approved content
         with application.app.app_context():
-            public = application.db.session.get(application.PublicFlashcardSet, state["public_id"])
+            public = fetch(application.db.session, application.PublicFlashcardSet, state["public_id"])
             public_cards = json.loads(public.cards_json)
         self.assertIn("What is a cell?", [c["front"] for c in public_cards])
 
@@ -215,7 +216,7 @@ class PublishTests(unittest.TestCase):
         with application.app.app_context():
             versions = application.db.session.scalars(
                 application.db.select(application.AIReview).where(application.AIReview.public_set_id == public_id)).all()
-            public = application.db.session.get(application.PublicFlashcardSet, public_id)
+            public = fetch(application.db.session, application.PublicFlashcardSet, public_id)
             snapshots = application.db.session.scalars(
                 application.db.select(application.FlashcardPublicationVersion).where(
                     application.FlashcardPublicationVersion.public_set_id == public_id).order_by(
@@ -231,14 +232,18 @@ class PublishTests(unittest.TestCase):
         set_id = self._make_set()
         public_id = self._publish(set_id).get_json()["id"]
         self.client.put(f"/api/flashcards/sets/{set_id}", json={"cards": [
-            {"type": "question_answer", "front": "unsafe edit", "back": "changed"}]})
-        rejected = {**REVIEW_HIGH, "overallScore": 1.0}
-        with ai_responder(rejected):
+            {"type": "question_answer", "front": "unsafe edit", "back": "you are a worthless idiot"}]})
+        # Quality no longer rejects anything, so the failing resubmission is a safety one.
+        insult = {**_moderation_allow(), "recommendation": "reject", "confidence": 0.95,
+                  "dimensions": {**_moderation_allow()["dimensions"], "harassment_or_insult": "flag"},
+                  "quotes": [{"dimension": "harassment_or_insult", "quote": "a worthless idiot"}],
+                  "reason_codes": ["HARASSMENT"], "evidence_summary": "A direct insult."}
+        with ai_responder(REVIEW_HIGH, moderation_payload=insult):
             response = self.client.post(f"/api/community/sets/{public_id}/resubmit")
         self.assertEqual(response.get_json()["status"], "rejected")
         with application.app.app_context():
-            public = application.db.session.get(application.PublicFlashcardSet, public_id)
-            active = application.db.session.get(
+            public = fetch(application.db.session, application.PublicFlashcardSet, public_id)
+            active = fetch(application.db.session, 
                 application.FlashcardPublicationVersion, public.active_version_id)
         self.assertIn("What is a cell?", json.loads(active.cards_json)[0]["front"])
 

@@ -1,34 +1,45 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Learning Projects') }} — Learnova{% endblock %}
+{% block title %}{{ _('Project Mode') }} — Learnova{% endblock %}
 {% block body_class %}project-page{% endblock %}
+{% from "components/_grade_selector.html" import grade_selector with context %}
 {% block content %}
   <main class="project-shell">
     <section class="project-hero document-hero">
-      <div><span class="eyebrow">{{ _('EXAM PREPARATION') }}</span><h1>{{ _('Turn your school papers into a study plan.') }}</h1><p>{{ _('Scan or upload 10–15 pages. Learnova improves image quality, recognizes print and handwriting, asks you to verify uncertain content, then builds source-grounded learning sections.') }}</p><ol class="document-flow"><li>{{ _('Scan or upload') }}</li><li>{{ _('Recognize') }}</li><li>{{ _('Review uncertain text') }}</li><li>{{ _('Learn and test') }}</li></ol></div>
+      <div><span class="eyebrow">{{ _('PROJECT MODE') }}</span><h1>{{ _('Turn your notes into a plan.') }}</h1><p>{{ _('One project per subject or exam: Learnova finds the topics in your material, explains them at your level, tests you, plans your revision and prepares you for the exam.') }}</p><ol class="document-flow"><li>{{ _('Upload notes') }}</li><li>{{ _('Check the topics') }}</li><li>{{ _('Tap Next') }}</li></ol></div>
       <form id="projectCreateForm" class="project-create-card" method="post" enctype="multipart/form-data">
-        <h2>{{ _('Start a study project') }}</h2>
+        <h2>{{ _('Create a new learning project') }}</h2>
         <label>{{ _('Project name') }} <small>({{ _('optional') }})</small><input name="title" maxlength="255" placeholder="{{ _('e.g. Physics exam — mechanics') }}"></label>
-        <div class="form-pair"><label>{{ _('Subject') }} <small>({{ _('optional') }})</small><input name="subject" maxlength="80" placeholder="{{ _('Physics') }}"></label><label>{{ _('Exam date') }} <small>({{ _('optional') }})</small><input name="exam_date" type="date"></label></div>
-        <fieldset class="document-input-options"><legend>{{ _('Add school papers') }}</legend>
-          <label class="document-input-option"><input id="pdfInput" name="materials" type="file" accept="application/pdf" multiple><span class="input-icon">PDF</span><b>{{ _('Upload PDF') }}</b><small>{{ _('Select one or more PDFs') }}</small></label>
-          <label class="document-input-option"><input id="imageUploadInput" name="materials" type="file" accept="image/jpeg,image/png,image/webp" multiple><span class="input-icon">IMG</span><b>{{ _('Upload Images') }}</b><small>JPG, PNG, WebP</small></label>
+        <div class="form-pair">
+          <label>{{ _('Subject') }}<select name="subject">{% for value in ['Mathematics', 'German', 'English', 'Physics', 'Chemistry', 'Biology', 'History', 'Geography', 'Other'] %}<option value="{{ value }}">{{ _(value) }}</option>{% endfor %}</select><input class="subject-other" name="subject_other" maxlength="80" placeholder="{{ _('Which subject?') }}" aria-label="{{ _('Which subject?') }}"></label>
+          <label for="grade">{{ _('Class') }}{{ grade_selector(selected=current_user.grade, required=False) }}</label>
+        </div>
+        <label>{{ _('Exam date') }} <small>({{ _('optional') }})</small><input name="exam_date" type="date" min="{{ today.isoformat() }}"><small class="field-hint">{{ _('Without a date you get a flexible learning plan.') }}</small></label>
+        <fieldset class="document-input-options"><legend>{{ _('Your notes') }}</legend>
+          <label class="document-input-option"><input id="imageUploadInput" name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">＋</span><b>{{ _('Photos or PDFs') }}</b><small>{{ _('Notes, worksheets, handwriting') }}</small></label>
           <button id="openScanner" class="document-input-option" type="button"><span class="input-icon">▣</span><b>{{ _('Scan with Camera') }}</b><small>{{ _('Phone or laptop camera') }}</small></button>
         </fieldset>
+        <details class="project-more-options">
+          <summary>{{ _('Kompetenzraster and own topics') }} <small>({{ _('optional') }})</small></summary>
+          <label class="document-input-option compact"><input id="competencyGridInput" name="competency_grid" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">✓</span><b>{{ _('Kompetenzraster') }}</b><small>{{ _('What your teacher will test. Not required.') }}</small></label>
+          <label for="projectTopics">{{ _('Topics, one per line') }}</label>
+          <textarea id="projectTopics" name="topics" rows="3" maxlength="4000" placeholder="{{ _('e.g. Pythagoras') }}&#10;{{ _('e.g. Linear functions') }}"></textarea>
+          <small class="field-hint">{{ _('You can also start with topics only, without uploading anything.') }}</small>
+        </details>
         <div id="selectedMaterial" class="selected-material" aria-live="polite">{{ _('No pages selected yet.') }}</div>
-        <button id="createProjectButton" class="primary-button" type="submit">{{ _('Start lesson from these pages') }} <b>→</b></button>
+        <button id="createProjectButton" class="primary-button" type="submit">{{ _('Create learning project') }} <b>→</b></button>
         <div id="uploadProgress" class="upload-progress hidden" aria-live="polite"><i></i><span>{{ _('Uploading pages securely…') }}</span></div>
-        <p class="privacy">🔒 Learnova stores the original file and a conservatively improved recognition copy. Camera video is never recorded or stored; only pages you capture are uploaded.</p>
+        <p class="privacy">🔒 {{ _('Your files stay private to your account. Camera video is never recorded; only pages you capture are uploaded.') }}</p>
       </form>
     </section>
-    <section class="project-list-section"><div class="section-heading"><div><span class="eyebrow">{{ _('YOUR MATERIAL') }}</span><h2>{{ _('Study projects') }}</h2></div></div>
-      {% if projects %}<div class="project-grid">{% for project in projects %}{% set active = project.sections|rejectattr('excluded')|list %}{% set mastery = (active|sum(attribute='mastery_score') / active|length) if active else 0 %}<a class="project-tile" href="{{ url_for('project_dashboard', project_id=project.id) }}"><div class="project-tile-head"><span class="project-subject">{{ project.subject }}</span><span class="status-badge">{{ _(project.status|replace('_', ' ')|capitalize) }}</span></div><h3>{{ project.title }}</h3><p>{{ project.pages|length }} {{ _('pages') }} · {{ active|length }} {{ _('sections') }}{% if project.exam_date %} · {{ _('Exam') }} {{ project.exam_date.strftime('%d.%m.%Y') }}{% endif %}</p><div class="project-progress" aria-label="{{ _('Mastery') }} {{ mastery|round|int }}%"><i style="width:{{ mastery|round|int }}%"></i></div><div><small>{{ mastery|round|int }}% {{ _('mastery') }}</small><b>{{ _('Open') }} →</b></div></a>{% endfor %}</div>{% else %}<div class="empty-project"><h3>{{ _('No projects yet') }}</h3><p>{{ _('Your first scanned or uploaded study pack will appear here.') }}</p><a class="primary-button" href="#projectCreateForm">{{ _('Upload material') }} →</a></div>{% endif %}
+    <section class="project-list-section" aria-labelledby="myProjectsTitle"><div class="section-heading"><div><span class="eyebrow">{{ _('PROJECT MODE') }}</span><h2 id="myProjectsTitle">{{ _('My learning projects') }}</h2></div></div>
+      {% if projects %}<div class="project-grid">{% for project in projects %}{% set active = project.sections|rejectattr('excluded')|list %}{% set mastery = (active|sum(attribute='mastery_score') / active|length) if active else 0 %}{% set task = next_tasks.get(project.id) %}<a class="project-tile" href="{{ url_for('project_dashboard', project_id=project.id) }}"><div class="project-tile-head"><span class="project-subject">{{ _(project.subject) }}{% if project.grade %} · {{ _(grade_label(project.grade)) }}{% endif %}</span><span class="status-badge">{% if project.exam_date and project.exam_date >= today %}{{ _('{days} days left', days=(project.exam_date - today).days) }}{% elif project.exam_date %}{{ _('Exam over') }}{% else %}{{ _('Flexible plan') }}{% endif %}</span></div><h3>{{ project.title }}</h3><p>{{ project.pages|length }} {{ _('pages') }} · {{ active|length }} {{ _('topics') }}{% if project.exam_date %} · {{ _('Exam') }} {{ project.exam_date.strftime('%d.%m.%Y') }}{% endif %}</p>{% if task %}<p class="project-tile-next">{{ _('Next') }}: {{ task.title or _('Practice exam') }}</p>{% elif not project.topics_confirmed %}<p class="project-tile-next">{{ _('Check the topics') }}</p>{% endif %}<div class="project-progress" aria-label="{{ _('Mastery') }} {{ mastery|round|int }}%"><i style="width:{{ mastery|round|int }}%"></i></div><div><small>{{ mastery|round|int }}% {{ _('mastery') }}</small><b>{{ _('Open') }} →</b></div></a>{% endfor %}</div>{% else %}<div class="empty-project"><h3>{{ _('No projects yet') }}</h3><p>{{ _('Create your first learning project: upload notes, a Kompetenzraster, or just type the topics.') }}</p><a class="primary-button" href="#projectCreateForm">{{ _('Create a new learning project') }} →</a></div>{% endif %}
     </section>
   </main>
 
   <div id="scannerModal" class="scanner-modal hidden" role="dialog" aria-modal="true" aria-labelledby="scannerTitle">
     <div class="scanner-panel">
       <header><div><span class="eyebrow">{{ _('LEARNOVA DOCUMENT SCANNER') }}</span><h2 id="scannerTitle">{{ _('Scan one page at a time') }}</h2></div><button id="closeScanner" type="button" aria-label="{{ _('Close camera scanner') }}">×</button></header>
-      <div id="cameraFallback" class="camera-fallback hidden" role="alert"><h3>{{ _('Camera access is unavailable') }}</h3><p>{{ _('Camera unavailable. Close the scanner and use Upload Images instead.') }}</p></div>
+      <div id="cameraFallback" class="camera-fallback hidden" role="alert"><h3>{{ _('Camera access is unavailable') }}</h3><p>{{ _('Take the photo with your camera app instead, or close the scanner and use Photos or PDFs.') }}</p><label class="attach-button native-camera">{{ _('Open camera app') }}<input id="nativeCameraInput" class="attach-input" type="file" accept="image/*" capture="environment"></label></div>
       <section id="liveCapture" class="scanner-live">
         <div class="camera-stage"><video id="cameraPreview" autoplay playsinline muted aria-label="Live camera preview"></video><div class="document-frame"><span>Place the full paper inside the frame</span></div></div>
         <div class="capture-guidance"><span>Use good lighting</span><span>Avoid shadows and glare</span><span>Keep the camera steady</span><span>Make handwriting clearly visible</span></div>
@@ -44,4 +55,4 @@
     </div>
   </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='scanner.js') }}"></script>{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='scanner.js') }}"></script>{% endblock %}

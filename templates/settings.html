@@ -3,6 +3,7 @@
 {% from "components/_grade_selector.html" import grade_selector with context %}
 {% block title %}{{ _('Settings') }} — Learnova{% endblock %}
 {% block body_class %}account-page settings-page{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">{% endblock %}
 {% block content %}
 <main class="account-shell settings-shell">
   <section class="account-card">
@@ -36,25 +37,10 @@
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <button class="primary-button" type="submit">{{ _('Save school type') }}</button>
     </form>
+    {% include "components/_profile_settings.html" %}
     {% endif %}
-    <section class="settings-grade" id="premium">
-      <h2>{{ _('Premium') }}</h2>
-      {% if premium_active and premium_entitlement %}
-      <p role="status">{{ _('Premium is active.') }}</p>
-      <p>{{ _('Expires') }}: <time datetime="{{ premium_expiry.isoformat() }}">{{ premium_expiry.strftime('%Y-%m-%d %H:%M UTC') }}</time>
-        ({{ premium_remaining_days }} {{ _('days remaining') }})</p>
-      {% else %}
-      <p>{{ _('Premium is not active on this account.') }}</p>
-      {% endif %}
-      <p>{{ _('Pay in person and enter the key you received to activate 30 days. Redeeming another key extends active Premium by 30 days. There is no automatic renewal.') }}</p>
-      <form method="post" action="{{ url_for('redeem_premium_key') }}" autocomplete="off">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="premium-key">{{ _('Redeem key') }}</label>
-        <input id="premium-key" name="premium_key" type="password" maxlength="120" required autocomplete="off">
-        <button class="primary-button" type="submit">{{ _('Redeem key') }}</button>
-      </form>
-      {% if premium_admin %}<p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Manage Premium keys') }}</a></p>{% endif %}
-    </section>
+    {% if current_user.is_authenticated %}{% include "components/_subscription.html" %}{% endif %}
   </section>
 </main>
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/subscription.js', v=static_version) }}"></script>{% endblock %}

@@ -150,7 +150,8 @@ student can act on.
 | Setting | Scope | Unset means |
 | --- | --- | --- |
 | `AI_BUDGET_USER_TOKENS_PER_DAY` / `_PER_MONTH` | one learner | no limit |
-| `AI_BUDGET_GLOBAL_TOKENS_PER_DAY` / `_PER_MONTH` | the whole site | no limit |
+| `AI_BUDGET_GLOBAL_TOKENS_PER_DAY` | the whole site | 2,000,000 tokens per UTC day (emergency ceiling; an explicit blank disables it) |
+| `AI_BUDGET_GLOBAL_TOKENS_PER_MONTH` | the whole site | no limit |
 | `AI_BUDGET_<PROVIDER>_TOKENS_PER_DAY` / `_PER_MONTH` | one provider | Groq: no limit; **any other provider: not permitted** |
 | `AI_RATE_<PROVIDER>_REQUESTS_PER_MINUTE` | one provider | no limit |
 | `AI_COST_<PROVIDER>_INPUT_PER_MILLION` / `_OUTPUT_PER_MILLION` | prices | fall back to `AI_INPUT/OUTPUT_COST_PER_MILLION`, else 0 |
@@ -159,9 +160,9 @@ student can act on.
 A paid provider is **off until it has a cap**. That is the one asymmetry, and it is
 deliberate: a provider that bills must be switched on by a decision, never by omission.
 
-The older per‑user *request* caps (`AI_MAX_REQUESTS_PER_USER_HOUR` / `_DAY`) and the
-per‑session token cap (`AI_MAX_TOKENS_PER_SESSION`) still apply; they are abuse protection
-and run before the cache is consulted.
+The older per‑user *request* caps (`AI_MAX_REQUESTS_PER_USER_HOUR` / `_DAY`) still apply;
+they are abuse protection and run before the cache is consulted. There is no per‑session
+token cap: it stopped long Projektmodus tests partway and was removed on 2026-10-31.
 
 ### Never silently exceeded
 

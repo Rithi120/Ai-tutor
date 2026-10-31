@@ -1,5 +1,5 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}<div class="global-alerts" role="status" aria-live="polite">
-    {% for category, message in messages %}<div class="form-alert {{ category }}" data-alert-category="{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}"><span>{{ _(message) }}</span><button class="alert-dismiss" type="button" aria-label="{{ _('Dismiss') }}">×</button></div>{% endfor %}
+    {% for category, message in messages %}{% set kind = 'error' if category == 'limit' else category %}<div class="form-alert {{ kind }}" data-alert-category="{{ category }}" role="{{ 'alert' if kind == 'error' else 'status' }}"><span>{{ _(message) }}{% if category == 'limit' and current_user.is_authenticated %} <a class="alert-link" href="{{ url_for('settings') }}#subscription">{{ _('See Premium') }}</a>{% endif %}</span><button class="alert-dismiss" type="button" aria-label="{{ _('Dismiss') }}">×</button></div>{% endfor %}
   </div>{% endif %}
 {% endwith %}

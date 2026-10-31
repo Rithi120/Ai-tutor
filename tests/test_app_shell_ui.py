@@ -43,7 +43,9 @@ class AuthenticatedAppShellTests(unittest.TestCase):
         self.assertIn(b'id="moreMenu" class="app-dropdown" role="menu"', html)
         self.assertIn(b'Mistake Notebook', html)
         self.assertIn(b"Today&#39;s Practice", html)
-        self.assertIn(b'Exam Mode', html)
+        # One Projektmodus: no separate exam-mode or study-planner entries any more.
+        self.assertNotIn(b'Exam Mode', html)
+        self.assertNotIn(b'href="/study-plans"', html)
         self.assertIn(b'aria-controls="profileMenu"', html)
         self.assertIn(b'id="profileMenu"', html)
         self.assertIn(b'class="settings-link', html)
@@ -52,6 +54,7 @@ class AuthenticatedAppShellTests(unittest.TestCase):
         self.assertEqual(desktop.count(b'class="app-nav-link'), 3)
         self.assertIn(b'href="/"', desktop)
         self.assertIn(b'New Lesson', desktop)
+        self.assertIn(b'Project Mode', desktop)
         self.assertIn(b'id="moreMenu"', desktop)
 
     def test_mobile_menu_has_all_links_and_accessibility_controls(self):
@@ -63,12 +66,14 @@ class AuthenticatedAppShellTests(unittest.TestCase):
         self.assertIn(b'id="mobileAppMenu"', html)
         mobile = html.split(b'id="mobileAppMenu"', 1)[1].split(b"</nav>", 1)[0]
         for label in (
-            b"Overview", b"New Lesson", b"Projects", b"Mistake Notebook", b"Today&#39;s Practice",
-            b"Exam Mode", b"Settings", b"Language", b"Log out",
+            b"Overview", b"New Lesson", b"Project Mode", b"Mistake Notebook", b"Today&#39;s Practice",
+            b"Settings", b"Language", b"Log out",
         ):
             self.assertIn(label, mobile)
+        self.assertNotIn(b"Exam Mode", mobile)
+        self.assertNotIn(b"Study Planner", mobile)
         self.assertLess(mobile.index(b"Overview"), mobile.index(b"New Lesson"))
-        self.assertLess(mobile.index(b"New Lesson"), mobile.index(b"Projects"))
+        self.assertLess(mobile.index(b"New Lesson"), mobile.index(b"Project Mode"))
 
     def test_active_state_and_pages_work_without_javascript(self):
         self.register()
@@ -138,8 +143,10 @@ class AuthenticatedAppShellTests(unittest.TestCase):
     def test_german_navigation_uses_central_translations(self):
         self.register(language="de")
         html = self.client.get("/dashboard").data
-        for label in ("Übersicht", "Neue Lektion", "Projekte", "Mehr", "Konto", "Fehlernotizbuch", "Heutige Übung", "Prüfungsmodus", "Einstellungen", "Sprache", "Abmelden"):
+        for label in ("Übersicht", "Neue Lektion", "Projektmodus", "Mehr", "Konto", "Fehlernotizbuch", "Heutige Übung", "Einstellungen", "Sprache", "Abmelden"):
             self.assertIn(label.encode(), html)
+        self.assertNotIn("Prüfungsmodus".encode(), html)
+        self.assertNotIn("Lernplaner".encode(), html)
 
     def test_motion_navigation_and_mobile_overflow_safeguards_exist(self):
         motion = Path("static/css/motion.css").read_text(encoding="utf-8")

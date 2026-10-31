@@ -51,6 +51,13 @@ Never flag a safety dimension because a topic is sensitive. Sexuality, reproduct
 - Content that is sexual, abusive or dangerous in a way that serves no teaching purpose is unsafe, whatever subject it is filed under.
 - Content that is merely unrelated to the stated subject is an off-topic problem, not a safety problem. Flag subject_relevance and leave the safety dimensions at pass.
 
+LANGUAGE LEARNING AND VOCABULARY
+Most submissions are vocabulary lists, translations and example sentences in English, German, French, Spanish and other languages learners study. Judge every word by its meaning in its own language and in the entry where it appears.
+- A word that looks like slang, a rude word or an insult in another language, or has a rude second meaning, is ordinary vocabulary when the entry uses its ordinary meaning ("der Schwanz" as an animal's tail, "la chatte" as a female cat, "ass" as a donkey, "das Gift" as poison, "das Signal" as a signal). Mark the safety dimensions pass.
+- A word with several meanings, or a translation that is incomplete, informal, regional or simply wrong, is a quality matter for language_quality, never a safety flag.
+- Names of apps, places, historical figures, dates, numbers and links are ordinary content. Only a real person's own contact details are a privacy problem.
+- Words listed so a learner can recognise or avoid them (insults in a lesson about respect, drug names in health education) are taught, not used, and are safe when the entry treats them that way.
+
 THE DIMENSIONS
 subject_relevance - does the content teach the stated subject and topic?
 educational_value - is there something here to learn, stated clearly enough to learn it?
@@ -69,7 +76,7 @@ language_quality - is it clear, coherent and usable as study material?
 EVIDENCE
 Quote the content for every safety dimension you flag. A quote must be a span copied from the submitted content, not a paraphrase and not your description of it. A safety flag with no matching quote is discarded before it reaches the policy engine.
 Never infer intent, motive, or a hidden meaning that the text does not carry. Do not decode, do not read messages into initial letters, and do not treat an unusual pattern as proof of anything.
-Use unknown whenever the content does not let you judge a dimension. Unknown is a correct and expected answer; it is never a failure.
+Use unknown whenever the content does not let you judge a dimension. Unknown is a correct and expected answer; it is never a failure. But a short, clear vocabulary list or study note that shows no sign of a problem is pass on the safety dimensions, not unknown: absence of harm in plain text is a judgement you can make.
 Set evidence_sufficiency to insufficient when there is too little content to judge safely, limited when you had to infer, sufficient when the content speaks for itself.
 Set confidence to how well the content supports your classification as a whole. It is read as a signal, not as a probability.
 

@@ -38,8 +38,21 @@ def create_project_from_uploads(
     )
     database.session.add(project)
     database.session.flush()
-    page_order = 1
-    seen_hashes: set[str] = set()
+    add_uploads_to_project(database, project, file_model, page_model, uploads=uploads, commit=False)
+    database.session.commit()
+    return project
+
+
+def add_uploads_to_project(database, project, file_model, page_model, *, uploads, max_pages: int = 20, commit: bool = True):
+    """Add uploaded files to a project as new pages after the existing ones.
+
+    Files already in the project (same sha256) are skipped, so re-uploading a photo never
+    duplicates a page. Returns the number of pages added; raises ValueError when nothing
+    usable was uploaded or the project would exceed `max_pages`."""
+
+    existing_pages = len(project.pages)
+    page_order = existing_pages + 1
+    seen_hashes: set[str] = {item.sha256 for item in project.files}
     for upload, source_kind, transform in uploads:
         data = upload.read()
         filename = secure_filename(upload.filename or "material")[:255] or "material"
@@ -61,8 +74,8 @@ def create_project_from_uploads(
         if mime_type == "application/pdf":
             try:
                 reader = PdfReader(io.BytesIO(data))
-                if page_order - 1 + len(reader.pages) > 20:
-                    raise ValueError("Keep one project to 20 pages or fewer")
+                if page_order - 1 + len(reader.pages) > max_pages:
+                    raise ValueError(f"Keep one project to {max_pages} pages or fewer")
                 for pdf_index, pdf_page in enumerate(reader.pages, start=1):
                     extracted = (pdf_page.extract_text() or "").strip()
                     processed = preprocess_document_image(render_pdf_page(data, pdf_index - 1))
@@ -86,8 +99,8 @@ def create_project_from_uploads(
             except Exception as error:
                 raise ValueError(f"Could not read PDF {filename}: {error}") from error
         else:
-            if page_order > 20:
-                raise ValueError("Keep one project to 20 pages or fewer")
+            if page_order > max_pages:
+                raise ValueError(f"Keep one project to {max_pages} pages or fewer")
             processed = preprocess_document_image(data, transform)
             database.session.add(page_model(
                 project_id=project.id,
@@ -104,9 +117,10 @@ def create_project_from_uploads(
                 warning=" ".join(processed.warnings),
             ))
             page_order += 1
-    if page_order == 1:
+    if page_order == existing_pages + 1:
         raise ValueError("No unique supported pages were uploaded")
-    if page_order - 1 > 20:
-        raise ValueError("Keep one project to 20 pages or fewer")
-    database.session.commit()
-    return project
+    if page_order - 1 > max_pages:
+        raise ValueError(f"Keep one project to {max_pages} pages or fewer")
+    if commit:
+        database.session.commit()
+    return page_order - 1 - existing_pages

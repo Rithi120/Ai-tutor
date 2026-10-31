@@ -101,15 +101,20 @@ class AIObservabilityTests(unittest.TestCase):
             ("invalid_source_references", "project_section_generation", {"source_page_ids": [1]}, "source_reference_validation"),
             ("incorrect_exam_question_count", "final_exam_generation", {"question_count": 2}, "schema_validation"),
             ("invalid_scores", "answer_evaluation", {}, "schema_validation"),
-            ("unsupported_difficulty", "adaptive_practice", {}, "schema_validation"),
         ]
+        # An unknown level word ("expert") is repaired to level 1, not refused (2026-10-31):
+        # the app sets the level from the plan on this path anyway.
+        with stub_provider("unsupported_difficulty"):
+            self.assertIn("Explain fractions", self.call("adaptive_practice", validation_context={}).output_text)
         for scenario, task, context, category in cases:
             with stub_provider(scenario):
                 with self.assertRaises(AIValidationError) as caught:
                     self.call(task, validation_context=context)
             self.assertEqual(caught.exception.category, category, scenario)
-            self.assertEqual(caught.exception.report.prompt_version, PROMPT_VERSIONS[task])
-            self.assertFalse(caught.exception.report.valid)
+            report = caught.exception.report
+            assert report is not None, scenario
+            self.assertEqual(report.prompt_version, PROMPT_VERSIONS[task])
+            self.assertFalse(report.valid)
         application.app.config["AI_MAX_OUTPUT_CHARACTERS"] = 20
         with stub_provider("oversized_output"):
             with self.assertRaises(AIValidationError) as caught:
@@ -257,11 +262,14 @@ class AIObservabilityTests(unittest.TestCase):
             self.call()      # would be refused if the dead reservation still counted
         self.assertEqual(provider.call_count, 1)
 
-    def test_the_session_token_default_is_one_number_everywhere(self):
-        self.assertEqual(application.app.config["AI_MAX_TOKENS_PER_SESSION"], 60000)
+    def test_there_is_no_per_session_token_cap(self):
+        # Removed 2026-10-31: it stopped long Projektmodus tests partway through.
+        self.assertNotIn("AI_MAX_TOKENS_PER_SESSION", application.app.config)
         source = Path(service.__file__).read_text(encoding="utf-8")
-        self.assertIn('"AI_MAX_TOKENS_PER_SESSION", 60000', source)
+        self.assertNotIn("AI_MAX_TOKENS_PER_SESSION", source)
+        self.assertNotIn('scope="session_tokens"', source)
         self.assertIn('"AI_MAX_LIVE_REQUESTS_DEVELOPMENT", 1000', source)
+        self.assertNotIn("PROJECT_TOKEN_LIMIT", application.app.config)
 
     # ---- what the student is told ---------------------------------------------------------
     def test_budget_exhaustion_is_a_503_with_a_reset_time(self):

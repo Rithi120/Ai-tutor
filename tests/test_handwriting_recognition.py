@@ -22,6 +22,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.typing_helpers import fetch  # noqa: E402
 from learnova.ocr.service import (  # noqa: E402
     _CV2_AVAILABLE,
     apply_recognition_variant,
@@ -57,7 +58,7 @@ def block(content, confidence, btype="handwriting", suggestion=""):
     }
 
 
-def png(size, background="white", draw_fn=None):
+def png(size, background: str | tuple[int, int, int] = "white", draw_fn=None):
     image = Image.new("RGB", size, background)
     if draw_fn:
         draw_fn(ImageDraw.Draw(image), size)
@@ -102,7 +103,8 @@ class PreprocessingTests(unittest.TestCase):
         landscape = Image.new("RGB", (900, 600), "white")
         exif = landscape.getexif()
         exif[274] = 6  # Orientation = rotate 90° CW on display -> becomes portrait
-        buf = io.BytesIO(); landscape.save(buf, format="JPEG", exif=exif)
+        buf = io.BytesIO()
+        landscape.save(buf, format="JPEG", exif=exif)
         processed = preprocess_document_image(buf.getvalue(), {"autocrop": False})
         self.assertGreater(processed.height, processed.width)  # orientation applied -> portrait
 
@@ -189,7 +191,7 @@ class RecognitionFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "ready_for_review")
         with application.app.app_context():
-            page = application.db.session.get(application.ProjectPage, page_id)
+            page = fetch(application.db.session, application.ProjectPage, page_id)
             self.assertEqual(page.extraction_status, "ready")
             self.assertIn("lesbar", page.extracted_text)
 
@@ -201,7 +203,7 @@ class RecognitionFlowTests(unittest.TestCase):
             response = self._recognize(project_id, page_id)
         self.assertEqual(response.status_code, 200)
         with application.app.app_context():
-            page = application.db.session.get(application.ProjectPage, page_id)
+            page = fetch(application.db.session, application.ProjectPage, page_id)
             self.assertEqual(page.extraction_status, "ready")
             self.assertIn("only this line", page.extracted_text)
 
@@ -242,7 +244,7 @@ class RecognitionFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mocked.call_count, 3)
         with application.app.app_context():
-            page = application.db.session.get(application.ProjectPage, page_id)
+            page = fetch(application.db.session, application.ProjectPage, page_id)
             self.assertEqual(page.extraction_status, "ready")
             self.assertIn("recovered", page.extracted_text)
 
@@ -302,7 +304,9 @@ class FrontendUploadTests(unittest.TestCase):
         enhanced = preprocess_document_image(source)
         gray = apply_recognition_variant(enhanced.data, "grayscale")
         out = Image.open(io.BytesIO(gray.data)).convert("RGB")
-        r, g, b = out.getpixel((5, 5))
+        pixel = out.getpixel((5, 5))
+        assert isinstance(pixel, tuple)
+        r, g, b = pixel[:3]
         self.assertTrue(abs(r - g) <= 2 and abs(g - b) <= 2)
 
 

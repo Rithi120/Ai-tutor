@@ -298,7 +298,7 @@ class AdaptiveTutorIntegrationTests(unittest.TestCase):
         self.register("9")
         session_id = self.start_lesson()
         self.answer(session_id, DIAGNOSIS)  # prerequisite gap
-        state = application.SESSIONS[session_id]["teaching"]
+        state = el.topic_state(application.SESSIONS[session_id]["teaching"], "Linear equations")
         self.assertEqual((state["offset"], state["focus"]), (-1, "prerequisite"))
         _, instructions = self.chat(session_id, "What now?")
         self.assertIn("rebuild that briefly first", instructions)
@@ -311,7 +311,7 @@ class AdaptiveTutorIntegrationTests(unittest.TestCase):
         slip["recommended_intervention"] = "worked_example"
         session_id = self.start_lesson()
         self.answer(session_id, slip)
-        self.assertEqual(application.SESSIONS[session_id]["teaching"]["focus"], "calculation_check")
+        self.assertEqual(el.topic_state(application.SESSIONS[session_id]["teaching"], "Linear equations")["focus"], "calculation_check")
 
     def test_answer_evaluation_feedback_carries_the_level(self):
         self.register("2")

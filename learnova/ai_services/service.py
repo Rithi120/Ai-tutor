@@ -6,7 +6,6 @@ response caching, private cache partitioning, and sanitized usage accounting.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -62,9 +61,11 @@ SUPPORTED_TASK_TYPES = {
     "flashcard_back_suggestion",
     "flashcard_review",
     "content_moderation",
+    "report_review",
     "assistant_chat",
     "competency_extraction",
     "vocabulary_page_extraction",
+    "image_understanding",
 }
 _ACCOUNTING_LOCK = threading.Lock()
 
@@ -74,7 +75,8 @@ _ACCOUNTING_LOCK = threading.Lock()
 # bug. Only these two are cached in live mode. (In "cached" mode everything is cached,
 # which is that mode's purpose.)
 DETERMINISTIC_TASKS = frozenset({
-    "ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction"})
+    "ocr_document_recognition", "handwriting_region_review", "vocabulary_page_extraction",
+    "image_understanding"})
 
 
 class AIGatewayError(RuntimeError):
@@ -163,18 +165,24 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     # Three short definitions for one term - deliberately the smallest budget here,
     # because this task runs once per card typed rather than once per set.
     "flashcard_back_suggestion": 400,
-    "flashcard_review": 900,
+    # v2 adds per-entry warnings; a 30-entry vocabulary set can carry several.
+    "flashcard_review": 1800,
     "content_moderation": 900,
+    # One verdict about one reported entry.
+    "report_review": 600,
     "assistant_chat": 2000,
     # One row per "Ich kann" statement; a full Kompetenzraster has 20-60 of them.
     "competency_extraction": 3500,
     # One row per printed entry; a dense textbook page has 20-30 of them, each with an
     # example sentence and its translation.
     "vocabulary_page_extraction": 3000,
+    # A full reading of up to four images: every line, formulas twice (text and LaTeX),
+    # diagram descriptions and the uncertainty list.
+    "image_understanding": 5000,
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
-    "tutor_chat": 6000,
+    "tutor_chat": 8000,
     "answer_evaluation": 5000,
     "mistake_analysis": 6000,
     "answer_diagnosis": 7000,
@@ -193,9 +201,12 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "flashcard_back_suggestion": 800,
     "flashcard_review": 12000,
     "content_moderation": 12000,
+    "report_review": 12000,
     "assistant_chat": 12000,
     "competency_extraction": 16000,
     "vocabulary_page_extraction": 8000,
+    # Four images at the fixed 1 500-token image estimate, plus the reading contract.
+    "image_understanding": 10000,
 }
 
 
@@ -260,6 +271,25 @@ def _carries_image(value: Any) -> bool:
     if isinstance(value, list):
         return any(_carries_image(item) for item in value)
     return False
+
+
+def _fit_images(value: Any) -> Any:
+    """Shrink any image data URL a provider would refuse for its size; nothing else changes.
+
+    The safety net under every call site: pages used to be sent as full-resolution PNGs
+    (an 11 MB base64 string from a 1.6 MB phone photo), which is far over Groq's
+    documented 4 MB base64 image limit. learnova.vision sizes images properly; this makes
+    sure a call site that forgets cannot send one that will be refused.
+    """
+
+    if isinstance(value, dict):
+        if value.get("type") == "input_image" and isinstance(value.get("image_url"), str):
+            from learnova.vision.intake import fit_data_url, limits_from_config  # lazy: import cycle
+            return {**value, "image_url": fit_data_url(value["image_url"], limits_from_config(current_app.config))}
+        return {key: _fit_images(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_fit_images(item) for item in value]
+    return value
 
 
 def _refused(result: adapters.ProviderResult) -> adapters.ProviderResult:
@@ -442,16 +472,6 @@ def parse_json(payload: str) -> Any:
         if match is None:
             raise
         return json.loads(repair_latex_json(match.group(0)))
-
-
-def image_data_url(upload: Any) -> str:
-    if upload.mimetype not in ALLOWED_IMAGE_TYPES:
-        raise ValueError("Please upload a JPG, PNG, or WebP image.")
-    payload = upload.read()
-    if not payload:
-        raise ValueError("The uploaded image is empty.")
-    encoded = base64.b64encode(payload).decode("ascii")
-    return f"data:{upload.mimetype};base64,{encoded}"
 
 
 # AI content languages the gateway can be asked to generate in. Interface language can
@@ -663,6 +683,26 @@ def _task_budget(task_type: str, direction: str) -> int:
     defaults = DEFAULT_INPUT_TOKEN_BUDGETS if direction == "input" else DEFAULT_OUTPUT_TOKEN_BUDGETS
     name = f"AI_{task_type.upper()}_MAX_{direction.upper()}_TOKENS"
     return max(1, int(current_app.config.get(name, defaults[task_type])))
+
+
+# The output contract the gateway appends to every prompt is not known to a caller;
+# this covers it (the longest contracts are a few hundred tokens).
+_CONTRACT_ALLOWANCE_TOKENS = 600
+
+
+def estimate_request_tokens(task_type: str, *, input: Any = None, instructions: Any = None,
+                            max_output_tokens: int | None = None) -> tuple[int, int]:
+    """(input, output) tokens one call of this request may use, before it is made.
+
+    The same estimate the gateway reserves against its own budgets, for a caller that
+    must hold an allowance first. Output is the full budget the call may spend.
+    """
+
+    input_tokens = (_estimate_tokens(_compress_input(input)) + _estimate_tokens(str(instructions or ""))
+                    + _CONTRACT_ALLOWANCE_TOKENS)
+    budget = _task_budget(task_type, "output")
+    output_tokens = min(int(max_output_tokens or budget), budget)
+    return input_tokens, output_tokens
 
 
 def _read_usage_records() -> list[dict[str, Any]]:
@@ -970,12 +1010,9 @@ def _reserve_for_call(entry: UsageEntry, *, anticipated_cost: float,
                 raise AIRequestLimitError(
                     f"Provider {entry.provider!r} has no budget configured.",
                     scope="provider_not_permitted")
-            if entry.session_reference != "anonymous":
-                session_cap = int(current_app.config.get("AI_MAX_TOKENS_PER_SESSION", 60000))
-                session_used = ledger.totals(session_reference=entry.session_reference).tokens
-                if session_used + entry.reserved_tokens > session_cap:
-                    raise AIRequestLimitError(
-                        "Study-session AI token limit reached.", scope="session_tokens")
+            # There is no per-session token cap (removed 2026-10-31 by user decision): it
+            # stopped long Projektmodus tests partway. Request rates and the site budgets
+            # below still apply.
 
             def totals_for(spec: LimitSpec, window_start: datetime) -> UsageTotals:
                 if spec.scope.startswith("user_"):
@@ -1388,7 +1425,7 @@ def diagnostics_summary() -> dict[str, Any]:
         "coalesced_requests": sum(record.get("event_kind") == "coalesced" for record in records),
         "most_expensive_tasks": sorted(
             ({"task_type": task, **values} for task, values in by_task.items()),
-            key=lambda item: (-item["cost"], -item["tokens"], item["task_type"]),
+            key=lambda item: (-float(item["cost"]), -int(item["tokens"]), str(item["task_type"])),
         )[:10],
         "prompt_versions": prompt_versions, "recent_failures": failed,
     }
@@ -1407,12 +1444,17 @@ def create_response(
     preset: str | None = None,
     previous_failure: str | None = None,
     premium_entitled: bool = False,
+    usage_observer: Callable[[str, str, GatewayUsage], None] | None = None,
     **provider_kwargs: Any,
 ) -> GatewayResponse:
     """Execute, measure, validate, and cost-control one centralized AI task.
 
     `signals`, `deep`, `preset` and `previous_failure` describe the request to the router
     (learnova.ai_services.routing) and are never forwarded to a provider.
+
+    `usage_observer(provider, model, usage)` is told about every provider call this
+    request makes - corrective retries and fallbacks included, cache hits not - so a
+    caller can charge what the request really cost (the free chat allowance does).
     """
 
     if task_type not in SUPPORTED_TASK_TYPES:
@@ -1454,6 +1496,11 @@ def create_response(
         # to the provider raw - which rejected it, so every call shaped this way failed.
         # Serialised here, once, rather than at each call site that might forget.
         provider_input = json.dumps(provider_input, ensure_ascii=False)
+    has_images = _carries_image(provider_input)
+    if has_images:
+        provider_input = _fit_images(provider_input)
+        # The router sends a request carrying a picture only to models that can see it.
+        signals = {**(signals or {}), "has_images": True}
     provider_kwargs["input"] = provider_input
     contract = output_contract(task_type, language_name, validation_context)
     original_instructions = _clean_text(str(provider_kwargs.get("instructions") or ""))
@@ -1561,6 +1608,8 @@ def create_response(
                 duration_ms=round((time.perf_counter() - call_started) * 1000, 2))
             raise AIProviderError(category, summary) from provider_error
         add_usage(item.usage)
+        if usage_observer is not None:
+            usage_observer(candidate.provider, candidate.model, item.usage)
         usage_ledger().settle(
             handle, usage=item.usage, success=True,
             duration_ms=round((time.perf_counter() - call_started) * 1000, 2),

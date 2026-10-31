@@ -34,7 +34,7 @@ class PremiumTests(unittest.TestCase):
         raw = "LN-PREM-test-key-" + str(application.uuid.uuid4())
         record = application.PremiumKey(
             key_hash=hashlib.sha256(raw.encode()).hexdigest(),
-            created_by_id=application.User.query.filter_by(username="admin").first().id,
+            created_by_id=application.User.query.filter_by(username="admin").one().id,
             created_at=application.utcnow(),
             expires_at=expires or application.utcnow() + timedelta(days=365),
             revoked_at=application.utcnow() if revoked else None,
@@ -61,7 +61,7 @@ class PremiumTests(unittest.TestCase):
         with application.app.app_context():
             self.assertEqual(application.PremiumKey.query.count(), before)
 
-    def test_redeem_grants_thirty_days_and_duplicate_is_rejected(self):
+    def test_redeem_grants_one_calendar_month_and_duplicate_is_rejected(self):
         self.register("admin")
         with application.app.app_context():
             raw, key = self.make_key()
@@ -72,7 +72,12 @@ class PremiumTests(unittest.TestCase):
         with application.app.app_context():
             entitlement = application.PremiumEntitlement.query.one()
             self.assertTrue(application.has_active_premium(entitlement.user))
-            self.assertEqual((entitlement.expires_at - entitlement.starts_at).days, 30)
+            # A calendar month in the app's timezone (learnova/subscriptions/periods.py),
+            # not a flat 30 days.
+            from learnova.subscriptions.periods import add_months
+            zone = application.subscription_settings().zone
+            self.assertEqual(application.as_utc(entitlement.expires_at),
+                             add_months(application.as_utc(entitlement.starts_at), 1, zone))
             self.assertEqual(application.PremiumRedemption.query.count(), 1)
         self.client.post("/settings/premium/redeem", data={"premium_key": raw})
         with application.app.app_context():
@@ -156,11 +161,15 @@ class PremiumTests(unittest.TestCase):
             service._assert_usage_limits("test-user", "live", premium=True)
 
     def test_adsense_loader_is_present_for_free_and_absent_for_premium(self):
+        # With a consent message confirmed and ads for students switched on, a free
+        # student gets the loader; Premium never does (tests/test_ads_csp.py has the rest).
+        application.app.config.update(ADSENSE_CMP="google_privacy_messaging", ADSENSE_SHOW_TO_STUDENTS=True)
+        self.addCleanup(application.app.config.update, ADSENSE_CMP="", ADSENSE_SHOW_TO_STUDENTS=False)
         self.register()
         free_page = self.client.get("/about").data
         self.assertEqual(free_page.count(b"pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"), 1)
         with application.app.app_context():
-            user = application.User.query.filter_by(username="student").first()
+            user = application.User.query.filter_by(username="student").one()
             application.db.session.add(application.PremiumEntitlement(
                 user_id=user.id, starts_at=application.utcnow(),
                 expires_at=application.utcnow() + timedelta(days=30)))

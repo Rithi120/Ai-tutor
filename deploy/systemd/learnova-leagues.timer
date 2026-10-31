@@ -1,0 +1,20 @@
+# Runs learnova-leagues.service shortly after the competition week ends.
+# Template - NOT installed or enabled automatically. See docs/PROFILES_AND_LEAGUES.md.
+#
+# Weeks end on Monday 00:00 in APP_TIMEZONE (Europe/Berlin by default). If you changed
+# APP_TIMEZONE, change the zone below to the same value.
+[Unit]
+Description=Learnova weekly league transition (Monday shortly after midnight)
+
+[Timer]
+# Five minutes after the week ends, in Learnova's timezone (systemd >= 235 accepts a zone).
+OnCalendar=Mon *-*-* 00:05:00 Europe/Berlin
+# Safety net: every hour at :35. Cheap (one indexed query when nothing is due) and it
+# retries a failed Monday run without anyone having to notice first.
+OnCalendar=*-*-* *:35:00
+# Catch up after the host was down at the scheduled time.
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

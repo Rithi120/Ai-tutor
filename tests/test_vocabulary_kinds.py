@@ -20,6 +20,7 @@ rule needs four words rather than three so that "il y a", "es gibt viele" and "h
 survive.
 """
 
+import re
 import os
 import tempfile
 import unittest
@@ -342,9 +343,9 @@ class ExistingDataTests(unittest.TestCase):
 
     def test_both_schema_changes_are_guarded_by_a_marker(self):
         for version in ("021_add_vocabulary_entry_kind", "022_add_practice_scope"):
-            self.assertEqual(
-                self.source.count(f'apply_schema_migration("{version}"'), 2,
-                f"{version} needs the add-it and already-there branches")
+            # Whitespace-insensitive: a formatter may wrap the call across lines.
+            calls = re.findall(rf'apply_schema_migration\(\s*"{version}"', self.source)
+            self.assertEqual(len(calls), 2, f"{version} needs the add-it and already-there branches")
 
     def test_the_relabelling_rule_is_the_one_the_scanner_uses(self):
         # Same function, so an old list and a new scan agree about what a word is.

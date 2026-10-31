@@ -11,6 +11,7 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DATABASE.as_posix()}")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 
 import app as application  # noqa: E402
+from tests.typing_helpers import fetch  # noqa: E402
 from learnova.study_planner import (  # noqa: E402
     adapt_future_schedule,
     build_plan_schedule,
@@ -124,30 +125,41 @@ class StudyPlannerIntegrationTests(unittest.TestCase):
             "difficulty_preference": "medium",
         })
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
-        return int(response.headers["Location"].rstrip("/").split("/")[-1])
+        # Projektmodus: the old planner form lands on the project overview now.
+        self.assertIn(f"/projects/{project_id}", response.headers["Location"])
+        with application.app.app_context():
+            return application.db.session.scalar(application.db.select(application.StudyPlan.id).where(
+                application.StudyPlan.project_id == project_id, application.StudyPlan.status == "active"))
 
     def test_plan_creation_dashboard_calendar_and_restart_persistence(self):
         project_id = self.make_project()
         plan_id = self.create_plan(project_id)
         with application.app.app_context():
-            plan = application.db.session.get(application.StudyPlan, plan_id)
+            plan = fetch(application.db.session, application.StudyPlan, plan_id)
             self.assertEqual(plan.target_grade, "Grade 1")
             self.assertEqual(plan.daily_minutes, 30)
             self.assertGreater(len(plan.sessions), 0)
             self.assertEqual(json.loads(plan.preferred_days), list(range(7)))
             session_id = plan.sessions[0].id
-        detail = self.client.get(f"/study-plans/{plan_id}")
+        # The old plan page redirects to the one project overview, which shows the plan.
+        redirect = self.client.get(f"/study-plans/{plan_id}")
+        self.assertEqual(redirect.status_code, 302)
+        self.assertIn(f"/projects/{project_id}", redirect.headers["Location"])
+        detail = self.client.get(f"/study-plans/{plan_id}", follow_redirects=True)
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b"Fractions", detail.data)
+        self.assertIn(b'id="progress"', detail.data)
         self.assertEqual(self.client.get(f"/study-plans/{plan_id}/calendar").status_code, 200)
         self.assertEqual(
             self.client.get(f"/study-plans/{plan_id}/sessions/{session_id}").status_code, 200
         )
-        self.assertIn(b"AI STUDY COACH", self.client.get("/dashboard").data)
+        # The Overview shows the Project Mode plan card (it replaced the one-plan coach).
         dashboard_html = self.client.get("/dashboard").get_data(as_text=True)
+        self.assertIn("YOUR LEARNING PLAN", dashboard_html)
+        self.assertNotIn("AI STUDY COACH", dashboard_html)
         self.assertEqual(dashboard_html.count('<section class="learning-overview reveal-card">'), 1)
         self.assertLess(
-            dashboard_html.index('class="dashboard-planner-widget reveal-card"'),
+            dashboard_html.index('class="pm-home reveal-card"'),
             dashboard_html.index('class="learning-overview reveal-card"'),
         )
 
@@ -162,9 +174,9 @@ class StudyPlannerIntegrationTests(unittest.TestCase):
         restarted_client.post("/login", data={
             "identifier": "alice", "password": "correct-horse-battery",
         })
-        self.assertEqual(restarted_client.get(f"/study-plans/{plan_id}").status_code, 200)
+        self.assertEqual(restarted_client.get(f"/study-plans/{plan_id}", follow_redirects=True).status_code, 200)
         with application.app.app_context():
-            persisted = application.db.session.get(application.StudyPlanSession, session_id)
+            persisted = fetch(application.db.session, application.StudyPlanSession, session_id)
             self.assertEqual(persisted.status, "completed")
             self.assertEqual(persisted.completed_minutes, 25)
 
@@ -174,41 +186,50 @@ class StudyPlannerIntegrationTests(unittest.TestCase):
         first_plan = self.create_plan(first_project, 25)
         second_plan = self.create_plan(second_project, 30)
         with application.app.app_context():
-            plan = application.db.session.get(application.StudyPlan, first_plan)
+            plan = fetch(application.db.session, application.StudyPlan, first_plan)
             original_ids = [item.id for item in plan.sessions]
             skipped_id = plan.sessions[0].id
             original_last_date = plan.sessions[-1].date
         response = self.client.post(f"/study-plans/{first_plan}/sessions/{skipped_id}/skip")
         self.assertEqual(response.status_code, 302)
         with application.app.app_context():
-            plan = application.db.session.get(application.StudyPlan, first_plan)
-            self.assertEqual([item.id for item in plan.sessions], original_ids)
-            self.assertEqual(plan.sessions[-1].date, original_last_date)
-            self.assertEqual(application.db.session.get(application.StudyPlanSession, skipped_id).status, "skipped")
-            self.assertEqual(application.db.session.get(application.StudyPlan, second_plan).project_id, second_project)
+            plan = fetch(application.db.session, application.StudyPlan, first_plan)
+            # The plan is rebuilt by the shared scheduler, so rows may be reused or replaced;
+            # what matters is that nothing is appended after the original last day, the
+            # skipped day stays skipped and gets no new work, and nothing moved projects.
+            self.assertTrue(original_ids)
+            self.assertLessEqual(plan.sessions[-1].date, original_last_date)
+            skipped = fetch(application.db.session, application.StudyPlanSession, skipped_id)
+            self.assertEqual(skipped.status, "skipped")
+            self.assertFalse([task for task in json.loads(skipped.tasks_json) if not task.get("completed")])
+            self.assertEqual(fetch(application.db.session, application.StudyPlan, second_plan).project_id, second_project)
+            other = fetch(application.db.session, application.StudyPlan, second_plan)
+            self.assertTrue(all(row.status != "skipped" for row in other.sessions),
+                            "skipping a day of one project does not mark the other project's days missed")
 
     def test_overdue_planned_day_is_redistributed_automatically(self):
         project_id = self.make_project()
         plan_id = self.create_plan(project_id, 20)
         with application.app.app_context():
-            plan = application.db.session.get(application.StudyPlan, plan_id)
+            plan = fetch(application.db.session, application.StudyPlan, plan_id)
             missed = plan.sessions[0]
             missed.date = date.today() - timedelta(days=1)
             missed_id = missed.id
             original_ids = {item.id for item in plan.sessions}
             application.db.session.commit()
-        self.assertEqual(self.client.get(f"/study-plans/{plan_id}").status_code, 200)
+        self.assertEqual(self.client.get(f"/study-plans/{plan_id}", follow_redirects=True).status_code, 200)
         with application.app.app_context():
-            plan = application.db.session.get(application.StudyPlan, plan_id)
-            self.assertEqual(application.db.session.get(application.StudyPlanSession, missed_id).status, "skipped")
-            self.assertEqual({item.id for item in plan.sessions}, original_ids)
+            plan = fetch(application.db.session, application.StudyPlan, plan_id)
+            self.assertEqual(fetch(application.db.session, application.StudyPlanSession, missed_id).status, "skipped")
+            # Nothing is lost; the missed work may be planned into today (a new row).
+            self.assertLessEqual(original_ids, {item.id for item in plan.sessions})
             self.assertTrue(any(item.date >= date.today() and item.planned_minutes for item in plan.sessions))
 
     def test_plan_and_session_permissions_are_user_isolated(self):
         project_id = self.make_project()
         plan_id = self.create_plan(project_id)
         with application.app.app_context():
-            session_id = application.db.session.get(application.StudyPlan, plan_id).sessions[0].id
+            session_id = fetch(application.db.session, application.StudyPlan, plan_id).sessions[0].id
         self.client.post("/logout")
         self.client.post("/register", data={
             "username": "bob", "email": "bob@example.com",
@@ -233,9 +254,11 @@ class StudyPlannerIntegrationTests(unittest.TestCase):
             )
             user.preferred_language = "de"
             application.db.session.commit()
-        page = self.client.get("/study-plans")
+        page = self.client.get("/study-plans", follow_redirects=True)
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Lernplaner", page.get_data(as_text=True))
+        text = page.get_data(as_text=True)
+        self.assertIn("Projektmodus", text)
+        self.assertIn("Meine Lernprojekte", text)
 
 
 if __name__ == "__main__":

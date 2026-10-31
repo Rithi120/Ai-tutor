@@ -177,7 +177,8 @@ class ComposerTests(unittest.TestCase):
         cls.template = (ROOT / "templates/assistant.html").read_text(encoding="utf-8")
 
     def test_the_textarea_and_its_controls_share_one_shell(self):
-        shell = self.template.split('class="asst-composer-shell"', 1)[1].split("</div>", 1)[0]
+        # Up to the actions row: the photo tray (a div of its own) also sits in the shell.
+        shell = self.template.split('class="asst-composer-shell"', 1)[1].split('class="asst-composer-actions"', 1)[0]
         self.assertIn('id="asstInput"', shell)
         shell_full = self.template.split('class="asst-composer-shell"', 1)[1]
         self.assertLess(shell_full.index('id="asstSend"'), shell_full.index("</form>"))

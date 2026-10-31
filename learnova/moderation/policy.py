@@ -11,8 +11,14 @@ Four commitments shape the rules:
   the record, via LEGITIMATE_SENSITIVE_EDUCATIONAL_CONTENT.
 * **Off-topic is not dangerous.** Fit problems produce a revision request. They can never
   produce a rejection, no matter how many of them stack up.
-* **Uncertainty escalates; it never rejects and it never publishes.** Unknown statuses,
-  thin evidence, low confidence and conflicting signals all route to a human.
+* **Uncertainty with a reason escalates; uncertainty alone does not hold content.**
+  Since v2 an unjudged dimension, thin evidence or low confidence routes to a human only
+  together with an actual risk signal (a safety flag, text aimed at the reviewer,
+  obfuscation, substantiated reports). Without one, a short vocabulary list the model
+  could say little about is ordinary content and is published - a human queue that
+  waits on "the model was unsure" holds harmless sets indefinitely.
+* **Quality is a note, not a gate.** Subject fit, educational value, level and language
+  quality are reported to the author and never hold content (see QUALITY_DIMENSIONS).
 * **Rejection needs grounded, confident evidence in a safety dimension.** No score
   threshold, no accumulation of weak signals and no obfuscation finding can reject on its
   own.
@@ -30,8 +36,9 @@ from typing import Any
 from .normalize import DeterministicFindings
 from .taxonomy import (
     AUTHOR_VISIBLE_REASONS,
+    BLOCKING_FIT_DIMENSIONS,
     DIMENSION_REASONS,
-    FIT_DIMENSIONS,
+    QUALITY_DIMENSIONS,
     SAFETY_DIMENSIONS,
     SEVERE_DIMENSIONS,
     reason_label,
@@ -39,7 +46,7 @@ from .taxonomy import (
 
 # Bumped on every change to the rules below, stored with each decision, so an audit can
 # always reconstruct which policy produced a given outcome.
-POLICY_VERSION = "moderation-policy:v1"
+POLICY_VERSION = "moderation-policy:v2"
 
 # Confidence needed before a safety flag becomes a rejection rather than an escalation.
 # Severe categories sit lower because the cost of publishing one of them even once is far
@@ -144,6 +151,9 @@ class PolicyDecision:
     rationale: tuple[str, ...] = ()
     policy_version: str = POLICY_VERSION
     source: str = "policy"
+    # Quality dimensions the classifier flagged. Shown to the author as suggestions;
+    # they never change the decision.
+    quality_notes: tuple[str, ...] = ()
 
     @property
     def publishable(self) -> bool:
@@ -160,6 +170,7 @@ class PolicyDecision:
             "rationale": list(self.rationale),
             "policy_version": self.policy_version,
             "source": self.source,
+            "quality_notes": list(self.quality_notes),
         }
 
 
@@ -315,7 +326,18 @@ def decide(
     flagged_safety = [name for name in SAFETY_DIMENSIONS if statuses.get(name) == "flag"]
     flagged_severe = [name for name in flagged_safety if name in SEVERE_DIMENSIONS]
     unknown_safety = [name for name in SAFETY_DIMENSIONS if statuses.get(name) == "unknown"]
-    flagged_fit = [name for name in FIT_DIMENSIONS if statuses.get(name) == "flag"]
+    flagged_fit = [name for name in BLOCKING_FIT_DIMENSIONS if statuses.get(name) == "flag"]
+    quality_notes = tuple(sorted(name for name in QUALITY_DIMENSIONS if statuses.get(name) == "flag"))
+    # Something in the submission itself that points at harm, as opposed to the model
+    # merely being unsure. Uncertainty escalates only together with one of these.
+    # The classifier recommending review or rejection is a concern it formed about the
+    # content (letter-spaced solicitation is the evaluation case that proves it), not
+    # mere uncertainty; a "revision_required" recommendation is about quality and is not.
+    risk_signal = bool(
+        flagged_safety or findings.injection_detected or findings.signals.risk_level != "low"
+        or findings.signals.normalization_changed_meaning
+        or str(classification.get("recommendation") or "") in {"review", "reject"}
+        or safety_reports >= thresholds.safety_reports or total_reports >= thresholds.total_reports)
 
     # -- 3. A grounded, confident safety flag. The only route to a rejection. ---------
     if flagged_safety and evidence_level != "insufficient":
@@ -347,9 +369,14 @@ def decide(
 
     # -- 5. Safety dimensions the classifier could not judge at all. ------------------
     if unknown_safety and evidence_level != "sufficient":
-        work.add("NEEDS_HUMAN_REVIEW",
-                 "unjudged safety dimension(s): " + ", ".join(sorted(unknown_safety)))
-        work.escalate = True
+        if risk_signal:
+            work.add("NEEDS_HUMAN_REVIEW",
+                     "unjudged safety dimension(s) alongside a risk signal: " + ", ".join(sorted(unknown_safety)))
+            work.escalate = True
+        else:
+            work.add("SAFETY_UNCERTAIN",
+                     "unjudged safety dimension(s) with nothing pointing at harm: "
+                     + ", ".join(sorted(unknown_safety)))
 
     # -- 6. Text addressed to the review system. A signal, never a verdict. -----------
     # A computer-science set may legitimately teach these phrases, so this escalates to a
@@ -379,14 +406,24 @@ def decide(
         work.escalate = True
 
     # -- 9. The classifier is not confident enough to clear this on its own. ----------
+    # Confidence alone is not evidence: low confidence escalates only with a risk signal.
     if confidence < thresholds.min_allow_confidence:
-        work.add("LOW_CONFIDENCE",
-                 f"confidence {confidence:.2f} below the "
-                 f"{thresholds.min_allow_confidence:.2f} floor")
+        if risk_signal:
+            work.add("LOW_CONFIDENCE",
+                     f"confidence {confidence:.2f} below the "
+                     f"{thresholds.min_allow_confidence:.2f} floor, with a risk signal")
+            work.escalate = True
+        else:
+            work.add("SAFETY_UNCERTAIN",
+                     f"confidence {confidence:.2f} below the {thresholds.min_allow_confidence:.2f} "
+                     "floor, with nothing pointing at harm")
+
+    # The classifier asking for a person counts the same way: with a reason, not alone.
+    if classification.get("requires_review") and risk_signal:
         work.escalate = True
 
     # -- 10. Anything escalated goes to a person, unpublished. ------------------------
-    if work.escalate or classification.get("requires_review"):
+    if work.escalate:
         work.add("NEEDS_HUMAN_REVIEW")
         return PolicyDecision(
             decision="review", reason_codes=tuple(work.reasons), requires_review=True,
@@ -394,10 +431,20 @@ def decide(
             rationale=tuple(work.rationale))
 
     # -- 11. Safe, but it does not fit. A revision request, never a rejection. --------
+    # Quality notes never block, with one narrow exception: the classifier is confident,
+    # on sufficient evidence, that there is nothing to learn at all and itself asks for
+    # a revision ("my weekend at the cinema", "practise the formula"). That is not an
+    # imperfect study set but no study set; a thin or flawed one still publishes.
+    no_study_material = bool(
+        "educational_value" in quality_notes
+        and classification.get("recommendation") == "revision_required"
+        and evidence_level == "sufficient" and confidence >= thresholds.reject_confidence)
+    if no_study_material and not flagged_fit:
+        flagged_fit = ["educational_value"]
     if flagged_fit:
         for name in flagged_fit:
             work.add(DIMENSION_REASONS[name], f"{name} flagged")
-        if "subject_relevance" in flagged_fit and not context.has_subject:
+        if "subject_relevance" in quality_notes and not context.has_subject:
             # No subject was declared, so "off-topic" is not something the author can be
             # held to. Ask for the subject rather than implying they wrote the wrong thing.
             work.add("INSUFFICIENT_EDUCATIONAL_CONTEXT", "no subject declared to judge relevance against")
@@ -406,15 +453,18 @@ def decide(
             confidence=confidence,
             author_message=_author_message("revision_required", work.reasons),
             suggested_revision=_safe_revision(classification, findings),
-            rationale=tuple(work.rationale))
+            rationale=tuple(work.rationale), quality_notes=quality_notes)
 
     # -- 12. Clear. Record *why* a sensitive topic was allowed, so the audit shows it. -
     if statuses.get("sexual_content_context") == "pass":
         work.add("LEGITIMATE_SENSITIVE_EDUCATIONAL_CONTENT",
                  "sensitive terminology judged legitimate for the declared subject")
+    for name in quality_notes:
+        work.add(DIMENSION_REASONS[name], f"{name} flagged: a suggestion for the author, not a hold")
     return PolicyDecision(
         decision="allow", reason_codes=tuple(work.reasons), confidence=confidence,
-        author_message=_author_message("allow", work.reasons), rationale=tuple(work.rationale))
+        author_message=_author_message("allow", work.reasons), rationale=tuple(work.rationale),
+        quality_notes=quality_notes)
 
 
 def moderator_decision(

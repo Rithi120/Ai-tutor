@@ -195,13 +195,17 @@ class ModerationWorkflowTests(unittest.TestCase):
         self.assertIn("content_moderation", seen)
         self.assertNotIn("flashcard_review", seen)
 
-    def test_off_topic_content_asks_for_a_revision_and_is_not_rejected(self):
+    def test_off_topic_content_publishes_with_a_note_for_the_author(self):
+        """Policy v2: subject fit is a quality note, never a hold on harmless content."""
+
         published = self._publish(self._create_set(subject="Mathematics"),
                                   moderation_result=REVISION_OFF_TOPIC)
         body = published.get_json()
-        self.assertEqual(body["moderation"]["decision"], "revision_required")
-        self.assertEqual(body["status"], "changes_requested")
-        self.assertIsNotNone(body["moderation"]["suggested_revision"])
+        self.assertEqual(body["moderation"]["decision"], "allow")
+        self.assertEqual(body["status"], "approved")
+        self.assertIn(moderation.reason_label("OFF_TOPIC_CONTENT"),
+                      body["moderation"]["reasons"])
+        self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 1)
 
     def test_provider_failure_holds_content_instead_of_publishing_it(self):
         failure = application.ai_service.AIProviderError("provider_timeout", "timed out")
@@ -371,17 +375,28 @@ class ReportingTests(unittest.TestCase):
         with application.app.app_context():
             self.assertEqual(application.report_counts(self.public_id)["total"], 1)
 
-    def test_enough_safety_reports_auto_hide_the_set_pending_review(self):
-        for name in ("bob", "cara"):
+    def test_reports_alone_never_hide_or_penalize_the_set(self):
+        """v2: the count-based auto-hide is gone. A report is a signal, not a verdict.
+
+        Three safety reports used to take a set down with no evidence at all. Now each
+        asks for a re-review; here no provider is reachable, so the re-review fails - and
+        the set stays up, the reports stay open, and nothing about the author changes.
+        """
+
+        for name in ("bob", "cara", "dan"):
             self._reader(name).post(f"/api/community/sets/{self.public_id}/report",
                                     json={"reason": "harassment"})
-        self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 0)
+        self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 1)
         with application.app.app_context():
             public_set = application.db.session.get(
                 application.PublicFlashcardSet, self.public_id)
             assert public_set is not None
-            self.assertEqual(public_set.status, "hidden")
-            self.assertEqual(public_set.moderation_decision, "review")
+            self.assertEqual(public_set.status, "approved")
+            self.assertEqual(public_set.moderation_decision, "allow")
+            reports = application.db.session.scalars(application.db.select(
+                application.ContentReport)).all()
+            self.assertEqual([row.status for row in reports], ["open"] * 3)
+            self.assertEqual({row.ai_outcome for row in reports}, {"review_failed"})
 
     def test_a_single_report_does_not_hide_anything(self):
         self._reader("bob").post(f"/api/community/sets/{self.public_id}/report",
@@ -624,7 +639,7 @@ class ModerationPrivacyTests(unittest.TestCase):
             assert record is not None
             self.assertEqual(record.policy_version, moderation.POLICY_VERSION)
             self.assertEqual(record.schema_version, moderation.MODERATION_SCHEMA_VERSION)
-            self.assertEqual(record.prompt_version, "content_moderation:v1")
+            self.assertEqual(record.prompt_version, "content_moderation:v2")
             self.assertTrue(record.content_hash)
 
 

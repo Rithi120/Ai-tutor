@@ -180,3 +180,14 @@ chunks server-side so the cache write and the usage record still see a complete 
 expose an SSE endpoint alongside the JSON one; consume it with `EventSource` in
 `assistant.js`. The CSP already permits it (`connect-src 'self'`). The reason it is not
 here is scope, not an obstacle.
+
+## Photos in a conversation
+
+A message can carry up to four photos (camera or gallery). They are uploaded first
+(`POST /api/chat-attachments`), then sent with the message as `attachments: [ids]`. The
+server reads them once with the vision model (`image_understanding`, see
+docs/VISION.md). The assistant model then answers from that reading. It never sees the
+picture, so the user's chosen style, depth and model still apply. The reading is stored on
+the attachment, and every later turn reuses it from the transcript, so the picture is never
+sent again. A reading that fails stores nothing, and the same photos can be sent again.
+Photos are owned by one account, served with `no-store`, and deleted with the conversation.

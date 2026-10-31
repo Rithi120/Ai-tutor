@@ -5,19 +5,24 @@ import { renderMath } from "./math.js";
 const SUBJECTS = ["Mathematics", "English", "German", "History", "Biology", "Chemistry", "Physics", "Other"];
 const MODERATION_ENABLED =
   document.querySelector("#main-content")?.dataset.moderationEnabled === "true";
-// Mirrors learnova.moderation.taxonomy.REPORT_REASONS. The server validates against that
-// list, so an unknown value here is refused rather than silently stored.
+// A subset of learnova.moderation.taxonomy.REPORT_REASONS. The server validates against
+// that list, so an unknown value here is refused rather than silently stored. One
+// plain-language safety choice ("inappropriate or harmful") replaces the four finer ones
+// the form used to offer; the server still accepts those from older clients.
 const REPORT_REASONS = [
+  ["incorrect_translation", "Incorrect translation", "Falsche Übersetzung"],
   ["incorrect", "Incorrect information", "Falsche Informationen"],
-  ["offensive", "Offensive content", "Anstößiger Inhalt"],
-  ["harassment", "Harassment or bullying", "Belästigung oder Mobbing"],
-  ["sexual", "Sexual content", "Sexueller Inhalt"],
-  ["dangerous", "Dangerous content", "Gefährlicher Inhalt"],
-  ["personal_information", "Personal information", "Persönliche Daten"],
+  ["misleading", "Misleading explanation or context", "Irreführende Erklärung oder irreführender Kontext"],
+  ["inappropriate", "Inappropriate or harmful", "Unangemessen oder schädlich"],
   ["spam", "Spam or advertising", "Spam oder Werbung"],
+  ["personal_information", "Personal information", "Persönliche Daten"],
   ["copyright", "Copyright problem", "Urheberrechtsproblem"],
   ["other", "Something else", "Etwas anderes"],
 ];
+const shorten = (text, length = 48) => {
+  const value = String(text ?? "").replace(/\s+/g, " ").trim();
+  return value.length > length ? `${value.slice(0, length - 1)}…` : value;
+};
 const tx = (en, de) => window.LEARNOVA_LANGUAGE === "de" ? de : en;
 
 
@@ -103,6 +108,24 @@ function loadDiscoveryShelves() {
   ]);
 }
 
+// The author's identity, from the server's author_identity (present only when the set is
+// published under the username). Premium and level come from the server; nothing here
+// can grant either. Links only where the card is not itself a button.
+const SAFE_COLOUR = /^#[0-9a-f]{3,8}$/i;
+const PREMIUM_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 5.2 5 7.6 8 2.5l3 5.1 3-2.4-1.2 7.3H3.2Z" fill="currentColor"/><rect x="3.2" y="13" width="9.6" height="1.6" rx=".8" fill="currentColor"/></svg>';
+
+function authorHtml(set, { link = false } = {}) {
+  const who = set.author_identity;
+  if (!who) return `${tx("by", "von")} ${escapeHtml(set.author)}`;
+  const accent = SAFE_COLOUR.test(who.accent || "") ? who.accent : "#7c5cff";
+  const inner = `<span class="avatar-frame" style="--avatar-accent: ${accent}"><img src="${escapeHtml(who.avatar_url)}" alt="" width="256" height="256" loading="lazy" decoding="async"></span>`
+    + `<span class="author-chip-name">${escapeHtml(who.username)}</span>`
+    + (who.level ? `<span class="author-chip-level">${tx("Level", "Level")} ${Number(who.level)}</span>` : "")
+    + (who.premium ? `<span class="premium-badge is-compact" title="${tx("Premium member", "Premium-Mitglied")}">${PREMIUM_ICON}<span class="visually-hidden">Premium</span></span>` : "");
+  if (link && who.profile_url) return `<a class="author-chip" href="${escapeHtml(who.profile_url)}">${inner}</a>`;
+  return `<span class="author-chip">${inner}</span>`;
+}
+
 function cardHtml(set) {
   const excerpt = set.description ? escapeHtml(set.description.slice(0, 120)) + (set.description.length > 120 ? "…" : "") : "";
   return `
@@ -114,7 +137,8 @@ function cardHtml(set) {
       <p class="set-meta"><span class="subject-accent">${escapeHtml(set.subject)}</span>${set.topic ? " · " + escapeHtml(set.topic) : ""} · ${escapeHtml(set.difficulty)}${set.grade ? ` · ${tx("Grade", "Klasse")} ` + escapeHtml(set.grade) : ""}</p>
       ${excerpt ? `<p class="set-excerpt">${excerpt}</p>` : ""}
       <div class="rating-row">${aiRatingHtml(set.ai_review)}${studentRatingHtml(set.student_rating)}</div>
-      <p class="set-stats">${set.set_kind === "vocabulary" ? `<span class="set-kind-badge">${tx("Vocabulary", "Vokabeln")}</span> · ` : ""}${set.card_count} ${tx("cards", "Karten")}${set.study_count ? ` · ${set.study_count} ${tx("studied", "gelernt")}` : ""}${set.save_count ? ` · ${set.save_count} ${tx("saved", "gespeichert")}` : ""} · ${tx("by", "von")} ${escapeHtml(set.author)}</p>
+      <p class="set-stats">${set.set_kind === "vocabulary" ? `<span class="set-kind-badge">${tx("Vocabulary", "Vokabeln")}</span> · ` : ""}${set.card_count} ${tx("cards", "Karten")}${set.study_count ? ` · ${set.study_count} ${tx("studied", "gelernt")}` : ""}${set.save_count ? ` · ${set.save_count} ${tx("saved", "gespeichert")}` : ""}</p>
+      <p class="set-author">${authorHtml(set)}</p>
     </article>`;
 }
 
@@ -140,7 +164,8 @@ function renderDetail(set) {
   container.innerHTML = `
     <div class="detail-grid">
       <div class="detail-main">
-        <p class="set-meta">${escapeHtml(set.subject)}${set.topic ? " · " + escapeHtml(set.topic) : ""} · ${escapeHtml(set.difficulty)}${set.grade ? " · Grade " + escapeHtml(set.grade) : ""} · by ${escapeHtml(set.author)}</p>
+        <p class="set-meta">${escapeHtml(set.subject)}${set.topic ? " · " + escapeHtml(set.topic) : ""} · ${escapeHtml(set.difficulty)}${set.grade ? " · Grade " + escapeHtml(set.grade) : ""}</p>
+        <p class="set-author">${authorHtml(set, { link: true })}</p>
         ${set.description ? `<p class="detail-description">${escapeHtml(set.description)}</p>` : ""}
         <div class="rating-row large">${aiRatingHtml(set.ai_review)}${studentRatingHtml(set.student_rating)}</div>
         <p class="rating-explainer">${tx("The AI review checks quality; student ratings reflect the learning experience.", "Die KI-Prüfung bewertet die Qualität; Bewertungen von Lernenden zeigen die Lernerfahrung.")}</p>
@@ -152,10 +177,15 @@ function renderDetail(set) {
           ${MODERATION_ENABLED ? `<button type="button" class="ghost-button subtle-button" id="detailReport">${tx("Report this set", "Dieses Set melden")}</button>` : ""}
         </div>
         ${MODERATION_ENABLED ? `<form id="reportPanel" class="report-panel hidden">
-          <p class="report-question">${tx("Why are you reporting this?", "Warum meldest du das?")}</p>
+          <p class="report-question">${tx("What is wrong?", "Was stimmt nicht?")}</p>
           <div class="report-reasons" role="radiogroup" aria-label="${tx("Why are you reporting this?", "Warum meldest du das?")}">
-            ${REPORT_REASONS.map(([value, en, de], index) => `<label class="report-reason"><input type="radio" name="reportReason" value="${value}"${index === 0 ? " checked" : ""}> ${tx(en, de)}</label>`).join("")}
+            ${REPORT_REASONS.map(([value, en, de]) => `<label class="report-reason"><input type="radio" name="reportReason" value="${value}"${value === (set.set_kind === "vocabulary" ? "incorrect_translation" : "incorrect") ? " checked" : ""}> ${tx(en, de)}</label>`).join("")}
           </div>
+          ${(set.cards || []).length > 1 ? `<label class="report-entry-label" for="reportEntry">${tx("Which entry? (optional)", "Welcher Eintrag? (optional)")}</label>
+          <select id="reportEntry" class="report-entry">
+            <option value="">${tx("The whole set", "Das ganze Set")}</option>
+            ${set.cards.map((card, index) => `<option value="${index + 1}">${index + 1}. ${escapeHtml(shorten(card.front))}${card.back ? ` — ${escapeHtml(shorten(card.back, 32))}` : ""}</option>`).join("")}
+          </select>` : ""}
           <label class="visually-hidden" for="reportDetail">${tx("Anything else we should know?", "Sonst noch etwas?")}</label>
           <textarea id="reportDetail" rows="2" maxlength="500" placeholder="${tx("Anything else we should know? (optional)", "Sonst noch etwas? (optional)")}"></textarea>
           <div class="report-actions">
@@ -231,13 +261,14 @@ function wireReporting(setId) {
     event.preventDefault();
     const reason = panel.querySelector('input[name="reportReason"]:checked')?.value || "other";
     const detail = panel.querySelector("#reportDetail").value.trim();
+    const entry = Number(panel.querySelector("#reportEntry")?.value || 0) || null;
     try {
-      await api(`/api/community/sets/${setId}/report`, { method: "POST", body: { reason, detail } });
+      await api(`/api/community/sets/${setId}/report`, { method: "POST", body: { reason, detail, entry } });
       panel.classList.add("hidden");
       trigger.disabled = true;
-      // The same acknowledgement whatever happened. Telling the reporter that their
-      // report crossed a threshold would make this an oracle for how many it takes.
-      toast(tx("Thanks — our team will look at this.", "Danke — unser Team sieht sich das an."), "success");
+      // The same acknowledgement whatever the review finds: the reporter is told it was
+      // received, never what it led to.
+      toast(tx("Thanks — your report was received. We will check it.", "Danke — deine Meldung ist eingegangen. Wir prüfen sie."), "success");
     } catch (error) {
       toast(error.message, "error");
     }

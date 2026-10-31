@@ -27,3 +27,6 @@ pyyaml==6.0.3
 six==1.17.0
 # Translation/dictionary API calls (DeepL, LibreTranslate, MyMemory); also used by RapidOCR.
 requests==2.32.3
+# IANA timezone data for zoneinfo (APP_TIMEZONE, Europe/Berlin): Windows and slim
+# containers have no system copy, and free allowances reset at local midnight.
+tzdata==2025.2

@@ -5,6 +5,7 @@ import {announceXp} from "./js/xp.js";
 import {bindDiagnosisDetails, diagnosisMarkup} from "./js/diagnosis.js";
 import {selectedLanguage, t} from "./js/i18n.js";
 import {answerSymbols} from "./js/symbols.js";
+import {createAttachmentTray, normalizeImage, photoNotesNode, sentPhotosNode, uploadImage} from "./js/image-attach.js";
 
 const uploadView = document.querySelector("#uploadView");
 const lessonView = document.querySelector("#lessonView");
@@ -23,6 +24,10 @@ let lessonConcepts = [];
 let latestKnowledge = null;   // the knowledge gate's latest view, from the last answer
 let hintUsed = false;
 let answerRetryCount = 0;
+// "photo" once the written answer was filled in from a photo of the student's working, so
+// the grader judges the steps; reset with every new question.
+let answerSource = "typed";
+const photoAnswers = answerForm?.dataset.photoAnswers === "1";
 let currentSubject = "Mathematics";
 // Which subjects get the on-screen symbol keyboard when typing an answer. Rendering
 // is no longer subject-gated - math.js decides per span - but offering a student a
@@ -160,14 +165,17 @@ function renderQuestion(question) {
   currentQuestion = question;
   hintUsed = false;
   answerRetryCount = 0;
+  answerSource = "typed";
   const neutralConfidence = answerForm.querySelector('input[name="responseConfidence"][value="50"]');
   if (neutralConfidence) neutralConfidence.checked = true;
   const questionNumber = questionResults.length + 1;
   document.querySelector("#questionNumber").textContent = String(questionNumber).padStart(2, "0");
   document.querySelector("#questionPrompt").textContent = question.prompt;
   document.querySelector("#difficulty").textContent = `${t("level")} ${question.difficulty}`;
-  document.querySelector("#hint").textContent = question.hint;
+  // The hint text arrives only when asked for (POST /api/hint), so the server knows.
+  document.querySelector("#hint").textContent = question.hint || "";
   document.querySelector("#hint").classList.add("hidden");
+  document.querySelector("#hintButton").classList.toggle("hidden", question.has_hint === false && !question.hint);
   document.querySelector("#hintListenControl")?.classList.add("hidden");
   document.querySelector("#feedback").className = "feedback hidden";
   document.querySelector("#feedbackListenControl")?.classList.add("hidden");
@@ -200,14 +208,74 @@ function renderQuestion(question) {
     enableOrdering();
   } else {
     const showSymbols = MATH_SUBJECTS.has(currentSubject);
-    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${showSymbols ? symbolKeyboardMarkup() : ""}`;
+    control.innerHTML = `<textarea id="writtenAnswer" rows="4" placeholder="${t("answerPlaceholder")}" required></textarea>${showSymbols ? symbolKeyboardMarkup() : ""}${photoAnswers ? answerPhotoMarkup() : ""}`;
     if (showSymbols) enableSymbolKeyboard();
+    if (photoAnswers) enableAnswerPhoto();
   }
   document.querySelector("#answerMicrophoneControl")?.classList.toggle("hidden", !document.querySelector("#writtenAnswer"));
   answerForm.classList.remove("hidden");
   answerForm.querySelector(".primary-button").classList.remove("hidden");
   renderMath(document.querySelector("#questionCard"));
   updateProgress(questionNumber);
+}
+
+function answerPhotoMarkup() {
+  return `<div class="answer-photo"><span class="attach-buttons"><label class="attach-button"><input id="answerCamera" class="attach-input" type="file" accept="image/*" capture="environment"><span aria-hidden="true">📷</span> ${escapeHtml(t("imgPhotoOfWorking"))}</label><label class="attach-button"><input id="answerGallery" class="attach-input" type="file" accept="image/*"><span aria-hidden="true">🖼</span> ${escapeHtml(t("imgChoosePhoto"))}</label></span><p id="answerPhotoStatus" class="answer-photo-status" role="status" aria-live="polite"></p><p id="answerPhotoNote" class="answer-photo-note hidden"></p></div>`;
+}
+
+/* A photo of handwritten working is read into the answer box - never graded directly. The
+ * student sees exactly what was read, with unclear parts marked [?…], fixes it, and sends
+ * it like a typed answer; so a misread digit cannot turn a right answer into a wrong one. */
+function enableAnswerPhoto() {
+  const status = document.querySelector("#answerPhotoStatus");
+  const note = document.querySelector("#answerPhotoNote");
+  const box = document.querySelector("#writtenAnswer");
+  const inputs = [document.querySelector("#answerCamera"), document.querySelector("#answerGallery")];
+  const setBusy = busy => inputs.forEach(input => { if (input) input.disabled = busy; });
+  inputs.forEach(input => input?.addEventListener("change", async event => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !sessionId) return;
+    setBusy(true);
+    note.classList.add("hidden");
+    status.textContent = t("imgUploading");
+    try {
+      const attachment = await uploadImage(await normalizeImage(file), "answer", progress => {
+        status.textContent = t("imgUploadingPercent", { percent: Math.round(progress * 100) });
+      });
+      status.textContent = t("imgReadingWorking");
+      const response = await fetch("/api/answer/photo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, attachments: [attachment.id] })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      if (!data.readable || !data.transcription) {
+        status.textContent = "";
+        note.textContent = t("imgWorkingUnreadable");
+        note.classList.remove("hidden");
+        return;
+      }
+      box.value = box.value.trim() ? `${box.value.trim()}\n\n${data.transcription}` : data.transcription;
+      answerSource = "photo";
+      box.focus();
+      const parts = [t("imgCheckWorking")];
+      const unclear = (data.unclear || []).map(item => item.alternatives?.length
+        ? t("imgUnclearWithOptions", { text: item.text, options: item.alternatives.join(" / ") })
+        : `“${item.text}”`);
+      if (unclear.length) parts.push(t("imgUnclearParts", { parts: unclear.join(", ") }));
+      if (data.clarification_question) parts.push(data.clarification_question);
+      if (data.hints?.length) parts.push(data.hints[0]);
+      note.textContent = parts.join(" ");
+      note.classList.remove("hidden");
+      status.textContent = "";
+    } catch (error) {
+      status.textContent = error.message || t("imgUploadFailed");
+    } finally {
+      setBusy(false);
+    }
+  }));
 }
 
 function collectAnswer() {
@@ -260,15 +328,22 @@ function renderLesson(data) {
   document.querySelector("#sideTitle").textContent = lesson.lesson_title;
   document.querySelector("#levelBadge").textContent = lesson.detected_level;
   document.querySelector("#explanation").textContent = lesson.explanation;
-  document.querySelector("#exampleProblem").textContent = lesson.worked_example.problem;
+  // A lesson can arrive without a usable worked example; the card is hidden then, and an
+  // example without a stated problem or answer shows only what it has.
+  const worked = lesson.worked_example && typeof lesson.worked_example === "object" ? lesson.worked_example : null;
+  const workedSteps = Array.isArray(worked?.steps) ? worked.steps : [];
+  document.querySelector(".example-card")?.classList.toggle("hidden", !worked || (!worked.problem && !workedSteps.length));
+  document.querySelector("#exampleProblem").textContent = worked?.problem || "";
+  document.querySelector("#exampleProblem").classList.toggle("hidden", !worked?.problem);
   // The <ol> numbers the steps; models often number them too ("1. 1. Das Problem ...").
   // Only a leading "N." / "N)" / "Schritt N:" followed by a space is removed, so "4.5 kg"
   // and "2 + 3 = 5" stay intact.
   const ownNumber = /^\s*(?:(?:Schritt|Step|Étape|Paso|Passo|Stap)\s*)?\d{1,2}\s*[.):]\s+/i;
-  document.querySelector("#exampleSteps").innerHTML = lesson.worked_example.steps
+  document.querySelector("#exampleSteps").innerHTML = workedSteps
     .map(step => `<li>${escapeHtml(String(step).replace(ownNumber, ""))}</li>`).join("");
-  document.querySelector("#exampleAnswer").dataset.answer = lesson.worked_example.answer;
-  document.querySelector("#exampleAnswer").textContent = `${t("answer")}: ${lesson.worked_example.answer}`;
+  document.querySelector("#exampleAnswer").dataset.answer = worked?.answer || "";
+  document.querySelector("#exampleAnswer").textContent = worked?.answer ? `${t("answer")}: ${worked.answer}` : "";
+  document.querySelector("#exampleAnswer").classList.toggle("hidden", !worked?.answer);
   const tips = lesson.teacher_tips || [];
   const exceptions = lesson.exceptions || [];
   document.querySelector("#teacherTips").innerHTML = tips.map(item => `<li>${escapeHtml(item)}</li>`).join("");
@@ -300,12 +375,18 @@ uploadForm.addEventListener("submit", async event => {
   document.querySelector("#loading").classList.remove("hidden");
   try {
     const formData = new FormData(uploadForm);
+    formData.delete("images");
+    for (const file of [...imageInput.files].slice(0, 4)) {
+      const prepared = await normalizeImage(file);
+      formData.append("images", prepared, prepared.name || file.name);
+    }
     currentSubject = uploadForm.querySelector('input[name="subject"]:checked')?.value || currentSubject;
     const response = await fetch("/api/analyze", { method: "POST", body: formData });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     sessionId = data.session_id;
     renderLesson(data);
+    showMaterialNotes(data.material_notes);
     document.querySelector("#loading").classList.add("hidden");
     document.querySelector("#lessonContent").classList.remove("hidden");
   } catch (error) {
@@ -317,9 +398,35 @@ uploadForm.addEventListener("submit", async event => {
   }
 });
 
-document.querySelector("#hintButton").addEventListener("click", () => {
+/* What could not be read from the lesson's photos: one calm line, not a warning box. */
+function showMaterialNotes(notes) {
+  const target = document.querySelector("#materialNotes");
+  if (!target) return;
+  const unclear = notes?.unclear || [];
+  const parts = [];
+  if (unclear.length) parts.push(t("imgLessonUnclear", { parts: unclear.map(item => `“${item}”`).join(", ") }));
+  (notes?.hints || []).slice(0, 1).forEach(hint => parts.push(hint));
+  target.textContent = parts.join(" ");
+  target.classList.toggle("hidden", parts.length === 0);
+}
+
+document.querySelector("#hintButton").addEventListener("click", async () => {
   hintUsed = true;
   const hint = document.querySelector("#hint");
+  if (!hint.textContent && sessionId) {
+    try {
+      const response = await fetch("/api/hint", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || t("dxLoadFailed"));
+      hint.textContent = data.hint || "";
+    } catch (error) {
+      showError(error.message);
+      return;
+    }
+  }
   hint.classList.toggle("hidden");
   document.querySelector("#hintListenControl")?.classList.toggle("hidden", hint.classList.contains("hidden"));
 });
@@ -403,6 +510,7 @@ answerForm.addEventListener("submit", async event => {
         answer: submittedAnswer,
         hints_used: hintUsed,
         retry_count: answerRetryCount,
+        answer_source: answerSource,
         response_confidence: Number(answerForm.querySelector('input[name="responseConfidence"]:checked')?.value || 50)
       })
     });
@@ -500,26 +608,46 @@ document.querySelector(".chat-controls")?.addEventListener("click", event => {
   if (button) sendChat(button.textContent.trim(), button.dataset.control);
 });
 
+const chatTray = document.querySelector("#chatAttachTray") ? createAttachmentTray({
+  tray: document.querySelector("#chatAttachTray"),
+  inputs: [document.querySelector("#chatCamera"), document.querySelector("#chatGallery")],
+  purpose: "chat",
+  onError: showError,
+}) : null;
+
 chatForm.addEventListener("submit", event => {
   event.preventDefault();
   const message = chatInput.value.trim();
+  if (chatTray?.busy()) return showError(t("imgStillUploading"));
+  if (chatTray?.failed()) return showError(t("imgFixFailed"));
+  if (!message && !chatTray?.count()) return;
   chatInput.value = "";
   sendChat(message);
 });
 
 async function sendChat(message, control = null) {
-  if (!message || !sessionId) return;
-  addChatMessage(message, "student");
-  const typing = addChatMessage(t("thinking"), "tutor", "typing-message");
+  const attachments = chatTray ? chatTray.ids() : [];
+  if ((!message && !attachments.length) || !sessionId) return;
+  const studentBubble = addChatMessage(message || t("imgPhotoOnly"), "student");
+  const typing = addChatMessage(attachments.length ? t("imgReading") : t("thinking"), "tutor", "typing-message");
   try {
+    const body = { session_id: sessionId, message };
+    if (control) body.control = control;
+    if (attachments.length) body.attachments = attachments;
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(control ? { session_id: sessionId, message, control } : { session_id: sessionId, message })
+      body: JSON.stringify(body)
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     typing.remove();
+    if (data.attachments?.length) {
+      studentBubble.appendChild(sentPhotosNode(data.attachments));
+      const notes = photoNotesNode(data.image_notes);
+      if (notes) studentBubble.appendChild(notes);
+      chatTray?.clear();
+    }
     // The reply may end with a "CHIPS: a | b" line naming tap answers for its question;
     // it is stripped before rendering (and speech), so it is never shown or read aloud.
     const parsed = parseChips(data.reply);
@@ -528,6 +656,8 @@ async function sendChat(message, control = null) {
     renderMastery(data.mastery);
   } catch (error) {
     typing.remove();
+    // Photos stay in the tray, already read, so sending again costs no second reading.
+    if (attachments.length && !chatInput.value) chatInput.value = message;
     addChatMessage(t("chatFailed"), "tutor");
     showError(error.message || t("chatError"));
   }

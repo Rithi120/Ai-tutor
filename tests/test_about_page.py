@@ -55,12 +55,10 @@ class AboutPageTests(unittest.TestCase):
             self.assertIn(competitor, page)
         self.assertIn("official pages in October 2026".encode(), page)
 
-    def test_adsense_verification_script_renders_once_on_shared_pages(self):
-        script = (
-            b'<script async src="https://pagead2.googlesyndication.com/pagead/js/'
-            b'adsbygoogle.js?client=ca-pub-5205912301427741"\n'
-            b'     crossorigin="anonymous"></script>'
-        )
+    def test_adsense_verification_renders_once_on_shared_pages_without_ad_code(self):
+        # Site verification uses Google's meta tag, which loads nothing. The ad code itself
+        # waits for a certified consent message (ADSENSE_CMP), so by default no page loads it.
+        meta = b'<meta name="google-adsense-account" content="ca-pub-5205912301427741">'
         pages = [self.client.get("/about").data,
                  self.client.get("/login").data,
                  self.client.get("/register").data]
@@ -70,7 +68,8 @@ class AboutPageTests(unittest.TestCase):
         }, follow_redirects=True)
         pages.append(self.client.get("/").data)
         for page in pages:
-            self.assertEqual(page.count(script), 1)
+            self.assertEqual(page.count(meta), 1)
+            self.assertNotIn(b"adsbygoogle.js", page)
 
     def test_anonymous_visitors_get_registration_ctas(self):
         page = self.client.get("/about").data
@@ -126,6 +125,35 @@ class AboutPageTests(unittest.TestCase):
         self.assertIn("Warum Learnova?", page)
         self.assertIn("Kostenlos lernen starten", page)
         self.assertNotIn("Start learning for free", page)
+
+    def test_plans_and_limits_come_from_the_configuration(self):
+        # The page used to say "There are no paid plans" after Premium existed.
+        page = self.client.get("/about").data.decode("utf-8")
+        self.assertNotIn("no paid plans", page)
+        self.assertNotIn("All features are free", page)
+        plan = application.subscription_settings()
+        price = f"{plan.premium_price_eur:.2f}".replace(".", ",")
+        self.assertIn(f"Premium costs {price} € a month", page)
+        self.assertIn(f"new projects ({plan.free_projects_per_window} every {plan.free_project_window_days} days)", page)
+        self.assertIn(f"{plan.free_lessons_per_day} new lessons a day outside projects", page)
+        self.assertIn("Lessons and tests inside your projects are unlimited", page)
+        bounds = application.test_range()
+        self.assertIn(f"between {bounds['minimum']} and {bounds['maximum']} questions", page)
+
+    def test_current_features_and_privacy_are_described(self):
+        page = self.client.get("/about").data.decode("utf-8")
+        for text in ("Project Mode", "Kompetenzraster", "flexible plan", "Vocabulary Trainer",
+                     "An assistant for quick questions", "XP, challenges and weekly leagues",
+                     "Who can see my profile?", "your email is never shown"):
+            self.assertIn(text, page)
+        # Profiles and leagues exist, so "nothing is shared" would no longer be true.
+        self.assertNotIn("Nothing is shared with other students", page)
+        self.assertNotIn("section tests, final exams", page)
+        with self.client.session_transaction() as session:
+            session["language"] = "de"
+        german = self.client.get("/about").data.decode("utf-8")
+        for text in ("Projektmodus", "Wer kann mein Profil sehen?", "Kostenlos, mit optionalem Premium"):
+            self.assertIn(text, german)
 
     def test_the_page_keeps_the_shared_shell_contract(self):
         page = self.client.get("/about").data

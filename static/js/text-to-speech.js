@@ -1,5 +1,6 @@
 import {t} from "./i18n.js";
 import {safeUUID} from "./dom.js";
+import {readableTex} from "./math-rules.js";
 
 const synthesis = window.speechSynthesis;
 const Utterance = window.SpeechSynthesisUtterance;
@@ -33,10 +34,33 @@ function stopActive(message = "") {
   if (message) announce(previous.control, message);
 }
 
+// How a power is spoken. Formulas are read from their LaTeX source: a typeset formula's
+// textContent holds KaTeX's visual markup plus a hidden MathML copy, so "4⁵ = 1024" was
+// read as "4 5 = 1024 4 5 =4⋅4…", and a raised power (4<sup>2</sup>) as "forty-two".
+const POWER_WORDS = { de: " hoch ", en: " to the power of ", fr: " puissance ", es: " elevado a ",
+                      it: " elevato a ", pt: " elevado a ", nl: " tot de macht " };
+
+function powerWord() {
+  const language = window.LEARNOVA_CONTENT_LANGUAGE || document.documentElement.lang || "en";
+  return POWER_WORDS[String(language).slice(0, 2).toLowerCase()] || " ^ ";
+}
+
+function spokenTex(tex) {
+  const power = powerWord();
+  return readableTex(tex)
+    .replace(/\^\{([^{}]*)\}|\^(-?[\p{L}\p{N}]+)/gu, (_match, group, single) => `${power}${group ?? single} `)
+    .replace(/[{}]/g, "");
+}
+
 function targetText(control) {
   const selector = control.dataset.speechTarget || "";
   const target = selector ? document.querySelector(selector) : null;
-  return target?.textContent?.replace(/\s+/g, " ").trim() || "";
+  if (!target) return "";
+  const clone = target.cloneNode(true);
+  clone.querySelectorAll(".listen-control, [aria-hidden='true']").forEach(node => node.remove());
+  clone.querySelectorAll("[data-ln-math]").forEach(node => node.replaceWith(` ${spokenTex(node.dataset.lnMath)} `));
+  clone.querySelectorAll("sup").forEach(node => node.replaceWith(`${powerWord()}${node.textContent} `));
+  return clone.textContent.replace(/\s+/g, " ").trim();
 }
 
 function play(control) {
@@ -113,9 +137,13 @@ export function attachListenControl(container) {
   container.dataset.listenAttached = "true";
   let readable = container.querySelector(":scope > .speech-readable-text");
   if (!readable) {
-    readable = document.createElement("span");
+    // The rendered nodes are moved, not copied as text: copying textContent flattened
+    // every tutor reply - tables, lists, bold, and formulas not yet typeset - into one
+    // run of plain text. A block wrapper when the content has blocks keeps the HTML valid.
+    const hasBlocks = container.querySelector(":scope > :is(p, div, ul, ol, table, pre, blockquote, h3, h4, h5, h6, hr)");
+    readable = document.createElement(hasBlocks ? "div" : "span");
     readable.className = "speech-readable-text";
-    readable.textContent = container.textContent;
+    readable.append(...container.childNodes);
     container.replaceChildren(readable);
   }
   if (!readable.id) readable.id = `speech-text-${safeUUID()}`;

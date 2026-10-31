@@ -115,8 +115,8 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
-  <script>window.LEARNOVA_IMPORT_ID = {{ (import_id|default(None))|tojson }};</script>
-  <script>window.LEARNOVA_VOCABULARY_IMPORT_ID = {{ (vocabulary_import_id|default(None))|tojson }};</script>
-  <script type="module" src="{{ url_for('static', filename='js/flashcards/create.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_IMPORT_ID = {{ (import_id|default(None))|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_VOCABULARY_IMPORT_ID = {{ (vocabulary_import_id|default(None))|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/flashcards/create.js') }}"></script>
 {% endblock %}

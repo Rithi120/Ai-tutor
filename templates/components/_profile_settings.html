@@ -1,0 +1,46 @@
+{# Settings -> Profile: username, avatar, privacy and leagues. Each form posts to a
+   route that changes only the signed-in account. #}
+{% from "components/_identity.html" import avatar_frame with context %}
+<section id="profile" class="settings-profile" aria-labelledby="profileSettingsTitle">
+  <h2 id="profileSettingsTitle">{{ _('Profile') }}</h2>
+  <div class="settings-profile-head">
+    {% if nav_avatar %}{{ avatar_frame(nav_avatar.url, nav_avatar.accent, "md") }}{% endif %}
+    <div>
+      <p class="settings-profile-name">{{ current_user.username }}</p>
+      <a class="ghost-button" href="{{ url_for('profile_page') }}#avatars">{{ _('Change avatar') }}</a>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('update_username') }}" class="settings-grade" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="new_username">{{ _('Username') }}</label>
+    <p>{{ _('Shown on your profile, in the community and in leagues. You also log in with it. You can change it once every {days} days.', days=config.USERNAME_CHANGE_COOLDOWN_DAYS) }}</p>
+    <input id="new_username" name="username" type="text" value="{{ current_user.username }}"
+           minlength="3" maxlength="30" pattern="[a-z0-9][a-z0-9_.\-]{2,29}" required
+           autocapitalize="none" spellcheck="false">
+    <label for="username_password">{{ _('Current password') }}</label>
+    <input id="username_password" name="password" type="password" autocomplete="current-password" required>
+    <button class="primary-button" type="submit">{{ _('Change username') }}</button>
+  </form>
+
+  <form method="post" action="{{ url_for('update_profile_preferences') }}" class="settings-grade settings-toggles">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="toggle-row">
+      <input type="checkbox" name="profile_public" {{ 'checked' if current_user.profile_public }}>
+      <span><b>{{ _('Public profile') }}</b>
+        <small>{{ _('Others can see your level, streak and achievements. Your avatar, username and Premium badge are always shown where you publish.') }}</small></span>
+    </label>
+    {% if leagues_on %}
+    <label class="toggle-row">
+      <input type="checkbox" name="leaderboard_enabled" {{ 'checked' if current_user.leaderboard_enabled }}>
+      <span><b>{{ _('Take part in weekly leagues') }}</b>
+        <small>{{ _('Leagues rank learners by the XP they earn each week; the top places move up a league, the bottom ones move down.') }}</small></span>
+    </label>
+    <div class="settings-explainer">
+      <p><b>{{ _('If you turn leagues off:') }}</b> {{ _('you leave this week’s ranking straight away and are never promoted or demoted. Your XP, level, avatars, streak and challenges keep working exactly as before, and nobody else can see that you turned it off.') }}</p>
+      <p><b>{{ _('If you turn them on again:') }}</b> {{ _('you join from the start of next week, in the league you were in. Nothing is awarded or taken away for the weeks you missed.') }}</p>
+    </div>
+    {% endif %}
+    <button class="primary-button" type="submit">{{ _('Save profile settings') }}</button>
+  </form>
+</section>

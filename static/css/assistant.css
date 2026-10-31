@@ -60,6 +60,9 @@
 .asst-list-item {
   display: flex;
   flex-direction: column;
+  /* Never squeezed by the height-limited list: shrunk items clipped their own titles
+     (overflow: hidden) to a row of dots once a few conversations existed. */
+  flex-shrink: 0;
   gap: .1rem;
   width: 100%;
   text-align: start;
@@ -81,6 +84,7 @@
 .asst-list-title {
   font-size: .9rem;
   font-weight: 600;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

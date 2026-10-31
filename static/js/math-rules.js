@@ -90,3 +90,60 @@ export function splitMath(text) {
 export function hasMath(text) {
   return splitMath(text).some(segment => segment.type === "math");
 }
+
+// A power written in plain text, outside any delimiters: "4^2", "a^{m+n}", "x^-1",
+// "(a+b)^2". The base must touch the caret, so a lone "^" in prose ("see ^ above") or a
+// caret between spaces is never treated as an exponent.
+const BARE_POWER = /([\p{L}\p{N})\]])\^(?:\{([^{}\n]{1,24})\}|(-?[\p{L}\p{N}]{1,4}))/gu;
+
+export function hasBarePower(text) {
+  BARE_POWER.lastIndex = 0;
+  return BARE_POWER.test(String(text ?? ""));
+}
+
+/**
+ * Split plain text into text and superscript segments, so "4^2·4^3" reads as 4²·4³
+ * instead of showing the caret. Used for powers the model wrote without $…$, and for
+ * the fallback when KaTeX cannot load. Returns [{type: "text"|"sup", value}, …].
+ */
+export function powerSegments(text) {
+  const source = String(text ?? "");
+  const segments = [];
+  let last = 0;
+  BARE_POWER.lastIndex = 0;
+  for (let match = BARE_POWER.exec(source); match; match = BARE_POWER.exec(source)) {
+    const caret = match.index + match[1].length;
+    segments.push({ type: "text", value: source.slice(last, caret) });
+    segments.push({ type: "sup", value: match[2] ?? match[3] });
+    last = match.index + match[0].length;
+  }
+  segments.push({ type: "text", value: source.slice(last) });
+  return segments.filter(segment => segment.value !== "");
+}
+
+/**
+ * A LaTeX source made readable as plain text, for when the formula renderer is not
+ * available (offline, CDN blocked): \frac{a}{b} -> (a)/(b), \cdot -> ·, \sqrt{x} -> √(x).
+ * Powers are kept as "^" so powerSegments can raise them. Never alters the mathematics,
+ * only its spelling.
+ */
+export function readableTex(tex) {
+  let value = String(tex ?? "");
+  for (let pass = 0; pass < 3; pass += 1) {
+    value = value
+      .replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, "($1)/($2)")
+      .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)");
+  }
+  const symbols = {
+    cdot: "·", times: "×", div: "÷", pm: "±", mp: "∓", le: "≤", leq: "≤", ge: "≥", geq: "≥",
+    neq: "≠", ne: "≠", approx: "≈", infty: "∞", pi: "π", alpha: "α", beta: "β", gamma: "γ",
+    delta: "δ", Delta: "Δ", lambda: "λ", mu: "μ", sigma: "σ", theta: "θ", rightarrow: "→",
+    to: "→", Rightarrow: "⇒", cdots: "⋯", ldots: "…", circ: "°", degree: "°",
+  };
+  value = value
+    .replace(/\\(?:left|right|displaystyle|,|;|!|quad|qquad)/g, " ")
+    .replace(/\\(?:text|mathrm|mathbf|operatorname)\{([^{}]*)\}/g, "$1")
+    .replace(/\\([A-Za-z]+)/g, (whole, name) => symbols[name] ?? name)
+    .replace(/_\{([^{}]*)\}/g, "_$1");
+  return value.replace(/\s+/g, " ").trim();
+}

@@ -81,12 +81,18 @@ class CommunityServiceTests(unittest.TestCase):
         middling = community.publication_decision(3.4, [])
         self.assertEqual((middling["status"], middling["reason"], middling["correctable"]),
                          ("approved", "approved_with_suggestions", True))
+        # v2: quality never blocks. A low score publishes with its warnings showing.
         needs = community.publication_decision(2.5, [])
-        self.assertEqual((needs["status"], needs["correctable"]), ("rejected", True))
-        self.assertEqual(community.publication_decision(1.2, [])["status"], "rejected")
-        # safety overrides even an excellent score
+        self.assertEqual((needs["status"], needs["reason"], needs["correctable"]),
+                         ("approved", "published_with_warnings", True))
+        self.assertEqual(community.publication_decision(1.2, [])["status"], "approved")
+        # Without a moderation pass the reviewer's safety flag is the only safety signal
+        # and still overrides even an excellent score...
         override = community.publication_decision(5.0, ["offensive"])
         self.assertEqual((override["status"], override["reason"]), ("rejected", "safety_violation"))
+        # ...with one, the caller settles it with a stricter moderation check instead.
+        moderated = community.publication_decision(5.0, ["offensive"], moderated=True)
+        self.assertEqual(moderated["status"], "approved")
 
     def test_bayesian_average_protects_against_single_review(self):
         one_five = community.bayesian_average(5, 1)
@@ -209,13 +215,28 @@ class CommunityApiTests(unittest.TestCase):
         self.assertIsNone(entry["student_rating"]["average"])
         self.assertEqual(entry["student_rating"]["count"], 0)
 
-    def test_safety_flag_rejects_regardless_of_score(self):
+    def test_unquoted_quality_safety_flag_buys_a_stricter_check_not_a_rejection(self):
+        """The quality reviewer's flag used to reject on no evidence; now it is re-checked.
+
+        Here the stricter moderation pass finds nothing, so the set publishes and an
+        administrator is told about the disagreement. The held case, where the stricter
+        pass does find a problem, is in test_community_reports.
+        """
+
         set_id = self._create_set(self.alice)
-        published = self._publish(self.alice, set_id, review_payload=REVIEW_SAFETY)
-        self.assertEqual(published.get_json()["status"], "rejected")
-        self.assertEqual(published.get_json()["review"]["decision"]["reason"], "safety_violation")
-        # rejected sets never appear publicly
-        self.assertEqual(len(self.alice.get("/api/community/library").get_json()["sets"]), 0)
+        with ai_responder(REVIEW_SAFETY) as mocked:
+            published = self.alice.post("/api/community/publish", json={
+                "source_set_id": set_id, "title": "Cell Biology Basics", "subject": "Biology",
+                "topic": "Cells", "grade": "8", "difficulty": "medium", "language": "en",
+                "tags": ["cells", "biology"], "author_display": "username", "confirm": True})
+        self.assertEqual(published.get_json()["status"], "approved")
+        tasks = [call.kwargs.get("task_type") for call in mocked.call_args_list]
+        self.assertEqual(tasks.count("content_moderation"), 2, tasks)
+        self.assertEqual(len(self.alice.get("/api/community/library").get_json()["sets"]), 1)
+        with application.app.app_context():
+            alerts = application.db.session.scalars(application.db.select(
+                application.AdminNotification)).all()
+            self.assertEqual([row.kind for row in alerts], ["quality_safety_conflict"])
 
     def test_rating_requires_study_and_blocks_self_and_updates_bayesian(self):
         set_id = self._create_set(self.alice)

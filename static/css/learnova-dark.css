@@ -156,7 +156,7 @@
 :root[data-theme="dark"] :is(.project-create-card h2, .project-create-card label, .exam-config-card label, .document-input-options legend) {
   color: var(--ln-ink);
 }
-:root[data-theme="dark"] :is(.project-create-card input, .exam-config-card input, #mergeForm input, .section-edit input) {
+:root[data-theme="dark"] :is(.project-create-card input, .project-create-card select, .exam-config-card input, #mergeForm input, .section-edit input) {
   background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
 :root[data-theme="dark"] .document-input-option { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
@@ -197,6 +197,12 @@
 :root[data-theme="dark"] :is(.listen-control, .listen-control select, .listen-control button) {
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
+/* The microphone buttons beside answers and chats: styles.css paints them #f8f6ff, a
+   white square in dark mode. The container stays transparent, as in light mode. */
+:root[data-theme="dark"] .speech-input-control button {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .speech-input-control button:hover { border-color: var(--ln-violet); }
 
 /* ===== styles.css: in-lesson tutor chat panel =====
    The panel hardcodes light surfaces (white panel, white tutor bubble, #fbfaf7 thread)
@@ -261,6 +267,7 @@
 :root[data-theme="dark"] :is(.app-nav-link.is-active, .app-menu-trigger.is-active,
   .app-nav-link.nav-primary-action) { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
 :root[data-theme="dark"] .profile-avatar { background: rgba(149, 136, 255, .2); color: var(--ln-violet); }
+:root[data-theme="dark"] .profile-avatar.has-image { background: linear-gradient(135deg, #7c5cff, #18b9bd); }
 :root[data-theme="dark"] :is(.app-dropdown, .mobile-app-menu, .global-nav-links) {
   background: var(--ln-surface-raised); border-color: var(--ln-line-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
@@ -277,3 +284,117 @@
 :root[data-theme="dark"] .mobile-nav-toggle { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
 :root[data-theme="dark"] .mobile-menu-head button { background: var(--fc-muted-surface); color: var(--ln-ink); }
 :root[data-theme="dark"] .mobile-menu-divider { background: var(--ln-line-strong); }
+/* Settings, the activation-code page and other account cards: styles.css paints them
+   #fff, so in dark mode the light ink of the headings and labels sat on white and was
+   near-invisible ("Einstellungen", "Abo"). */
+:root[data-theme="dark"] .account-card {
+  background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink);
+  box-shadow: var(--ln-shadow-sm);
+}
+:root[data-theme="dark"] .account-card :is(h1, h2, h3) { color: var(--ln-ink); }
+/* The maths symbol keyboard under a written answer: styles.css paints the panel #f8f6f1
+   and every key white while the key text follows the theme, so in dark mode the symbols
+   were light grey on white and barely readable. */
+:root[data-theme="dark"] .symbol-keyboard { background: var(--fc-muted-surface, var(--ln-surface-solid)); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .symbol-keyboard button {
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .symbol-keyboard button:hover,
+:root[data-theme="dark"] .symbol-keyboard button:focus-visible { border-color: var(--ln-violet); color: var(--ln-violet); }
+/* Found by the audit's dark-mode contrast check (light text on a light surface):
+   - dashboard project cards (#f7f5ef in styles.css),
+   - Projects page tiles (#fff),
+   - the sticky test progress bar in a lesson (#fffffff2). */
+:root[data-theme="dark"] .dashboard-project-list a { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .dashboard-project-list small { color: var(--ln-muted); }
+:root[data-theme="dark"] .project-tile {
+  background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .project-tile p { color: var(--ln-muted); }
+:root[data-theme="dark"] .test-progress {
+  background: color-mix(in srgb, var(--ln-surface-solid) 94%, transparent); border-color: var(--ln-line);
+  color: var(--ln-ink); box-shadow: var(--ln-shadow-sm);
+}
+:root[data-theme="dark"] .progress-track { background: var(--fc-muted-surface); }
+/* Light tinted callouts and pills that stayed light in dark mode (readable, but glaring):
+   the lesson's tips and exceptions, the level badge, planner status, input icons, the
+   New lesson attachment button and the notebook filters. Same accents, dark surfaces. */
+:root[data-theme="dark"] .tips-box { background: color-mix(in srgb, var(--ln-violet) 14%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] .tips-box h3 { color: var(--ln-violet); }
+:root[data-theme="dark"] .exceptions-box { background: color-mix(in srgb, var(--ln-amber) 14%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] .exceptions-box h3 { color: var(--ln-amber); }
+:root[data-theme="dark"] :is(.level-badge, .planner-status, .input-icon) {
+  background: color-mix(in srgb, var(--ln-violet) 22%, var(--ln-surface-solid)); color: var(--ln-violet);
+}
+:root[data-theme="dark"] .attachment-button { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .notebook-filters { background: var(--fc-muted-surface); color: var(--ln-ink); }
+/* Practice exam: styles.css paints the page, header, question cards, nav tiles, option
+   rows and symbol keys light, so in dark mode the header, timer and every question
+   prompt were light text on white. */
+:root[data-theme="dark"] .exam-page { background: var(--ln-canvas); color: var(--ln-ink); }
+:root[data-theme="dark"] :is(.exam-header, .exam-question) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink);
+}
+:root[data-theme="dark"] :is(.exam-header small, .exam-clock span, .exam-question-meta, .exam-sidebar nav span) { color: var(--ln-muted); }
+:root[data-theme="dark"] :is(.exam-sidebar nav a, .exam-intro span, .exam-symbols button) {
+  background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .exam-options span { border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .exam-options input:checked + span {
+  background: color-mix(in srgb, var(--ln-violet) 18%, var(--ln-surface-solid)); color: var(--ln-violet);
+}
+:root[data-theme="dark"] .exam-written-answer { background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+/* Pages first covered by the audit on 2026-10-29, same defect each time: a light surface
+   from styles.css or study-planner.css under the dark theme's light text. */
+:root[data-theme="dark"] .concept-row:hover { background: color-mix(in srgb, var(--ln-violet) 12%, var(--ln-surface-solid)); }
+:root[data-theme="dark"] :is(.learning-block, .mastery-dial) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .mastery-dial { border-color: var(--ln-line-strong); border-top-color: var(--ln-violet); }
+:root[data-theme="dark"] .mastery-dial span { color: var(--ln-muted); }
+:root[data-theme="dark"] .readiness-warning { background: color-mix(in srgb, var(--ln-amber) 14%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] :is(.result-metrics article, .result-breakdown article, .exam-review) {
+  background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink);
+}
+:root[data-theme="dark"] .exam-review.review-correct { border-left-color: var(--ln-success); }
+:root[data-theme="dark"] :is(.result-metrics span, .exam-review dt, .exam-review footer) { color: var(--ln-muted); }
+:root[data-theme="dark"] .exam-review footer { border-top-color: var(--ln-line); }
+:root[data-theme="dark"] .timeline-row time { background: color-mix(in srgb, var(--ln-violet) 18%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] .timeline-row.status-completed time { background: color-mix(in srgb, var(--ln-success) 20%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] .timeline-row.status-skipped time { background: color-mix(in srgb, var(--ln-danger) 20%, var(--ln-surface-solid)); color: var(--ln-ink); }
+:root[data-theme="dark"] .calendar-legend span { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .calendar-day { background: var(--ln-surface-solid); color: var(--ln-ink); }
+:root[data-theme="dark"] .side-study-card { background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink); }
+:root[data-theme="dark"] .side-study-card ul { color: var(--ln-muted); }
+:root[data-theme="dark"] .exam-performance-list a { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .exam-performance-list small { color: var(--ln-muted); }
+:root[data-theme="dark"] .concept-stat-grid { border-color: var(--ln-line); background: var(--ln-line); }
+:root[data-theme="dark"] .concept-stat-grid div { background: var(--ln-surface-solid); color: var(--ln-ink); }
+:root[data-theme="dark"] .block-number { background: color-mix(in srgb, var(--ln-violet) 18%, var(--ln-surface-solid)); color: var(--ln-violet); }
+
+/* ---- Community reports, entry suggestions and the review queue ---- */
+:root[data-theme="dark"] :is(.report-panel, .mod-record, .mod-content, .entry-warning) {
+  background: var(--ln-surface-solid);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] .entry-warnings {
+  background: rgba(194, 124, 0, .12);
+  border-color: rgba(243, 223, 180, .35);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] .entry-warnings-badge { background: rgba(255, 196, 87, .18); color: #ffd58a; }
+:root[data-theme="dark"] .entry-warning-mark { text-decoration-color: #ffc457; }
+:root[data-theme="dark"] .entry-warning-state { color: #7fdca0; }
+:root[data-theme="dark"] :is(.report-panel textarea, .report-entry, .mod-correct input, .mod-correct select, .mod-record textarea) {
+  background: var(--fc-input-bg);
+  border-color: var(--ln-line-strong);
+  color: var(--ln-ink);
+}
+:root[data-theme="dark"] .mod-stale { color: #ff9b9b; }
+:root[data-theme="dark"] .mod-finding { border-top-color: var(--ln-line-strong); }
+
+/* ---- Projektmodus additions ---- */
+:root[data-theme="dark"] .pm-stats > div { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .project-more-options textarea { background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+

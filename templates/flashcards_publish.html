@@ -53,6 +53,6 @@
 </main>
 {% endblock %}
 {% block scripts %}
-  <script>window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
-  <script type="module" src="{{ url_for('static', filename='js/flashcards/publish.js') }}"></script>
+  <script nonce="{{ csp_nonce() }}">window.LEARNOVA_SET_ID = {{ set_id|tojson }};</script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/flashcards/publish.js') }}"></script>
 {% endblock %}

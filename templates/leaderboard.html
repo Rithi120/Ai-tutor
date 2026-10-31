@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "components/_identity.html" import premium_badge with context %}
+{% block title %}{{ view.league.name }} — Learnova{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">
+{% endblock %}
+{% block content %}
+<main class="league-page" id="main-content" style="--league: {{ view.league.colour }}; --league-dark: {{ view.league.colour_dark }}">
+  <section class="league-hero">
+    <span class="league-crest league-crest-lg league-{{ view.league.key }}" aria-hidden="true"></span>
+    <div>
+      <p class="eyebrow">{{ _('LEARNOVA LEAGUES') }}</p>
+      <h1>{{ view.league.name }}</h1>
+      <p class="league-timer" data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"></p>
+    </div>
+    <ol class="league-ladder" aria-label="{{ _('All leagues') }}">
+      {% for item in view.leagues %}<li class="{{ 'is-current' if item.current }}{{ ' is-passed' if item.tier < view.league.tier }}" style="--league: {{ item.colour }}; --league-dark: {{ item.colour_dark }}" title="{{ item.name }}"><span class="league-crest league-{{ item.key }}" aria-hidden="true"></span><span class="visually-hidden">{{ item.name }}{% if item.current %} ({{ _('your league') }}){% endif %}</span></li>{% endfor %}
+    </ol>
+  </section>
+
+  {% if view.last_result %}
+  <section class="league-result league-result-{{ view.last_result.outcome }}" data-league-result>
+    <p>{% if view.last_result.outcome == 'promoted' %}{{ _('Promoted! Last week you finished #{rank} with {xp} XP and moved up to the {league}.', rank=view.last_result.rank, xp=view.last_result.xp, league=view.last_result.league_after) }}
+       {% elif view.last_result.outcome == 'demoted' %}{{ _('Last week you finished #{rank} and moved to the {league}. A fresh week, a fresh start.', rank=view.last_result.rank, league=view.last_result.league_after) }}
+       {% else %}{{ _('Last week you finished #{rank} with {xp} XP and stayed in the {league}.', rank=view.last_result.rank, xp=view.last_result.xp, league=view.last_result.league_after) }}{% endif %}</p>
+    <button type="button" class="ghost-button" data-dismiss-result>{{ _('Got it') }}</button>
+  </section>
+  {% endif %}
+
+  {% if not view.participating %}
+  <section class="league-empty">
+    <h2>{{ _('You are not taking part in leagues') }}</h2>
+    <p>{{ _('Your XP, level, avatars and challenges work exactly as usual. If you would like to compete, you can join from next week.') }}</p>
+    <a class="primary-button" href="{{ url_for('settings') }}#profile">{{ _('League settings') }}</a>
+  </section>
+  {% elif not view.joined %}
+  <section class="league-empty">
+    <h2>{% if view.rejoin_from %}{{ _('You will join the leagues next week') }}{% else %}{{ _('Earn XP to join this week’s league') }}{% endif %}</h2>
+    <p>{{ _('Your first XP of the week puts you into a group in the {league}. Every lesson, flashcard and test counts.', league=view.league.name) }}</p>
+    <a class="primary-button" href="{{ url_for('index') }}">{{ _('Start a lesson') }}</a>
+  </section>
+  {% else %}
+  <section class="league-status league-status-{{ view.me.zone }}" role="status">
+    <span class="league-status-rank">#{{ view.me.rank }}</span>
+    <div><b>{{ view.me.message }}</b>
+      <small>{% if view.me.zone == 'promotion' %}{{ _('Keep it up — stay in the promotion zone until the week ends to move up a league.') }}
+        {% elif view.me.zone == 'demotion' %}{{ _('A lesson or two this week can lift you out of it.') }}
+        {% else %}{{ _('{xp} XP this week. Every bit of learning counts.', xp=view.me.weekly_xp) }}{% endif %}</small></div>
+  </section>
+  <ol class="league-table" aria-label="{{ _('Ranking this week') }}">
+    {% for row in view.standings %}
+    {% if row.rank == view.promote + 1 and view.promote %}<li class="league-divider league-divider-up" aria-hidden="true"><span>{{ _('Promotion zone') }} ↑</span></li>{% endif %}
+    {% if view.demote and row.rank == view.size - view.demote + 1 %}<li class="league-divider league-divider-down" aria-hidden="true"><span>{{ _('Demotion zone') }} ↓</span></li>{% endif %}
+    <li class="league-row zone-{{ row.zone }}{{ ' is-me' if row.me }}" {% if row.me %}aria-current="true"{% endif %}>
+      <span class="league-rank">{{ row.rank }}</span>
+      <span class="avatar-frame avatar-sm" style="--avatar-accent: {{ row.accent }}"><img src="{{ row.avatar_url }}" alt="" width="256" height="256" loading="lazy" decoding="async"></span>
+      <span class="league-name"><span class="league-name-text">{% if row.profile_url and not row.me %}<a href="{{ row.profile_url }}">{{ row.username }}</a>{% else %}{{ row.username }}{% endif %}{% if row.me %} <small>({{ _('you') }})</small>{% endif %}</span>{% if row.premium %}{{ premium_badge(compact=True) }}{% endif %}</span>
+      <span class="league-xp">{{ row.weekly_xp }} <small>XP</small></span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  <section class="league-explainer">
+    <h2>{{ _('How leagues work') }}</h2>
+    <ul>
+      <li>{{ _('Each week you compete with up to {size} learners in your league, using only the XP you earn by learning.', size=config.LEAGUE_GROUP_SIZE) }}</li>
+      <li>{{ _('When the week ends on Monday at midnight, the top places move up and the bottom places move down. Smaller groups have smaller zones.') }}</li>
+      <li>{{ _('Weekly XP starts again from zero each week. Your level and total XP never reset.') }}</li>
+      <li>{{ _('Not for you? You can turn leagues off in Settings at any time.') }}</li>
+    </ul>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/profile.js', v=static_version) }}"></script>{% endblock %}
