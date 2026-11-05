@@ -70,7 +70,11 @@ class KatexRenderSiteTests(unittest.TestCase):
         rules = read("static", "js", "math-rules.js")
         for opening in ('$$', '\\\\[', '$', '\\\\('):
             self.assertIn(f'open: "{opening}"', rules)
-        self.assertIn("throwOnError: false", read("static", "js", "math.js"))
+        # The safe fallback: KaTeX throws on a parse error and math.js shows the formula's
+        # source instead of KaTeX's red partial render (tests/test_js_browser.py runs it).
+        math_js = read("static", "js", "math.js")
+        self.assertIn("throwOnError: true", math_js)
+        self.assertIn("ln-math-source", math_js)
 
 
 class DarkModeWiringTests(unittest.TestCase):

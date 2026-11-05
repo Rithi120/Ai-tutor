@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de" data-theme="__THEME__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Render harness</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/css/learnova-tokens.css">
+<link rel="stylesheet" href="/static/css/learnova-components.css">
+<link rel="stylesheet" href="/static/css/learnova-layouts.css">
+<link rel="stylesheet" href="/static/css/learnova-study.css">
+<link rel="stylesheet" href="/static/css/learnova-pages.css">
+<link rel="stylesheet" href="/static/css/learnova-content.css">
+<link rel="stylesheet" href="/static/css/learnova-dark.css">
+<link rel="stylesheet" href="/static/css/learnova-responsive.css">
+<link rel="stylesheet" href="/static/css/assistant.css">
+</head>
+<body>
+<!-- The three surfaces that show a chat reply: the assistant thread (assistant.js
+     messageNode), the lesson tutor chat (app.js addChatMessage) and the lesson history
+     page (rich-history.js), each in the containers and with the stylesheets of the app. -->
+<main class="assistant-page" id="main-content">
+  <section class="asst-main">
+    <div id="asstThread" class="asst-thread"></div>
+  </section>
+</main>
+<aside class="chat-panel"><div id="chatMessages" class="chat-messages"></div></aside>
+<div class="dashboard-shell history-shell">
+  <section class="dashboard-grid"><article class="dashboard-card chat-history" id="historyList"></article></section>
+</div>
+<script nonce="__NONCE__" type="module">
+  import { escapeAttr, escapeHtml } from "/static/js/dom.js";
+  import { parseChips, renderMarkdown } from "/static/js/markdown.js";
+  import { renderMath } from "/static/js/math.js";
+  import * as rules from "/static/js/math-rules.js";
+  import * as protect from "/static/js/math-protect.js";
+  import { highlightCode } from "/static/js/code-highlight.js";
+  import { renderRichText } from "/static/js/rich-history.js";
+
+  window.__api = { escapeAttr, escapeHtml, parseChips, renderMarkdown, renderMath, rules, protect,
+                   highlightCode, renderRichText };
+  window.__ready = true;
+</script>
+</body>
+</html>

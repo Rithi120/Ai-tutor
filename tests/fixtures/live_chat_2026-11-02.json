@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "source": "Live check of the Chat Assistant against Groq, 2026-11-02 20:16-20:29 (scratchpad chat/live_check.md). Raw model text exactly as returned; synthetic worksheets only, no student data.",
+    "calibration": "Groq counted 950 output tokens for 2039 and 2227 characters of pretty-printed reading JSON (2.15-2.34 characters per token) and 344 for 846 (2.46)."
+  },
+  "reading_cut_off_one_photo": {
+    "facts": {
+      "task": "image_understanding",
+      "label": "pa",
+      "model": "qwen/qwen3.8-27b",
+      "max_output_tokens": 950,
+      "images": 1,
+      "status": "incomplete",
+      "incomplete_details": "IncompleteDetails(reason='max_output_tokens')",
+      "input_tokens": 2711,
+      "output_tokens": 950,
+      "output_chars": 2039
+    },
+    "text": "{\n  \"images\": [{\n    \"index\": 1,\n    \"kind\": \"handwritten_notes\",\n    \"rotation\": 0,\n    \"cut_off\": false,\n    \"legibility\": \"clear\"\n  }],\n  \"blocks\": [{\n    \"image\": 1,\n    \"type\": \"heading\",\n    \"text\": \"Arbeitsblatt Mathe – Klasse 9b\",\n    \"latex\": \"\",\n    \"bbox\": [\n      0.08,\n      0.04,\n      0.6,\n      0.09\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"handwriting\",\n    \"text\": \"Aufgabe 1: Kürze den Bruch 12/18\",\n    \"latex\": \"\\\\frac{12}{18}\",\n    \"bbox\": [\n      0.08,\n      0.13,\n      0.5,\n      0.2\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"handwriting\",\n    \"text\": \"Aufgabe 2: Löse die Gleichung\",\n    \"latex\": \"\",\n    \"bbox\": [\n      0.08,\n      0.25,\n      0.5,\n      0.29\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"formula\",\n    \"text\": \"(x + 3) / 4 = (2x - 1) / 3\",\n    \"latex\": \"\\\\frac{x+3}{4} = \\\\frac{2x-1}{3}\",\n    \"bbox\": [\n      0.12,\n      0.3,\n      0.5,\n      0.38\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"handwriting\",\n    \"text\": \"Aufgabe 3: Berechne 3/4 + 5/6\",\n    \"latex\": \"\\\\frac{3}{4} + \\\\frac{5}{6}\",\n    \"bbox\": [\n      0.08,\n      0.43,\n      0.5,\n      0.5\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"handwriting\",\n    \"text\": \"Meine Rechnung zu Aufgabe 2:\",\n    \"latex\": \"\",\n    \"bbox\": [\n      0.08,\n      0.56,\n      0.5,\n      0.6\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"formula\",\n    \"text\": \"3 · (x + 3) = 4 · (2x - 1)\",\n    \"latex\": \"3 \\\\cdot (x+3) = 4 \\\\cdot (2x-1)\",\n    \"bbox\": [\n      0.12,\n      0.61,\n      0.6,\n      0.65\n    ],\n    \"author\": \"student\",\n    \"confidence\": 0.95\n  }, {\n    \"image\": 1,\n    \"type\": \"formula\",\n    \"text\": \"3x + 9 = 8x - 4\",\n    \"latex\": \"3x + 9 = 8x - 4\",\n    \"bbox\": [\n      0.12,\n      0.66,\n      0.5,\n      0.7\n    ],\n    \"author\": \"student\",\n    \"confidence\":"
+  },
+  "reading_cut_off_two_photos": {
+    "facts": {
+      "task": "image_understanding",
+      "label": "pb",
+      "model": "qwen/qwen3.8-27b",
+      "max_output_tokens": 950,
+      "images": 2,
+      "status": "incomplete",
+      "incomplete_details": "IncompleteDetails(reason='max_output_tokens')",
+      "input_tokens": 4024,
+      "output_tokens": 950,
+      "output_chars": 2227
+    },
+    "text": "```json\n{\n  \"images\": [\n    {\n      \"index\": 1,\n      \"kind\": \"handwritten_notes\",\n      \"rotation\": 0,\n      \"cut_off\": false,\n      \"legibility\": \"clear\"\n    },\n    {\n      \"index\": 2,\n      \"kind\": \"handwritten_notes\",\n      \"rotation\": 0,\n      \"cut_off\": false,\n      \"legibility\": \"clear\"\n    }\n  ],\n  \"blocks\": [\n    {\n      \"image\": 1,\n      \"type\": \"heading\",\n      \"text\": \"Arbeitsblatt Mathe – Seite 2\",\n      \"latex\": \"\",\n      \"bbox\": [0.1, 0.04, 0.6, 0.08],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"handwriting\",\n      \"text\": \"Aufgabe 4: Löse das Gleichungssystem\",\n      \"latex\": \"\",\n      \"bbox\": [0.1, 0.14, 0.6, 0.18],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"formula\",\n      \"text\": \"I: 2x + y = 7\",\n      \"latex\": \"I: 2x + y = 7\",\n      \"bbox\": [0.15, 0.2, 0.4, 0.24],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"formula\",\n      \"text\": \"II: x - y = 2\",\n      \"latex\": \"II: x - y = 2\",\n      \"bbox\": [0.15, 0.25, 0.4, 0.29],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"handwriting\",\n      \"text\": \"Aufgabe 5: Vereinfache\",\n      \"latex\": \"\",\n      \"bbox\": [0.1, 0.33, 0.5, 0.37],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"formula\",\n      \"text\": \"√50 - √18\",\n      \"latex\": \"\\\\sqrt{50} - \\\\sqrt{18}\",\n      \"bbox\": [0.15, 0.4, 0.35, 0.44],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 2,\n      \"type\": \"heading\",\n      \"text\": \"Aufgabe 6: Satz des Pythagoras\",\n      \"latex\": \"\",\n      \"bbox\": [0.1, 0.05, 0.7, 0.1],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 2,\n      \"type\": \"diagram\",\n      \"text\": \"Rechtwinkliges Dreieck mit Katheten a und b sowie Hypotenuse c. Rechtswinkel ist markiert.\",\n      \"latex\": \"\",\n      \"bbox\": [0.2, 0.25, 0.9, 0.75],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 2,\n      \"type\": \"annotation\",\n      \"text\": \"b = 6 cm\",\n      \"latex\": \"b = 6 \\\\text{ cm}\",\n      \"bbox\": [0.1, 0.5, 0.3, "
+  },
+  "reading_complete_crop": {
+    "facts": {
+      "task": "image_understanding",
+      "label": "pd",
+      "model": "qwen/qwen3.8-27b",
+      "max_output_tokens": 950,
+      "images": 1,
+      "status": "completed",
+      "incomplete_details": "",
+      "input_tokens": 2199,
+      "output_tokens": 344,
+      "output_chars": 846
+    },
+    "text": "```json\n{\n  \"images\": [\n    {\n      \"index\": 1,\n      \"kind\": \"handwritten_notes\",\n      \"rotation\": 0,\n      \"cut_off\": false,\n      \"legibility\": \"clear\"\n    }\n  ],\n  \"blocks\": [\n    {\n      \"image\": 1,\n      \"type\": \"handwriting\",\n      \"text\": \"Aufgabe 2: Löse die Gleichung\",\n      \"latex\": \"\",\n      \"bbox\": [0.05, 0.04, 0.65, 0.1],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    },\n    {\n      \"image\": 1,\n      \"type\": \"formula\",\n      \"text\": \"(x + 3) / 4 = (2x - 1) / 3\",\n      \"latex\": \"\\\\frac{x + 3}{4} = \\\\frac{2x - 1}{3}\",\n      \"bbox\": [0.12, 0.13, 0.55, 0.28],\n      \"author\": \"student\",\n      \"confidence\": 0.95\n    }\n  ],\n  \"diagrams\": [],\n  \"uncertain\": [],\n  \"clarification_question\": \"\",\n  \"summary\": \"Handgeschriebene mathematische Aufgabe zur Lösung einer linearen Gleichung mit Brüchen.\",\n  \"language\": \"de\"\n}\n```"
+  },
+  "reply_f1_table_derivation": {
+    "facts": {
+      "task": "assistant_chat",
+      "label": "f1",
+      "model": "openai/gpt-oss-20b",
+      "max_output_tokens": 2000,
+      "images": 0,
+      "status": "completed",
+      "incomplete_details": "",
+      "input_tokens": 1414,
+      "output_tokens": 1110,
+      "output_chars": 2640
+    },
+    "text": "**Herleitung der Mitternachtsformel (Quadratische Ergänzung)**  \nAusgangsgleichung:  \n\\[\nax^{2}+bx+c=0 \\qquad (a\\neq 0)\n\\]\n\n---\n\n### Schritt‑für‑Schritt\n\n| Nr. | Operation | Warum? |\n|-----|-----------|--------|\n| 1 | **Teile durch \\(a\\)**: \\(\\displaystyle x^{2}+\\frac{b}{a}x+\\frac{c}{a}=0\\) | Wir wollen die Koeffizienten von \\(x^{2}\\) und \\(x\\) in der Form \\(1\\) und \\(\\frac{b}{a}\\) haben, damit wir quadratisch ergänzen können. |\n| 2 | **Subtrahiere \\(\\frac{c}{a}\\)**: \\(\\displaystyle x^{2}+\\frac{b}{a}x=-\\frac{c}{a}\\) | Wir verschieben den konstanten Term auf die rechte Seite, damit die linke Seite nur \\(x\\)-Terme enthält. |\n| 3 | **Addiere \\(\\left(\\frac{b}{2a}\\right)^{2}\\)** zu beiden Seiten:  \n\\(\\displaystyle x^{2}+\\frac{b}{a}x+\\left(\\frac{b}{2a}\\right)^{2}= -\\frac{c}{a}+\\left(\\frac{b}{2a}\\right)^{2}\\) | Wir ergänzen die quadratische Ergänzung, damit die linke Seite ein perfektes Quadrat wird. |\n| 4 | **Schreibe die linke Seite als Quadrat**:  \n\\(\\displaystyle \\left(x+\\frac{b}{2a}\\right)^{2}= -\\frac{c}{a}+\\frac{b^{2}}{4a^{2}}\\) | Das Quadrat entsteht, weil \\((x+p)^{2}=x^{2}+2px+p^{2}\\); hier ist \\(p=\\frac{b}{2a}\\). |\n| 5 | **Bringe die rechten Terme zusammen**:  \n\\(\\displaystyle \\left(x+\\frac{b}{2a}\\right)^{2}= \\frac{-4ac+b^{2}}{4a^{2}}\\) | Wir haben \\(-\\frac{c}{a}=\\frac{-4ac}{4a^{2}}\\) und addieren \\(\\frac{b^{2}}{4a^{2}}\\). |\n| 6 | **Nimm die Quadratwurzel**:  \n\\(\\displaystyle x+\\frac{b}{2a}= \\pm \\frac{\\sqrt{b^{2}-4ac}}{2a}\\) | Die Wurzel löst das Quadrat; das \\(\\pm\\) kommt daher, dass sowohl \\(+w\\) als auch \\(-w\\) quadriert \\(w^{2}\\) ergeben. |\n| 7 | **Subtrahiere \\(\\frac{b}{2a}\\)**:  \n\\(\\displaystyle x= -\\frac{b}{2a}\\pm \\frac{\\sqrt{b^{2}-4ac}}{2a}\\) | Wir isolieren \\(x\\) auf der linken Seite. |\n| 8 | **Fasse zusammen**:  \n\\[\nx=\\frac{-b\\pm\\sqrt{\\,b^{2}-4ac\\,}}{2a}\n\\] | Das ist die Mitternachtsformel (Quadratische Formel). |\n\n---\n\n### Beispiel\n\nLöse \\(2x^{2}+3x-2=0\\).\n\n1. \\(x^{2}+\\frac{3}{2}x-\\frac{1}{1}=0\\)  \n2. \\(x^{2}+\\frac{3}{2}x=\\frac{1}{1}\\)  \n3. \\(x^{2}+\\frac{3}{2}x+\\left(\\frac{3}{4}\\right)^{2}=\\frac{1}{1}+\\left(\\frac{3}{4}\\right)^{2}\\)  \n4. \\(\\left(x+\\frac{3}{4}\\right)^{2}=\\frac{1}{1}+\\frac{9}{16}\\)  \n5. \\(\\left(x+\\frac{3}{4}\\right)^{2}=\\frac{25}{16}\\)  \n6. \\(x+\\frac{3}{4}= \\pm \\frac{5}{4}\\)  \n7. \\(x= -\\frac{3}{4}\\pm \\frac{5}{4}\\)  \n8. \\(x=\\frac{1}{2}\\) oder \\(x=-2\\)\n\n---\n\n### Übungsaufgabe\n\nLöse die Gleichung \\(3x^{2}-12x+9=0\\) mit der Mitternachtsformel.  \nVersuche, jeden Schritt wie oben zu nummerieren und zu erklären.  \n\n**Check-Frage:**  \nWas passiert, wenn der Ausdruck unter der Wurzel, \\(b^{2}-4ac\\), negativ ist?  \n\nTOPIC: Algebra | Quadratische Gleichungen (Mitternachtsformel)"
+  },
+  "reply_f7_decimal_commas": {
+    "facts": {
+      "task": "assistant_chat",
+      "label": "f7",
+      "model": "openai/gpt-oss-20b",
+      "max_output_tokens": 2000,
+      "images": 0,
+      "status": "completed",
+      "incomplete_details": "",
+      "input_tokens": 1400,
+      "output_tokens": 803,
+      "output_chars": 2127
+    },
+    "text": "**Kurze Antworten**\n\n| Größe | Symbol | Formel | Einheit |\n|-------|--------|--------|---------|\n| Wellen­länge | λ | – | Meter (m) |\n| Frequenz | f | – | Hertz (Hz) = 1/s |\n| Schall­geschwindigkeit | c | c = λ · f | Meter pro Sekunde (m/s) |\n| Kreis­frequenz | ω | ω = 2 π · f | Radiant pro Sekunde (rad/s) |\n| Geschwindigkeits­änderung | Δv | Δv = v₂ – v₁ | Meter pro Sekunde (m/s) |\n\n---\n\n### 1. Warum c = λ · f?\n\n* **Wellen­länge λ** ist der Abstand zwischen zwei aufeinanderfolgenden Wellenbergen (oder -tälern).  \n* **Frequenz f** ist die Anzahl der Schwingungen pro Sekunde.  \n* Wenn in einer Sekunde \\(f\\) Wellenberge vorbeifliegen, hat jedes dieser Berge die Länge λ.  \n  Also legt die Schall­geschwindigkeit \\(c\\) in einer Sekunde die Strecke \\(f·λ\\) zurück.\n\n**Beispiel**  \nEin Schall mit \\(f = 500\\; \\text{Hz}\\) und λ = 0,34 m:\n\n\\[\nc = λ·f = 0,34\\;\\text{m} \\times 500\\;\\text{Hz} = 170\\;\\text{m/s}\n\\]\n\n---\n\n### 2. Kreis­frequenz ω = 2 π · f\n\n* Die **Frequenz f** gibt an, wie viele Schwingungen pro Sekunde stattfinden.  \n* Jede Schwingung entspricht einem vollständigen Kreis (360° = \\(2π\\) Radiant).  \n* Deshalb multipliziert man \\(f\\) mit \\(2π\\), um die Winkelgeschwindigkeit in Radiant pro Sekunde zu erhalten.\n\n**Beispiel**  \nFür \\(f = 10\\; \\text{Hz}\\):\n\n\\[\nω = 2π·10 ≈ 62,8\\;\\text{rad/s}\n\\]\n\n---\n\n### 3. Was bedeutet Δ in Δv = v₂ – v₁?\n\n* **Δ** steht für „Differenz“.  \n* Δv ist also die Änderung der Geschwindigkeit von einem Zeitpunkt (v₁) zu einem späteren Zeitpunkt (v₂).  \n* Wenn v₂ größer ist, ist Δv positiv (Beschleunigung).  \n  Wenn v₂ kleiner ist, ist Δv negativ (Verlangsamung).\n\n**Beispiel**  \nEin Auto beschleunigt von 20 m/s auf 30 m/s:\n\n\\[\nΔv = 30\\;\\text{m/s} - 20\\;\\text{m/s} = 10\\;\\text{m/s}\n\\]\n\n---\n\n### 4. Mini‑Übung\n\nBerechne die Schall­geschwindigkeit, wenn die Frequenz 600 Hz und die Wellen­länge 0,28 m beträgt.\n\n*Antwort:*  \n\\(c = λ·f = 0,28\\;\\text{m} × 600\\;\\text{Hz} = 168\\;\\text{m/s}\\)\n\n---\n\n**Check‑Frage**  \nWenn ein Schall mit einer Frequenz von 400 Hz und einer Geschwindigkeit von 340 m/s schwingt, wie groß ist seine Wellen­länge λ?  \n\n---\n\nTOPIC: Physik | Wellen und Frequenz"
+  },
+  "reply_pd_photo_answer": {
+    "facts": {
+      "task": "assistant_chat",
+      "label": "pd",
+      "model": "openai/gpt-oss-20b",
+      "max_output_tokens": 2000,
+      "images": 0,
+      "status": "completed",
+      "incomplete_details": "",
+      "input_tokens": 1623,
+      "output_tokens": 518,
+      "output_chars": 1277
+    },
+    "text": "**Lösung der Gleichung**\n\n\\[\n\\frac{x+3}{4}=\\frac{2x-1}{3}\n\\]\n\n1. **Brüche eliminieren**  \n   Multipliziere beide Seiten mit dem kleinsten gemeinsamen Vielfachen der Nenner \\(4\\) und \\(3\\), also mit \\(12\\):\n\n   \\[\n   12 \\cdot \\frac{x+3}{4}=12 \\cdot \\frac{2x-1}{3}\n   \\]\n\n   \\[\n   3(x+3)=4(2x-1)\n   \\]\n\n   *(Warum? Wir wollen die Brüche loswerden, damit nur ganzzahlige Terme übrig bleiben.)*\n\n2. **Klammern auflösen**  \n\n   \\[\n   3x + 9 = 8x - 4\n   \\]\n\n3. **Alle \\(x\\)-Terme auf eine Seite bringen**  \n   Subtrahiere \\(3x\\) von beiden Seiten:\n\n   \\[\n   9 = 5x - 4\n   \\]\n\n4. **Konstante isolieren**  \n   Addiere \\(4\\) zu beiden Seiten:\n\n   \\[\n   13 = 5x\n   \\]\n\n5. **\\(x\\) berechnen**  \n   Teile durch \\(5\\):\n\n   \\[\n   x = \\frac{13}{5} = 2,6\n   \\]\n\n**Antwort:** \\(x = 2,6\\) (oder als Bruch \\(\\frac{13}{5}\\)).\n\n---\n\n**Kurze Kontrolle**  \nSetze \\(x = 2,6\\) in die ursprüngliche Gleichung ein:\n\n\\[\n\\frac{2,6+3}{4} = \\frac{5,6}{4} = 1,4\n\\]\n\\[\n\\frac{2\\cdot 2,6-1}{3} = \\frac{5,2-1}{3} = \\frac{4,2}{3} = 1,4\n\\]\n\nBeide Seiten sind gleich, also ist die Lösung korrekt.\n\n---\n\n**Mini‑Check**  \nWie würdest du die Gleichung lösen, wenn du stattdessen zuerst beide Seiten mit \\(12\\) multiplizierst? Schreibe die Zwischenschritte in deinen eigenen Worten.  \n\nTOPIC: Algebra | Gleichung lösen  "
+  },
+  "reply_pe_follow_up": {
+    "facts": {
+      "task": "assistant_chat",
+      "label": "pe",
+      "model": "openai/gpt-oss-20b",
+      "max_output_tokens": 2000,
+      "images": 0,
+      "status": "completed",
+      "incomplete_details": "",
+      "input_tokens": 2120,
+      "output_tokens": 562,
+      "output_chars": 1374
+    },
+    "text": "Ja, das ist richtig: \\(x=\\dfrac{13}{5}\\) (also 2,6).  \nUm zu prüfen, ob die Lösung wirklich funktioniert, setzt du \\(x\\) einfach wieder in die ursprüngliche Gleichung ein und kontrollierst, ob beide Seiten gleich sind.\n\n**Schritte der Probe**\n\n1. **Linke Seite**  \n   \\[\n   \\frac{x+3}{4}\\;\\;=\\;\\;\\frac{\\frac{13}{5}+3}{4}\n   \\]\n   Zuerst die Summe im Zähler:\n   \\[\n   \\frac{13}{5}+3 \\;=\\; \\frac{13}{5}+\\frac{15}{5}\\;=\\;\\frac{28}{5}\n   \\]\n   Dann den Bruch teilen durch 4 (was gleich \\(\\frac{1}{4}\\) multiplizieren ist):\n   \\[\n   \\frac{28}{5}\\cdot\\frac{1}{4}\\;=\\;\\frac{28}{20}\\;=\\;\\frac{7}{5}\\;=\\;1,4\n   \\]\n\n2. **Rechte Seite**  \n   \\[\n   \\frac{2x-1}{3}\\;\\;=\\;\\;\\frac{2\\cdot\\frac{13}{5}-1}{3}\n   \\]\n   Zuerst den Zähler:\n   \\[\n   2\\cdot\\frac{13}{5}\\;=\\;\\frac{26}{5}\\quad\\text{und}\\quad \\frac{26}{5}-1\\;=\\;\\frac{26}{5}-\\frac{5}{5}\\;=\\;\\frac{21}{5}\n   \\]\n   Dann durch 3 teilen:\n   \\[\n   \\frac{21}{5}\\cdot\\frac{1}{3}\\;=\\;\\frac{21}{15}\\;=\\;\\frac{7}{5}\\;=\\;1,4\n   \\]\n\n3. **Vergleich**  \n   Beide Seiten ergeben \\( \\frac{7}{5}\\) bzw. 1,4 – sie sind gleich.  \n   Damit ist die Lösung korrekt.\n\n**Kurz zusammengefasst:**  \nSetze \\(x=\\frac{13}{5}\\) in beide Seiten ein, rechne die Brüche aus und vergleiche die Ergebnisse. Wenn sie übereinstimmen, stimmt die Lösung.  \n\n**Mini‑Check**  \nWie würdest du die Probe in deinen eigenen Worten beschreiben?  \nTOPIC: Algebra | Gleichung lösen"
+  },
+  "otpm_refusals": [
+    "Request too large for model `qwen/qwen3.8-27b` in organization `org_x` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Requested 2274. The request's expected output tokens exceed the enforced limit; reduce max_tokens (or the request's expected output) and try again.",
+    "Request too large for model `qwen/qwen3.8-27b` in organization `org_x` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Requested 1388. The request's expected output tokens exceed the enforced limit; reduce max_tokens (or the request's expected output) and try again."
+  ]
+}

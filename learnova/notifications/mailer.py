@@ -14,10 +14,14 @@ environment (no credential ever lives in code), and a result that distinguishes
 
 Error details are reduced to the exception type and the SMTP reply code. Server reply
 text can echo the login name, so it is never stored or logged.
+
+An optional ``reply_to`` (the contact form's sender) is set only when it is one plain
+ASCII address with no whitespace or line break; anything else is left out silently.
 """
 
 from __future__ import annotations
 
+import re
 import smtplib
 import socket
 import ssl
@@ -28,6 +32,11 @@ from typing import Any, Callable, Mapping
 
 SECURITY_MODES = ("starttls", "ssl", "none")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# One ASCII address, nothing else: no display name, no comma, no whitespace, no CR/LF.
+# The same shape learnova.contact accepts from the form, so a header can never be split.
+_SAFE_REPLY_TO = re.compile(
+    r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}"
+    r"@(?:[A-Za-z0-9](?:-?[A-Za-z0-9]){0,62}\.)+[A-Za-z]{2,63}")
 
 
 @dataclass(frozen=True)
@@ -82,7 +91,15 @@ def mail_settings(config: Mapping[str, Any]) -> MailSettings | None:
         security=security, timeout=timeout)
 
 
-def _message(settings: MailSettings, recipient: str, subject: str, body: str) -> EmailMessage:
+def _safe_reply_to(value: str) -> str:
+    value = value if isinstance(value, str) else ""
+    if len(value) > 254 or not _SAFE_REPLY_TO.fullmatch(value):
+        return ""
+    return value
+
+
+def _message(settings: MailSettings, recipient: str, subject: str, body: str,
+             reply_to: str = "") -> EmailMessage:
     message = EmailMessage()
     message["From"] = settings.sender
     message["To"] = recipient
@@ -92,6 +109,12 @@ def _message(settings: MailSettings, recipient: str, subject: str, body: str) ->
     message["Date"] = formatdate(localtime=False)
     domain = settings.sender.rpartition("@")[2] or None
     message["Message-ID"] = make_msgid(domain=domain)
+    safe_reply_to = _safe_reply_to(reply_to)
+    if safe_reply_to:
+        try:
+            message["Reply-To"] = safe_reply_to
+        except (ValueError, TypeError):  # defence in depth: never let a header raise
+            pass
     message.set_content(body)
     return message
 
@@ -103,6 +126,7 @@ def _reply_code(error: BaseException) -> int:
 
 def send_email(
     settings: MailSettings | None, recipient: str, subject: str, body: str, *,
+    reply_to: str = "",
     smtp_factory: Callable[..., Any] | None = None,
     ssl_factory: Callable[..., Any] | None = None,
 ) -> DeliveryResult:
@@ -115,7 +139,11 @@ def send_email(
     if settings.security == "none" and settings.username and settings.host not in LOCAL_HOSTS:
         # Logging in over an unencrypted connection would put the password on the wire.
         return DeliveryResult("failed", "refusing to send credentials without TLS")
-    message = _message(settings, recipient, subject, body)
+    try:
+        message = _message(settings, recipient, subject, body, reply_to)
+    except (ValueError, TypeError) as error:
+        # A recipient or sender with a line break cannot become a header; say so honestly.
+        return DeliveryResult("failed", f"message could not be built ({type(error).__name__})")
     try:
         if settings.security == "ssl":
             factory = ssl_factory or smtplib.SMTP_SSL

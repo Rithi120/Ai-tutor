@@ -216,6 +216,43 @@ def _int(value: Any) -> int:
         return 0
 
 
+# How each API says "the output cap ended this answer": Responses (Groq, OpenAI) status
+# "incomplete" with incomplete_details.reason "max_output_tokens" (Groq 2026-11-02,
+# tests/fixtures/live_chat_2026-11-02.json), or "incomplete" with no reason given; Chat
+# Completions (Gemini) finish_reason "length"; Anthropic Messages stop_reason "max_tokens".
+OUTPUT_CAP_STOPS = frozenset({"max_output_tokens", "incomplete", "length", "max_tokens"})
+
+
+def _text_value(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def stop_reason_of(response: Any) -> str:
+    """The provider's own reason the answer ended, from whatever the gateway received: a raw
+    SDK object of any of the three shapes or a `ProviderResult`. "" when it does not say
+    (a test fake, a mock) - never a guess."""
+
+    if isinstance(response, ProviderResult):
+        return response.stop_reason
+    status = _text_value(getattr(response, "status", None))
+    if status:
+        if status != "incomplete":
+            return status
+        details = getattr(response, "incomplete_details", None)
+        reason = details.get("reason") if isinstance(details, dict) else getattr(details, "reason", None)
+        return _text_value(reason) or status
+    choices = getattr(response, "choices", None)
+    if isinstance(choices, (list, tuple)) and choices:
+        return _text_value(getattr(choices[0], "finish_reason", None))
+    return _text_value(getattr(response, "stop_reason", None))
+
+
+def stopped_at_output_cap(stop_reason: str) -> bool:
+    """True when `stop_reason` (from stop_reason_of) means the answer was cut off by its cap."""
+
+    return stop_reason in OUTPUT_CAP_STOPS
+
+
 def responses_to_canonical(response: Any, requested_model: str) -> ProviderResult:
     usage = getattr(response, "usage", None)
     return ProviderResult(
@@ -223,7 +260,9 @@ def responses_to_canonical(response: Any, requested_model: str) -> ProviderResul
         model=str(getattr(response, "model", "") or requested_model),
         usage=ProviderUsage(_int(getattr(usage, "input_tokens", 0)), _int(getattr(usage, "output_tokens", 0)),
                             _int(getattr(usage, "total_tokens", 0))),
-        stop_reason=str(getattr(response, "status", "") or ""),
+        # "max_output_tokens" rather than just "incomplete", so a cut-off answer is told
+        # apart from one the provider's content filter stopped.
+        stop_reason=stop_reason_of(response),
     )
 
 

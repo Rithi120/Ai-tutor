@@ -5,7 +5,7 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -282,17 +282,32 @@ class LeagueCliTests(Base):
         self.assertIn("Nothing due", first.output)
         self.assertEqual(self.run_cli("leagues", "process").exit_code, 0)
 
-    def test_failures_exit_non_zero_and_overdue_weeks_are_flagged(self):
-        with patch.object(application, "process_due_league_weeks", side_effect=RuntimeError("db down")):
-            result = self.run_cli("leagues", "process")
-        self.assertEqual(result.exit_code, 1)
+    # The clock is fixed: last week ends on Monday 00:00 Berlin and "overdue" means 6 hours
+    # past that, so with the real clock this test failed every Monday 00:00-06:00.
+    WEDNESDAY_NOON = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+    MONDAY_EARLY = datetime(2026, 11, 2, 2, 0, tzinfo=timezone.utc)   # 03:00 Berlin
+
+    def add_last_week(self):
         starts, ends, week_start = application.league_week_bounds()
         db.session.add(application.LeagueWeek(week_start=week_start - timedelta(days=7), starts_at=starts - timedelta(days=7),
                                               ends_at=ends - timedelta(days=7), status="open"))
         db.session.commit()
-        self.assertEqual(self.run_cli("leagues", "status", "--check").exit_code, 2)
-        self.run_cli("leagues", "process")
-        self.assertEqual(self.run_cli("leagues", "status", "--check").exit_code, 0)
+
+    def test_failures_exit_non_zero_and_overdue_weeks_are_flagged(self):
+        with patch.object(application, "process_due_league_weeks", side_effect=RuntimeError("db down")):
+            result = self.run_cli("leagues", "process")
+        self.assertEqual(result.exit_code, 1)
+        with patch.object(application, "utcnow", return_value=self.WEDNESDAY_NOON):
+            self.add_last_week()
+            self.assertEqual(self.run_cli("leagues", "status", "--check").exit_code, 2)
+            self.run_cli("leagues", "process")
+            self.assertEqual(self.run_cli("leagues", "status", "--check").exit_code, 0)
+
+    def test_a_week_that_just_ended_is_not_overdue_within_the_grace_hours(self):
+        with patch.object(application, "utcnow", return_value=self.MONDAY_EARLY):
+            self.add_last_week()
+            self.assertEqual(self.run_cli("leagues", "status", "--check").exit_code, 0)
+            self.assertEqual(self.run_cli("leagues", "status", "--check", "--grace-hours", "1").exit_code, 2)
 
 
 # ------------------------------------------------------------------ avatar generator

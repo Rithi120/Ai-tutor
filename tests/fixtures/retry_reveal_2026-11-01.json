@@ -1,0 +1,227 @@
+{
+  "_meta": {
+    "source": "R:/ai_tutor_suite_tmp/prod_live_lessons/out/*.lesson.json (question_full) and *.answer_wrong.json (the /api/answer response of the first wrong answer), live run 2026-11-01",
+    "note": "Synthetic notes written for the live test (no student data). Texts are verbatim model output that the Try again screen sent to the browser."
+  },
+  "cases": [
+    {
+      "subject": "math",
+      "student_answer": "d",
+      "question": {
+        "id": "q1",
+        "concept": "Steigung m",
+        "type": "multiple_choice",
+        "prompt": "Welche Steigung hat die Gerade, die die Punkte (2 | 1) und (6 | 9) enthält?",
+        "options": [
+          {
+            "id": "a",
+            "label": "1"
+          },
+          {
+            "id": "b",
+            "label": "2"
+          },
+          {
+            "id": "c",
+            "label": "3"
+          },
+          {
+            "id": "d",
+            "label": "4"
+          }
+        ],
+        "expected_answer": "b"
+      },
+      "texts": {
+        "evaluation.feedback": "Die Steigung einer Geraden wird mit der Formel $$m=\\frac{y_2-y_1}{x_2-x_1}$$ berechnet. Für die Punkte (2|1) und (6|9) gilt:\n\nStep 1, Differenz der y‑Koordinaten: $$y_2-y_1=9-1=8$$\n\nStep 2, Differenz der x‑Koordinaten: $$x_2-x_1=6-2=4$$\n\nStep 3, Division: $$m=\\frac{8}{4}=2$$\n\nDamit ist die richtige Steigung 2, also Option **b**. Du hast Option **d** (4) gewählt, was ein Rechenfehler bei der Division bedeutet.\n",
+        "evaluation.teacher_tip": "Wenn du die Steigung berechnest, schreibe immer zuerst die Differenz der y‑Werte und dann die Differenz der x‑Werte. So vermeidest du Verwechslungen.",
+        "diagnosis.explanation": "Die Steigung der Geraden ist 2, nicht 4. Du hast die Differenzen beim Einsetzen in die Formel vertauscht. Berechne m erneut mit (9‑1)/(6‑2)=2.",
+        "retry.misunderstanding": "Du hast die Division der Differenzen falsch durchgeführt.",
+        "retry.reteach": "Um die Steigung zu finden, subtrahiere zuerst die y‑Werte und dann die x‑Werte, und teile die beiden Ergebnisse.",
+        "retry.simpler_example": "Für die Punkte (1|2) und (4|5) ist die Steigung: $$m=\\frac{5-2}{4-1}=\\frac{3}{3}=1$$"
+      }
+    },
+    {
+      "subject": "ethics",
+      "student_answer": "c",
+      "question": {
+        "id": "q1",
+        "concept": "Höhlengleichnis",
+        "type": "multiple_choice",
+        "prompt": "Was symbolisiert die Sonne im Höhlengleichnis?",
+        "options": [
+          {
+            "id": "a",
+            "label": "Die Quelle des Lichts im Inneren der Höhle"
+          },
+          {
+            "id": "b",
+            "label": "Die Idee des Guten"
+          },
+          {
+            "id": "c",
+            "label": "Ein Feuer, das die Schatten erzeugt"
+          },
+          {
+            "id": "d",
+            "label": "Ein Spiegel, der die Schatten reflektiert"
+          }
+        ],
+        "expected_answer": "b"
+      },
+      "texts": {
+        "evaluation.feedback": "Noch nicht ganz. Lies dir die Erklärung unten durch und versuch dieselbe Frage noch einmal.",
+        "evaluation.teacher_tip": "Merke dir: \"Sonne = Idee des Guten, Feuer = Schattenquelle\" – ein kurzer Merksatz hilft, die beiden zu unterscheiden.",
+        "retry.misunderstanding": "Der Student hat die Sonne mit dem Feuer verwechselt, das die Schatten erzeugt.",
+        "retry.reteach": "Die Sonne steht für die höchste Wahrheit, das Feuer nur für die Quelle der Schatten.",
+        "retry.simpler_example": "Stell dir vor, du siehst im Dunkeln ein Licht, das alles erhellt – das ist die Sonne, nicht das Feuer, das die Schatten wirft."
+      }
+    },
+    {
+      "subject": "english",
+      "student_answer": "a",
+      "question": {
+        "id": "q1",
+        "concept": "Present perfect vs Simple Past",
+        "type": "multiple_choice",
+        "prompt": "Which sentence uses the correct form of the verb? \n\"I ___ (see) him yesterday.\"",
+        "options": [
+          {
+            "id": "a",
+            "label": "I have seen him yesterday."
+          },
+          {
+            "id": "b",
+            "label": "I saw him yesterday."
+          },
+          {
+            "id": "c",
+            "label": "I seeing him yesterday."
+          },
+          {
+            "id": "d",
+            "label": "I seen him yesterday."
+          }
+        ],
+        "expected_answer": "b"
+      },
+      "texts": {
+        "evaluation.feedback": "Du hast die falsche Zeitform gewählt. Das Signalwort „yesterday“ verlangt das Simple Past, nicht das Present Perfect. Deshalb ist die Antwort a („I have seen him yesterday“) grammatikalisch falsch.",
+        "evaluation.teacher_tip": "Schau immer zuerst nach dem Signalwort: Wörter wie „yesterday“, „last week“ usw. verlangen das Simple Past.",
+        "diagnosis.explanation": "Du hast die falsche Verbform gewählt: \"I have seen him yesterday\" ist nicht korrekt, weil \"yesterday\" einen genauen Zeitpunkt angibt. Die richtige Form ist \"I saw him yesterday\". Überprüfe, welches Zeitwort zu Signalwörtern wie \"yesterday\" passt.",
+        "retry.misunderstanding": "Du hast das Signalwort übersehen und deshalb die falsche Zeitform (Present Perfect) gewählt.",
+        "retry.reteach": "Wenn ein Satz ein konkretes, vergangenes Datum oder ein Wort wie „yesterday“ enthält, musst du das Simple Past benutzen. Das Present Perfect benutzt man nur, wenn der genaue Zeitpunkt nicht genannt wird oder die Handlung bis jetzt relevant ist.",
+        "retry.simpler_example": "Richtig: \"She visited Berlin last year.\" (Simple Past, weil \"last year\" ein konkreter Zeitpunkt ist.)"
+      }
+    },
+    {
+      "subject": "nwt",
+      "student_answer": "b",
+      "question": {
+        "id": "q1",
+        "concept": "Wärmedämmung",
+        "type": "multiple_choice",
+        "prompt": "Welches Material hat im Experiment die beste Dämmwirkung?",
+        "options": [
+          {
+            "id": "a",
+            "label": "Alufolie"
+          },
+          {
+            "id": "b",
+            "label": "Wolle"
+          },
+          {
+            "id": "c",
+            "label": "Styropor"
+          },
+          {
+            "id": "d",
+            "label": "Kein Material"
+          }
+        ],
+        "expected_answer": "c"
+      },
+      "texts": {
+        "evaluation.feedback": "Noch nicht ganz. Lies dir die Erklärung unten durch und versuch dieselbe Frage noch einmal.",
+        "evaluation.teacher_tip": "Beim nächsten Experiment notiere die Endtemperaturen in einer Tabelle, damit du sofort sehen kannst, welches Material die höchste Temperatur behält.",
+        "retry.misunderstanding": "Der Schüler hat die Endtemperatur von Becher C (Wolle) mit der besten Dämmwirkung verwechselt.",
+        "retry.reteach": "Die Dämmwirkung wird daran gemessen, wie viel Wärme ein Material zurückhält. Das Material mit der höchsten Endtemperatur nach einer bestimmten Zeit hat die beste Dämmwirkung, weil weniger Wärme nach außen abgegeben wird."
+      }
+    },
+    {
+      "subject": "history",
+      "student_answer": "b",
+      "question": {
+        "id": "q1",
+        "concept": "Art. 48",
+        "type": "multiple_choice",
+        "prompt": "Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?",
+        "options": [
+          {
+            "id": "a",
+            "label": "Es ermöglichte dem Reichspräsidenten, ohne Zustimmung des Reichstags zu regieren."
+          },
+          {
+            "id": "b",
+            "label": "Es schränkte die Grundrechte der Bürger ein."
+          },
+          {
+            "id": "c",
+            "label": "Es verlangte eine 5‑Prozent‑Sperrklausel."
+          },
+          {
+            "id": "d",
+            "label": "Es stärkte die Macht des Reichstags."
+          }
+        ],
+        "expected_answer": "a"
+      },
+      "texts": {
+        "evaluation.feedback": "Die Antwort \"b\" ist falsch, weil Art. 48 der Weimarer Verfassung die Macht des Reichspräsidenten stärkte, nicht die Grundrechte einschränkte. Art. 48 erlaubte dem Präsidenten, ohne Zustimmung des Reichstags zu regieren, was als Schwachstelle gilt.",
+        "evaluation.teacher_tip": "Merke dir die Abkürzung \"PR\" für \"Präsidentenrecht\": Art. 48 = PR – Präsidentenrecht – regiert ohne Reichstag.",
+        "diagnosis.explanation": "Du hast die Antwort b gewählt, die besagt, dass Art. 48 die Grundrechte einschränkt. Das ist falsch, weil Art. 48 dem Reichspräsidenten erlaubte, ohne Zustimmung des Reichstags zu regieren. Überprüfe die Beschreibung von Art. 48 im Text und wähle die Aussage, die die präsidiale Notverordnungsbefugnis beschreibt.",
+        "retry.misunderstanding": "Der Schüler hat Art. 48 mit der Einschränkung der Grundrechte verwechselt.",
+        "retry.reteach": "Art. 48 gibt dem Reichspräsidenten die Möglichkeit, Notverordnungen zu erlassen und damit ohne Reichstagszustimmung zu regieren. Das Parlament verliert dadurch an Einfluss.",
+        "retry.simpler_example": "Stell dir vor, du hast einen Klassenrat (Reichstag) und einen Klassenlehrer (Reichspräsident). Der Klassenlehrer kann ohne Zustimmung des Rats Regeln ändern, wenn er meint, dass etwas dringend ist. Das ist Art. 48 in einfacher Form."
+      }
+    },
+    {
+      "subject": "geography",
+      "student_answer": "c",
+      "question": {
+        "id": "q1",
+        "concept": "Tsunami",
+        "type": "multiple_choice",
+        "prompt": "Was passiert, wenn ein Seebeben unter dem Meeresboden auftritt?",
+        "options": [
+          {
+            "id": "a",
+            "label": "Der Meeresboden senkt sich und Wasser fließt nach oben."
+          },
+          {
+            "id": "b",
+            "label": "Der Meeresboden hebt sich an und Wasser wird angehoben."
+          },
+          {
+            "id": "c",
+            "label": "Der Meeresboden bleibt unverändert, aber die Wellen werden höher."
+          },
+          {
+            "id": "d",
+            "label": "Der Meeresboden senkt sich und die Wellen werden flacher."
+          }
+        ],
+        "expected_answer": "b"
+      },
+      "texts": {
+        "evaluation.feedback": "Die Antwort \"c\" ist falsch, weil ein Seebeben unter dem Meeresboden dazu führt, dass sich der Meeresboden anhebt und das darüber liegende Wasser angehoben wird. Das Ergebnis ist eine Welle, die sich ausbreitet. In der Antwort \"c\" steht, dass der Meeresboden unverändert bleibt, was nicht dem physikalischen Prozess entspricht.",
+        "evaluation.teacher_tip": "Wenn du dir die Frage noch einmal anschaust, stelle dir vor, wie ein Unterwasser-Beben die Erde bewegt: sie hebt sich an, nicht ab. Merke dir das als \"Beben = Anheben\".",
+        "diagnosis.explanation": "Die richtige Antwort ist b, weil beim Seebeben der Meeresboden angehoben wird und die Wassersäule darüber steigt. Du hast c gewählt, was besagt, dass der Meeresboden unverändert bleibt – das ist nicht korrekt. Überprüfe bitte noch einmal, wie ein Tsunami entsteht.",
+        "retry.misunderstanding": "Der Student hat angenommen, dass der Meeresboden unverändert bleibt, wenn ein Seebeben auftritt.",
+        "retry.reteach": "Ein Seebeben unter dem Meeresboden bedeutet, dass die Erde an dieser Stelle nach oben gedrückt wird. Dadurch wird das Wasser darüber angehoben und bildet eine Welle.",
+        "retry.simpler_example": "Stell dir vor, du drückst mit der Hand einen Ballon nach oben. Der Ballon hebt sich an und du siehst, wie er sich ausdehnt. Ähnlich hebt sich der Meeresboden an und das Wasser wird angehoben."
+      }
+    }
+  ]
+}

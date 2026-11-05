@@ -19,7 +19,15 @@ from typing import Any
 BLOCK_TYPES = frozenset({
     "printed_text", "handwriting", "formula", "table", "diagram", "heading",
     "annotation", "crossed_out", "uncertain",
+    "task",                                   # an exercise as set (chat readings, image_understanding:chat1)
 })
+# The chat reading's line types (vision/prompts.COMPACT_TYPES) as (block type, author).
+# "working" is the student's own line: a formula when it has LaTeX, handwriting otherwise.
+COMPACT_TYPES = {
+    "task": ("task", "unknown"), "text": ("printed_text", "unknown"), "formula": ("formula", "unknown"),
+    "working": ("", "student"), "table": ("table", "unknown"), "heading": ("heading", "unknown"),
+    "note": ("annotation", "unknown"), "crossed_out": ("crossed_out", "unknown"), "unclear": ("uncertain", "unknown"),
+}
 IMAGE_KINDS = frozenset({
     "handwritten_notes", "printed_page", "worksheet", "mixed", "diagram", "graph", "table",
     "screenshot", "photo", "other",
@@ -39,6 +47,7 @@ class ImageInfo:
     rotation: int = 0          # clockwise degrees the model says the content is turned
     cut_off: bool = False      # the model sees writing running off the edge
     legibility: str = "clear"
+    partial: bool = False      # the reading stopped (its output limit) before this image was read to the end
 
 
 @dataclass(frozen=True)
@@ -100,6 +109,12 @@ class VisualReading:
             or any(diagram.description for diagram in self.diagrams)
 
     @property
+    def partial(self) -> bool:
+        """Some image was not read to the end: the reader stopped (see mark_partial)."""
+
+        return any(info.partial for info in self.images)
+
+    @property
     def needs_clarification(self) -> bool:
         return bool(self.clarification_question) or any(item.affects_answer for item in self.uncertain)
 
@@ -128,6 +143,7 @@ class VisualReading:
         data["confidence"] = self.confidence
         data["confidence_reported"] = self.confidence_reported
         data["needs_clarification"] = self.needs_clarification
+        data["partial"] = self.partial
         return data
 
 
@@ -199,18 +215,27 @@ def normalize_reading(payload: Any, image_count: int) -> VisualReading:
         images.setdefault(index, ImageInfo(index=index))
 
     blocks: list[Block] = []
-    for order, raw in enumerate((payload.get("blocks") or [])[:MAX_BLOCKS], start=1):
+    # The chat reading (image_understanding:chat1) writes "lines" instead of "blocks".
+    compact = payload.get("blocks") is None and isinstance(payload.get("lines"), list)
+    raw_blocks = payload.get("lines") if compact else payload.get("blocks")
+    for order, raw in enumerate((raw_blocks or [])[:MAX_BLOCKS], start=1):
         if not isinstance(raw, dict):
             continue
         block_type = _text(raw.get("type"), 30).lower()
-        block_type = block_type if block_type in BLOCK_TYPES else "uncertain"
+        latex = _text(raw.get("latex"), 1000)
         text = _text(raw.get("text") if raw.get("text") is not None else raw.get("content"))
+        if compact:
+            block_type, author = COMPACT_TYPES.get(block_type, ("uncertain", "unknown"))
+            block_type = block_type or ("formula" if latex else "handwriting")
+            text = text or latex                   # a maths-only line: its LaTeX is its text
+        else:
+            block_type = block_type if block_type in BLOCK_TYPES else "uncertain"
+            author = _text(raw.get("author"), 20).lower()
         if not text and block_type != "diagram":
             continue
-        author = _text(raw.get("author"), 20).lower()
         blocks.append(Block(
             image=_index(raw.get("image"), count), order=order, type=block_type, text=text,
-            latex=_text(raw.get("latex"), 1000), bbox=_bbox(raw.get("bbox")),
+            latex=latex, bbox=_bbox(raw.get("bbox")),
             author=author if author in AUTHORS else "unknown",
             confidence=_confidence(raw.get("confidence"))))
 
@@ -232,7 +257,8 @@ def normalize_reading(payload: Any, image_count: int) -> VisualReading:
     # "what was unclear" summary complete without trusting the model to be consistent.
     listed = {item.text for item in uncertain}
     for block in blocks:
-        for match in UNCLEAR_MARK.finditer(block.text):
+        # A chat reading writes maths in latex only, so its [?…] marks can sit there.
+        for match in UNCLEAR_MARK.finditer(f"{block.text} {block.latex}" if compact else block.text):
             reading = match.group(1).strip()
             if reading and reading not in listed:
                 uncertain.append(Uncertainty(image=block.image, text=reading))
@@ -264,7 +290,8 @@ def reading_from_dict(data: Any) -> VisualReading:
     return VisualReading(
         images=tuple(ImageInfo(index=int(item.get("index") or 1), kind=str(item.get("kind") or "other"),
                                rotation=int(item.get("rotation") or 0), cut_off=bool(item.get("cut_off")),
-                               legibility=str(item.get("legibility") or "clear")) for item in rows("images")),
+                               legibility=str(item.get("legibility") or "clear"),
+                               partial=bool(item.get("partial"))) for item in rows("images")),
         blocks=tuple(Block(image=int(item.get("image") or 1), order=int(item.get("order") or 0),
                            type=str(item.get("type") or "uncertain"), text=str(item.get("text") or ""),
                            latex=str(item.get("latex") or ""), bbox=tuple(item.get("bbox") or ()),
@@ -279,6 +306,15 @@ def reading_from_dict(data: Any) -> VisualReading:
         clarification_question=str(data.get("clarification_question") or ""),
         summary=str(data.get("summary") or ""), language=str(data.get("language") or ""),
         warnings=tuple(str(item) for item in data.get("warnings") or ()))
+
+
+def mark_partial(reading: VisualReading) -> VisualReading:
+    """The reading of a response cut off by its output limit: the image its last complete
+    line belongs to, and every later one, are marked partial (images are read in order)."""
+
+    last = max((item.image for item in (*reading.blocks, *reading.diagrams)), default=1)
+    images = tuple(replace(info, partial=info.partial or info.index >= last) for info in reading.images)
+    return replace(reading, images=images)
 
 
 def split_reading(reading: VisualReading, count: int) -> list[VisualReading]:
@@ -303,6 +339,9 @@ def split_reading(reading: VisualReading, count: int) -> list[VisualReading]:
 
 # ---- handing a reading to another task -----------------------------------------------------
 
+# In the reading's header, so it survives when a long reading is shortened for the prompt.
+PARTIAL_NOTE = "only partly read: the photo reader stopped after the last line below, the rest was not read"
+
 _KIND_LABELS = {
     "handwritten_notes": "handwritten notes", "printed_page": "printed page", "worksheet": "worksheet",
     "mixed": "printed and handwritten", "diagram": "diagram", "graph": "graph", "table": "table",
@@ -322,11 +361,13 @@ def reading_context(reading: VisualReading, *, max_characters: int = 6000, first
         lines = [f"[Image {number}: {_KIND_LABELS.get(info.kind, 'image')}"
                  + (", partly unclear" if info.legibility == "partly_unclear" else "")
                  + (", unreadable" if info.legibility == "unreadable" else "")
-                 + (", writing may run off the edge" if info.cut_off else "") + "]"]
+                 + (", writing may run off the edge" if info.cut_off else "")
+                 + (f", {PARTIAL_NOTE}" if info.partial else "") + "]"]
         for block in reading.blocks:
             if block.image != info.index or block.type == "diagram":
                 continue
-            prefix = {"crossed_out": "(crossed out) ", "annotation": "(note) ", "heading": "## "}.get(block.type, "")
+            prefix = {"crossed_out": "(crossed out) ", "annotation": "(note) ", "heading": "## ",
+                      "task": "(task) "}.get(block.type, "")
             who = " (written by the student)" if block.author == "student" and block.type != "crossed_out" else ""
             line = f"{prefix}{block.text}{who}"
             if block.latex and block.latex not in block.text:

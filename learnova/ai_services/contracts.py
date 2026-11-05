@@ -7,12 +7,16 @@ behaviour. Invalid data never crosses the gateway boundary.
 from __future__ import annotations
 
 import json
+import logging
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, NoReturn
 
 from .prompts import STRUCTURED_TASKS
+
+_LOG = logging.getLogger(__name__)
 
 
 FAILURE_CATEGORIES = {
@@ -84,10 +88,22 @@ class AIValidationError(ValueError):
         super().__init__(self.safe_summary)
 
 
+# LaTeX commands that start with "n": a single-backslash \neq in a lesson used to decode
+# as a newline followed by "eq". Checked against the whole letter run after the
+# backslash, so "\nein" (a newline before the German word "ein") stays a newline.
+_LATEX_N_COMMANDS = frozenset({
+    "neq", "ne", "nabla", "nu", "not", "notin", "neg", "ni", "nmid", "nleq", "ngeq", "nless",
+    "ngtr", "nexists", "nsubseteq", "nparallel", "newline", "nolimits",
+})
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
 def repair_latex_json(text: str) -> str:
     """Double any lone backslash that is not a valid JSON escape so single-backslash LaTeX
     (\\frac, \\sqrt, \\pm, ...) survives json.loads. Already-escaped backslashes, real newline
-    escapes (\\n), and \\uXXXX sequences are left untouched."""
+    escapes (\\n), and \\uXXXX sequences are left untouched; \\neq, \\nabla, \\nu, \\not (the
+    LaTeX commands in _LATEX_N_COMMANDS) and \\u not followed by four hex digits
+    (\\underline, \\uparrow, \\upsilon) are LaTeX and are doubled."""
 
     out: list[str] = []
     i, n = 0, len(text)
@@ -103,21 +119,227 @@ def repair_latex_json(text: str) -> str:
             out.append(c + nxt)                 # already-escaped  \  "  /
             i += 2
         elif nxt == "n":
-            out.append(c + nxt)                 # newline - always preserve
-            i += 2
-        elif nxt == "u" and len(text[i + 2:i + 6]) == 4 and all(ch in "0123456789abcdefABCDEF" for ch in text[i + 2:i + 6]):
-            out.append(c + nxt)                 # \uXXXX unicode escape
-            i += 2
+            end = i + 1
+            while end < n and text[end].isascii() and text[end].isalpha():
+                end += 1
+            if text[i + 1:end] in _LATEX_N_COMMANDS:
+                out.append("\\\\")              # \neq \nabla \nu \not -> double
+                i += 1
+            else:
+                out.append(c + nxt)             # newline - preserve
+                i += 2
+        elif nxt == "u":
+            if len(text[i + 2:i + 6]) == 4 and all(ch in _HEX_DIGITS for ch in text[i + 2:i + 6]):
+                out.append(c + nxt)             # \uXXXX unicode escape
+                i += 2
+            else:
+                out.append("\\\\")              # \underline \uparrow \upsilon -> double
+                i += 1
         elif nxt in "bfrt" and after.isalpha():
             out.append("\\\\")                  # LaTeX word (\frac \times \beta \right) -> double
             i += 1
-        elif nxt in "bfrtu":
+        elif nxt in "bfrt":
             out.append(c + nxt)                 # genuine control escape (\b \f \r \t)
             i += 2
         else:
             out.append("\\\\")                  # lone LaTeX backslash (\sqrt \pm \cdot) -> double
             i += 1
     return "".join(out)
+
+
+_JSON_CLOSERS = {"{": "}", "[": "]"}
+_MAX_ADDED_CLOSERS = 2
+
+
+def _json_syntax_repair(text: str) -> tuple[str, str] | None:
+    """(repaired text, kind) for `repair_json_syntax`, or None."""
+
+    out: list[str] = []
+    stack: list[str] = []
+    in_string = escaped = False
+    dropped = False
+    last = ""                                   # the last significant character outside strings
+    length = len(text)
+    for index, char in enumerate(text):
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+                last = '"'
+            continue
+        if char == '"':
+            following = text[index + 1] if index + 1 < length else ""
+            if last in ("]", "}") and out and out[-1] == last and following in (",", "}", "]"):
+                # (a) a stray quote directly after a closing bracket: '..."}]","answer":...'
+                dropped = True
+                continue
+            in_string = True
+            out.append(char)
+            continue
+        if char in _JSON_CLOSERS:
+            stack.append(char)
+        elif char in ("}", "]"):
+            if not stack or _JSON_CLOSERS[stack[-1]] != char:
+                return None
+            stack.pop()
+        out.append(char)
+        if not char.isspace():
+            last = char
+    if in_string:
+        return None                             # cut inside a string: nothing to rebuild
+    repaired = "".join(out)
+    added = ""
+    if stack:
+        tail = repaired.rstrip()
+        complete = tail.endswith(("}", "]", '"', "true", "false", "null")) or (tail[-1:].isdigit())
+        if len(stack) > _MAX_ADDED_CLOSERS or not complete:
+            return None
+        # (b) one or two closers missing at the very end, after a complete value
+        added = "".join(_JSON_CLOSERS[opener] for opener in reversed(stack))
+        repaired = tail + added
+    if not dropped and not added:
+        return None
+    kind = "both" if dropped and added else ("stray_quote" if dropped else "closers")
+    return repaired, kind
+
+
+def repair_json_syntax(text: str) -> str | None:
+    """`text` with one of two model syntax slips repaired, or None.
+
+    Outside JSON strings only: (a) a stray '"' directly after "]" or "}" and before ",", "}"
+    or "]"; (b) one or two missing closers at the very end, when the text ends after a
+    complete value. Anything else - a cut inside a string, after a comma or a colon, more
+    missing closers - is None, and so is text that still does not parse afterwards or needed
+    no repair. Measured live (2026-11-01): 2 of 17 lesson and grading answers failed on
+    exactly these slips and each paid a full corrective call on the larger model."""
+
+    if not isinstance(text, str) or not text.strip():
+        return None
+    result = _json_syntax_repair(text)
+    if result is None:
+        return None
+    try:
+        json.loads(result[0])
+    except (json.JSONDecodeError, RecursionError, ValueError):
+        return None
+    return result[0]
+
+
+# ---- A response cut off by its output limit (photo readings, CHAT_FIX2 D1) -----------------
+#
+# A reading that hits max_output_tokens stops mid-JSON. Live 2026-11-02: the reading of a
+# 10-line worksheet stopped inside block 8 at 950 tokens and the whole photo was refused as
+# invalid_json - although its first seven lines were complete and correct.
+
+def _model_json_text(text: str) -> str:
+    """Model text as json.loads should see it: no <think> block, no code fence, LaTeX escaped."""
+
+    cleaned = re.sub(r"<think>.*?</think>", "", str(text or "").strip(), flags=re.DOTALL).strip()
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned).strip()
+    return repair_latex_json(cleaned)
+
+
+def _json_scan(text: str) -> tuple[list[str], bool, list[tuple[int, int, str | None]]]:
+    """Walk JSON text outside strings: (brackets still open at the end, ended inside a
+    string, cut points). A cut point (end, depth, key) is where a complete element of a
+    top-level list (depth 2) or a complete top-level value (depth 1) ends; `key` is the
+    top-level key it belongs to."""
+
+    stack: list[str] = []
+    in_string = escaped = False
+    cuts: list[tuple[int, int, str | None]] = []
+    key: str | None = None
+    key_start = -1
+    expecting_key = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+                if len(stack) == 1 and expecting_key:
+                    key, expecting_key = text[key_start + 1:index], False
+                elif len(stack) == 1 and key is not None:
+                    cuts.append((index + 1, 1, key))     # a string value at the top level
+            continue
+        if char == '"':
+            in_string, key_start = True, index
+        elif char in "{[":
+            stack.append(char)
+            if len(stack) == 1:
+                expecting_key = char == "{"
+        elif char in "}]":
+            if not stack or _JSON_CLOSERS[stack[-1]] != char:
+                break
+            stack.pop()
+            if len(stack) == 2 and stack[1] == "[":
+                cuts.append((index + 1, 2, key))         # a complete element of a top-level list
+            elif len(stack) == 1 and key is not None:
+                cuts.append((index + 1, 1, key))         # a complete top-level list or object
+        elif char == "," and len(stack) == 1:
+            expecting_key = True
+    return stack, in_string, cuts
+
+
+def json_cut_off(text: str) -> bool:
+    """True when model JSON ends before its outermost object or list closes (a response
+    stopped by its output limit). Prose around a complete object, or a stray quote, is not."""
+
+    cleaned = _model_json_text(text)
+    start = min((position for position in (cleaned.find("{"), cleaned.find("[")) if position >= 0), default=-1)
+    if start < 0:
+        return False
+    stack, in_string, _cuts = _json_scan(cleaned[start:])
+    return bool(stack) or in_string
+
+
+def salvage_cut_off_json(text: str) -> tuple[dict[str, Any], frozenset[str]] | None:
+    """A JSON object cut off mid-way, kept up to its last complete list element.
+
+    Returns (object, top-level keys whose value was complete before the cut) or None when
+    the text is not a cut-off object or nothing complete is left. Only whole elements are
+    kept: a block whose own fields were still being written is dropped, never completed -
+    what it went on to say is unknown and is not invented.
+    """
+
+    cleaned = _model_json_text(text)
+    start = cleaned.find("{")
+    if start < 0:
+        return None
+    body = cleaned[start:]
+    stack, in_string, cuts = _json_scan(body)
+    if not stack and not in_string:
+        return None
+    for end, depth, _key in reversed(cuts):
+        try:
+            payload = json.loads(body[:end] + ("]}" if depth == 2 else "}"))
+        except (json.JSONDecodeError, RecursionError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            reached = frozenset(name for position, level, name in cuts
+                                if level == 1 and position <= end and name is not None and name in payload)
+            return payload, reached
+    return None
+
+
+def usable_reading(payload: Any) -> bool:
+    """A photo reading with at least one line of text, LaTeX or a described diagram."""
+
+    if not isinstance(payload, dict):
+        return False
+    for name in ("blocks", "lines"):
+        for item in payload.get(name) or []:
+            if isinstance(item, dict) and any(str(item.get(field) or "").strip() and isinstance(item.get(field), str)
+                                              for field in ("text", "content", "latex")):
+                return True
+    return any(isinstance(item, dict) and str(item.get("description") or "").strip()
+               for item in payload.get("diagrams") or [])
 
 
 def _fail(summary: str, category: str = "schema_validation") -> NoReturn:
@@ -352,8 +574,32 @@ def _unique_questions(questions: list[Any], *, exam: bool = False) -> None:
         _fail("question prompts must be unique")
 
 
+def repair_lesson_parts(lesson: dict[str, Any]) -> dict[str, Any]:
+    """The lesson's `parts` in the canonical shape and its short `explanation` filled.
+
+    Shared by the validator (which checks a repaired copy) and `app.repair_lesson`, so a
+    lesson the gateway accepted is never refused afterwards. A lesson from the teaching
+    engine (lesson_generation:v7) may carry its whole content in typed parts and leave the
+    short explanation empty; that is a harmless variant: the explanation is rebuilt from
+    the objective, explaining and summary parts (learnova.lessons.lesson_plan)."""
+
+    from learnova.lessons.lesson_plan import explanation_from_parts, repair_parts
+
+    parts = repair_parts(lesson.get("parts"))
+    lesson["parts"] = parts
+    explanation = lesson.get("explanation")
+    if parts and (not isinstance(explanation, str) or not explanation.strip()):
+        filled = explanation_from_parts(parts)
+        if filled:
+            lesson["explanation"] = filled
+    return lesson
+
+
 def _lesson(data: Any, context: dict[str, Any]) -> None:
     root = _dict(data, "lesson")
+    if not isinstance(root.get("explanation"), str) or not root["explanation"].strip():
+        # Checked on a repaired copy: the parts may hold what the explanation lacks.
+        root = repair_lesson_parts(dict(root))
     for field in ("lesson_title", "explanation"):
         _text(root.get(field), field)
     concepts = _list(root.get("concepts"), "concepts", nonempty=True)
@@ -388,6 +634,45 @@ def _quiz(data: Any, context: dict[str, Any]) -> None:
     _unique_questions(questions)
 
 
+RETRY_FIELDS = ("misunderstanding", "reteach", "simpler_example")
+_RETRY_ALIASES = {
+    "misunderstanding": ("misunderstanding", "what_is_missing", "missing", "misconception", "mistake", "gap"),
+    "reteach": ("reteach", "reteach_explanation", "explanation", "explain_again", "explained_differently"),
+    "simpler_example": ("simpler_example", "simple_example", "example", "easier_example"),
+}
+RETRY_TEXT_LIMIT = 1500
+
+
+def repair_retry(result: Any) -> dict[str, str]:
+    """The "Try again" fields of an answer evaluation, as plain strings ("" when missing).
+
+    Optional and never validated strictly: the app asks for them only when a second try
+    is possible, and a model that leaves them out (or puts them into `evaluation`, or
+    writes "what_is_missing") still yields a usable retry."""
+
+    root = result if isinstance(result, dict) else {}
+    evaluation = root.get("evaluation")
+    nested = evaluation.get("retry") if isinstance(evaluation, dict) else None
+    sources = [value for value in (root.get("retry"), nested, evaluation) if isinstance(value, dict)]
+    repaired: dict[str, str] = {}
+    for field in RETRY_FIELDS:
+        text = ""
+        for source in sources:
+            folded = {re.sub(r"[^0-9a-z]+", "_", str(key).casefold()).strip("_"): value
+                      for key, value in source.items()}
+            if source is root.get("evaluation") and field == "reteach":
+                aliases = ("reteach", "reteach_explanation", "explain_again")   # not its own "explanation"
+            else:
+                aliases = _RETRY_ALIASES[field]
+            value = next((folded[name] for name in aliases if isinstance(folded.get(name), str)
+                          and folded[name].strip()), "")
+            if value:
+                text = " ".join(value.split()) if field == "misunderstanding" else value.strip()
+                break
+        repaired[field] = text[:RETRY_TEXT_LIMIT]
+    return repaired
+
+
 def _answer(data: Any, context: dict[str, Any]) -> None:
     root = _dict(data, "answer evaluation")
     evaluation = _dict(root.get("evaluation"), "evaluation")
@@ -403,6 +688,24 @@ def _answer(data: Any, context: dict[str, Any]) -> None:
 
 
 def _project(data: Any, context: dict[str, Any]) -> None:
+    """project_section_generation (v4 topic map; the v3 shape still passes).
+
+    With `lenient_topics` (Project Mode topic extraction) only the list itself is checked:
+    learnova.projects.topics.normalize_topic checks every topic, term and item against the
+    pages and drops what is unusable, so one odd entry never fails the batch (and never
+    costs a corrective retry). A bare list or "topics" instead of "sections" is repaired
+    by the app the same way."""
+
+    if context.get("lenient_topics") and context.get("operation") != "split":
+        if isinstance(data, list):
+            return
+        record = _dict(data, "project")
+        # Same rule as the app's _topic_sections: "sections", or "topics" when "sections"
+        # is missing or null ({"sections": null, "topics": [...]} is accepted there too).
+        topics = record.get("sections")
+        _list(topics if topics is not None else record.get("topics"), "sections",
+              nonempty=not context.get("allow_empty"))
+        return
     sections = _list(_dict(data, "project").get("sections"), "sections",
                      nonempty=not context.get("allow_empty"))
     expected = context.get("section_count")
@@ -414,16 +717,11 @@ def _project(data: Any, context: dict[str, Any]) -> None:
         _text(section.get("title"), f"sections[{index}].title")
         if context.get("operation") == "split":
             continue
-        if context.get("lenient_topics"):
-            # Project Mode topic extraction: the structure is checked here; content is
-            # checked item by item by learnova.projects.topics.normalize_topic, which drops
-            # an unusable card or a topic without a real page instead of failing the batch.
-            continue
-        for field in ("main_topic", "simple_explanation", "standard_explanation", "detailed_explanation"):
-            _text(section.get(field), f"sections[{index}].{field}")
-        for field in ("learning_goals", "important_facts", "definitions", "formulas", "examples", "vocabulary", "relationships", "likely_exam_questions", "recall_cards"):
-            _list(section.get(field), f"sections[{index}].{field}")
-        for card_index, value in enumerate(section["recall_cards"]):
+        for field in ("learning_goals", "terms", "items", "exam_questions", "related_topics", "prerequisites",
+                      "recall_cards"):
+            if section.get(field) is not None:
+                _list(section.get(field), f"sections[{index}].{field}")
+        for card_index, value in enumerate(section.get("recall_cards") or []):
             card = _dict(value, f"sections[{index}].recall_cards[{card_index}]")
             for field in ("kind", "prompt", "answer", "source_text"):
                 _text(card.get(field), f"sections[{index}].recall_cards[{card_index}].{field}")
@@ -486,33 +784,340 @@ def _vocabulary_page(data: Any, context: dict[str, Any]) -> None:
                   allow_empty=True)
 
 
+# ---- OCR: repair a page reading instead of rejecting it -----------------------------
+#
+# This validator used to be stricter than the code it guards. normalize_recognition
+# (learnova/ocr/service.py) already kept a worksheet's "2/6" page number and dropped a bad
+# box, but the gateway rejected the whole page first: "2/6", "S. 3" or "M1", a box on the
+# 0-1000 grid Qwen-VL models use, a confidence of 95, a table sent as rows, or one bad box
+# among 40 blocks. Each rejection bought a corrective retry that came back in the same
+# shape (measured: six provider calls per pass for one "2/6", then a failed page).
+#
+# repair_recognition is the one place those shapes are fixed. The validator uses it to
+# decide, and normalize_recognition (which every reader of output_text goes through:
+# project pages, flashcard imports, the text layer) applies it first, so a shape the
+# validator lets through can never reach code that only knows the strict one. Nothing is
+# invented: a value that cannot be read sensibly is dropped (a box) or left at the app's
+# own default (confidence 0, "uncertain" type).
+
+# What models write for a block type instead of the names in BLOCK_TYPES. Anything not
+# listed becomes "uncertain", exactly as normalize_recognition treats it.
+_BLOCK_TYPE_ALIASES = {
+    "text": "printed_text", "printed": "printed_text", "print": "printed_text",
+    "typed": "printed_text", "typed_text": "printed_text", "paragraph": "printed_text",
+    "handwritten": "handwriting", "handwritten_text": "handwriting", "handwriting_text": "handwriting",
+    "title": "heading", "header": "heading", "headline": "heading", "subheading": "heading",
+    "equation": "formula", "math": "formula", "maths": "formula",
+    "figure": "diagram", "image": "diagram", "drawing": "diagram", "sketch": "diagram",
+    "chart": "diagram", "graph": "diagram",
+    "note": "annotation", "margin_note": "annotation", "comment": "annotation",
+    "illegible": "uncertain", "unclear": "uncertain",
+    "strikethrough": "crossed_out", "struck_out": "crossed_out", "crossed": "crossed_out",
+}
+# A confidence written as a word. "low" stays below the review band (0.45) on purpose.
+_CONFIDENCE_WORDS = {
+    "very high": 0.95, "high": 0.9, "hoch": 0.9, "medium": 0.65, "moderate": 0.65, "mittel": 0.65,
+    "low": 0.4, "niedrig": 0.4, "very low": 0.2,
+}
+_TRUE_WORDS = {"true", "yes", "y", "1", "ja", "wahr"}
+# The coordinate grids a box can arrive on. A 0-1 box may overshoot the edge a little.
+# Above _MILLI_MIN a box can only be on the 0-1000 grid Qwen-VL models use (a 0-1 box that
+# far past the edge is not a box), and above _MILLI_MAX it can only be in pixels of an
+# image whose size is not known here (a provider-sized copy), so it cannot be rescaled.
+_UNIT_OVERSHOOT = 1.05
+_MILLI_MIN = 2.0
+_MILLI_MAX = 1000.0
+_PAGE_NUMBER_LIMIT = 40   # ProjectPage.detected_page_number is VARCHAR(40)
+_EMPTY_WORDS = {"none", "null", "n/a", "unknown", "nan"}
+# A table is rows of cells. Deeper nesting is a degenerate reply, and following it would
+# exhaust Python's recursion limit long before the JSON parser's own limit.
+_MAX_CONTENT_DEPTH = 6
+
+
+def _cell_text(value: Any, depth: int = 0) -> str:
+    """One table cell or row as text: rows become "a | b" lines, nested rows new lines."""
+
+    if value is None or isinstance(value, bool) or depth > _MAX_CONTENT_DEPTH:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, float) and not math.isfinite(value):
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("text", "content", "value"):
+            text = _cell_text(value.get(key), depth + 1)
+            if text:
+                return text
+        return " | ".join(text for text in (_cell_text(item, depth + 1) for item in value.values()) if text)
+    if isinstance(value, (list, tuple)):
+        parts = [text for text in (_cell_text(item, depth + 1) for item in value) if text]
+        nested = any(isinstance(item, (list, tuple, dict)) for item in value)
+        return ("\n" if nested else " | ").join(parts)
+    return ""
+
+
+def _repair_content(value: Any) -> str:
+    """Block content as text. A table sent as rows keeps one line per row."""
+
+    if isinstance(value, dict):
+        header = value.get("headers", value.get("header"))
+        rows = value.get("rows")
+        if isinstance(rows, list):
+            lines = [_cell_text(header, 1)] if header else []
+            lines += [_cell_text(row, 1) for row in rows]
+            return "\n".join(line for line in lines if line)
+    if isinstance(value, (list, tuple)):
+        # A flat list is a column of lines, not one row: "a\nb", never "a | b".
+        return "\n".join(text for text in (_cell_text(item, 1) for item in value) if text)
+    return _cell_text(value)
+
+
+def _block_content(raw: dict[str, Any]) -> str:
+    """The reading of one block, wherever the model put it. An empty "content" next to a
+    filled "text" is still a reading; a table may carry its rows on the block itself."""
+
+    for key in ("content", "text", "lines"):
+        text = _repair_content(raw.get(key))
+        if text:
+            return text
+    if isinstance(raw.get("rows"), list):
+        return _repair_content({"headers": raw.get("headers", raw.get("header")), "rows": raw["rows"]})
+    return ""
+
+
+def _optional_text(value: Any) -> str:
+    """A side field (suggestion, caption, warning): "null" or "none" written out is no text."""
+
+    text = _repair_content(value)
+    return "" if text.casefold() in _EMPTY_WORDS else text
+
+
+def _repair_confidence(value: Any) -> float:
+    if isinstance(value, bool) or value is None:
+        return 0.0
+    try:
+        if isinstance(value, str):
+            text = " ".join(value.casefold().split())
+            if text in _CONFIDENCE_WORDS:
+                return _CONFIDENCE_WORDS[text]
+            number = float(text.rstrip("%").strip().replace(",", "."))
+            if text.endswith("%"):
+                number /= 100
+        elif isinstance(value, (int, float)):
+            number = float(value)   # an int too large for a float raises OverflowError
+        else:
+            return 0.0
+    except (ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(number):
+        return 0.0
+    if 2 <= number <= 100:
+        number /= 100   # 95 means 95 %; 1.2 is an overshoot and is clamped below
+    return round(max(0.0, min(1.0, number)), 4)
+
+
+def _coordinate(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _bbox_numbers(value: Any) -> list[float] | None:
+    """Four raw coordinates from the shapes models use, or None when there is no box."""
+
+    if isinstance(value, dict):
+        for keys in (("x1", "y1", "x2", "y2"), ("left", "top", "right", "bottom"),
+                     ("xmin", "ymin", "xmax", "ymax")):
+            if all(key in value for key in keys):
+                value = [value[key] for key in keys]
+                break
+        else:
+            return None
+    if not isinstance(value, (list, tuple)):
+        return None
+    # Corner points ([[x1, y1], [x2, y2]] or a four-point polygon, nested or flattened to
+    # eight numbers) stand for the rectangle around them.
+    polygon = bool(value) and all(isinstance(point, (list, tuple)) and len(point) == 2 for point in value)
+    flat = [coordinate for point in value for coordinate in point] if polygon else list(value)
+    polygon = polygon or len(flat) == 8
+    numbers: list[float] = []
+    for item in flat:
+        number = _coordinate(item)
+        if number is None:
+            return None
+        numbers.append(number)
+    if polygon:
+        xs, ys = numbers[0::2], numbers[1::2]
+        return [min(xs), min(ys), max(xs), max(ys)]
+    return numbers if len(numbers) == 4 else None
+
+
+def _box_grid(boxes: list[list[float] | None]) -> str:
+    """The grid the whole page's boxes are on: "unit" (0-1), "milli" (0-1000) or "pixels".
+
+    It is decided per page, not per box: a model uses one coordinate system for a whole
+    answer. A box that does not fit the page's grid is dropped rather than rescaled on
+    its own terms, because a box read on the wrong grid crops the wrong spot, and the
+    close-up second look would then put a word from elsewhere on the page into this block.
+    """
+
+    tops = [max(numbers) for numbers in boxes if numbers]
+    if any(top > _MILLI_MAX for top in tops):
+        return "pixels"
+    milli = sum(1 for top in tops if top > _MILLI_MIN)
+    unit = sum(1 for top in tops if top <= _UNIT_OVERSHOOT)
+    return "milli" if milli > unit else "unit"
+
+
+def _scaled_bbox(numbers: list[float] | None, grid: str) -> list[float]:
+    if not numbers or grid == "pixels":
+        return []   # no box, or pixels: dropped, the block itself is kept
+    top = max(numbers)
+    if grid == "milli":
+        if top <= _MILLI_MIN:
+            return []
+        numbers = [number / _MILLI_MAX for number in numbers]
+    elif top > _UNIT_OVERSHOOT:
+        return []   # neither a 0-1 box nor clearly on the 0-1000 grid: no crop beats a wrong one
+    box = [round(max(0.0, min(1.0, number)), 4) for number in numbers]
+    return box if box[2] > box[0] and box[3] > box[1] else []
+
+
+def _flag(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().casefold() in _TRUE_WORDS
+    if isinstance(value, (bool, int, float)):
+        return bool(value)
+    return False
+
+
+def _repair_page_number(value: Any) -> str:
+    """A printed page label as text: "2/6", "S. 3", "IV" and "M1" are all real labels."""
+
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        text = str(value) if value > 0 else ""
+    elif isinstance(value, float):
+        text = str(int(value)) if math.isfinite(value) and value.is_integer() and value > 0 else ""
+    elif isinstance(value, str):
+        text = " ".join(value.split())
+    else:
+        return ""
+    if (len(text) > _PAGE_NUMBER_LIMIT or text.casefold() in _EMPTY_WORDS
+            or not any(character.isalnum() for character in text)):
+        return ""   # a sentence, "n/a" or a lone dash is not a page number
+    if re.fullmatch(r"[+-]?\d+", text) and int(text) <= 0:
+        return ""   # a plain number must still be a real page, as the old contract required
+    return text
+
+
+def _repair_block_type(value: Any) -> str:
+    name = re.sub(r"[\s-]+", "_", str(value or "").strip().casefold())
+    if name in BLOCK_TYPES:
+        return name
+    return _BLOCK_TYPE_ALIASES.get(name, "uncertain")
+
+
+def _page_object(value: Any, depth: int = 0) -> dict[str, Any] | None:
+    """The one object that holds "blocks", through up to two wrappers such as
+    {"recognition": {...}}, {"result": {"page": {...}}} or {"pages": [{...}]}."""
+
+    if isinstance(value, dict) and "blocks" in value:
+        return value
+    if depth >= 2:
+        return None
+    children = list(value.values()) if isinstance(value, dict) else value if isinstance(value, list) else []
+    found = [page for page in (_page_object(child, depth + 1) for child in children) if page is not None]
+    return found[0] if len(found) == 1 else None   # two pages in one answer: not guessed
+
+
+def _recognition_root(value: Any) -> tuple[dict[str, Any], list[Any]] | None:
+    """The page object and its raw block list, or None for a shape with no blocks at all."""
+
+    page = _page_object(value)
+    if page is None:
+        return ({}, value) if isinstance(value, list) else None   # a bare list of blocks
+    blocks = page.get("blocks")
+    if blocks is None:
+        return page, []   # "nothing on this page", said with null
+    if isinstance(blocks, dict):
+        members = list(blocks.values())
+        if (members and all(isinstance(item, dict) for item in members)
+                and not any(key in blocks for key in ("type", "content", "text"))):
+            return page, members   # {"1": {...}, "2": {...}}: blocks keyed by number
+        return page, [blocks]   # a single block not wrapped in a list
+    if not isinstance(blocks, list):
+        return None
+    return page, blocks
+
+
+def _repair_recognition(value: Any) -> tuple[dict[str, Any] | None, int]:
+    """(repaired page, number of blocks the model sent); the page is None when unusable."""
+
+    found = _recognition_root(value)
+    if found is None:
+        return None, 0
+    root, raw_blocks = found
+    candidates = [block for block in raw_blocks if isinstance(block, dict)]
+    # "bbox_2d" is the key Qwen-VL grounding output uses.
+    boxes = [_bbox_numbers(next((block[key] for key in ("bbox", "bbox_2d", "box")
+                                 if block.get(key) is not None), None))
+             for block in candidates]
+    grid = _box_grid(boxes)
+    blocks: list[dict[str, Any]] = []
+    for raw, numbers in zip(candidates, boxes):
+        block_type = _repair_block_type(raw.get("type"))
+        content = _block_content(raw)
+        if not content and block_type != "diagram":
+            continue   # nothing to keep; the rest of the page still counts
+        blocks.append({
+            "type": block_type,
+            "content": content,
+            "bbox": _scaled_bbox(numbers, grid),
+            "confidence": _repair_confidence(raw.get("confidence")),
+            "crossed_out": _flag(raw.get("crossed_out")) or block_type == "crossed_out",
+            "important_candidate": _flag(raw.get("important_candidate")),
+            "teacher_highlight_candidate": _flag(raw.get("teacher_highlight_candidate")),
+            "nearby_text": _optional_text(raw.get("nearby_text")),
+            "suggested_correction": _optional_text(raw.get("suggested_correction")),
+        })
+    return {
+        "blocks": blocks,
+        "detected_page_number": _repair_page_number(root.get("detected_page_number")),
+        "warning": _optional_text(root.get("warning")).replace("\n", " "),
+    }, len(raw_blocks)
+
+
+def repair_recognition(value: Any) -> dict[str, Any]:
+    """A page reading in the exact shape normalize_recognition expects. Never raises.
+
+    Harmless variants are repaired: page labels such as "2/6" are kept as text, boxes on
+    the 0-1000 grid are rescaled and pixel boxes, or boxes off the page's grid, dropped
+    (the block stays), confidences such as 95 or "high" become 0-1, tables sent as rows
+    become text, and an unusable block is dropped without sinking the page. A response
+    with no block list at all comes back as an empty page. Idempotent, so calling it
+    again on its own output (normalize_recognition always does) changes nothing.
+    """
+
+    repaired, _offered = _repair_recognition(value)
+    return repaired or {"blocks": [], "detected_page_number": "", "warning": ""}
+
+
 def _ocr(data: Any, context: dict[str, Any]) -> None:
-    root = _dict(data, "recognition")
-    blocks = _list(root.get("blocks"), "blocks")
-    for index, value in enumerate(blocks):
-        block = _dict(value, f"blocks[{index}]")
-        block_type = _text(block.get("type"), f"blocks[{index}].type")
-        if block_type not in BLOCK_TYPES:
-            _fail(f"blocks[{index}].type is unsupported")
-        # A diagram often has no readable caption, and normalize_recognition keeps such a
-        # block on purpose (ocr/service.py: `if not content and block_type != "diagram"`).
-        # Demanding text here rejected a whole page the app would have accepted, and paid
-        # for a retry to be told the same thing again.
-        _text(block.get("content"), f"blocks[{index}].content",
-              allow_empty=block_type == "diagram")
-        _number(block.get("confidence"), f"blocks[{index}].confidence", 0, 1)
-        bbox = _list(block.get("bbox"), f"blocks[{index}].bbox")
-        if len(bbox) != 4:
-            _fail(f"blocks[{index}].bbox must contain four coordinates")
-        for position, coordinate in enumerate(bbox):
-            _number(coordinate, f"blocks[{index}].bbox[{position}]", 0, 1)
-    page_number = root.get("detected_page_number")
-    if page_number not in (None, ""):
-        try:
-            if int(page_number) <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            _fail("detected_page_number is invalid", "source_reference_validation")
+    # Only what no repair can rescue costs a corrective retry: a reply with no block list,
+    # or blocks none of which carried anything to read.
+    repaired, offered = _repair_recognition(data)
+    if repaired is None:
+        _fail("recognition must be an object with a blocks list")
+    if offered and not repaired["blocks"]:
+        _fail("no block has readable content")
 
 
 def _visual_reading(data: Any, context: dict[str, Any]) -> None:
@@ -526,9 +1131,35 @@ def _visual_reading(data: Any, context: dict[str, Any]) -> None:
         text = block.get("text", block.get("content", ""))
         if not isinstance(text, str):
             _fail(f"blocks[{index}].text must be a string")
+    # image_understanding:chat1 writes "lines" (learnova/vision/prompts.py COMPACT_FIELD_RULES).
+    lines = _list(root.get("lines") if root.get("lines") is not None else [], "lines")
+    for index, value in enumerate(lines):
+        line = _dict(value, f"lines[{index}]")
+        for field in ("text", "latex"):
+            if line.get(field) is not None and not isinstance(line.get(field), str):
+                _fail(f"lines[{index}].{field} must be a string")
     for name in ("images", "diagrams", "uncertain"):
         if root.get(name) is not None:
             _list(root.get(name), name)
+
+
+# The prompt variant whose readings may be kept when cut off (ai_services/prompts.PROMPT_VARIANTS).
+SALVAGE_VARIANTS = frozenset({"image_understanding+chat"})
+
+
+def _salvaged_chat_reading(task_type: str, cleaned: str, context: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The complete part of a chat photo reading that its output limit cut off, or None.
+
+    Only for the chat variant: the chat reply tells the student what was not read
+    (CHAT_IMAGE_RULES), while a lesson or a graded answer built on half a page would not
+    say so. Nothing usable kept means the reading failed, as before."""
+
+    if task_type != "image_understanding" or str((context or {}).get("prompt_variant") or "") not in SALVAGE_VARIANTS:
+        return None
+    kept = salvage_cut_off_json(cleaned)
+    if kept is None or not usable_reading(kept[0]):
+        return None
+    return kept[0]
 
 
 def _adaptive(data: Any, context: dict[str, Any]) -> None:
@@ -805,7 +1436,21 @@ def _validate_output(task_type: str, output_text: str, prompt_version: str, cont
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as error:
-        raise AIValidationError("invalid_json", f"invalid JSON near character {error.pos}") from error
+        # A stray quote or a missing final brace is repaired here instead of paying a full
+        # corrective call (service.parse_json applies the same repair for the caller).
+        repaired = _json_syntax_repair(cleaned)
+        try:
+            if repaired is None:
+                raise error
+            payload = json.loads(repaired[0])
+        except json.JSONDecodeError:
+            salvaged = _salvaged_chat_reading(task_type, cleaned, context)
+            if salvaged is None:
+                raise AIValidationError("invalid_json", f"invalid JSON near character {error.pos}") from error
+            payload = salvaged
+            _LOG.info("ai.json_salvaged task=%s", task_type)
+        else:
+            _LOG.info("ai.json_repaired task=%s kind=%s", task_type, repaired[1])
     schema = TASK_SCHEMAS.get(task_type)
     if not schema:
         _fail("no validation schema is registered for this task")

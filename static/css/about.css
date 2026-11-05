@@ -1,13 +1,19 @@
 /* about.css — public About page. Loaded in {% block head %}, which sits BEFORE the
  * shared learnova sheets, so every selector here uses .about- prefixed classes that
  * nothing else defines. Colors come from the --ln-* tokens, so dark mode works without
- * a single override in learnova-dark.css. */
+ * a single override in learnova-dark.css (the one dark-theme rule here only keeps the
+ * lighter violet for text, where light mode needs the deeper one). */
 
 .about-shell {
+  /* Violet text (links, the tagline): --ln-violet is under 4.5:1 on the light surfaces at
+   * these sizes (17px bold is not "large text"); the deeper violet is about 6:1. Dark mode
+   * keeps --ln-violet, which passes there. Borders and tints keep --ln-violet. */
+  --about-violet-text: var(--ln-violet-deep);
   width: min(1060px, calc(100% - 32px));
   margin: 0 auto;
   padding: 24px 0 80px;
 }
+:root[data-theme="dark"] .about-shell { --about-violet-text: var(--ln-violet); }
 
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -37,6 +43,12 @@
   line-height: 1.65;
   color: var(--ln-muted);
 }
+.about-hero-tagline {
+  max-width: 30em;
+  margin: 16px auto 0;
+  font: 700 clamp(17px, 2.2vw, 21px)/1.4 Manrope, sans-serif;
+  color: var(--about-violet-text);
+}
 .about-cta-row {
   display: flex;
   flex-wrap: wrap;
@@ -46,7 +58,7 @@
   margin-top: 34px;
 }
 .about-secondary-link {
-  color: var(--ln-violet);
+  color: var(--about-violet-text);
   font-weight: 700;
   text-decoration: none;
 }
@@ -194,7 +206,7 @@
   font-size: 13.5px;
 }
 .about-fine-print { margin: 14px 2px 0; color: var(--ln-muted); font-size: 13.5px; line-height: 1.6; }
-.about-fine-print a { color: var(--ln-violet); }
+.about-fine-print a { color: var(--about-violet-text); }
 
 /* ------------------------------------------------------------------- faq */
 .about-faq { display: grid; gap: 10px; margin-top: 30px; max-width: 760px; }
@@ -240,6 +252,81 @@
   color: var(--ln-ink);
 }
 
+/* ------------------------------------------------------------------ story */
+.about-story-text { max-width: 40em; margin-top: 18px; }
+.about-story-text p {
+  margin: 0 0 14px;
+  font-size: 17px;
+  line-height: var(--ln-leading-read, 1.65);
+  color: var(--ln-ink);
+}
+.about-subheading {
+  margin: 40px 0 0;
+  font: 800 clamp(19px, 2.4vw, 23px)/1.3 Manrope, sans-serif;
+  color: var(--ln-ink);
+}
+
+/* ---------------------------------------------------------------- mission */
+.about-mission { padding: 0; list-style: none; }
+.about-mission-card {
+  border-top: 4px solid color-mix(in srgb, var(--accent, var(--ln-violet)) 70%, transparent);
+  background: color-mix(in srgb, var(--accent, var(--ln-violet)) 6%, var(--ln-surface-solid));
+}
+.about-mission-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent, var(--ln-violet)) 16%, transparent);
+  color: var(--ln-ink);
+  font: 800 15px Manrope, sans-serif;
+}
+
+/* ---------------------------------------------------------------- founder */
+.about-founder-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 22px;
+  align-items: start;
+  max-width: 760px;
+  margin-top: 30px;
+  padding: 26px 24px;
+  border: 1px solid var(--ln-line);
+  border-radius: 20px;
+  background: var(--ln-surface-solid);
+}
+.about-founder-monogram {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--ln-gradient-brand);
+  color: #fff;
+  font: 800 30px Manrope, sans-serif;
+}
+.about-founder-body h3 { margin: 0; font: 800 20px/1.3 Manrope, sans-serif; color: var(--ln-ink); }
+.about-founder-role {
+  margin: 6px 0 0;
+  color: var(--ln-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.about-founder-text { margin: 14px 0 0; line-height: var(--ln-leading-read, 1.65); color: var(--ln-ink); }
+
+.about-contact-line { margin: 22px 0 0; color: var(--ln-muted); }
+.about-contact-line a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--about-violet-text);
+  font-weight: 700;
+}
+
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 960px) {
   .about-grid-4 { grid-template-columns: repeat(2, 1fr); }
@@ -252,6 +339,7 @@
 }
 @media (max-width: 520px) {
   .about-grid-4, .about-steps { grid-template-columns: 1fr; }
+  .about-founder-card { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .about-card, .about-faq summary::after { transition: none; }

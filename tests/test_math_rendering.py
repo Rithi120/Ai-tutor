@@ -56,6 +56,21 @@ class MathRules:
         return bool(cls.SIGNAL.search(tex))
 
     @classmethod
+    def accepts(cls, opening, tex):
+        # Only a single $ is ambiguous (prices); \(…\), \[…\] and $$…$$ need content only.
+        if opening == "$":
+            return cls.looks_like_math(tex, False)
+        return isinstance(tex, str) and bool(tex.strip())
+
+    @staticmethod
+    def escaped(text, index):
+        # An odd number of backslashes before a closer escapes it: "x \\]" is a row break.
+        count = 0
+        while index - count - 1 >= 0 and text[index - count - 1] == "\\":
+            count += 1
+        return count % 2 == 1
+
+    @classmethod
     def _match_at(cls, text, index):
         for open_d, close_d, display in cls.DELIMITERS:
             if not text.startswith(open_d, index):
@@ -65,10 +80,10 @@ class MathRules:
                 close = text.find(close_d, search)
                 if close == -1:
                     break
-                if close > 0 and text[close - 1] == "\\":
+                if cls.escaped(text, close):
                     search = close + 1
                     continue
-                return display, text[index + len(open_d):close], close + len(close_d)
+                return open_d, display, text[index + len(open_d):close], close + len(close_d)
         return None
 
     @classmethod
@@ -88,10 +103,10 @@ class MathRules:
                 index += 2
                 continue
             found = cls._match_at(source, index)
-            if found and cls.looks_like_math(found[1], found[0]):
+            if found and cls.accepts(found[0], found[2]):
                 flush()
-                segments.append(("math", found[1], found[0]))
-                index = found[2]
+                segments.append(("math", found[2], found[1]))
+                index = found[3]
                 continue
             plain += source[index]
             index += 1
@@ -126,6 +141,23 @@ class FormulaDetectionTests(unittest.TestCase):
                              [r"\begin{pmatrix}1&0\\0&1\end{pmatrix}"])
         self.assert_formulas(r"Chemistry $\mathrm{H_2O}$ and $6CO_2$.", [r"\mathrm{H_2O}", "6CO_2"])
         self.assert_formulas(r"Inequality $a \leq b < c$.", [r"a \leq b < c"])
+
+    def test_the_notation_the_chat_models_write(self):
+        # openai/gpt-oss pads \( \) with spaces and writes digits-only spans; both used to
+        # stay raw because the $-price rules were applied to \( \) too.
+        self.assert_formulas(r"Setze \( a = 2 \), \( b = -4 \) ein.", [" a = 2 ", " b = -4 "])
+        self.assert_formulas(r"| 2 | \(\sqrt{D}\) | \(8\) |", [r"\sqrt{D}", "8"])
+        self.assert_formulas("\\(x +\n y\\)", ["x +\n y"])
+        long_inline = " + ".join(f"\\frac{{{i}}}{{{i + 1}}}" for i in range(1, 16))
+        self.assert_formulas(f"\\({long_inline}\\)", [long_inline])
+        self.assert_formulas(r"\(\)", [])
+        # The price rule still holds for a single $.
+        self.assert_formulas(f"${long_inline}$", [])
+
+    def test_a_closer_after_an_odd_run_of_backslashes_is_escaped(self):
+        # "\\]" is a LaTeX row break followed by "]", so it cannot close \[ ... \].
+        self.assert_formulas("\\[ a \\\\] b \\]", [" a \\\\] b "])
+        self.assert_formulas("\\[ a \\\\\\]", [" a \\\\"])
 
     def test_money_and_ordinary_prose_are_left_alone(self):
         # Each of these has two or more dollar signs, which is what a naive renderer
@@ -241,8 +273,12 @@ class OneRendererEverywhereTests(unittest.TestCase):
         self.assertIn("export function mathSource", MATH_JS)
 
     def test_a_broken_formula_shows_its_source_rather_than_nothing(self):
-        self.assertIn("throwOnError: false", MATH_JS)
-        self.assertIn("span.textContent = display", MATH_JS)
+        # KaTeX throws on a parse error (instead of drawing a red partial render) and the
+        # formula's source is shown in a monospace <code class="ln-math-source">. The real
+        # behaviour runs in a browser in tests/test_js_browser.py.
+        self.assertIn("throwOnError: true", MATH_JS)
+        self.assertIn("ln-math-source", MATH_JS)
+        self.assertIn("return sourceElement(tex, display)", MATH_JS)
 
     def test_a_rendered_suggestion_still_yields_its_latex_when_tapped(self):
         # KaTeX replaces the chip's text with glyphs, so textContent is no longer the

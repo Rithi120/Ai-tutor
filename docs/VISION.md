@@ -47,6 +47,21 @@ The code is in `learnova/vision/`. The routes that use it are in `app.py`, in th
 6. **Two separate OCR paths gave different rules.** Project Mode and flashcard import had
    their own prompts, so a page was read by different rules depending on where it was
    uploaded.
+7. **Chat photos failed on the real model (audit 2026-11-01).** Upload, MIME, base64 and the
+   payload shape were correct; the reading request did not fit `qwen/qwen3.8-27b` on Groq:
+   - R1: about 3.3k input tokens per photo (prompt ≈1.2k + 2048 per image) plus a
+     5000-token output cap was over the 8000 tokens per minute Groq allows that model on the
+     on_demand tier ("Request too large", HTTP 413); the dev key also allows it only 1000
+     output tokens per minute (HTTP 429 "Request too large … OTPM").
+   - R2: up to 4 images were sent; the model takes at most 3.
+   - R3: every provider error became "AI is temporarily unavailable. You can retry." with
+     nothing logged, so a retry failed the same way. Tests patched `app.create_response`
+     and never exercised the provider limits.
+   Amplifiers: the image estimate was 1500 tokens (Groq counts 2048), one message could
+   exceed the 120 s worker timeout (stage 1 + same-model retry + stages 2/3 + reply), the
+   assistant route did not commit the reading before the reply, the tray limit was
+   hard-coded to 4, removing a duplicate photo deleted the shared attachment, and non-JSON
+   401/413/502 answers became raw errors. See "Fitting the vision model" below.
 
 ## The pipeline
 
@@ -92,6 +107,24 @@ call site, including ones that do not use the reader:
   chat instructions (`CHAT_IMAGE_RULES` in `app.py`) tell the model to ask that question
   and to answer only what does not depend on it.
 - **No warning for clear photos:** nothing is shown when the photo was clear.
+- **Project pages: a confident mean is not enough (PF3 D2).** A project page read by vision
+  is checked by `reading_doubts` (`learnova/ocr/service.py`): two or more text blocks below
+  0.80 or one below 0.45, or two or more broken-off fragments ("mut", "en!", "verge:sen")
+  in a reading with at least one block below 0.80 (review B B-5: a confident vocabulary list
+  or "gut"/"ok" in the margin is no misreading) make the page "unclear" (at most 0.79), so
+  it needs review and nothing from it is shown as
+  verified notes content until the student checks it. In the live run of 2026-11-01 a page
+  with a word error rate of 0.55 had scored 0.806 "high"; replayed offline, the check flags
+  that page and none of the other 21 (docs/PROJECT_MODE.md, "Reading honesty").
+- **A busy vision model is asked once per Project Mode run (review B B-1).** While the only
+  vision model cools down after a 429, `ocr_document_recognition` fails at once without a
+  call (`COOLDOWN_FAIL_FAST_TASKS`) and the page is read offline; the reading loops stop at
+  the first page read offline because the AI was busy. Chat photos (`image_understanding`
+  and their close-up second look) still ask the model as before.
+- **"Try reading again" is a real re-read (PF3 D3).** Page readings are cached
+  (`DETERMINISTIC_TASKS`), so a retry used to return the same reading for free. The retry
+  now passes `fresh` to the gateway and starts with another image mode; the stored
+  reading's mode goes last.
 
 ### Maths
 
@@ -105,11 +138,11 @@ call site, including ones that do not use the reader:
 
 | Feature | What happens now |
 |---|---|
-| **Assistant** (`/assistant`) | Camera and gallery buttons, a preview tray, remove/reorder/retry, real upload progress. Up to 4 photos per message, photo without text allowed. The photos are read once, then the normal assistant model answers from the reading. Later turns reuse the stored reading; the picture is never sent again. |
+| **Assistant** (`/assistant`) | Camera and gallery buttons, a preview tray, remove/reorder/retry, real upload progress. Up to `chat_image_limit()` photos per message (2 at the default 8000-token ceiling; the tray reads it from `data-max-photos`), photo without text allowed; a photo-only message of which nothing could be read gets a fixed "I could not read anything in your photo…" answer without any model call. The photos are read once, then the normal assistant model answers from the reading. Later turns reuse the stored reading; the picture is never sent again. |
 | **Lesson tutor chat** (`/api/chat`) | The same, inside a lesson. If the reply fails, the reading is kept and the photos stay unsent, so sending again costs no second reading. |
 | **Photo of my working** (`/api/answer/photo`) | On written questions. The solution is read with the "solution" purpose: task separated from the student's working, line by line, every step kept. The transcription goes into the answer box with unclear parts marked. The student fixes it and sends it as their answer, so nothing is graded from a photo directly. The grader is told it came from a photo and must judge the steps and never count an unreadable line as wrong. The expected answer never reaches the reader. |
 | **New lesson with photos** (`/api/analyze`) | Shared intake, then a reading, then the normal tutor model writes the lesson from it, with quality options; it no longer sees the images. Unreadable photos get a clear 422 and the lesson is not counted. The reading becomes the lesson's `source_context`, so the tutor chat and the grading know what the photos said. Unclear parts are shown in one line above the lesson. |
-| **Project Mode pages** | The existing pipeline is kept: native PDF text, three preprocessing variants, the close-up second look, the review page and topic confirmation. Now each page goes to the provider sized (`provider_image_url`), and the page prompt shares the confusable-characters and maths rules. The scanner still captures lossless full-resolution PNG (an earlier handwriting decision); only the copy sent to a provider is sized. When the live camera is refused or missing, it offers the phone's own camera app, with specific advice for a refused permission. Exam preparation reads the same Project pages. |
+| **Project Mode pages** | The existing pipeline is kept: native PDF text, three preprocessing variants, the close-up second look, the review page and topic confirmation. Since the teaching-engine rebuild a provider-wide error stops the image modes at once, a page waits instead of failing while the provider or the hourly allowance is out, blank PDF pages are skipped without a call, and the text layer and then the offline OCR are the fallback (`text_source`, see `docs/PROJECT_MODE.md`). Each page goes to the provider sized (`provider_image_url`), and the page prompt shares the confusable-characters and maths rules. The scanner still captures lossless full-resolution PNG (an earlier handwriting decision); only the copy sent to a provider is sized. When the live camera is refused or missing, it offers the phone's own camera app, with specific advice for a refused permission. Exam preparation reads the same Project pages. |
 | **Flashcard image import, vocabulary textbook pages** | Sent sized. Their prompts and flows are unchanged. |
 | **Vocabulary tap-a-word scanner** | Unchanged and still LLM-free, by earlier decision. |
 
@@ -145,6 +178,130 @@ call site, including ones that do not use the reader:
   supports; using one costs that provider's per-image price and needs its key and an
   `AI_BUDGET_<PROVIDER>_*` cap.
 
+## Fitting the vision model (2026-11-01)
+
+**Effective photo limit.** `app.chat_image_limit()` = the smallest of
+`CHAT_IMAGES_PER_MESSAGE` (owner cap, default 3), `VISION_MAX_IMAGES_PER_REQUEST` (what the
+model accepts, 3 for qwen3.8-27b) and `vision_images_that_fit()`: the largest n whose
+reading request - the gateway's own estimate of the v2 prompt with a 600-character question,
+2048 tokens per image, the system prompt and the 600-token contract allowance - plus
+`AI_IMAGE_UNDERSTANDING_MIN_OUTPUT_TOKENS` (1500) and a margin of max(200, ceiling/20) stays
+within the ceiling. At the default `AI_VISION_REQUEST_TOKEN_CEILING=8000` that is **2**; 3
+photos need a ceiling of at least 9 710 (2 photos need 7 530; a paid tier). The same limit applies to the assistant,
+the lesson chat, photographed answers and `/api/analyze`, and is rendered as
+`data-max-photos` for the trays and the lesson builder.
+
+**Gateway preflight (requests that carry images only).** Before anything is reserved or
+sent, `image_output_cap` lowers `max_output_tokens` to the room left under the ceiling
+(`request_ceiling(model, has_images=True)`: an `AI_REQUEST_TOKEN_CEILINGS` entry for the model,
+else `AI_VISION_REQUEST_TOKEN_CEILING`), and refuses with `request_too_large` (no call, usage
+`event_kind=refused`) when that room is below the task's minimum output. Text requests are
+never clamped: clamping would truncate lessons. Their admission check (Project Mode's PF4,
+on the same `request_ceiling`) counts the input plus `AI_TEXT_REQUEST_OUTPUT_ALLOWANCE` of the
+output cap, because Groq counted about 47 % of it on 2026-11-02 (PF_FIX2, AI_ROUTING.md).
+
+**Output per minute.** When Groq refuses a reading because its expected output exceeds the
+model's output-tokens-per-minute limit (429 "Request too large … OTPM: Limit 1000, Requested
+1057"), the gateway retries once with the cap just below that limit (950) and remembers it for
+an hour - in every worker: the learned cap is also kept in `AI_CACHE_DIR/_limits/
+learned_output_caps.state` (integers only), so a new process does not pay a refusal to learn
+it again. `AI_VISION_OUTPUT_TOKEN_CEILING` pins it instead (0 = learn; 950 on Groq on_demand). The pin caps every image request, Project Mode page readings included (budget 4000), so a long page reading is cut off at it (docs/OPERATIONS.md, "The Groq tier"). A 429 that only found the minute's output budget used up ("Used 901,
+Requested 900") is a real rate limit: no retry, the student is told to try again in a minute
+(`Retry-After` from Groq). A 413 that names its limit gets one retry with the overshoot removed
+from the output cap, if that still leaves the minimum. Only `image_understanding` is retried
+this way. The OTPM 429 keeps the category `provider_rate_limit`, and a 413 is
+`request_too_large`, which is not a provider-wide limit: Project Mode's page reading and topic
+analysis behave as before (a rate-limited page waits, or is read offline for now and by
+vision later; a too-large topic batch is halved).
+
+**Time.** A photo message should finish within 120 s: gunicorn's `--timeout` kills a longer
+request on a sync worker (the gthread worker of `render.yaml` does not), and a reverse proxy
+with a shorter read timeout gives up sooner (docs/OPERATIONS.md). The reading gets
+`VISION_TIME_BUDGET_SECONDS` (100) minus what the reply still needs
+(`AI_PROVIDER_TIMEOUT_SECONDS`, 40, for chat and lesson photos; 0 for a photographed answer):
+every call is passed `timeout_seconds` = what is left (the gateway bounds the SDK timeout by
+it, at least 5 s), and stage 2 and each stage-3 close-up start only with
+`VISION_OPTIONAL_PASS_MIN_SECONDS` (15) left; skipped passes are logged (`skipped=`). A
+timeout is never retried on the same provider, and an invalid reading is not read again by
+the same model (a truncated reading would truncate again). The assistant commits the reading
+before the reply starts, so a failed or killed reply never throws a paid reading away.
+
+**What the student is told** (`app.image_failure_response`, all JSON; nothing is stored and
+the photos stay attached):
+
+| Category | Status, code | Message |
+|---|---|---|
+| `request_too_large`, `token_limit_exceeded` | 413 `photos_too_large` (+`details.max_photos`) | "These photos are too much to read at once. Send at most {count} photos per message." / one photo: "…Crop it to the task you need, or type the task instead." |
+| `provider_rate_limit`, `provider_overloaded` | 503 `photo_reader_busy` + `Retry-After` (provider's, else 60) | "The photo reader is busy right now. Try again in a minute. Your photos stay attached." |
+| `provider_daily_limit`, `provider_quota_exhausted` | 503 `photo_reader_daily_limit` | "The photo reader has reached its limit for today. Type the task instead, or try again tomorrow." |
+| `image_rejected` (a 400 on an image request), `invalid_request` | 400 `image_rejected` | "This photo could not be read. Take it again as a JPEG or PNG, straight from above." |
+| `provider_timeout` | 504 `photo_read_timeout` | "Reading the photo took too long. Try again with one photo." |
+| `model_not_found`, `authentication_failure`, `provider_unavailable`, `network_failure` | 503 `photo_reader_unavailable` | "Photos can't be read right now. You can type the task instead. Your photos stay attached." |
+| `invalid_json`, `schema_validation` | 422 `photo_read_failed` | "The photo reader could not finish reading your photo this time. Crop it to the exercise you need, or try again in a minute." / several photos: "…Send one photo at a time, or try again in a minute." (it used to say "send a sharper photo": live, sharp worksheets failed here because the reader ran out of output) |
+| allowances, budgets | as before (`ai_failure_response`) | e.g. the free chat allowance |
+
+Groq's 429 bodies all link to its billing page; a "tokens/requests per day" 429 is now
+`provider_daily_limit` (that model cools down 10 minutes), not an empty account.
+
+**Logging, no content.** `ai.provider_failure task=… provider=… model=… status=… code=…
+type=… category=… limit_scope=… limit=… requested=… retry_after=…` per failed call,
+`vision.read_failed purpose=… images=… category=… status=… code=…` per failed reading, and
+the usage record gains `provider_status`, `provider_error_code`, `provider_error_type`. The
+provider's message text is parsed for integers only and never logged. Readings are recorded
+per feature: `prompt_version` = `image_understanding:chat1+chat` for a chat photo,
+`image_understanding:v2+lesson|solution` for the others. `vision.read` logs `partial=[…]`,
+the images a reading stopped in.
+
+### Chat photos on a 1000-output-tokens-per-minute tier (live check 2026-11-02)
+
+Live on Groq's on_demand tier no ordinary worksheet photo could be read in a chat: the
+reading asked for 3500 output tokens (429 OTPM, "Limit 1000, Requested 2274"), the retry at
+950 stopped inside block 8 of 10 - the v2 reading is about 110 tokens a block, pretty-printed
+with bbox, author and confidence on every block - and the truncated JSON became a 422 that
+told the student to send a sharper photo. What changed (CHAT_FIX2):
+
+- **Compact chat reading** (`image_understanding:chat1`, `vision/prompts.COMPACT_*`, label in
+  `ai_services/prompts.PROMPT_VARIANTS`, named per call in `validation_context.prompt_variant`):
+  `lines` of `type` (task, text, formula, working, table, heading, note, crossed_out, unclear),
+  `text` and `latex`, plus the images' rotation/legibility, diagrams, uncertain parts, the
+  clarification question and a one-sentence summary; minified; no bbox, author or per-line
+  confidence. `working` lines are the student's (author `student`), `task` lines show as
+  "(task)" to the tutor. Without a bbox there is no close-up second look for chat photos;
+  unclear parts stay `[?…]` and the reply asks about them. The same worksheet is about 360
+  tokens. `AI_CHAT_PHOTO_READING_MAX_OUTPUT_TOKENS` (900 per photo, under the 1000 per minute).
+  Lesson photos and photographed answers keep `image_understanding:v2` and their caches.
+- **A cut-off reading keeps its complete lines** (`contracts.salvage_cut_off_json`, only for
+  the chat variant): the image it stopped in is marked `partial`, the tutor is told "only
+  partly read: the photo reader stopped after the last line below, the rest was not read"
+  and never to guess the rest, and the student sees "Only the first part of your photo could
+  be read; the rest was not read. Crop it to the exercise you need, or send it again in a
+  minute." A response with no complete line still fails (422). A cut-off reading is never
+  cached, so sending the photo again really reads it.
+- **One photo per request when the output minute is the limit:** when a per-minute output cap
+  is known (`AI_VISION_OUTPUT_TOKEN_CEILING`, or learned) and the photos' readings together
+  would exceed it, each photo is read alone, with what this message's earlier readings left
+  of the minute (at least 300 tokens, else 503 `photo_reader_busy` with `Retry-After`). Each
+  reading is committed as soon as it is read, so after a refusal the resend reads only the
+  photos still unread. While no limit is known the photos are read together, each with 900;
+  the first refusal teaches the limit to every worker.
+- **No charge for nothing:** a free account's chat allowance is given back for a photo
+  reading that failed or found nothing readable (the deferred settlements become releases);
+  the site's usage ledger still records what the provider was paid.
+- **The size hint measures the writing:** a photo under 450 000 pixels or 800 px is called
+  small only when its text lines (75th percentile of their heights) are under 28 px - a
+  legible crop of one exercise (1180×340, lines of 47 px) is no longer told to move closer,
+  while the synthetic small page (24 px) and pages shrunk until hard to read (15-24 px) are.
+
+**Prompt.** `image_understanding:v2`: the reading instructions are about 30 % shorter (2 539
+instead of 3 666 characters for a chat photo; the handwriting and maths rules and every schema
+field are kept), a `bbox` is asked for only where the close-up needs it (confidence < 0.8 or
+an unclear mark) and `latex` only on formula blocks. Reading quality on real photos is not
+measured offline (live check proposal, chat plan §9).
+
+**Fallback model.** `AI_VISION_FALLBACK_MODEL` stays empty by default (owner decision). Images
+are never routed to a text model, and a failed reading is never shown as if the photo had
+been read.
+
 ## Configuration
 
 All values are optional and validated at start-up.
@@ -152,7 +309,14 @@ All values are optional and validated at start-up.
 | Variable | Default | Meaning |
 |---|---|---|
 | `FEATURE_CHAT_IMAGES` | `true` | Photos in both chats and photographed answers |
-| `CHAT_IMAGES_PER_MESSAGE` | `4` | Most photos per message (at most 4) |
+| `CHAT_IMAGES_PER_MESSAGE` | `3` | Owner cap on photos per message (1-4); the effective limit is `chat_image_limit()` |
+| `VISION_MAX_IMAGES_PER_REQUEST` | `3` | Images the vision model accepts in one request |
+| `AI_IMAGE_TOKEN_ESTIMATE` | `2048` | Tokens one image counts as in every estimate |
+| `AI_VISION_REQUEST_TOKEN_CEILING` | `8000` | Input + output ceiling for image requests (0 = off) |
+| `AI_VISION_OUTPUT_TOKEN_CEILING` | `0` | Pinned output cap for image requests (0 = learn from the provider) |
+| `AI_REQUEST_TOKEN_CEILINGS` | empty | Per-model ceilings `provider:model=tokens,…` (image requests) |
+| `AI_IMAGE_UNDERSTANDING_MIN_OUTPUT_TOKENS` | `1500` | Smallest output a reading may be sent with |
+| `VISION_TIME_BUDGET_SECONDS` / `VISION_OPTIONAL_PASS_MIN_SECONDS` | `100` / `15` | Reading time budget per message; seconds an optional pass needs |
 | `CHAT_ATTACHMENT_RETENTION_DAYS` | `30` | Days a sent photo's picture is kept |
 | `CHAT_ATTACHMENT_UPLOADS_PER_HOUR` | `60` | Upload rate limit per client |
 | `VISION_MAX_UPLOAD_BYTES` | 15 MB | Per-image upload limit |
@@ -162,7 +326,7 @@ All values are optional and validated at start-up.
 | `AI_VISION_FALLBACK_MODEL` | empty | Second vision model, `provider:model` |
 | `AI_VISION_MODELS` | empty | Further models you vouch can see images |
 | `VISION_LOCAL_ORIENTATION` | `true` | Turn sideways landscape photos upright locally (needs RapidOCR) |
-| `AI_IMAGE_UNDERSTANDING_MAX_OUTPUT_TOKENS` / `…_INPUT_TOKENS` | `5000` / `10000` | Reading budgets |
+| `AI_IMAGE_UNDERSTANDING_MAX_OUTPUT_TOKENS` / `…_INPUT_TOKENS` | `3500` / `10000` | Reading budgets (the ceiling may lower the output per request) |
 
 The existing `FEATURE_HANDWRITING_SECOND_LOOK` and `HANDWRITING_SECOND_LOOK_MAX_REGIONS`
 also control stage 3. The tutor chat's input budget rose from 6000 to 8000 tokens, so one
@@ -234,8 +398,14 @@ account. Run it before claiming any change in model reading accuracy.
   (`<input capture>`). The live in-page camera (`getUserMedia`) exists only in the Project
   scanner. This is deliberate: it is the most reliable path on iOS Safari and Android
   Chrome, but there is no live framing guide in the chats.
-- **No browser-side tests.** The JavaScript has no automated browser tests here (Node is
-  not installed). The pages are covered by the mobile layout audit and the markup tests.
+- **Browser tests need Playwright.** Node is not installed; `tests/test_image_attach_browser.py`
+  runs the shipped `image-attach.js` (tray limit, duplicates, restore, upload errors) in the
+  system Chrome/Edge through Playwright, so it runs only with `.venv/Scripts/python` and is
+  skipped under Store Python. The pages are also covered by the mobile layout audit.
+- **3 photos per message need a higher tier.** At Groq's on_demand limits (8000 tokens and,
+  on the dev key, 1000 output tokens per minute for qwen3.8-27b) a message takes 2 photos and
+  the photo reader serves about one reading per minute site-wide; check the production key's
+  tier, or configure `AI_VISION_FALLBACK_MODEL` with a budget.
 
 ## Manual verification (phone)
 

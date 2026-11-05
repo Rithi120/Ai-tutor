@@ -134,11 +134,20 @@ class SchedulingRuleTests(unittest.TestCase):
         self.assertEqual(tuesday.tasks, [])
         self.assertEqual(tuesday.capacity, 0)
 
-    def test_no_exam_date_gives_a_flexible_plan_without_a_mock_or_a_deadline_warning(self):
+    def test_no_exam_date_gives_a_flexible_plan_without_a_mock_and_says_what_does_not_fit_yet(self):
         plan = build_plan([project(fifteen_topics(), exam=False)], Availability(daily_minutes=40), today=TODAY)
         self.assertEqual(len(plan.days), 14)
         self.assertNotIn("mock_exam", [k for day in plan.days for k in kinds(day)])
-        self.assertFalse([w for w in plan.warnings if w["code"] == "insufficient_time"])
+        # Track DASH: topics beyond the two-week horizon are reported (never silently
+        # left out), as a no-exam warning with the daily time that fits them all.
+        warning = next(w for w in plan.warnings if w["code"] == "insufficient_time")
+        self.assertFalse(warning["exam"])
+        self.assertFalse(warning["planned_none"])
+        self.assertEqual(warning["topic_ids"], plan.unscheduled)
+        roomy = build_plan([project(fifteen_topics(), exam=False)],
+                           Availability(daily_minutes=warning["minutes_needed"]), today=TODAY)
+        self.assertEqual(roomy.unscheduled, [])
+        self.assertFalse([w for w in roomy.warnings if w["code"] == "insufficient_time"])
 
     def test_two_exams_share_one_daily_budget(self):
         near = project(fifteen_topics(1), project_id=1, days_left=4)

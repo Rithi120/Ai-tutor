@@ -11,6 +11,8 @@ import re
 from collections import Counter
 from typing import Any
 
+from learnova.lessons.subjects import canonical_subject
+
 VERDICTS = ("correct", "partially_correct", "incorrect", "ambiguous")
 
 # The distinct diagnostic categories the model may assign (evidence-based only).
@@ -220,11 +222,59 @@ _SUBJECT_RULES = {
         "COMPUTER SCIENCE: Accept any correct algorithm/output and equivalent code; judge logic and complexity, not "
         "exact syntax. Distinguish an off-by-one/typo from a wrong algorithm (conceptual)."
     ),
+    "ethics": (
+        "ETHICS/PHILOSOPHY: Judge whether the text, thought experiment or position is rendered correctly, whether "
+        "the Fachbegriffe are used precisely, and whether a judgement is justified with reasons. Accept any "
+        "defensible, well-argued position; never mark an answer wrong for the opinion it holds."
+    ),
+    "religion": (
+        "RELIGION: Judge whether the text, teaching or tradition is rendered correctly and the terms are precise. "
+        "Never grade a personal belief; only the accuracy of what a tradition teaches and the quality of reasons."
+    ),
+    "politics": (
+        "SOCIAL STUDIES: Judge factual accuracy about institutions and processes, the use of Fachbegriffe, and "
+        "whether a judgement weighs different perspectives with reasons; accept any well-justified position."
+    ),
+    "science and technology": (
+        "SCIENCE AND TECHNOLOGY (NwT): Check formulas, substitutions and especially UNITS; a missing or wrong unit "
+        "is unit_error, not a conceptual failure. In an experiment, describing what was observed is not yet "
+        "explaining it: judge observation and explanation separately. Accept synonyms and valid paraphrases of a "
+        "mechanism or of how a device works; a wrong working principle is conceptual_misunderstanding."
+    ),
+    "technology": (
+        "TECHNOLOGY: Judge whether the function, structure, materials and safety of the system are described "
+        "correctly and in the right order; accept valid paraphrases. A missing step is incomplete_answer, a wrong "
+        "working principle is conceptual_misunderstanding."
+    ),
+    "music": (
+        "MUSIC: Judge Fachbegriffe (notation, intervals, form, instruments), facts about works and composers, and "
+        "whether a description of what is heard is supported by the music; accept valid wordings and any "
+        "defensible interpretation with reasons."
+    ),
+    "art": (
+        "ART: Judge Fachbegriffe (composition, colour, technique, epoch), facts about works and artists, and "
+        "whether an interpretation is supported by what is visible in the work; accept any defensible "
+        "interpretation with reasons."
+    ),
+    "physical education": (
+        "PHYSICAL EDUCATION: Judge rules, techniques, movement phases and training principles for accuracy; "
+        "accept valid paraphrases. A missing technique or safety point is incomplete_answer."
+    ),
 }
+# The same rule for subjects that share a method.
+_SUBJECT_RULES.update({
+    "philosophy": _SUBJECT_RULES["ethics"],
+    "economics": _SUBJECT_RULES["politics"],
+    "french": _SUBJECT_RULES["english"],
+    "spanish": _SUBJECT_RULES["english"],
+    "latin": _SUBJECT_RULES["english"],
+})
 
 
 def _subject_rule(subject: str) -> str:
-    key = str(subject or "").strip().casefold()
+    # Canonical names, so a project typed as "Mathematik", "Physik" or "Ethik" gets its
+    # subject's rule instead of the general one.
+    key = canonical_subject(subject).casefold()
     return _SUBJECT_RULES.get(key, (
         "GENERAL: Judge accuracy and reasoning fairly; accept valid alternative correct answers and equivalent "
         "wordings; only diagnose a misconception with concrete evidence from the student's response."

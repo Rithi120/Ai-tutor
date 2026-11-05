@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Contact messages') }} — Learnova{% endblock %}
+{% block head %}
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/contact.css', v=static_version) }}">
+{% endblock %}
+{% block body_class %}contact-page contact-admin-page{% endblock %}
+{% block content %}
+<main id="main-content" class="contact-shell contact-admin">
+  <section class="contact-card" aria-labelledby="contact-admin-title">
+    <div class="eyebrow">LEARNOVA</div>
+    <h1 id="contact-admin-title">{{ _('Contact messages') }}</h1>
+    <p class="contact-hint">{% if forwarding %}{{ _('New messages are forwarded to {email}.', email=contact_email) }}{% else %}{{ _('Email forwarding is not configured (MAIL_SMTP_HOST, MAIL_FROM), so messages are only stored here.') }}{% endif %}</p>
+    <p class="contact-hint">{{ _('Messages from the contact form, newest first. They are deleted automatically after {days} days.', days=retention_days) }}</p>
+
+    {% if rows %}
+    <ol class="contact-admin-list">
+      {% for row in rows %}
+      <li class="contact-admin-item" id="contact-message-{{ row.id }}">
+        <div class="contact-admin-meta">
+          <strong>{{ _(category_labels.get(row.category, 'Other')) }}</strong>
+          <span>#{{ row.id }} · {{ _('Received {date}', date=received(row)) }}</span>
+          <span class="contact-status contact-status-{{ row.status }}">{{ _(status_labels.get(row.status, 'Waiting to be forwarded')) }}</span>
+        </div>
+        <p class="contact-admin-from"><span>{{ row.name }}</span> · <a href="mailto:{{ row.email|urlencode }}">{{ _('Reply by email') }}</a> · <span>{{ row.email }}</span></p>
+        <p class="contact-hint">{% if row.user_id and usernames.get(row.user_id) %}{{ _('Signed in as {username}', username=usernames.get(row.user_id)) }}{% else %}{{ _('Not signed in') }}{% endif %} · {{ _('Attempts: {count}', count=row.attempts) }}{% if row.last_error %} · {{ row.last_error }}{% endif %}</p>
+        <p class="contact-admin-body">{{ row.message }}</p>
+        <div class="contact-admin-actions">
+          {% if row.status != 'sent' %}
+          <form method="post" action="{{ url_for('retry_contact_message', message_id=row.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="secondary-button" type="submit">{{ _('Try forwarding again') }}</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('delete_contact_message', message_id=row.id) }}" class="contact-admin-delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label><input type="checkbox" name="confirm" value="yes"> {{ _('Confirm deletion') }}</label>
+            <button class="ghost-button" type="submit">{{ _('Delete') }}</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state contact-admin-empty">{{ _('No messages yet.') }}</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

@@ -14,10 +14,13 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 
 
 class PremiumTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "PREMIUM_ADMIN_IDENTIFIERS")
         application.app.config.update(TESTING=True, PREMIUM_ADMIN_IDENTIFIERS={"admin"})
         with application.app.app_context():
             application.db.drop_all()
@@ -153,6 +156,11 @@ class PremiumTests(unittest.TestCase):
             def count_provider_calls(self, *, provider, since):
                 return 0
 
+        # Restore the limits afterwards: left on, every later test module that reads pages
+        # sees a free account with a daily cap of 2 and its pages are parked as "waiting".
+        saved = {key: application.app.config.get(key) for key in (
+            "AI_ENFORCE_LIMITS", "AI_MAX_REQUESTS_PER_USER_DAY", "AI_MAX_REQUESTS_PER_USER_HOUR")}
+        self.addCleanup(application.app.config.update, saved)
         application.app.config.update(AI_ENFORCE_LIMITS=True, AI_MAX_REQUESTS_PER_USER_DAY=2,
                                       AI_MAX_REQUESTS_PER_USER_HOUR=60)
         with application.app.app_context(), patch.object(service, "usage_ledger", return_value=FullDailyLedger()):

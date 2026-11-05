@@ -24,6 +24,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.ocr import local as local_ocr  # noqa: E402
 from learnova.vocabulary import layout, service  # noqa: E402
 
@@ -126,6 +127,9 @@ def photo_bytes(shade="white"):
 
 class LocalFirstImportTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_VOCABULARY_TRAINER", "FEATURE_PRIVATE_FLASHCARDS",
+                    "FEATURE_FLASHCARD_IMAGE_IMPORT", "FEATURE_FLASHCARD_PDF_IMPORT")
         application.app.config.update(
             TESTING=True, FEATURE_VOCABULARY_TRAINER=True, FEATURE_PRIVATE_FLASHCARDS=True,
             FEATURE_FLASHCARD_IMAGE_IMPORT=True, FEATURE_FLASHCARD_PDF_IMPORT=True)

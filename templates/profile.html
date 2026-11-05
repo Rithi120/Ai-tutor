@@ -6,14 +6,14 @@
 {% endblock %}
 {% block content %}
 <main class="profile-page" id="main-content" data-profile-page>
-  <section class="profile-hero" style="--avatar-accent: {{ avatar.accent }}">
+  <section class="profile-hero" style="--avatar-accent: {{ avatar.accent }}" data-tour-target="profile-hero">
     <div class="profile-hero-art">
       {{ avatar_frame(avatar.url, avatar.accent, "xl", _('Your avatar: {name}', name=avatar.name)) }}
       <span class="rarity-chip rarity-{{ avatar.rarity }}">{{ avatar.rarity_label }}</span>
     </div>
     <div class="profile-hero-info">
       <p class="eyebrow">{{ _('YOUR LEARNOVA PROFILE') }}</p>
-      <h1 class="profile-name"><span>{{ profile_user.username }}</span>{% if premium %}{{ premium_badge() }}{% endif %}</h1>
+      <h1 class="profile-name" data-tour-target="profile-name"><span>{{ profile_user.username }}</span>{% if premium %}{{ premium_badge() }}{% endif %}</h1>
       <p class="profile-avatar-name">{{ avatar.name }}</p>
       {% if gamification %}
       <div class="profile-level" aria-label="{{ _('Level {level}', level=gamification.level) }}">
@@ -31,7 +31,7 @@
       </ul>
       {% endif %}
       <div class="profile-actions">
-        <a class="primary-button" href="{{ url_for('settings') }}#profile">{{ _('Edit profile') }}</a>
+        <a class="primary-button" href="{{ url_for('settings') }}#profile" data-tour-target="profile-edit">{{ _('Edit profile') }}</a>
         {% if profile_user.profile_public %}<a class="ghost-button" href="{{ url_for('public_profile', username=profile_user.username) }}" data-view-public>{{ _('View public profile') }}</a>{% endif %}
       </div>
     </div>
@@ -39,7 +39,7 @@
 
   {% if gamification %}
   {% set difficulty_labels = {'easy': _('Easy'), 'medium': _('Medium'), 'hard': _('Hard')} %}
-  <section class="challenge-board" aria-label="{{ _('Challenges') }}">
+  <section class="challenge-board" aria-label="{{ _('Challenges') }}" data-tour-target="challenges">
     {% for period, items, heading, hint in [
         ('daily', daily, _('Daily challenges'), _('New challenges every day at midnight.')),
         ('weekly', weekly, _('Weekly challenges'), _('Bigger rewards for the whole week.'))] %}
@@ -71,7 +71,7 @@
   {% endif %}
 
   {% if league %}
-  <a class="league-card" href="{{ url_for('leaderboard_page') }}" style="--league: {{ league.colour }}; --league-dark: {{ league.colour_dark }}">
+  <a class="league-card" href="{{ url_for('leaderboard_page') }}" style="--league: {{ league.colour }}; --league-dark: {{ league.colour_dark }}" data-tour-target="league-card">
     <span class="league-crest league-{{ league.key }}" aria-hidden="true"></span>
     <span><small>{{ _('Your league this week') }}</small><b>{{ league.name }}</b>
       <em>{% if league.joined and league.rank %}{{ _('Rank {rank} of {size}', rank=league.rank, size=league.size) }} · {{ league.message }}{% else %}{{ _('Earn XP this week to join the ranking.') }}{% endif %}</em></span>
@@ -80,7 +80,7 @@
   {% endif %}
 
   <section id="avatars" class="avatar-collection" aria-labelledby="avatarsTitle">
-    <header>
+    <header data-tour-target="avatars">
       <div><h2 id="avatarsTitle">{{ _('Avatar collection') }}</h2>
         <p>{{ _('{count} of 20 characters unlocked. New ones unlock as you level up.', count=unlocked_count) }}</p></div>
       {% if next_avatar %}<p class="next-unlock"><img src="{{ next_avatar.url }}" alt="" width="40" height="40" loading="lazy"> {{ _('Next: {name} at level {level}', name=next_avatar.name, level=next_avatar.level) }}</p>{% endif %}

@@ -93,10 +93,31 @@ class FakeResponse:
         self.output_text = payload if isinstance(payload, str) else json.dumps(payload)
 
 
+_MISSING = object()
+
+
+def keep_app_config(case, *keys):
+    """Restore these app.config keys after the test: AI_MODE="cached" left behind made
+    test_create_response_wrapper fail whenever it ran after this module."""
+
+    saved = {key: application.app.config.get(key, _MISSING) for key in keys}
+
+    def restore():
+        for key, value in saved.items():
+            if value is _MISSING:
+                application.app.config.pop(key, None)
+            else:
+                application.app.config[key] = value
+
+    case.addCleanup(restore)
+
+
 class KnowledgeGateIntegrationTests(unittest.TestCase):
     maxDiff = None
 
     def setUp(self):
+        keep_app_config(self, "TESTING", "FEATURE_ADAPTIVE_DIAGNOSTICS", "FEATURE_DIAGNOSTIC_VERIFICATION", "AI_MODE",
+                        "TEST_MIN_QUESTIONS", "TEST_MAX_QUESTIONS", "KNOWLEDGE_TARGET", "EXAM_DIAGNOSIS_LIMIT")
         application.app.config.update(
             TESTING=True, FEATURE_ADAPTIVE_DIAGNOSTICS=True, FEATURE_DIAGNOSTIC_VERIFICATION=True,
             AI_MODE="cached", TEST_MIN_QUESTIONS=3, TEST_MAX_QUESTIONS=15, KNOWLEDGE_TARGET=80,

@@ -104,7 +104,7 @@
     <p class="summary-next-action"><strong>{{ _('Next best action') }}:</strong> {{ _('Review mistakes now while the memory is still fresh.') }}</p>
     <div class="study-summary-actions">
       <button id="retryMode" type="button" class="primary-button">{{ _('Retry') }}</button>
-      <a id="reviewWeak" class="ghost-button" href="{{ url_for('flashcards_learn_page', set_id=set_id) }}?objective=weak">{{ _('Review mistakes') }}</a>
+      <a id="reviewWeak" class="ghost-button" href="{% if feature_flags.flashcard_learn_mode %}{{ url_for('flashcards_learn_page', set_id=set_id) }}{% else %}{{ url_for('flashcards_study_page', set_id=set_id) }}{% endif %}?objective=weak">{{ _('Review mistakes') }}</a>
       <a class="ghost-button" href="{{ url_for('flashcards_overview_page', set_id=set_id) }}">{{ _('Back to set') }}</a>
     </div>
   </section>

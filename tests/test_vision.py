@@ -798,17 +798,20 @@ class ProjectAndImportImageTests(unittest.TestCase):
 
 class PageMarkupTests(RouteTestCase):
     def test_both_chats_offer_the_native_camera_and_the_photo_picker(self):
-        for path in ("/assistant", "/"):
+        # The assistant (also the home page "/") and the lesson chat (the lesson page, /lesson).
+        for path in ("/assistant", "/", "/lesson"):
             with self.subTest(path):
                 page = self.client.get(path).get_data(as_text=True)
                 self.assertIn('capture="environment"', page)
                 self.assertIn('accept="image/*" multiple', page)
-        self.assertIn('data-photo-answers="1"', self.client.get("/").get_data(as_text=True))
+        lesson = self.client.get("/lesson").get_data(as_text=True)
+        self.assertIn('data-photo-answers="1"', lesson)
+        self.assertIn("chatCamera", lesson)
 
     def test_switched_off_the_buttons_are_gone(self):
         application.app.config["FEATURE_CHAT_IMAGES"] = False
         self.assertNotIn("asstCamera", self.client.get("/assistant").get_data(as_text=True))
-        self.assertNotIn("chatCamera", self.client.get("/").get_data(as_text=True))
+        self.assertNotIn("chatCamera", self.client.get("/lesson").get_data(as_text=True))
 
 
 class EvaluationSuiteTests(unittest.TestCase):

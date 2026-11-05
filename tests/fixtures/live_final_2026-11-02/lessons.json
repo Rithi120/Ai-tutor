@@ -1,0 +1,4090 @@
+{
+ "_meta": {
+  "source": "Final live re-check 2026-11-02 (scratchpad prod/live_final.md), R:/ai_tutor_suite_tmp/live_final",
+  "provider": "Groq on_demand, openai/gpt-oss-20b (lessons, evaluation), gpt-oss-120b (diagnosis)",
+  "prompt_versions": {
+   "lesson_generation": "lesson_generation:v8",
+   "answer_evaluation": "answer_evaluation:v7",
+   "answer_diagnosis": "answer_diagnosis:v3"
+  },
+  "note": "Synthetic notes only. Raw model outputs as returned (raw/NNN.txt); the organisation id is removed from provider messages."
+ },
+ "cases": {
+  "nwt": {
+   "subject": "NwT",
+   "grade": "9",
+   "file": "NwT_Waermedaemmung_Versuch.pdf",
+   "notes": [
+    {
+     "label": "[NwT_Waermedaemmung_Versuch.pdf, p. 1]",
+     "text": "NwT Klasse 9 - Versuch: Wärmedämmung\nFragestellung: Welches Material hält heißes Wasser am längsten warm?\nVermutung (Hypothese): Wolle dämmt am besten, weil Winterkleidung aus Wolle ist.\nMaterial und Aufbau: 4 gleiche Bechergläser (250 ml), je 200 ml Wasser mit 70 °C,\nDigitalthermometer, Stoppuhr. Becher A ohne Hülle, Becher B mit Alufolie umwickelt, Becher C mit\neinem Wollschal umwickelt, Becher D in einer Styropor-Hülle. Alle Becher haben den gleichen\nDeckel.\nDurchführung: Wasser gleichzeitig einfüllen, Starttemperatur messen, 20 Minuten lang alle 5\nMinuten die Temperatur ablesen und in eine Tabelle eintragen.\nWichtig: Nur das Hüllmaterial wird verändert (unabhängige Variable). Wassermenge,\nStarttemperatur, Becherart und Raumtemperatur bleiben gleich (Kontrollvariablen). Gemessen wird\ndie Temperatur (abhängige Variable).\nBeobachtung (Messwerte nach 20 min): A ohne Hülle 48 °C, B Alufolie 52 °C, C Wolle 60 °C, D\nStyropor 62 °C.\nErgebnis: Styropor dämmt in unserem Versuch am besten, knapp vor Wolle. Die Hypothese ist damit\nnicht bestätigt. Ohne Hülle kühlt das Wasser am schnellsten ab.\nErklärung: Styropor und Wolle enthalten viele kleine Lufteinschlüsse. Ruhende Luft ist ein schlechter\nWärmeleiter. Dadurch wird weniger Wärme durch Wärmeleitung nach außen abgegeben. Alufolie\nleitet Wärme gut, wirft aber einen Teil der Wärmestrahlung zurück.\nFachbegriffe\nWärmeleitung: Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben.\nWärmedämmung: Verringerung des Wärmeflusses durch schlecht leitende Stoffe.\nWärmestrahlung: Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde.\nKonvektion (Wärmeströmung): Wärme wird mit einem strömenden Stoff (Luft, Wasser)\nmitgenommen.\nFehlerquellen: Thermometer nicht immer gleich tief eingetaucht; Deckel nicht ganz dicht."
+    }
+   ],
+   "section": {
+    "title": "Wärmedämmung – Experiment und Grundlagen",
+    "topic_map": {
+     "summary": "In diesem Experiment wird untersucht, welches Material ein heißes Wasser in Bechern am längsten warm hält. Vier Becher mit identischem Inhalt werden mit unterschiedlichen Hüllmaterialien – keine Hülle, Alufolie, Wollschal und Styropor – verglichen. Die Temperatur wird alle fünf Minuten über 20 Minuten gemessen, um den Wärmeverlust zu bestimmen. Die Ergebnisse zeigen, dass Styropor die beste Dämmung bietet, gefolgt von Wolle, während Alufolie die Wärme am wenigsten dämmt.",
+     "simple_summary": "Ein Experiment zeigt, welches Material Wasser am längsten warm hält.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "Wärmeleitung",
+       "definition": "Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben.",
+       "simple_definition": "Wärme wird durch die Teilchen eines Materials übertragen.",
+       "example": "",
+       "page_id": 2,
+       "page_ids": [
+        2
+       ],
+       "quote": "Wärmeleitung: Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "waermeleit"
+      },
+      {
+       "term": "Wärmedämmung",
+       "definition": "Verringerung des Wärmeflusses durch schlecht leitende Stoffe.",
+       "simple_definition": "Wärme wird durch ein Material weniger schnell übertragen.",
+       "example": "",
+       "page_id": 2,
+       "page_ids": [
+        2
+       ],
+       "quote": "Wärmedämmung: Verringerung des Wärmeflusses durch schlecht leitende Stoffe.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "waermedaemm"
+      },
+      {
+       "term": "Wärmestrahlung",
+       "definition": "Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde.",
+       "simple_definition": "Wärme wird durch Strahlung übertragen, ohne ein Medium zu brauchen.",
+       "example": "",
+       "page_id": 2,
+       "page_ids": [
+        2
+       ],
+       "quote": "Wärmestrahlung: Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "waermestrahl"
+      },
+      {
+       "term": "Konvektion (Wärmeströmung)",
+       "definition": "Wärme wird mit einem strömenden Stoff (Luft, Wasser) mitgenommen.",
+       "simple_definition": "Wärme wird durch die Bewegung von Luft oder Wasser transportiert.",
+       "example": "",
+       "page_id": 2,
+       "page_ids": [
+        2
+       ],
+       "quote": "Konvektion (Wärmeströmung): Wärme wird mit einem strömenden Stoff (Luft, Wasser) mitgenommen.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "konvektion"
+      },
+      {
+       "term": "Fehlerquellen",
+       "definition": "Mögliche Ursachen für Abweichungen im Experiment, z. B. ungleich tief eingetauchte Thermometer oder nicht dicht schließender Deckel.",
+       "simple_definition": "Mögliche Gründe, warum die Messungen nicht exakt sind.",
+       "example": "",
+       "page_id": 2,
+       "page_ids": [
+        2
+       ],
+       "quote": "Fehlerquellen: Thermometer nicht immer gleich tief eingetaucht; Deckel nicht ganz dicht.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "fehlerquell"
+      }
+     ],
+     "items": [],
+     "exam_questions": [
+      "Welche Wärmeübertragungsarten wirken bei der Wärmedämmung und wie unterscheiden sie sich?",
+      "Warum hat Styropor die beste Dämmwirkung in diesem Experiment?",
+      "Welche unabhängigen und abhängigen Variablen wurden im Experiment festgelegt?",
+      "Nenne zwei mögliche Fehlerquellen, die die Messergebnisse beeinflussen könnten."
+     ],
+     "related": []
+    },
+    "source_page_ids": "[2]"
+   },
+   "plan_item_kinds": [
+    "term",
+    "experiment"
+   ],
+   "lesson_call": 6,
+   "lesson_raw": {
+    "lesson_title": "Wärmedämmung – Experiment und Grundlagen",
+    "detected_level": "Klasse 9",
+    "concepts": [
+     {
+      "name": "Wärmeleitung",
+      "evidence": "Erklärt, wie Wärme durch ein Material übertragen wird"
+     },
+     {
+      "name": "Wärmestrahlung",
+      "evidence": "Erklärt, wie Wärme ohne Medium übertragen wird"
+     },
+     {
+      "name": "Konvektion",
+      "evidence": "Erklärt, wie Wärme durch bewegte Luft oder Wasser transportiert wird"
+     },
+     {
+      "name": "Wärmedämmung",
+      "evidence": "Erklärt, wie Materialien Wärmeverlust reduzieren"
+     },
+     {
+      "name": "unabhängige Variable",
+      "evidence": "Zeigt, welche Variable im Experiment verändert wird"
+     },
+     {
+      "name": "abhängige Variable",
+      "evidence": "Zeigt, was gemessen wird"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Lernziel",
+      "body": "Nach dieser Stunde kannst du den Unterschied zwischen Wärmeleitung, Wärmestrahlung und Konvektion erklären und beschreiben, wie verschiedene Dämmmaterialien den Wärmeverlust beeinflussen. Das Wissen hilft dir, Experimente zu planen und im Alltag zu verstehen, warum z. B. ein Styroporbehälter dein Getränk länger warm hält.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "terms",
+      "title": "Wichtige Fachbegriffe",
+      "body": "",
+      "items": [
+       {
+        "label": "Wärmeleitung",
+        "text": "Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben."
+       },
+       {
+        "label": "Wärmedämmung",
+        "text": "Verringerung des Wärmeflusses durch schlecht leitende Stoffe."
+       },
+       {
+        "label": "Wärmestrahlung",
+        "text": "Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde."
+       },
+       {
+        "label": "Konvektion (Wärmeströmung)",
+        "text": "Wärme wird mit einem strömenden Stoff (Luft, Wasser) mitgenommen."
+       },
+       {
+        "label": "unabhängige Variable",
+        "text": "Variable, die im Experiment verändert wird (hier das Hüllmaterial)."
+       },
+       {
+        "label": "abhängige Variable",
+        "text": "Variable, die gemessen wird (hier die Temperatur des Wassers)."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "explanation",
+      "title": "Wissenschaftlicher Grundsatz",
+      "body": "Wenn ein heißes Wasser in einem Becher steht, kann Wärme auf drei Arten verloren gehen: durch Wärmeleitung in das Material des Bechers, durch Wärmestrahlung von der Oberfläche in die Luft und durch Konvektion, wenn warme Luft nach außen strömt. Je schlechter ein Material diese Übertragungen verhindert, desto länger bleibt das Wasser warm. Materialien mit vielen Lufteinschlüssen, wie Styropor oder Wolle, sind schlechte Wärmeleiter und reduzieren die Wärmeleitung. Alufolie leitet Wärme gut, reflektiert aber einen Teil der Strahlung zurück, wodurch sie weniger effektiv dämmt.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "experiment",
+      "title": "Experiment zur Wärmedämmung",
+      "body": "",
+      "items": [
+       {
+        "label": "Fragestellung",
+        "text": "Welches Material hält heißes Wasser am längsten warm?"
+       },
+       {
+        "label": "Hypothese",
+        "text": "Wolle dämmt am besten, weil Winterkleidung aus Wolle ist."
+       },
+       {
+        "label": "Material und Aufbau",
+        "text": "Vier gleiche Bechergläser (250 ml), je 200 ml Wasser mit 70 °C, Digitalthermometer, Stoppuhr, Deckel. Becher A ohne Hülle, B mit Alufolie, C mit Wollschal, D mit Styropor-Hülle."
+       },
+       {
+        "label": "Durchführung",
+        "text": "Wasser gleichzeitig einfüllen, Starttemperatur messen, 20 Minuten lang alle 5 Minuten die Temperatur ablesen und in eine Tabelle eintragen."
+       },
+       {
+        "label": "Beobachtung",
+        "text": "A ohne Hülle 48 °C, B Alufolie 52 °C, C Wolle 60 °C, D Styropor 62 °C nach 20 Minuten."
+       },
+       {
+        "label": "Ergebnis",
+        "text": "Styropor dämmt am besten, knapp vor Wolle. Die Hypothese ist damit nicht bestätigt."
+       },
+       {
+        "label": "Erklärung",
+        "text": "Styropor und Wolle enthalten viele kleine Lufteinschlüsse. Ruhende Luft ist ein schlechter Wärmeleiter. Dadurch wird weniger Wärme durch Wärmeleitung nach außen abgegeben. Alufolie leitet Wärme gut, wirft aber einen Teil der Wärmestrahlung zurück."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "rule",
+      "title": "Sicherheitsregeln",
+      "body": "",
+      "items": [
+       {
+        "label": "Thermometerposition",
+        "text": "Stelle sicher, dass das Thermometer immer gleich tief eingetaucht ist, sonst entstehen Messfehler."
+       },
+       {
+        "label": "Deckelabdichtung",
+        "text": "Der Deckel muss fest sitzen, damit keine warme Luft entweicht und die Konvektion reduziert wird."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "example",
+      "title": "Alltägliche Anwendung",
+      "body": "In der Küche hält ein Styroporbehälter dein heißes Wasser länger warm, weil das Styropor die Wärmeleitung stark reduziert. Das ist die gleiche Idee, die bei Isolierbehältern für Getränke verwendet wird.",
+      "items": [],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     },
+     {
+      "kind": "mistakes",
+      "title": "Typische Missverständnisse",
+      "body": "",
+      "items": [
+       {
+        "label": "Wolle ist besser als Styropor",
+        "text": "Tatsächlich ist Styropor die bessere Dämmung, weil es mehr Lufteinschlüsse hat."
+       },
+       {
+        "label": "Alufolie dämmt gut",
+        "text": "Alufolie leitet Wärme gut, daher ist sie keine gute Dämmung, obwohl sie Strahlung zurückwirft."
+       },
+       {
+        "label": "Beobachtung = Erklärung",
+        "text": "Die Messwerte (Beobachtung) sind nicht gleich der wissenschaftlichen Erklärung; die Erklärung muss die physikalischen Prozesse beschreiben."
+       }
+      ],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Anwendungsfrage",
+      "body": "",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Denke daran, welche Variable du ändern würdest, wenn du ein neues Material testen willst."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Beobachte, wie sich die Temperaturveränderung über die Zeit verhält."
+       }
+      ],
+      "answer": "Wenn du ein neues Material testen willst, änderst du die unabhängige Variable (das Hüllmaterial). Du misst die abhängige Variable (die Temperatur). Die Temperatur sinkt langsamer, wenn das Material eine schlechte Wärmeleitung hat, z. B. Styropor.",
+      "from_notes": false,
+      "source_pages": []
+     },
+     {
+      "kind": "summary",
+      "title": "Kurzfassung",
+      "body": "Wärme kann durch Leitung, Strahlung und Konvektion verloren gehen. Materialien mit vielen Lufteinschlüssen, wie Styropor, dämmen am besten, weil sie die Wärmeleitung reduzieren. Im Experiment war Styropor die beste Dämmung, Wolle knapp dahinter, Alufolie am schlechtesten.",
+      "items": [],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     }
+    ],
+    "explanation": "In dieser Stunde lernst du, wie Wärme durch Leitung, Strahlung und Konvektion übertragen wird und wie Dämmmaterialien diese Prozesse beeinflussen. Du siehst, wie ein Experiment aufgebaut ist und welche Variablen dabei wichtig sind.",
+    "teacher_tips": [
+     "Behalte immer im Kopf, dass die unabhängige Variable diejenige ist, die du selbst veränderst, und die abhängige Variable die gemessene Größe ist. Vergiss nicht, dass die Temperaturmessung ein Beispiel für die abhängige Variable ist."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Wärmedämmung",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Welches Material hat im Experiment die beste Wärmedämmung?",
+     "hint": "Schau dir die Endtemperaturen an.",
+     "options": [
+      {
+       "id": "a",
+       "label": "Alufolie"
+      },
+      {
+       "id": "b",
+       "label": "Wolle"
+      },
+      {
+       "id": "c",
+       "label": "Styropor"
+      },
+      {
+       "id": "d",
+       "label": "Kein Material"
+      }
+     ],
+     "expected_answer": "c"
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Wärmedämmung",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Welches Material hat im Experiment die beste Wärmedämmung?",
+    "hint": "Schau dir die Endtemperaturen an.",
+    "options": [
+     {
+      "id": "a",
+      "label": "Alufolie"
+     },
+     {
+      "id": "b",
+      "label": "Wolle"
+     },
+     {
+      "id": "c",
+      "label": "Styropor"
+     },
+     {
+      "id": "d",
+      "label": "Kein Material"
+     }
+    ],
+    "expected_answer": "c",
+    "subject": "Science and Technology",
+    "concepts": [
+     "Wärmedämmung"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Lernziel",
+     "body": "Nach dieser Stunde kannst du den Unterschied zwischen Wärmeleitung, Wärmestrahlung und Konvektion erklären und beschreiben, wie verschiedene Dämmmaterialien den Wärmeverlust beeinflussen. Das Wissen hilft dir, Experimente zu planen und im Alltag zu verstehen, warum z. B. ein Styroporbehälter dein Getränk länger warm hält.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      2
+     ],
+     "source_labels": [
+      "NwT_Waermedaemmung_Versuch.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Fachbegriffe",
+     "body": "",
+     "items": [
+      {
+       "label": "Wärmeleitung",
+       "text": "Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben."
+      },
+      {
+       "label": "Wärmedämmung",
+       "text": "Verringerung des Wärmeflusses durch schlecht leitende Stoffe."
+      },
+      {
+       "label": "Wärmestrahlung",
+       "text": "Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde."
+      },
+      {
+       "label": "Konvektion (Wärmeströmung)",
+       "text": "Wärme wird mit einem strömenden Stoff (Luft, Wasser) mitgenommen."
+      },
+      {
+       "label": "unabhängige Variable",
+       "text": "Variable, die im Experiment verändert wird (hier das Hüllmaterial)."
+      },
+      {
+       "label": "abhängige Variable",
+       "text": "Variable, die gemessen wird (hier die Temperatur des Wassers)."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      2
+     ],
+     "source_labels": [
+      "NwT_Waermedaemmung_Versuch.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „Wärmeleitung“?",
+       "text": "Wärme wird durch die Teilchen eines Materials übertragen.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Wärmedämmung“?",
+       "text": "Wärme wird durch ein Material weniger schnell übertragen.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Wärmestrahlung“?",
+       "text": "Wärme wird durch Strahlung übertragen, ohne ein Medium zu brauchen.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Konvektion (Wärmeströmung)“?",
+       "text": "Wärme wird durch die Bewegung von Luft oder Wasser transportiert.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Fehlerquellen“?",
+       "text": "Mögliche Gründe, warum die Messungen nicht exakt sind.",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 2,
+     "study_url": "/flashcards/2/study",
+     "from_notes": true,
+     "source_pages": []
+    },
+    {
+     "kind": "explanation",
+     "title": "Wissenschaftlicher Grundsatz",
+     "body": "Wenn ein heißes Wasser in einem Becher steht, kann Wärme auf drei Arten verloren gehen: durch Wärmeleitung in das Material des Bechers, durch Wärmestrahlung von der Oberfläche in die Luft und durch Konvektion, wenn warme Luft nach außen strömt. Je schlechter ein Material diese Übertragungen verhindert, desto länger bleibt das Wasser warm. Materialien mit vielen Lufteinschlüssen, wie Styropor oder Wolle, sind schlechte Wärmeleiter und reduzieren die Wärmeleitung. Alufolie leitet Wärme gut, reflektiert aber einen Teil der Strahlung zurück, wodurch sie weniger effektiv dämmt.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      2
+     ],
+     "source_labels": [
+      "NwT_Waermedaemmung_Versuch.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "experiment",
+     "title": "Experiment zur Wärmedämmung",
+     "body": "",
+     "items": [
+      {
+       "label": "Fragestellung",
+       "text": "Welches Material hält heißes Wasser am längsten warm?"
+      },
+      {
+       "label": "Hypothese",
+       "text": "Wolle dämmt am besten, weil Winterkleidung aus Wolle ist."
+      },
+      {
+       "label": "Material und Aufbau",
+       "text": "Vier gleiche Bechergläser (250 ml), je 200 ml Wasser mit 70 °C, Digitalthermometer, Stoppuhr, Deckel. Becher A ohne Hülle, B mit Alufolie, C mit Wollschal, D mit Styropor-Hülle."
+      },
+      {
+       "label": "Durchführung",
+       "text": "Wasser gleichzeitig einfüllen, Starttemperatur messen, 20 Minuten lang alle 5 Minuten die Temperatur ablesen und in eine Tabelle eintragen."
+      },
+      {
+       "label": "Beobachtung",
+       "text": "A ohne Hülle 48 °C, B Alufolie 52 °C, C Wolle 60 °C, D Styropor 62 °C nach 20 Minuten."
+      },
+      {
+       "label": "Ergebnis",
+       "text": "Styropor dämmt am besten, knapp vor Wolle. Die Hypothese ist damit nicht bestätigt."
+      },
+      {
+       "label": "Erklärung",
+       "text": "Styropor und Wolle enthalten viele kleine Lufteinschlüsse. Ruhende Luft ist ein schlechter Wärmeleiter. Dadurch wird weniger Wärme durch Wärmeleitung nach außen abgegeben. Alufolie leitet Wärme gut, wirft aber einen Teil der Wärmestrahlung zurück."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      2
+     ],
+     "source_labels": [
+      "NwT_Waermedaemmung_Versuch.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "rule",
+     "title": "Sicherheitsregeln",
+     "body": "",
+     "items": [
+      {
+       "label": "Thermometerposition",
+       "text": "Stelle sicher, dass das Thermometer immer gleich tief eingetaucht ist, sonst entstehen Messfehler."
+      },
+      {
+       "label": "Deckelabdichtung",
+       "text": "Der Deckel muss fest sitzen, damit keine warme Luft entweicht und die Konvektion reduziert wird."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      2
+     ],
+     "source_labels": [
+      "NwT_Waermedaemmung_Versuch.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "example",
+     "title": "Alltägliche Anwendung",
+     "body": "In der Küche hält ein Styroporbehälter dein heißes Wasser länger warm, weil das Styropor die Wärmeleitung stark reduziert. Das ist die gleiche Idee, die bei Isolierbehältern für Getränke verwendet wird.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "mistakes",
+     "title": "Typische Missverständnisse",
+     "body": "",
+     "items": [
+      {
+       "label": "Wolle ist besser als Styropor",
+       "text": "Tatsächlich ist Styropor die bessere Dämmung, weil es mehr Lufteinschlüsse hat."
+      },
+      {
+       "label": "Alufolie dämmt gut",
+       "text": "Alufolie leitet Wärme gut, daher ist sie keine gute Dämmung, obwohl sie Strahlung zurückwirft."
+      },
+      {
+       "label": "Beobachtung = Erklärung",
+       "text": "Die Messwerte (Beobachtung) sind nicht gleich der wissenschaftlichen Erklärung; die Erklärung muss die physikalischen Prozesse beschreiben."
+      }
+     ],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Anwendungsfrage",
+     "body": "",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Denke daran, welche Variable du ändern würdest, wenn du ein neues Material testen willst."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Beobachte, wie sich die Temperaturveränderung über die Zeit verhält."
+      }
+     ],
+     "answer": "Wenn du ein neues Material testen willst, änderst du die unabhängige Variable (das Hüllmaterial). Du misst die abhängige Variable (die Temperatur). Die Temperatur sinkt langsamer, wenn das Material eine schlechte Wärmeleitung hat, z. B. Styropor.",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "summary",
+     "title": "Kurzfassung",
+     "body": "Wärme kann durch Leitung, Strahlung und Konvektion verloren gehen. Materialien mit vielen Lufteinschlüssen, wie Styropor, dämmen am besten, weil sie die Wärmeleitung reduzieren. Im Experiment war Styropor die beste Dämmung, Wolle knapp dahinter, Alufolie am schlechtesten.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    }
+   ]
+  },
+  "history1": {
+   "subject": "Geschichte",
+   "grade": "9",
+   "file": "Geschichte_Weimarer_Verfassung.pdf",
+   "notes": [
+    {
+     "label": "[Geschichte_Weimarer_Verfassung.pdf, p. 1]",
+     "text": "Geschichte Klasse 9 - Die Weimarer Verfassung: Chancen und Schwächen\nZeitleiste\n9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II.\nwird bekanntgegeben.\n19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.\nDie Nationalversammlung tagt in Weimar, weil es in Berlin unruhig ist.\n11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.\nMärz 1920: Der Kapp-Putsch gegen die Republik scheitert an einem Generalstreik.\n1923: Krisenjahr mit Ruhrbesetzung, Hyperinflation und Hitler-Putsch in München.\n1930: Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten (Präsidialkabinett).\n30. Januar 1933: Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler.\nDie Verfassung\nGrundrechte: Gleichheit vor dem Gesetz, Meinungsfreiheit, Versammlungsfreiheit.\nDer Reichstag wird nach dem Verhältniswahlrecht gewählt, ohne Sperrklausel (keine\n5-Prozent-Hürde).\nDer Reichspräsident wird direkt vom Volk für sieben Jahre gewählt. Er ernennt und entlässt den\nReichskanzler (Art. 53), kann den Reichstag auflösen (Art. 25) und hat das Notverordnungsrecht\n(Art. 48).\nUrsachen und Folgen\nOhne Sperrklausel kamen viele kleine Parteien in den Reichstag. Folge: Regierungen fanden schwer\neine Mehrheit und zerbrachen oft.\nWeil der Reichspräsident so viel Macht hatte, nannten Kritiker ihn einen Ersatzkaiser.\nWenn der Reichstag keine Mehrheit fand, konnte der Präsident mit Art. 48 am Parlament vorbei\nregieren. Ab 1930 wurde das zur Regel. Folge: Das Parlament verlor an Bedeutung, der Weg zur\nDiktatur wurde leichter.\nQuelle: Art. 48 Abs. 2 der Weimarer Reichsverfassung (1919)\n\"Der Reichspräsident kann, wenn im Deutschen Reiche die öffentliche Sicherheit und Ordnung\nerheblich gestört oder gefährdet wird, die zur Wiederherstellung der öffentlichen Sicherheit und\nOrdnung nötigen Maßnahmen treffen, erforderlichenfalls mit Hilfe der bewaffneten Macht\neinschreiten. Zu diesem Zwecke darf er vorübergehend die in den Artikeln 114, 115, 117, 118, 123,\n124 und 153 festgesetzten Grundrechte ganz oder zum Teil außer Kraft setzen.\"\nAufgabe: Erkläre mit Hilfe der Quelle, warum Art. 48 als Schwachstelle der Verfassung gilt."
+    }
+   ],
+   "section": {
+    "title": "Weimarer Verfassung – Chancen und Schwächen",
+    "topic_map": {
+     "summary": "Die Weimarer Verfassung von 1919 legte die Grundlagen der deutschen Republik fest. Sie enthielt Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten mit Notverordnungsrecht. Diese Regelungen führten zu politischen Instabilitäten und erleichterten den Weg zur Diktatur.",
+     "simple_summary": "Die Verfassung von 1919 hatte Stärken, aber auch Schwächen, die die Demokratie gefährdeten.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "Weimarer Verfassung",
+       "definition": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah.",
+       "simple_definition": "Die Verfassung, die 1919 die deutsche Republik regelte.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "Die Weimarer Verfassung: Chancen und Schwächen",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "verfass-weimar"
+      },
+      {
+       "term": "Art. 48",
+       "definition": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte.",
+       "simple_definition": "Ein Paragraph, der dem Präsidenten Notverordnungen erlaubte.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "48-art"
+      },
+      {
+       "term": "Reichspräsident",
+       "definition": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflösen und Notverordnungen erließ.",
+       "simple_definition": "Der Präsident, der die Regierung ernennt und Notverordnungen machen kann.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "Der Reichspräsident wird direkt vom Volk für sieben Jahre gewählt. Er ernennt und entlässt den Reichskanzler (Art. 53), kann den Reichstag auflösen (Art. 25) und hat das Notverordnungsrecht (Art. 48).",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "reichspraesident"
+      },
+      {
+       "term": "Reichstag",
+       "definition": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt.",
+       "simple_definition": "Das Parlament, das Gesetze macht.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "reichstag"
+      },
+      {
+       "term": "Reichskanzler",
+       "definition": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt.",
+       "simple_definition": "Der Regierungschef, der vom Präsidenten ernannt wird.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "reichskanzl"
+      },
+      {
+       "term": "Notverordnungen",
+       "definition": "Recht des Reichspräsidenten, ohne Zustimmung des Reichstags Maßnahmen zu ergreifen, um die öffentliche Sicherheit wiederherzustellen.",
+       "simple_definition": "Notfallmaßnahmen, die der Präsident allein ergreifen kann.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "notverordn"
+      },
+      {
+       "term": "Sperrklausel",
+       "definition": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie.",
+       "simple_definition": "Eine Grenze, die Parteien erreichen müssen, um im Parlament zu sitzen.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "sperrklausel"
+      },
+      {
+       "term": "Kapp‑Putsch",
+       "definition": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde.",
+       "simple_definition": "Ein gescheiterter Versuch, die Republik zu stürzen, im März 1920.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "kapp-putsch"
+      },
+      {
+       "term": "Hyperinflation",
+       "definition": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte.",
+       "simple_definition": "Eine sehr hohe Inflation, die 1923 auftrat.",
+       "example": "",
+       "page_id": 3,
+       "page_ids": [
+        3
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "hyperinflation"
+      }
+     ],
+     "items": [
+      {
+       "kind": "event",
+       "name": "Ausruf der Republik",
+       "detail": "9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II. wird bekanntgegeben.",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "date",
+       "name": "Wahl zur Nationalversammlung",
+       "detail": "19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Unterzeichnung der Verfassung",
+       "detail": "11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Kapp‑Putsch",
+       "detail": "März 1920: Der Kapp‑Putsch gegen die Republik scheitert an einem Generalstreik.",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Hyperinflation",
+       "detail": "1923: Krisenjahr mit Ruhrbesetzung, Hyperinflation und Hitler‑Putsch in München.",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Reichskanzler Brüning",
+       "detail": "1930: Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten (Präsidialkabinett).",
+       "page_id": 3,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Hitler zum Reichskanzler",
+       "detail": "30. Januar 1933: Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler.",
+       "page_id": 3,
+       "in_notes": true
+      }
+     ],
+     "exam_questions": [
+      "Erkläre, warum Art. 48 der Weimarer Verfassung als Schwachstelle galt.",
+      "Beschreibe die Folgen der fehlenden Sperrklausel im Verhältniswahlrecht.",
+      "Welche Ereignisse im Jahr 1923 trugen zur Instabilität der Weimarer Republik bei?"
+     ],
+     "related": []
+    },
+    "source_page_ids": "[3]"
+   },
+   "plan_item_kinds": [
+    "event",
+    "date",
+    "term",
+    "source"
+   ],
+   "lesson_call": 7,
+   "lesson_raw": {
+    "lesson_title": "Weimarer Verfassung – Chancen und Schwächen",
+    "detected_level": "Klasse 9",
+    "concepts": [
+     {
+      "name": "Weimarer Verfassung",
+      "evidence": "Grundrechte, Verhältniswahlrecht ohne Sperrklausel, starkes Amt des Reichspräsidenten"
+     },
+     {
+      "name": "Art. 48",
+      "evidence": "Notverordnungsrecht des Reichspräsidenten, Schwachstelle der Verfassung"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Lernziel und Bedeutung",
+      "body": "In dieser Stunde lernst du, welche Rechte und Institutionen die Weimarer Verfassung vorsah, warum Art. 48 als Schwachstelle galt und welche wichtigen Ereignisse die Republik prägten. Das Thema ist wichtig, weil es erklärt, wie die politische Instabilität zur Diktatur führte.",
+      "items": [],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     },
+     {
+      "kind": "explanation",
+      "title": "Historischer Kontext",
+      "body": "Die Weimarer Verfassung wurde 1919 in der deutschen Republik festgelegt. Vor ihr herrschte das Kaiserreich, das 1918 nach dem Ersten Weltkrieg zusammenbrach. Die Verfassung schuf Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten, der Notverordnungen erlassen konnte.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "timeline",
+      "title": "Chronologie der wichtigsten Ereignisse",
+      "body": "",
+      "items": [
+       {
+        "label": "9. Nov. 1918",
+        "text": "Philipp Scheidemann ruft die Republik aus; Kaiser Wilhelm II. tritt ab."
+       },
+       {
+        "label": "19. Jan. 1919",
+        "text": "Wahl zur Nationalversammlung; Frauen dürfen erstmals wählen."
+       },
+       {
+        "label": "11. Aug. 1919",
+        "text": "Reichspräsident Friedrich Ebert unterzeichnet die Verfassung."
+       },
+       {
+        "label": "März 1920",
+        "text": "Kapp‑Putsch scheitert an einem Generalstreik."
+       },
+       {
+        "label": "1923",
+        "text": "Krisenjahr: Ruhrbesetzung, Hyperinflation, Hitler‑Putsch in München."
+       },
+       {
+        "label": "1930",
+        "text": "Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten."
+       },
+       {
+        "label": "30. Jan. 1933",
+        "text": "Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "terms",
+      "title": "Wichtige Begriffe",
+      "body": "",
+      "items": [
+       {
+        "label": "Weimarer Verfassung",
+        "text": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah."
+       },
+       {
+        "label": "Art. 48",
+        "text": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte."
+       },
+       {
+        "label": "Reichspräsident",
+        "text": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflöste und Notverordnungen erließ."
+       },
+       {
+        "label": "Reichstag",
+        "text": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt."
+       },
+       {
+        "label": "Reichskanzler",
+        "text": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt."
+       },
+       {
+        "label": "Notverordnungen",
+        "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann."
+       },
+       {
+        "label": "Sperrklausel",
+        "text": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie."
+       },
+       {
+        "label": "Kapp‑Putsch",
+        "text": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde."
+       },
+       {
+        "label": "Hyperinflation",
+        "text": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "cause_effect",
+      "title": "Ursachen und Folgen",
+      "body": "",
+      "items": [
+       {
+        "label": "Fehlende Sperrklausel",
+        "text": "Viele kleine Parteien kamen in den Reichstag, was die Bildung stabiler Regierungen erschwerte."
+       },
+       {
+        "label": "Starke Macht des Reichspräsidenten",
+        "text": "Er konnte mit Art. 48 am Parlament vorbeiregieren, was die Bedeutung des Reichstags schwächte."
+       },
+       {
+        "label": "Verwendung von Art. 48 ab 1930",
+        "text": "Regierungen nutzten Notverordnungen regelmäßig, wodurch die Demokratie geschwächt und der Weg zur Diktatur erleichtert wurde."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "perspectives",
+      "title": "Verschiedene Sichtweisen",
+      "body": "Die konservativen und rechten Gruppen sahen Art. 48 als notwendiges Sicherheitsinstrument, während linke und demokratische Kräfte es als Gefahr für die Republik betrachteten. Heute wird die starke Macht des Reichspräsidenten oft als Grund für die politische Instabilität kritisiert.",
+      "items": [],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     },
+     {
+      "kind": "source_analysis",
+      "title": "Analyse einer Quelle",
+      "body": "Die Quelle ist Art. 48 Abs. 2 der Weimarer Reichsverfassung (1919).",
+      "items": [
+       {
+        "label": "Autor",
+        "text": "Der Gesetzgeber der Weimarer Republik"
+       },
+       {
+        "label": "Datum",
+        "text": "1919"
+       },
+       {
+        "label": "Art",
+        "text": "Verfassungsartikel"
+       },
+       {
+        "label": "Adressat",
+        "text": "Der deutsche Staat und seine Bürger"
+       },
+       {
+        "label": "Intention",
+        "text": "Rechtliche Grundlage für Notverordnungen des Reichspräsidenten"
+       },
+       {
+        "label": "Inhalt",
+        "text": "Der Reichspräsident kann bei erheblicher Störung der öffentlichen Sicherheit Maßnahmen ergreifen und Grundrechte teilweise außer Kraft setzen."
+       },
+       {
+        "label": "Vertrauenswürdigkeit",
+        "text": "Als Teil der Verfassung ist die Quelle verlässlich, jedoch spiegelt sie die politische Machtbalance wider, die später problematisch wurde."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Beispielaufgabe",
+      "body": "Erkläre, warum Art. 48 als Schwachstelle der Verfassung gilt.",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Betrachte die Macht des Reichspräsidenten und die Möglichkeit, am Parlament vorbeizugehen."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Denke an die Nutzung von Art. 48 ab 1930 und die Folgen für die Demokratie."
+       }
+      ],
+      "answer": "Art. 48 gilt als Schwachstelle, weil er dem Reichspräsidenten das Recht gab, ohne Zustimmung des Reichstags Notverordnungen zu erlassen und damit die Grundrechte teilweise außer Kraft zu setzen. Dadurch konnte er am Parlament vorbeiregieren, was die Bedeutung des Reichstags schwächte und die politische Stabilität untergrub. Ab 1930 wurden Notverordnungen regelmäßig eingesetzt, was die Demokratie weiter schwächte und den Weg zur Diktatur erleichterte.",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "summary",
+      "title": "Kurzfassung",
+      "body": "Die Weimarer Verfassung schuf Grundrechte und ein Verhältniswahlrecht ohne Sperrklausel, aber die starke Macht des Reichspräsidenten und Art. 48 führten zu politischer Instabilität. Wichtige Ereignisse wie der Kapp‑Putsch und die Hyperinflation 1923 verdeutlichten die Schwächen der Republik.",
+      "items": [],
+      "answer": "",
+      "from_notes": false,
+      "source_pages": []
+     }
+    ],
+    "explanation": "In dieser Stunde lernst du die wichtigsten Rechte und Institutionen der Weimarer Verfassung kennen, verstehst, warum Art. 48 als Schwachstelle galt, und ordnest zentrale Ereignisse wie den Kapp‑Putsch und die Hyperinflation in die Zeit der Weimarer Republik ein.",
+    "worked_example": {},
+    "teacher_tips": [
+     "Achte darauf, dass du die Begriffe genau so schreibst, wie sie in den Notizen stehen.",
+     "Wenn du Art. 48 erklärst, erwähne sowohl die Möglichkeit, am Parlament vorbeizugehen, als auch die Folgen für die Demokratie."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Art. 48",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?",
+     "hint": "Denke an die Macht des Reichspräsidenten und die Folgen für das Parlament.",
+     "options": [
+      {
+       "id": "a",
+       "label": "Es erlaubte dem Reichspräsidenten, ohne Zustimmung des Reichstags Notverordnungen zu erlassen und damit die Grundrechte teilweise außer Kraft zu setzen."
+      },
+      {
+       "id": "b",
+       "label": "Es schuf eine Sperrklausel, die die politische Stabilität stärkte."
+      },
+      {
+       "id": "c",
+       "label": "Es begrenzte die Amtszeit des Reichspräsidenten auf vier Jahre."
+      },
+      {
+       "id": "d",
+       "label": "Es verlangte, dass der Reichstag immer eine Mehrheit von 60 % haben muss."
+      }
+     ],
+     "expected_answer": "a",
+     "source_pages": [
+      3
+     ]
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Art. 48",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?",
+    "hint": "Denke an die Macht des Reichspräsidenten und die Folgen für das Parlament.",
+    "options": [
+     {
+      "id": "a",
+      "label": "Es erlaubte dem Reichspräsidenten, ohne Zustimmung des Reichstags Notverordnungen zu erlassen und damit die Grundrechte teilweise außer Kraft zu setzen."
+     },
+     {
+      "id": "b",
+      "label": "Es schuf eine Sperrklausel, die die politische Stabilität stärkte."
+     },
+     {
+      "id": "c",
+      "label": "Es begrenzte die Amtszeit des Reichspräsidenten auf vier Jahre."
+     },
+     {
+      "id": "d",
+      "label": "Es verlangte, dass der Reichstag immer eine Mehrheit von 60 % haben muss."
+     }
+    ],
+    "expected_answer": "a",
+    "source_pages": [
+     3
+    ],
+    "subject": "History",
+    "concepts": [
+     "Art. 48"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Lernziel und Bedeutung",
+     "body": "In dieser Stunde lernst du, welche Rechte und Institutionen die Weimarer Verfassung vorsah, warum Art. 48 als Schwachstelle galt und welche wichtigen Ereignisse die Republik prägten. Das Thema ist wichtig, weil es erklärt, wie die politische Instabilität zur Diktatur führte.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "explanation",
+     "title": "Historischer Kontext",
+     "body": "Die Weimarer Verfassung wurde 1919 in der deutschen Republik festgelegt. Die Verfassung schuf Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten, der Notverordnungen erlassen konnte.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "explanation",
+     "title": "Historischer Kontext",
+     "body": "Vor ihr herrschte das Kaiserreich, das 1918 nach dem Ersten Weltkrieg zusammenbrach.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "timeline",
+     "title": "Chronologie der wichtigsten Ereignisse",
+     "body": "",
+     "items": [
+      {
+       "label": "9. Nov. 1918",
+       "text": "Philipp Scheidemann ruft die Republik aus; Kaiser Wilhelm II. tritt ab."
+      },
+      {
+       "label": "19. Jan. 1919",
+       "text": "Wahl zur Nationalversammlung; Frauen dürfen erstmals wählen."
+      },
+      {
+       "label": "11. Aug. 1919",
+       "text": "Reichspräsident Friedrich Ebert unterzeichnet die Verfassung."
+      },
+      {
+       "label": "März 1920",
+       "text": "Kapp‑Putsch scheitert an einem Generalstreik."
+      },
+      {
+       "label": "1923",
+       "text": "Krisenjahr: Ruhrbesetzung, Hyperinflation, Hitler‑Putsch in München."
+      },
+      {
+       "label": "1930",
+       "text": "Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten."
+      },
+      {
+       "label": "30. Jan. 1933",
+       "text": "Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe",
+     "body": "",
+     "items": [
+      {
+       "label": "Weimarer Verfassung",
+       "text": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah."
+      },
+      {
+       "label": "Art. 48",
+       "text": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte."
+      },
+      {
+       "label": "Reichspräsident",
+       "text": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflöste und Notverordnungen erließ."
+      },
+      {
+       "label": "Reichstag",
+       "text": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt."
+      },
+      {
+       "label": "Reichskanzler",
+       "text": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt."
+      },
+      {
+       "label": "Notverordnungen",
+       "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann."
+      },
+      {
+       "label": "Sperrklausel",
+       "text": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie."
+      },
+      {
+       "label": "Kapp‑Putsch",
+       "text": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „Weimarer Verfassung“?",
+       "text": "Die Verfassung, die 1919 die deutsche Republik regelte.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Art. 48“?",
+       "text": "Ein Paragraph, der dem Präsidenten Notverordnungen erlaubte.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichspräsident“?",
+       "text": "Der Präsident, der die Regierung ernennt und Notverordnungen machen kann.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichstag“?",
+       "text": "Das Parlament, das Gesetze macht.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichskanzler“?",
+       "text": "Der Regierungschef, der vom Präsidenten ernannt wird.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Notverordnungen“?",
+       "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Sperrklausel“?",
+       "text": "Eine Grenze, die Parteien erreichen müssen, um im Parlament zu sitzen.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Kapp‑Putsch“?",
+       "text": "Ein gescheiterter Versuch, die Republik zu stürzen, im März 1920.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Hyperinflation“?",
+       "text": "Eine sehr hohe Inflation, die 1923 auftrat.",
+       "from_notes": false
+      },
+      {
+       "label": "Was geschah: Ausruf der Republik?",
+       "text": "9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II. wird bekanntgegeben.",
+       "from_notes": true
+      },
+      {
+       "label": "Wofür steht das Datum Wahl zur Nationalversammlung?",
+       "text": "19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.",
+       "from_notes": true
+      },
+      {
+       "label": "Was geschah: Unterzeichnung der Verfassung?",
+       "text": "11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 3,
+     "study_url": "/flashcards/3/study",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe",
+     "body": "",
+     "items": [
+      {
+       "label": "Hyperinflation",
+       "text": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte."
+      }
+     ],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "cause_effect",
+     "title": "Ursachen und Folgen",
+     "body": "",
+     "items": [
+      {
+       "label": "Fehlende Sperrklausel",
+       "text": "Viele kleine Parteien kamen in den Reichstag, was die Bildung stabiler Regierungen erschwerte."
+      },
+      {
+       "label": "Starke Macht des Reichspräsidenten",
+       "text": "Er konnte mit Art. 48 am Parlament vorbeiregieren, was die Bedeutung des Reichstags schwächte."
+      },
+      {
+       "label": "Verwendung von Art. 48 ab 1930",
+       "text": "Regierungen nutzten Notverordnungen regelmäßig, wodurch die Demokratie geschwächt und der Weg zur Diktatur erleichtert wurde."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "perspectives",
+     "title": "Verschiedene Sichtweisen",
+     "body": "Die konservativen und rechten Gruppen sahen Art. 48 als notwendiges Sicherheitsinstrument, während linke und demokratische Kräfte es als Gefahr für die Republik betrachteten. Heute wird die starke Macht des Reichspräsidenten oft als Grund für die politische Instabilität kritisiert.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "source_analysis",
+     "title": "Analyse einer Quelle",
+     "body": "Die Quelle ist Art. 48 Abs. 2 der Weimarer Reichsverfassung (1919).",
+     "items": [
+      {
+       "label": "Autor",
+       "text": "Der Gesetzgeber der Weimarer Republik"
+      },
+      {
+       "label": "Datum",
+       "text": "1919"
+      },
+      {
+       "label": "Art",
+       "text": "Verfassungsartikel"
+      },
+      {
+       "label": "Inhalt",
+       "text": "Der Reichspräsident kann bei erheblicher Störung der öffentlichen Sicherheit Maßnahmen ergreifen und Grundrechte teilweise außer Kraft setzen."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "source_analysis",
+     "title": "Analyse einer Quelle",
+     "body": "",
+     "items": [
+      {
+       "label": "Adressat",
+       "text": "Der deutsche Staat und seine Bürger"
+      },
+      {
+       "label": "Intention",
+       "text": "Rechtliche Grundlage für Notverordnungen des Reichspräsidenten"
+      },
+      {
+       "label": "Vertrauenswürdigkeit",
+       "text": "Als Teil der Verfassung ist die Quelle verlässlich, jedoch spiegelt sie die politische Machtbalance wider, die später problematisch wurde."
+      }
+     ],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Beispielaufgabe",
+     "body": "Erkläre, warum Art. 48 als Schwachstelle der Verfassung gilt.",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Betrachte die Macht des Reichspräsidenten und die Möglichkeit, am Parlament vorbeizugehen."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Denke an die Nutzung von Art. 48 ab 1930 und die Folgen für die Demokratie."
+      }
+     ],
+     "answer": "Art. 48 gilt als Schwachstelle, weil er dem Reichspräsidenten das Recht gab, ohne Zustimmung des Reichstags Notverordnungen zu erlassen und damit die Grundrechte teilweise außer Kraft zu setzen. Dadurch konnte er am Parlament vorbeiregieren, was die Bedeutung des Reichstags schwächte und die politische Stabilität untergrub. Ab 1930 wurden Notverordnungen regelmäßig eingesetzt, was die Demokratie weiter schwächte und den Weg zur Diktatur erleichterte.",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      3
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "summary",
+     "title": "Kurzfassung",
+     "body": "Die Weimarer Verfassung schuf Grundrechte und ein Verhältniswahlrecht ohne Sperrklausel, aber die starke Macht des Reichspräsidenten und Art. 48 führten zu politischer Instabilität. Wichtige Ereignisse wie der Kapp‑Putsch und die Hyperinflation 1923 verdeutlichten die Schwächen der Republik.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    }
+   ],
+   "answer": "a",
+   "evaluation_raw_text": "{\"evaluation\":{\"is_correct\":true,\"score\":100,\"feedback\":\"Du hast die richtige Antwort gewählt. Art. 48 erlaubt dem Reichspräsidenten, Notverordnungen zu erlassen und damit Grundrechte teilweise außer Kraft zu setzen – das macht die Verfassung schwach.\",\"correction\":\"\",\"teacher_tip\":\"Wenn du dir unsicher bist, prüfe, ob die Klausel dem Präsidenten Macht über das Parlament gibt – das ist der Schlüssel.\",\"exception_note\":\"\",\"skill_status\":\"mastered\"},\"next_question\":{\"id\":\"q2\",\"concept\":\"Weimarer Verfassung\",\"difficulty\":1,\"type\":\"ordering\",\"prompt\":\"Ordne die folgenden Ereignisse in der richtigen Reihenfolge: (1) Reichspräsident ernennt Reichskanzler, (2) Reichstag wird aufgelöst, (3) Notverordnungen werden erlassen, (4) Reichspräsident wird gewählt.\",\"hint\":\"Denke an die Reihenfolge, in der die Verfassungsakte wirken.\",\"options\":[{\"id\":\"a\",\"label\":\"1, 2, 3, 4\"},{\"id\":\"b\",\"label\":\"1, 3, 2, 4\"},{\"id\":\"c\",\"label\":\"2, 1, 3, 4\"},{\"id\":\"d\",\"label\":\"3, 1, 2, 4\"}],\"expected_answer\":\"b\"},\"summary\":null,\"retry\":{} }",
+   "evaluation_call": 9,
+   "diagnosis_raw_text": "{\n  \"analysis_version\": \"diagnosis:v2\",\n  \"correctness_status\": \"correct\",\n  \"score\": {\n    \"points\": 1,\n    \"max_points\": 1,\n    \"rubric_evidence\": [\n      {\n        \"criterion\": \"Correct answer selected\",\n        \"met\": true,\n        \"evidence_ids\": [\"e1\", \"e2\", \"e3\"]\n      }\n    ]\n  },\n  \"concepts_assessed\": [\"Art. 48\"],\n  \"primary_diagnosis\": {\n    \"tag\": \"correct\",\n    \"statement\": \"Der Schüler hat die richtige Antwort (a) gewählt, die dem erwarteten Ergebnis entspricht.\",\n    \"evidence_ids\": [\"e1\", \"e2\", \"e3\"]\n  },\n  \"secondary_diagnoses\": [],\n  \"evidence\": [\n    {\n      \"id\": \"e1\",\n      \"source\": \"question\",\n      \"quote\": \"Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?\"\n    },\n    {\n      \"id\": \"e2\",\n      \"source\": \"expected_answer\",\n      \"quote\": \"a\"\n    },\n    {\n      \"id\": \"e3\",\n      \"source\": \"student_answer\",\n      \"quote\": \"a\"\n    },\n    {\n      \"id\": \"e4\",\n      \"source\": \"source_material\",\n      \"quote\": \"Er hat das Notverordnungsrecht (Art. 48). Wenn der Reichstag keine Mehrheit fand, konnte der Präsident mit Art. 48 am Parlament vorbei regieren.\"\n    }\n  ],\n  \"misconception_description\": \"\",\n  \"prerequisite_gaps\": [],\n  \"missing_evidence\": false,\n  \"missing_evidence_reason\": \"\",\n  \"confidence\": {\n    \"value\": 0.95,\n    \"basis\": \"Direkte Übereinstimmung von Frage, erwarteter und gegebener Antwort, unterstützt durch Quelle.\"\n  },\n  \"recommended_intervention\": \"confirm_and_extend\",\n  \"candidate_question_constraints\": {\n    \"concept\": \"Art. 48\",\n    \"prerequisite_focus\": \"Weimarer Verfassung\",\n    \"difficulty\": 1,\n    \"cognitive_demand\": \"recall\",\n    \"question_type\": \"multiple_choice\",\n    \"target_misconception\": \"\",\n    \"purpose\": \"Assess understanding of Art. 48 as a weakness\"\n  },\n  \"student_facing_explanation\": \"Du hast die richtige Antwort gewählt: Art. 48 erlaubte dem Reichspräsidenten, Notverordnungen ohne Zustimmung des Reichstags zu erlassen. Nichts ist falsch, wiederhole das Konzept, um es zu festigen.\",\n  \"internal_diagnostic_summary\": \"Antwort korrekt, entspricht erwarteter Lösung.\"\n}",
+   "diagnosis_call": 10
+  },
+  "geography": {
+   "subject": "Geographie",
+   "grade": "8",
+   "file": "Geographie_Tsunami_Japan.pdf",
+   "notes": [
+    {
+     "label": "[Geographie_Tsunami_Japan.pdf, p. 1]",
+     "text": "Geographie Klasse 8 - Wie entsteht ein Tsunami? Beispiel Japan 2011\nKartenbeschreibung (Atlaskarte: Japan - Plattengrenzen)\nJapan liegt im Westen des Pazifischen Ozeans an der Grenze mehrerer Erdplatten. Östlich von\nJapan liegt die Pazifische Platte. Sie bewegt sich nach Westen und taucht im Japangraben unter die\nPlatte, auf der Nordjapan liegt. Im Süden grenzt die Philippinische Platte an. Tokio liegt an der\nOstküste der Insel Honshu. Die Region Tohoku liegt im Nordosten von Honshu.\nEntstehung eines Tsunamis (Ablauf)\n1. Die ozeanische Platte schiebt sich unter die andere Platte (Subduktion). Dabei verhaken sich die\nPlatten, und Spannung baut sich auf.\n2. Die Spannung löst sich ruckartig: Ein Seebeben entsteht, und der Meeresboden hebt sich an einer\nStelle um mehrere Meter.\n3. Die ganze Wassersäule darüber wird angehoben. Es entstehen Wellen, die sich in alle\nRichtungen ausbreiten.\n4. Auf dem offenen Meer sind die Wellen sehr schnell (bis etwa 800 km/h), aber nur wenig hoch.\n5. In flachem Wasser an der Küste werden sie langsamer, und das Wasser türmt sich zu hohen\nWellen auf.\n6. Oft zieht sich das Meer vorher weit zurück. Das ist ein Warnzeichen.\nFallbeispiel: 11. März 2011\nEin Seebeben der Stärke 9,0 vor der Küste von Tohoku löste einen Tsunami aus. An manchen\nStellen liefen die Wellen fast 40 m hoch an Land. Etwa 18 000 Menschen starben oder werden\nvermisst. Im Kernkraftwerk Fukushima Daiichi fiel die Kühlung aus, es kam zu Kernschmelzen.\nFolgen: Zerstörung von Städten und Häfen, Evakuierung rund um Fukushima, Diskussion über\nAtomkraft (Deutschland beschloss 2011 den Atomausstieg bis 2022).\nFachbegriffe\nSubduktion: Abtauchen einer Platte unter eine andere. Seebeben: Erdbeben unter dem\nMeeresboden. Tsunami: japanisch für Hafenwelle. Tiefseegraben: lange, sehr tiefe Rinne im\nMeeresboden an einer Subduktionszone.\nSchutz: Frühwarnsysteme, Deiche und Schutzmauern, Evakuierungsübungen, höher gelegene\nFluchtorte."
+    }
+   ],
+   "section": {
+    "title": "Tsunami",
+    "topic_map": {
+     "summary": "Ein Tsunami ist eine große Meereswelle, die durch ein Seebeben entsteht. Er entsteht, wenn sich eine ozeanische Platte unter eine andere schiebt (Subduktion) und dadurch der Meeresboden ruckartig anhebt. Die Wellen breiten sich schnell im offenen Meer aus und werden in flachem Wasser höher.",
+     "simple_summary": "Ein Tsunami ist eine riesige Welle, die durch ein Unterwasserbeben entsteht.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "Subduktion",
+       "definition": "Abtauchen einer Platte unter eine andere.",
+       "simple_definition": "Eine Platte schiebt sich unter eine andere.",
+       "example": "",
+       "page_id": 4,
+       "page_ids": [
+        4
+       ],
+       "quote": "Subduktion: Abtauchen einer Platte unter eine andere.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "subduktion"
+      },
+      {
+       "term": "Seebeben",
+       "definition": "Erdbeben unter dem Meeresboden.",
+       "simple_definition": "Beben unter Wasser.",
+       "example": "",
+       "page_id": 4,
+       "page_ids": [
+        4
+       ],
+       "quote": "Seebeben: Erdbeben unter dem Meeresboden.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "seebeb"
+      },
+      {
+       "term": "Tsunami",
+       "definition": "Japanisch für Hafenwelle, große Meereswelle, die durch ein Seebeben entsteht.",
+       "simple_definition": "Riesige Welle, die durch ein Unterwasserbeben kommt.",
+       "example": "",
+       "page_id": 4,
+       "page_ids": [
+        4
+       ],
+       "quote": "Tsunami: japanisch für Hafenwelle.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "tsunami"
+      },
+      {
+       "term": "Tiefseegraben",
+       "definition": "Lange, sehr tiefe Rinne im Meeresboden an einer Subduktionszone.",
+       "simple_definition": "Tiefe Rinne im Meeresboden.",
+       "example": "",
+       "page_id": 4,
+       "page_ids": [
+        4
+       ],
+       "quote": "Tiefseegraben: lange, sehr tiefe Rinne im Meeresboden an einer Subduktionszone.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "tiefseegrab"
+      },
+      {
+       "term": "Schutz",
+       "definition": "Frühwarnsysteme, Deiche und Schutzmauern, Evakuierungsübungen, höher gelegene Fluchtorte.",
+       "simple_definition": "Maßnahmen, um Menschen zu schützen.",
+       "example": "",
+       "page_id": 4,
+       "page_ids": [
+        4
+       ],
+       "quote": "Schutz: Frühwarnsysteme, Deiche und Schutzmauern, Evakuierungsübungen, höher gelegene Fluchtorte.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "schutz"
+      }
+     ],
+     "items": [
+      {
+       "kind": "process",
+       "name": "Entstehung eines Tsunamis",
+       "detail": "1. Subduktion: ozeanische Platte schiebt sich unter andere Platte. 2. Spannung löst sich ruckartig, Seebeben entsteht. 3. Meeresboden hebt sich an. 4. Wassersäule wird angehoben, Wellen entstehen. 5. Wellen breiten sich aus, im offenen Meer schnell, in flachem Wasser hoch.",
+       "page_id": 4,
+       "in_notes": true
+      },
+      {
+       "kind": "example",
+       "name": "Japan 2011",
+       "detail": "Ein Seebeben der Stärke 9,0 vor der Küste von Tohoku löste einen Tsunami aus. Wellen bis 40 m hoch, 18 000 Tote oder Vermisste, Kernschmelzen im Kernkraftwerk Fukushima.",
+       "page_id": 4,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Folgen des Tsunamis",
+       "detail": "Zerstörung von Städten und Häfen, Evakuierung rund um Fukushima, Diskussion über Atomkraft.",
+       "page_id": 4,
+       "in_notes": true
+      }
+     ],
+     "exam_questions": [
+      "Wie entsteht ein Tsunami?",
+      "Was passiert, wenn ein Seebeben unter dem Meeresboden auftritt?",
+      "Welche Schutzmaßnahmen gibt es gegen Tsunamis?",
+      "Beschreibe die Folgen des Tsunamis in Japan 2011."
+     ],
+     "related": []
+    },
+    "source_page_ids": "[4]"
+   },
+   "plan_item_kinds": [
+    "process",
+    "example",
+    "event",
+    "term",
+    "place"
+   ],
+   "lesson_call": 8,
+   "lesson_raw": {
+    "lesson_title": "Tsunami verstehen",
+    "detected_level": "Klasse 8",
+    "concepts": [
+     {
+      "name": "Tsunami",
+      "evidence": "Wichtige Naturkatastrophe, die Menschenleben und Infrastruktur bedroht"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Lernziel",
+      "body": "Du lernst, wie ein Tsunami entsteht, den Unterschied zu einem Seebeben erkennst und beschreibst, was bei einem Tsunami passiert. Das hilft dir, Naturereignisse richtig einzuschätzen und Schutzmaßnahmen zu verstehen.",
+      "items": [],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "explanation",
+      "title": "Was ist ein Tsunami?",
+      "body": "Ein Tsunami ist eine riesige Meereswelle, die durch ein Seebeben entsteht. Er passiert meist an der Grenze von Erdplatten, wo sich eine Platte unter die andere schiebt (Subduktion).",
+      "items": [],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "terms",
+      "title": "Wichtige Begriffe",
+      "body": "",
+      "items": [
+       {
+        "label": "Subduktion",
+        "text": "Abtauchen einer Platte unter eine andere."
+       },
+       {
+        "label": "Seebeben",
+        "text": "Erdbeben unter dem Meeresboden."
+       },
+       {
+        "label": "Tsunami",
+        "text": "Japanisch für Hafenwelle, große Meereswelle, die durch ein Seebeben entsteht."
+       },
+       {
+        "label": "Tiefseegraben",
+        "text": "Lange, sehr tiefe Rinne im Meeresboden an einer Subduktionszone."
+       },
+       {
+        "label": "Schutz",
+        "text": "Maßnahmen, um Menschen zu schützen, z. B. Frühwarnsysteme, Deiche, Evakuierungsübungen."
+       }
+      ],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "process",
+      "title": "Entstehung eines Tsunamis",
+      "body": "",
+      "items": [
+       {
+        "label": "1",
+        "text": "Subduktion: eine ozeanische Platte schiebt sich unter eine andere."
+       },
+       {
+        "label": "2",
+        "text": "Spannung löst sich ruckartig, ein Seebeben entsteht."
+       },
+       {
+        "label": "3",
+        "text": "Der Meeresboden hebt sich an einer Stelle um mehrere Meter."
+       },
+       {
+        "label": "4",
+        "text": "Die darüber liegende Wassersäule wird angehoben, Wellen entstehen."
+       },
+       {
+        "label": "5",
+        "text": "Wellen breiten sich im offenen Meer schnell aus, sind aber flach."
+       },
+       {
+        "label": "6",
+        "text": "Im flachen Wasser an der Küste werden sie langsamer und steigen hoch."
+       },
+       {
+        "label": "7",
+        "text": "Vor dem Ankommen kann das Meer zurückziehen – Warnzeichen."
+       }
+      ],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "diagram",
+      "title": "Diagramm lesen",
+      "body": "Beim Diagramm siehst du die Wellenhöhe vs. Zeit. Zuerst steigt die Höhe, dann fällt sie, wenn die Welle an der Küste ankommt. Achte auf Titel, Legende und Maßstab, bevor du interpretierst.",
+      "items": [],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "cause_effect",
+      "title": "Ursachen und Folgen",
+      "body": "",
+      "items": [
+       {
+        "label": "Ursache",
+        "text": "Subduktion führt zu Seebeben und damit zu Tsunami."
+       },
+       {
+        "label": "Folge",
+        "text": "Zerstörung von Städten, Evakuierung, Diskussion über Atomkraft."
+       }
+      ],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "example",
+      "title": "Japan 2011",
+      "body": "Ein Seebeben der Stärke 9,0 vor Tohoku löste einen Tsunami aus. Wellen bis 40 m hoch, 18 000 Tote, Kernschmelzen im Kernkraftwerk Fukushima.",
+      "items": [],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Karte beschreiben",
+      "body": "Beschreibe, was auf der Karte zu sehen ist, und erkläre, wie die geographischen Faktoren zu einem Tsunami beitragen.",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Achte auf die Plattengrenzen und den Tiefseegraben."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Markiere die Küstenlinie, an der der Tsunami auftreten kann."
+       }
+      ],
+      "answer": "Die Karte zeigt Japan an der Grenze der Pazifischen Platte. Dort taucht die Platte unter die Nordjapanische Platte (Subduktion). Der Tiefseegraben liegt an der Grenze. Wenn ein Seebeben auftritt, kann ein Tsunami entstehen, der an der Küste hohe Wellen erzeugt.",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "summary",
+      "title": "Kurzfassung",
+      "body": "Ein Tsunami entsteht durch ein Seebeben, das bei Subduktion ausgelöst wird. Die Wellen breiten sich schnell aus, werden an der Küste hoch und können große Schäden anrichten. Schutzmaßnahmen wie Frühwarnsysteme helfen, Menschenleben zu retten.",
+      "items": [],
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     }
+    ],
+    "explanation": "In dieser Stunde lernst du, wie ein Tsunami entsteht, erkennst die Unterschiede zu einem Seebeben und verstehst die Folgen für Menschen und Umwelt.",
+    "teacher_tips": [
+     "Denke immer daran, dass ein Tsunami erst dann gefährlich wird, wenn er an der Küste ankommt – im offenen Meer ist er flach."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Tsunami",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Was passiert, wenn ein Seebeben unter dem Meeresboden auftritt?",
+     "hint": "Denke an die Bewegung des Meeresbodens.",
+     "options": [
+      {
+       "id": "a",
+       "label": "Der Meeresboden sinkt und Wasser fließt nach oben."
+      },
+      {
+       "id": "b",
+       "label": "Der Meeresboden hebt sich an und Wasser wird angehoben."
+      },
+      {
+       "id": "c",
+       "label": "Der Meeresboden bleibt gleich, aber die Wellen werden höher."
+      },
+      {
+       "id": "d",
+       "label": "Der Meeresboden verschiebt sich horizontal ohne Wellen."
+      }
+     ],
+     "expected_answer": "b"
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Tsunami",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Was passiert, wenn ein Seebeben unter dem Meeresboden auftritt?",
+    "hint": "Denke an die Bewegung des Meeresbodens.",
+    "options": [
+     {
+      "id": "a",
+      "label": "Der Meeresboden sinkt und Wasser fließt nach oben."
+     },
+     {
+      "id": "b",
+      "label": "Der Meeresboden hebt sich an und Wasser wird angehoben."
+     },
+     {
+      "id": "c",
+      "label": "Der Meeresboden bleibt gleich, aber die Wellen werden höher."
+     },
+     {
+      "id": "d",
+      "label": "Der Meeresboden verschiebt sich horizontal ohne Wellen."
+     }
+    ],
+    "expected_answer": "b",
+    "subject": "Geography",
+    "concepts": [
+     "Tsunami"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Lernziel",
+     "body": "Du lernst, wie ein Tsunami entsteht, den Unterschied zu einem Seebeben erkennst und beschreibst, was bei einem Tsunami passiert. Das hilft dir, Naturereignisse richtig einzuschätzen und Schutzmaßnahmen zu verstehen.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "explanation",
+     "title": "Was ist ein Tsunami?",
+     "body": "Ein Tsunami ist eine riesige Meereswelle, die durch ein Seebeben entsteht. Er passiert meist an der Grenze von Erdplatten, wo sich eine Platte unter die andere schiebt (Subduktion).",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe",
+     "body": "",
+     "items": [
+      {
+       "label": "Subduktion",
+       "text": "Abtauchen einer Platte unter eine andere."
+      },
+      {
+       "label": "Seebeben",
+       "text": "Erdbeben unter dem Meeresboden."
+      },
+      {
+       "label": "Tsunami",
+       "text": "Japanisch für Hafenwelle, große Meereswelle, die durch ein Seebeben entsteht."
+      },
+      {
+       "label": "Tiefseegraben",
+       "text": "Lange, sehr tiefe Rinne im Meeresboden an einer Subduktionszone."
+      },
+      {
+       "label": "Schutz",
+       "text": "Maßnahmen, um Menschen zu schützen, z. B. Frühwarnsysteme, Deiche, Evakuierungsübungen."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „Subduktion“?",
+       "text": "Eine Platte schiebt sich unter eine andere.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Seebeben“?",
+       "text": "Beben unter Wasser.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Tsunami“?",
+       "text": "Riesige Welle, die durch ein Unterwasserbeben kommt.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Tiefseegraben“?",
+       "text": "Tiefe Rinne im Meeresboden.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Schutz“?",
+       "text": "Maßnahmen, um Menschen zu schützen.",
+       "from_notes": true
+      },
+      {
+       "label": "Beschreibe den Ablauf: Entstehung eines Tsunamis",
+       "text": "1. Subduktion: ozeanische Platte schiebt sich unter andere Platte. 2. Spannung löst sich ruckartig, Seebeben entsteht. 3. Meeresboden hebt sich an. 4. Wassersäule wird angehoben, Wellen entstehen. 5. Wellen breiten sich aus, im offenen Meer schnell, in flachem Wasser hoch.",
+       "from_notes": true
+      },
+      {
+       "label": "Was zeigt das Beispiel „Japan 2011“?",
+       "text": "Ein Seebeben der Stärke 9,0 vor der Küste von Tohoku löste einen Tsunami aus. Wellen bis 40 m hoch, 18 000 Tote oder Vermisste, Kernschmelzen im Kernkraftwerk Fukushima.",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 4,
+     "study_url": "/flashcards/4/study",
+     "from_notes": true,
+     "source_pages": []
+    },
+    {
+     "kind": "process",
+     "title": "Entstehung eines Tsunamis",
+     "body": "",
+     "items": [
+      {
+       "label": "1",
+       "text": "Subduktion: eine ozeanische Platte schiebt sich unter eine andere."
+      },
+      {
+       "label": "2",
+       "text": "Spannung löst sich ruckartig, ein Seebeben entsteht."
+      },
+      {
+       "label": "3",
+       "text": "Der Meeresboden hebt sich an einer Stelle um mehrere Meter."
+      },
+      {
+       "label": "4",
+       "text": "Die darüber liegende Wassersäule wird angehoben, Wellen entstehen."
+      },
+      {
+       "label": "5",
+       "text": "Wellen breiten sich im offenen Meer schnell aus, sind aber flach."
+      },
+      {
+       "label": "6",
+       "text": "Im flachen Wasser an der Küste werden sie langsamer und steigen hoch."
+      },
+      {
+       "label": "7",
+       "text": "Vor dem Ankommen kann das Meer zurückziehen – Warnzeichen."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "diagram",
+     "title": "Diagramm lesen",
+     "body": "Beim Diagramm siehst du die Wellenhöhe vs. Zeit. Zuerst steigt die Höhe, dann fällt sie, wenn die Welle an der Küste ankommt. Achte auf Titel, Legende und Maßstab, bevor du interpretierst.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "cause_effect",
+     "title": "Ursachen und Folgen",
+     "body": "",
+     "items": [
+      {
+       "label": "Ursache",
+       "text": "Subduktion führt zu Seebeben und damit zu Tsunami."
+      },
+      {
+       "label": "Folge",
+       "text": "Zerstörung von Städten, Evakuierung, Diskussion über Atomkraft."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "example",
+     "title": "Japan 2011",
+     "body": "Ein Seebeben der Stärke 9,0 vor Tohoku löste einen Tsunami aus. Wellen bis 40 m hoch, 18 000 Tote, Kernschmelzen im Kernkraftwerk Fukushima.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Karte beschreiben",
+     "body": "Beschreibe, was auf der Karte zu sehen ist, und erkläre, wie die geographischen Faktoren zu einem Tsunami beitragen.",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Achte auf die Plattengrenzen und den Tiefseegraben."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Markiere die Küstenlinie, an der der Tsunami auftreten kann."
+      }
+     ],
+     "answer": "Die Karte zeigt Japan an der Grenze der Pazifischen Platte. Dort taucht die Platte unter die Nordjapanische Platte (Subduktion). Der Tiefseegraben liegt an der Grenze. Wenn ein Seebeben auftritt, kann ein Tsunami entstehen, der an der Küste hohe Wellen erzeugt.",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "summary",
+     "title": "Kurzfassung",
+     "body": "Ein Tsunami entsteht durch ein Seebeben, das bei Subduktion ausgelöst wird. Die Wellen breiten sich schnell aus, werden an der Küste hoch und können große Schäden anrichten. Schutzmaßnahmen wie Frühwarnsysteme helfen, Menschenleben zu retten.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      4
+     ],
+     "source_labels": [
+      "Geographie_Tsunami_Japan.pdf S. 1"
+     ]
+    }
+   ],
+   "answer": "a",
+   "evaluation_raw_text": "{\"evaluation\":{\"is_correct\":false,\"score\":0,\"feedback\":\"Du hast die falsche Option gewählt. Bei einem Seebeben unter dem Meeresboden hebt sich der Meeresboden an, nicht sinkt er. Dadurch wird die Wassersäule darüber angehoben und es entstehen Wellen. Die Option \\\"Der Meeresboden sinkt und Wasser fließt nach oben\\\" beschreibt das Gegenteil von dem, was bei einem Tsunami passiert.\",\"correction\":\"1. Beim Seebeben bewegt sich die ozeanische Platte unter die andere Platte (Subduktion). 2. Durch die plötzliche Bewegung hebt sich der Meeresboden an. 3. Die darüber liegende Wassersäule wird angehoben und es entstehen Wellen, die sich in alle Richtungen ausbreiten. 4. Im offenen Meer sind die Wellen schnell und flach; an der Küste werden sie langsam und hoch.\",\"teacher_tip\":\"Wenn du dir unsicher bist, ob etwas steigt oder sinkt, frage dich: \\\"Was passiert mit dem Wasser, wenn der Boden nach oben rückt?\\\" – das Wasser wird nach oben gedrückt.\",\"exception_note\":\"\",\"skill_status\":\"needs_practice\"},\"next_question\":{\"id\":\"q2\",\"concept\":\"Tsunami\",\"difficulty\":1,\"type\":\"ordering\",\"prompt\":\"Ordne die Schritte in der richtigen Reihenfolge, wie ein Tsunami entsteht:\",\"hint\":\"Denke an die Bewegung der Platten und die Reaktion des Wassers.\",\"options\":[{\"id\":\"a\",\"label\":\"Der Meeresboden hebt sich an\"},{\"id\":\"b\",\"label\":\"Die ozeanische Platte bewegt sich unter die andere Platte\"},{\"id\":\"c\",\"label\":\"Die Wassersäule wird angehoben\"},{\"id\":\"d\",\"label\":\"Wellen breiten sich in alle Richtungen aus\"}],\"expected_answer\":\"b,a,c,d\"},\"summary\":null,\"retry\":{\"misunderstanding\":\"Du hast die Richtung der Bodenbewegung vertauscht – du dachtest, der Boden sinkt, aber er hebt sich an.\",\"reteach\":\"Wenn die ozeanische Platte unter die andere Platte rutscht, wird der Meeresboden nach oben gedrückt. Das Wasser darüber wird angehoben und erzeugt Wellen.\",\"simpler_example\":\"Stell dir vor, du drückst mit einer Hand einen Ballon von unten nach oben. Der Ballon hebt sich an und dehnt sich aus – so ähnlich passiert es beim Meeresboden und dem Wasser.\"}}",
+   "evaluation_call": 18,
+   "diagnosis_raw_text": "{\n  \"analysis_version\": \"diagnosis:v2\",\n  \"correctness_status\": \"incorrect\",\n  \"score\": {\n    \"points\": 0,\n    \"max_points\": 1,\n    \"rubric_evidence\": [\n      {\n        \"criterion\": \"Auswahl der korrekten Antwort\",\n        \"met\": false,\n        \"evidence_ids\": [\"e1\", \"e2\"]\n      }\n    ]\n  },\n  \"concepts_assessed\": [\"Tsunami\"],\n  \"primary_diagnosis\": {\n    \"tag\": \"conceptual_misconception\",\n    \"statement\": \"Der Schüler geht fälschlich davon aus, dass der Meeresboden bei einem Seebeben sinkt und Wasser nach oben fließt.\",\n    \"evidence_ids\": [\"e1\", \"e3\"]\n  },\n  \"secondary_diagnoses\": [],\n  \"evidence\": [\n    {\n      \"id\": \"e1\",\n      \"source\": \"student_answer\",\n      \"quote\": \"a\"\n    },\n    {\n      \"id\": \"e2\",\n      \"source\": \"expected_answer\",\n      \"quote\": \"b\"\n    },\n    {\n      \"id\": \"e3\",\n      \"source\": \"source_material\",\n      \"quote\": \"Der Meeresboden hebt sich an einer Stelle um mehrere Meter.\"\n    },\n    {\n      \"id\": \"e4\",\n      \"source\": \"source_material\",\n      \"quote\": \"Die ganze Wassersäule darüber wird angehoben.\"\n    }\n  ],\n  \"misconception_description\": \"Der Meeresboden hebt sich bei einem Seebeben, nicht sinkt; das Anheben der Wassersäule erzeugt den Tsunami.\",\n  \"prerequisite_gaps\": [],\n  \"missing_evidence\": false,\n  \"missing_evidence_reason\": \"\",\n  \"confidence\": {\n    \"value\": 0.95,\n    \"basis\": \"Klare Diskrepanz zwischen Schülerantwort (a) und Fachinformation, die das Anheben des Meeresbodens beschreibt.\"\n  },\n  \"recommended_intervention\": \"explain_correction\",\n  \"candidate_question_constraints\": {\n    \"concept\": \"Tsunami\",\n    \"prerequisite_focus\": \"Verstehen der Subduktion und des Anhebens des Meeresbodens bei einem Seebeben\",\n    \"difficulty\": 1,\n    \"cognitive_demand\": \"recall\",\n    \"question_type\": \"multiple_choice\",\n    \"target_misconception\": \"Meeresboden sinkt bei Seebeben\",\n    \"purpose\": \"Diagnose des Verständnisses der Tsunami-Entstehung\"\n  },\n  \"student_facing_explanation\": \"Du hast angenommen, dass der Meeresboden sinkt, aber er hebt sich tatsächlich an und hebt das Wasser darüber an. Das ist der Grund, warum deine Antwort nicht stimmt. Überprüfe bitte noch einmal, was im Text über das Anheben des Meeresbodens steht.\",\n  \"internal_diagnostic_summary\": \"Der Schüler wählte die falsche Option, weil er die falsche Richtung der Meeresbodensverschiebung annahm.\"\n}",
+   "diagnosis_call": 19
+  },
+  "math": {
+   "subject": "Mathe",
+   "grade": "8",
+   "file": "Mathe_Lineare_Funktionen.pdf",
+   "notes": [
+    {
+     "label": "[Mathe_Lineare_Funktionen.pdf, p. 1]",
+     "text": "Mathe Klasse 8 - Lineare Funktionen (Merkblatt)\nEine lineare Funktion hat die Funktionsgleichung y = m · x + b. Ihr Graph ist immer eine Gerade.\nm heißt Steigung. Sie gibt an, um wie viel y größer wird, wenn x um 1 größer wird.\nb heißt y-Achsenabschnitt. Die Gerade schneidet die y-Achse im Punkt (0 | b).\nIst m > 0, steigt die Gerade. Ist m < 0, fällt sie. Ist m = 0, verläuft sie parallel zur x-Achse.\nSteigung aus zwei Punkten P(x1 | y1) und Q(x2 | y2): m = (y2 - y1) : (x2 - x1)\nSteigungsdreieck: 1 nach rechts und m nach oben (bei negativem m nach unten).\nNullstelle: Dort schneidet der Graph die x-Achse, also ist y = 0. Man löst 0 = m · x + b nach x auf.\nBeispiel\nGegeben sind P(1 | 3) und Q(4 | 9).\nSteigung: m = (9 - 3) : (4 - 1) = 6 : 3 = 2\nb bestimmen: P einsetzen: 3 = 2 · 1 + b, also b = 1. Funktionsgleichung: y = 2x + 1\nNullstelle: 0 = 2x + 1, also 2x = -1 und x = -0,5\nTypische Fehler\nx und y beim Einsetzen vertauschen.\nBeim Steigungsdreieck die Differenzen in verschiedener Reihenfolge bilden (y2 - y1, aber x1 - x2).\nDas Vorzeichen von b beim Ablesen vergessen.\nÜbungen\n1) Bestimme m und b von y = -3x + 4. Steigt oder fällt die Gerade?\n2) Eine Gerade geht durch A(2 | 1) und B(6 | 9). Bestimme die Funktionsgleichung.\n3) Berechne die Nullstelle von y = 4x - 6.\n4) Handytarif: Grundgebühr 5 Euro im Monat, pro GB Datenvolumen 2 Euro. Stelle die\nFunktionsgleichung auf."
+    }
+   ],
+   "section": {
+    "title": "Lineare Funktionen",
+    "topic_map": {
+     "summary": "Eine lineare Funktion hat die Gleichung y = m·x + b. Der Graph ist eine Gerade, deren Steigung m angibt, wie stark y steigt oder fällt, wenn x um 1 zunimmt. Der y‑Achsenabschnitt b ist der Punkt, an dem die Gerade die y‑Achse schneidet. Mit zwei Punkten kann man m und b bestimmen, und die Nullstelle ergibt sich, wenn y = 0 gesetzt wird.",
+     "simple_summary": "Lineare Funktionen sind Geraden mit Gleichung y = m·x + b.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "y = m · x + b",
+       "definition": "Die Funktionsgleichung einer linearen Funktion, wobei m die Steigung und b der y‑Achsenabschnitt ist.",
+       "simple_definition": "Formel für eine Gerade: y = m·x + b",
+       "example": "",
+       "page_id": 5,
+       "page_ids": [
+        5
+       ],
+       "quote": "Eine lineare Funktion hat die Funktionsgleichung y = m · x + b.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "b-m-x-y"
+      },
+      {
+       "term": "Steigung m",
+       "definition": "Der Quotient (y2 – y1) : (x2 – x1), der angibt, um wie viel y größer wird, wenn x um 1 größer wird.",
+       "simple_definition": "Anstieg pro Einheit x",
+       "example": "",
+       "page_id": 5,
+       "page_ids": [
+        5
+       ],
+       "quote": "Steigung aus zwei Punkten P(x1 | y1) und Q(x2 | y2): m = (y2 - y1) : (x2 - x1)",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "m-steig"
+      },
+      {
+       "term": "y‑Achsenabschnitt b",
+       "definition": "Der y‑Wert, bei dem die Gerade die y‑Achse schneidet, also der Punkt (0 | b).",
+       "simple_definition": "Y‑Wert bei x = 0",
+       "example": "",
+       "page_id": 5,
+       "page_ids": [
+        5
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "achsenabschnitt-b-y"
+      },
+      {
+       "term": "Nullstelle",
+       "definition": "Der x‑Wert, bei dem y = 0, also der Schnittpunkt der Gerade mit der x‑Achse.",
+       "simple_definition": "X‑Wert, bei dem y = 0",
+       "example": "",
+       "page_id": 5,
+       "page_ids": [
+        5
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "nullstell"
+      },
+      {
+       "term": "Steigungsdreieck",
+       "definition": "Ein rechtwinkliges Dreieck, bei dem 1 Einheit nach rechts und m Einheiten nach oben (oder unten bei negativem m) gemessen werden.",
+       "simple_definition": "Dreieck zur Visualisierung der Steigung",
+       "example": "",
+       "page_id": 5,
+       "page_ids": [
+        5
+       ],
+       "quote": "Steigungsdreieck: 1 nach rechts und m nach oben (bei negativem m nach unten).",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "steigungsdreieck"
+      }
+     ],
+     "items": [
+      {
+       "kind": "formula",
+       "name": "Funktionsgleichung linear",
+       "detail": "y = m · x + b",
+       "page_id": 5,
+       "in_notes": true
+      },
+      {
+       "kind": "rule",
+       "name": "Berechnung der Steigung",
+       "detail": "m = (y2 - y1) : (x2 - x1)",
+       "page_id": 5,
+       "in_notes": true
+      },
+      {
+       "kind": "example",
+       "name": "Beispiel mit P(1 | 3) und Q(4 | 9)",
+       "detail": "Steigung m = 2, b = 1, Funktionsgleichung y = 2x + 1, Nullstelle x = -0,5",
+       "page_id": 5,
+       "in_notes": true
+      }
+     ],
+     "exam_questions": [
+      "Bestimme die Steigung und den y‑Achsenabschnitt einer Geraden, die die Punkte A(2 | 1) und B(6 | 9) enthält."
+     ],
+     "related": []
+    },
+    "source_page_ids": "[5]"
+   },
+   "plan_item_kinds": [
+    "formula",
+    "rule",
+    "example",
+    "term"
+   ],
+   "lesson_call": 11,
+   "lesson_raw": {
+    "lesson_title": "Lineare Funktionen verstehen",
+    "detected_level": "Klasse 8",
+    "concepts": [
+     {
+      "name": "lineare Funktion",
+      "evidence": "Sie beschreibt Geraden im Koordinatensystem"
+     },
+     {
+      "name": "Steigung m",
+      "evidence": "Sie gibt an, wie stark y steigt oder fällt"
+     },
+     {
+      "name": "y‑Achsenabschnitt b",
+      "evidence": "Er zeigt, wo die Gerade die y‑Achse schneidet"
+     },
+     {
+      "name": "Nullstelle",
+      "evidence": "Sie ist der Schnittpunkt mit der x‑Achse"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Was du nach der Stunde kannst",
+      "body": "Du kannst eine lineare Funktion in der Form y = m·x + b erkennen, die Steigung m und den y‑Achsenabschnitt b aus zwei Punkten berechnen und die Nullstelle bestimmen.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "why",
+      "title": "Warum das wichtig ist",
+      "body": "Lineare Funktionen tauchen in vielen Alltagssituationen auf, z. B. bei Kostenrechnungen oder bei der Analyse von Messdaten. Sie bilden die Basis für spätere Themen wie quadratische Funktionen oder lineare Gleichungssysteme.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "explanation",
+      "title": "Was ist eine lineare Funktion?",
+      "body": "Eine lineare Funktion hat die Gleichung y = m·x + b. Der Graph ist immer eine Gerade. Die Steigung m sagt, wie viel y steigt, wenn x um 1 zunimmt. Der y‑Achsenabschnitt b ist der Punkt, an dem die Gerade die y‑Achse schneidet.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "rule",
+      "title": "Formeln und Bedingungen",
+      "body": "Steigung: m = (y₂ – y₁) : (x₂ – x₁). y‑Achsenabschnitt: setze einen Punkt in y = m·x + b ein und löse nach b. Nullstelle: setze y = 0 und löse 0 = m·x + b nach x.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "worked_example",
+      "title": "Beispiel Schritt für Schritt",
+      "body": "Gegeben sind P(1 | 3) und Q(4 | 9).",
+      "items": [
+       {
+        "label": "Steigung",
+        "text": "m = (9 – 3) : (4 – 1) = 6 : 3 = 2"
+       },
+       {
+        "label": "y‑Achsenabschnitt",
+        "text": "Setze P in y = 2·x + b ein: 3 = 2·1 + b → b = 1"
+       },
+       {
+        "label": "Funktionsgleichung",
+        "text": "y = 2x + 1"
+       },
+       {
+        "label": "Nullstelle",
+        "text": "0 = 2x + 1 → 2x = –1 → x = –0,5"
+       }
+      ],
+      "answer": "Die Nullstelle ist x = –0,5",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "mistakes",
+      "title": "Typische Fehler",
+      "body": "1. x und y vertauschen beim Einsetzen. 2. Differenzen in falscher Reihenfolge bilden (z. B. x₁ – x₂). 3. Vorzeichen von b vergessen.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Übung mit Schritt‑für‑Schritt-Hinweis",
+      "body": "Bestimme die Steigung m und den y‑Achsenabschnitt b der Geraden, die die Punkte A(2 | 1) und B(6 | 5) enthält. Zeige jeden Schritt.",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Berechne zuerst die Steigung m = (y₂ – y₁) : (x₂ – x₁)."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Setze einen der Punkte in y = m·x + b ein, um b zu finden."
+       }
+      ],
+      "answer": "Steigung m = (5 – 1) : (6 – 2) = 4 : 4 = 1\\n\\nSetze A in y = 1·x + b ein: 1 = 1·2 + b → b = –1\\n\\nFunktionsgleichung: y = 1x – 1",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "summary",
+      "title": "Kurzcheckliste",
+      "body": "1. Steigung m = (y₂ – y₁) : (x₂ – x₁). 2. y‑Achsenabschnitt b: setze einen Punkt in y = m·x + b ein. 3. Nullstelle: setze y = 0 und löse 0 = m·x + b. 4. Achte auf Vorzeichen und Reihenfolge der Differenzen.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     }
+    ],
+    "explanation": "In dieser Stunde lernst du, wie man aus zwei Punkten die Gleichung einer Geraden bestimmt, die Steigung, den y‑Achsenabschnitt und die Nullstelle berechnet und typische Fehler vermeidet.",
+    "worked_example": {},
+    "teacher_tips": [
+     "Wenn du die Steigung berechnest, schreibe immer zuerst y₂ – y₁ und danach x₂ – x₁, damit du das Vorzeichen nicht verwechselst."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Steigung m",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Welche Steigung hat die Gerade, die die Punkte (3 | 4) und (7 | 12) enthält?",
+     "hint": "Berechne (y₂ – y₁) : (x₂ – x₁).",
+     "options": [
+      {
+       "id": "a",
+       "label": "2"
+      },
+      {
+       "id": "b",
+       "label": "3"
+      },
+      {
+       "id": "c",
+       "label": "4"
+      },
+      {
+       "id": "d",
+       "label": "5"
+      }
+     ],
+     "expected_answer": "b"
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Steigung m",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Welche Steigung hat die Gerade, die die Punkte (3 | 4) und (7 | 12) enthält?",
+    "hint": "Berechne (y₂ – y₁) : (x₂ – x₁).",
+    "options": [
+     {
+      "id": "a",
+      "label": "2"
+     },
+     {
+      "id": "b",
+      "label": "3"
+     },
+     {
+      "id": "c",
+      "label": "4"
+     },
+     {
+      "id": "d",
+      "label": "5"
+     }
+    ],
+    "expected_answer": "b",
+    "subject": "Mathematics",
+    "concepts": [
+     "Steigung m"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Was du nach der Stunde kannst",
+     "body": "Du kannst eine lineare Funktion in der Form y = m·x + b erkennen, die Steigung m und den y‑Achsenabschnitt b aus zwei Punkten berechnen und die Nullstelle bestimmen.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "why",
+     "title": "Warum das wichtig ist",
+     "body": "Lineare Funktionen tauchen in vielen Alltagssituationen auf, z. B. bei Kostenrechnungen oder bei der Analyse von Messdaten. Sie bilden die Basis für spätere Themen wie quadratische Funktionen oder lineare Gleichungssysteme.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "explanation",
+     "title": "Was ist eine lineare Funktion?",
+     "body": "Eine lineare Funktion hat die Gleichung y = m·x + b. Der Graph ist immer eine Gerade. Die Steigung m sagt, wie viel y steigt, wenn x um 1 zunimmt. Der y‑Achsenabschnitt b ist der Punkt, an dem die Gerade die y‑Achse schneidet.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „y = m · x + b“?",
+       "text": "Formel für eine Gerade: y = m·x + b",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Steigung m“?",
+       "text": "Anstieg pro Einheit x",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „y‑Achsenabschnitt b“?",
+       "text": "Y‑Wert bei x = 0",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Nullstelle“?",
+       "text": "X‑Wert, bei dem y = 0",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Steigungsdreieck“?",
+       "text": "Dreieck zur Visualisierung der Steigung",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet die Formel Funktionsgleichung linear und wann verwendest du sie?",
+       "text": "y = m · x + b",
+       "from_notes": true
+      },
+      {
+       "label": "Erkläre die Regel: Berechnung der Steigung",
+       "text": "m = (y2 - y1) : (x2 - x1)",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 5,
+     "study_url": "/flashcards/5/study",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "rule",
+     "title": "Formeln und Bedingungen",
+     "body": "Steigung: m = (y₂ – y₁) : (x₂ – x₁). y‑Achsenabschnitt: setze einen Punkt in y = m·x + b ein und löse nach b. Nullstelle: setze y = 0 und löse 0 = m·x + b nach x.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "worked_example",
+     "title": "Beispiel Schritt für Schritt",
+     "body": "Gegeben sind P(1 | 3) und Q(4 | 9).",
+     "items": [
+      {
+       "label": "Steigung",
+       "text": "m = (9 – 3) : (4 – 1) = 6 : 3 = 2"
+      },
+      {
+       "label": "y‑Achsenabschnitt",
+       "text": "Setze P in y = 2·x + b ein: 3 = 2·1 + b → b = 1"
+      },
+      {
+       "label": "Funktionsgleichung",
+       "text": "y = 2x + 1"
+      },
+      {
+       "label": "Nullstelle",
+       "text": "0 = 2x + 1 → 2x = –1 → x = –0,5"
+      },
+      {
+       "label": "",
+       "text": "Die Nullstelle ist x = –0,5"
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "mistakes",
+     "title": "Typische Fehler",
+     "body": "1. x und y vertauschen beim Einsetzen. 2. Differenzen in falscher Reihenfolge bilden (z. B. x₁ – x₂). 3. Vorzeichen von b vergessen.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Übung mit Schritt‑für‑Schritt-Hinweis",
+     "body": "Bestimme die Steigung m und den y‑Achsenabschnitt b der Geraden, die die Punkte A(2 | 1) und B(6 | 5) enthält. Zeige jeden Schritt.",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Berechne zuerst die Steigung m = (y₂ – y₁) : (x₂ – x₁)."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Setze einen der Punkte in y = m·x + b ein, um b zu finden."
+      }
+     ],
+     "answer": "Steigung m = (5 – 1) : (6 – 2) = 4 : 4 = 1\\n\\nSetze A in y = 1·x + b ein: 1 = 1·2 + b → b = –1\\n\\nFunktionsgleichung: y = 1x – 1",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "summary",
+     "title": "Kurzcheckliste",
+     "body": "1. Steigung m = (y₂ – y₁) : (x₂ – x₁). 2. y‑Achsenabschnitt b: setze einen Punkt in y = m·x + b ein. 3. Nullstelle: setze y = 0 und löse 0 = m·x + b. 4. Achte auf Vorzeichen und Reihenfolge der Differenzen.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      5
+     ],
+     "source_labels": [
+      "Mathe_Lineare_Funktionen.pdf S. 1"
+     ]
+    }
+   ],
+   "answer": "d",
+   "second_answer": "m = 3",
+   "evaluation_raw_text": "{\"evaluation\":{\"is_correct\":false,\"score\":0,\"feedback\":\"Du hast die Steigung als 5 angenommen. Die Steigung berechnet man mit \\n$$m = \\frac{y_2 - y_1}{x_2 - x_1}$$\\nFür die Punkte (3|4) und (7|12) ist \\n$$y_2 - y_1 = 12 - 4 = 8$$\\nund \\n$$x_2 - x_1 = 7 - 3 = 4$$\\nDamit \\n$$m = \\frac{8}{4} = 2$$\\nDa die Steigung 2 ist, passt die Option \\\"2\\\" (a) zu der Aufgabe. Du hast die Differenzen vertauscht oder einen Rechenfehler gemacht.\",\"correction\":\"1) Berechne \\n$$y_2 - y_1 = 12 - 4 = 8$$\\n2) Berechne \\n$$x_2 - x_1 = 7 - 3 = 4$$\\n3) Setze ein \\n$$m = \\frac{8}{4} = 2$$\",\"teacher_tip\":\"Schreibe immer zuerst \\n$$y_2 - y_1$$ \\nund danach \\n$$x_2 - x_1$$\\nso vermeidest du das Vorzeichenproblem.\",\"exception_note\":\"\",\"skill_status\":\"needs_practice\"},\"next_question\":{\"id\":\"q2\",\"concept\":\"Steigung m\",\"difficulty\":1,\"type\":\"text\",\"prompt\":\"Welche Steigung hat die Gerade, die die Punkte (1|2) und (4|8) enthält?\",\"hint\":\"Berechne (y₂ – y₁) : (x₂ – x₁).\",\"options\":[],\"expected_answer\":\"b\"},\"summary\":null,\"retry\":{\"misunderstanding\":\"Du hast die Differenzen vertauscht oder falsch berechnet.\",\"reteach\":\"Um die Steigung zu finden, subtrahiere zuerst die y-Werte und dann die x-Werte. Das Ergebnis ist die Steigung.\",\"simpler_example\":\"Für die Punkte (0|0) und (2|4) ist \\n$$y_2 - y_1 = 4 - 0 = 4$$\\n$$x_2 - x_1 = 2 - 0 = 2$$\\nAlso \\n$$m = \\frac{4}{2} = 2$$\"}}",
+   "evaluation_call": 13,
+   "diagnosis_raw_text": "{\n  \"analysis_version\": \"diagnosis:v2\",\n  \"correctness_status\": \"incorrect\",\n  \"score\": {\n    \"points\": 0,\n    \"max_points\": 1,\n    \"rubric_evidence\": [\n      {\n        \"criterion\": \"Antwort entspricht nicht der korrekten Steigung\",\n        \"met\": false,\n        \"evidence_ids\": [\"e1\", \"e2\", \"e3\"]\n      }\n    ]\n  },\n  \"concepts_assessed\": [\"Steigung m\"],\n  \"primary_diagnosis\": {\n    \"tag\": \"question_or_key_flawed\",\n    \"statement\": \"Die vorgegebene richtige Antwort (b) stimmt nicht mit der Steigungsformel und den gegebenen Punkten überein.\",\n    \"evidence_ids\": [\"e2\", \"e3\"]\n  },\n  \"secondary_diagnoses\": [],\n  \"evidence\": [\n    {\n      \"id\": \"e1\",\n      \"source\": \"question\",\n      \"quote\": \"Welche Steigung hat die Gerade, die die Punkte (3 | 4) und (7 | 12) enthält?\"\n    },\n    {\n      \"id\": \"e2\",\n      \"source\": \"expected_answer\",\n      \"quote\": \"\\\"expected_answer\\\": \\\"b\\\"\"\n    },\n    {\n      \"id\": \"e3\",\n      \"source\": \"source_material\",\n      \"quote\": \"Steigung aus zwei Punkten P(x1 | y1) und Q(x2 | y2): m = (y2 - y1) : (x2 - x1)\"\n    }\n  ],\n  \"misconception_description\": \"\",\n  \"prerequisite_gaps\": [],\n  \"missing_evidence\": false,\n  \"missing_evidence_reason\": \"\",\n  \"confidence\": {\n    \"value\": 0.92,\n    \"basis\": \"Formel aus dem Lernmaterial und die erwartete Antwort widersprechen sich eindeutig.\"\n  },\n  \"recommended_intervention\": \"explain_correction\",\n  \"candidate_question_constraints\": {\n    \"concept\": \"Steigung m\",\n    \"prerequisite_focus\": \"Anwenden der Steigungsformel\",\n    \"difficulty\": 1,\n    \"cognitive_demand\": \"apply\",\n    \"question_type\": \"multiple_choice\",\n    \"target_misconception\": \"\",\n    \"purpose\": \"Überprüfung des Verständnisses der Steigungsberechnung\"\n  },\n  \"student_facing_explanation\": \"Du hast die falsche Steigung gewählt. Die Steigung berechnet sich mit (y2‑y1)/(x2‑x1) und ergibt hier 2, nicht 5. Rechne die Differenzen der Koordinaten noch einmal aus und setze sie in die Formel ein.\",\n  \"internal_diagnostic_summary\": \"Der Schüler wählte eine falsche Antwort; die vorgegebene korrekte Antwort ist ebenfalls fehlerhaft.\"\n}",
+   "diagnosis_call": 14,
+   "second_evaluation_raw_text": "{\"evaluation\":{\"is_correct\":false,\"score\":0,\"feedback\":\"Du hast die Steigung falsch berechnet. Die Steigung einer Geraden, die die Punkte (1|2) und (4|8) enthält, ergibt sich aus \\n$$m = \\frac{y_2 - y_1}{x_2 - x_1}$$\\nHier ist \\n$$y_2 - y_1 = 8 - 2 = 6$$\\nund \\n$$x_2 - x_1 = 4 - 1 = 3$$\\nAlso \\n$$m = \\frac{6}{3} = 2$$\\nDeine Antwort 3 stammt vermutlich aus einer falschen Differenzbildung. Prüfe, ob du die Punkte richtig zugeordnet hast und die Differenzen in der richtigen Reihenfolge gebildet hast.\",\"correction\":\"1) Berechne \\n$$y_2 - y_1 = 8 - 2 = 6$$\\n2) Berechne \\n$$x_2 - x_1 = 4 - 1 = 3$$\\n3) Setze ein \\n$$m = \\frac{6}{3} = 2$$\",\"teacher_tip\":\"Wenn du die Steigung berechnest, schreibe immer zuerst \\(y_2 - y_1\\) und danach \\(x_2 - x_1\\). So vermeidest du das Vorzeichenproblem.\",\"exception_note\":\"\",\"skill_status\":\"needs_practice\"},\"next_question\":{\"id\":\"q3\",\"concept\":\"Steigung m\",\"difficulty\":1,\"type\":\"text\",\"prompt\":\"Welche Steigung hat die Gerade, die die Punkte (2|5) und (5|11) enthält?\",\"hint\":\"Berechne \\n$$\\frac{y_2 - y_1}{x_2 - x_1}$$\",\"options\":[],\"expected_answer\":\"b\"},\"summary\":null,\"retry\":{\"misunderstanding\":\"Du hast die Differenzen der Koordinaten vertauscht oder falsch berechnet.\",\"reteach\":\"Die Steigung ist die Änderung von y pro Änderung von x. Zuerst subtrahiere die y-Werte, dann die x-Werte, und teile die beiden Ergebnisse.\",\"simpler_example\":\"Für die Punkte (0|0) und (2|4) gilt \\n$$y_2 - y_1 = 4 - 0 = 4$$\\n$$x_2 - x_1 = 2 - 0 = 2$$\\nAlso \\n$$m = \\frac{4}{2} = 2$$\"}}",
+   "second_evaluation_call": 24,
+   "second_diagnosis_raw_text": "{\n  \"analysis_version\": \"diagnosis:v2\",\n  \"correctness_status\": \"incorrect\",\n  \"score\": {\n    \"points\": 0,\n    \"max_points\": 1,\n    \"rubric_evidence\": [\n      {\n        \"criterion\": \"Correct slope calculation\",\n        \"met\": false,\n        \"evidence_ids\": [\"q1\", \"s1\", \"stu\"]\n      },\n      {\n        \"criterion\": \"Matches expected answer\",\n        \"met\": false,\n        \"evidence_ids\": [\"exp\"]\n      }\n    ]\n  },\n  \"concepts_assessed\": [\"Steigung m\"],\n  \"primary_diagnosis\": {\n    \"tag\": \"question_or_key_flawed\",\n    \"statement\": \"Die vorgegebene richtige Antwort \\\"b\\\" stimmt nicht mit der Steigungsformel und den gegebenen Punkten überein.\",\n    \"evidence_ids\": [\"exp\", \"s1\", \"s2\"]\n  },\n  \"secondary_diagnoses\": [\n    {\n      \"tag\": \"arithmetic_or_transcription_error\",\n      \"statement\": \"Der Schüler hat die Steigung falsch berechnet und 3 statt 2 angegeben.\",\n      \"evidence_ids\": [\"stu\", \"s1\"]\n    }\n  ],\n  \"evidence\": [\n    {\n      \"id\": \"q1\",\n      \"source\": \"question\",\n      \"quote\": \"Welche Steigung hat die Gerade, die die Punkte (1|2) und (4|8) enthält?\"\n    },\n    {\n      \"id\": \"exp\",\n      \"source\": \"expected_answer\",\n      \"quote\": \"\\\"b\\\"\"\n    },\n    {\n      \"id\": \"stu\",\n      \"source\": \"student_answer\",\n      \"quote\": \"m = 3\"\n    },\n    {\n      \"id\": \"s1\",\n      \"source\": \"source_material\",\n      \"quote\": \"Steigung aus zwei Punkten P(x1 | y1) und Q(x2 | y2): m = (y2 - y1) : (x2 - x1)\"\n    },\n    {\n      \"id\": \"s2\",\n      \"source\": \"source_material\",\n      \"quote\": \"Beispiel ... Steigung: m = (9 - 3) : (4 - 1) = 6 : 3 = 2\"\n    }\n  ],\n  \"misconception_description\": \"\",\n  \"prerequisite_gaps\": [],\n  \"missing_evidence\": false,\n  \"missing_evidence_reason\": \"\",\n  \"confidence\": {\n    \"value\": 0.92,\n    \"basis\": \"Key mismatch and formula citation clearly show expected answer is wrong; student answer deviates from correct calculation.\"\n  },\n  \"recommended_intervention\": \"explain_correction\",\n  \"candidate_question_constraints\": {\n    \"concept\": \"Steigung m\",\n    \"prerequisite_focus\": \"Anwenden der Steigungsformel\",\n    \"difficulty\": 1,\n    \"cognitive_demand\": \"apply\",\n    \"question_type\": \"text\",\n    \"target_misconception\": \"\",\n    \"purpose\": \"Steigung berechnen\"\n  },\n  \"student_facing_explanation\": \"Du hast die Steigung falsch berechnet (3 statt 2). Die korrekte Formel ist m = (y2‑y1)/(x2‑x1). Berechne noch einmal die Differenzen und setze sie in die Formel ein.\",\n  \"internal_diagnostic_summary\": \"Key ist fehlerhaft, Schüler hat Rechenfehler bei der Steigung.\"\n}",
+   "second_diagnosis_call": 25
+  },
+  "english": {
+   "subject": "Englisch",
+   "grade": "7",
+   "file": "Englisch_Present_Perfect.pdf",
+   "notes": [
+    {
+     "label": "[Englisch_Present_Perfect.pdf, p. 1]",
+     "text": "Englisch Klasse 7 - Present perfect oder simple past?\nSimple past\nBildung: Verb + -ed (play - played). Unregelmäßige Verben: 2. Form (go - went, see - saw).\nVerneinung: didn't + Grundform (I didn't see him).\nGebrauch: abgeschlossene Handlung zu einem bestimmten Zeitpunkt in der Vergangenheit.\nSignalwörter: yesterday, last week, two days ago, in 2019, when I was young.\nBeispiel: We visited London last summer.\nPresent perfect\nBildung: have/has + 3. Form (Partizip Perfekt): I have played, she has seen, they have gone.\nGebrauch: Die Handlung ist in der Vergangenheit passiert, aber wichtig ist das Ergebnis jetzt. Der\ngenaue Zeitpunkt ist nicht wichtig oder nicht bekannt.\nSignalwörter: ever, never, already, just, yet, so far, since, for.\nBeispiele: I have already done my homework. (Ich bin jetzt fertig.) Have you ever been to Scotland?\nsince + Zeitpunkt (since Monday), for + Zeitraum (for three years): She has lived here for three\nyears.\nTypische Fehler\nFalsch: I have seen him yesterday. Richtig: I saw him yesterday. (yesterday = bestimmter Zeitpunkt)\nFalsch: I live here since 2020. Richtig: I have lived here since 2020.\nBei he/she/it heißt es has, nicht have: She has finished.\nÜbung\n1) Tom ____ (lose) his key. He can't open the door.\n2) We ____ (go) to the zoo last Saturday.\n3) ____ you ever ____ (eat) sushi?\n4) My parents ____ (be) married for 15 years."
+    }
+   ],
+   "section": {
+    "title": "Present perfect vs Simple Past",
+    "topic_map": {
+     "summary": "Dieses Thema erklärt, wann man das Simple Past (Vergangenheit) und das Present Perfect (Perfekt) im Englischen benutzt. Es beschreibt die Bildung, die Verneinung, typische Signalwörter und häufige Fehler. Außerdem gibt es Übungen, um die Unterschiede zu üben.",
+     "simple_summary": "Unterscheidung von Simple Past und Present Perfect im Englischen.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "Simple past",
+       "definition": "Vergangenheit des Verbs, gebildet durch Verb + -ed oder die 2. Form bei unregelmäßigen Verben.",
+       "simple_definition": "Vergangene Handlung, die zu einem bestimmten Zeitpunkt abgeschlossen ist.",
+       "example": "I saw him yesterday.",
+       "page_id": 6,
+       "page_ids": [
+        6
+       ],
+       "quote": "Simple past Bildung: Verb + -ed (play - played). Unregelmäßige Verben: 2. Form (go - went, see - saw).",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "past-simpl"
+      },
+      {
+       "term": "Present perfect",
+       "definition": "Vergangenheit des Verbs, die in der Gegenwart relevant ist, gebildet durch have/has + 3. Form (Partizip Perfekt).",
+       "simple_definition": "Vergangene Handlung, deren Ergebnis jetzt wichtig ist.",
+       "example": "I have already done my homework.",
+       "page_id": 6,
+       "page_ids": [
+        6
+       ],
+       "quote": "Present perfect Bildung: have/has + 3. Form (Partizip Perfekt): I have played, she has seen, they have gone.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "perfect-present"
+      },
+      {
+       "term": "Verneinung",
+       "definition": "Negation im Simple Past: didn’t + Grundform; im Present Perfect: haven’t/hasn’t + 3. Form.",
+       "simple_definition": "Verneinung der Handlung.",
+       "example": "I didn’t see him.",
+       "page_id": 6,
+       "page_ids": [
+        6
+       ],
+       "quote": "Verneinung: didn’t + Grundform (I didn’t see him).",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "vernein"
+      },
+      {
+       "term": "Signalwörter",
+       "definition": "Wörter, die den Gebrauch des Simple Past oder Present Perfect anzeigen.",
+       "simple_definition": "Hinweiswörter für die Zeitform.",
+       "example": "yesterday, last week, ever, since",
+       "page_id": 6,
+       "page_ids": [
+        6
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "signalwoert"
+      },
+      {
+       "term": "Typische Fehler",
+       "definition": "Häufige Fehler bei der Verwendung von Simple Past und Present Perfect.",
+       "simple_definition": "Typische Fehler, die vermieden werden sollten.",
+       "example": "I have seen him yesterday.",
+       "page_id": 6,
+       "page_ids": [
+        6
+       ],
+       "quote": "Typische Fehler Falsch: I have seen him yesterday. Richtig: I saw him yesterday. (yesterday = bestimmter Zeitpunkt) Falsch: I live here since 2020. Richtig: I have lived here since 2020.",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "fehl-typisch"
+      }
+     ],
+     "items": [
+      {
+       "kind": "rule",
+       "name": "Bildung Simple Past",
+       "detail": "Verb + -ed oder 2. Form bei unregelmäßigen Verben.",
+       "page_id": 6,
+       "in_notes": true
+      },
+      {
+       "kind": "rule",
+       "name": "Bildung Present Perfect",
+       "detail": "have/has + 3. Form (Partizip Perfekt).",
+       "page_id": 6,
+       "in_notes": true
+      },
+      {
+       "kind": "example",
+       "name": "Simple Past Beispiel",
+       "detail": "We visited London last summer.",
+       "page_id": 6,
+       "in_notes": true
+      },
+      {
+       "kind": "example",
+       "name": "Present Perfect Beispiel",
+       "detail": "I have already done my homework.",
+       "page_id": 6,
+       "in_notes": true
+      },
+      {
+       "kind": "example",
+       "name": "Übung",
+       "detail": "1) Tom ____ (lose) his key. He can't open the door. 2) We ____ (go) to the zoo last Saturday. 3) ____ you ever ____ (eat) sushi? 4) My parents ____ (be) married for 15 years.",
+       "page_id": 6,
+       "in_notes": true
+      }
+     ],
+     "exam_questions": [
+      "Explain the difference between Simple Past and Present Perfect and give an example of each."
+     ],
+     "related": []
+    },
+    "source_page_ids": "[6]"
+   },
+   "plan_item_kinds": [
+    "rule",
+    "example",
+    "term"
+   ],
+   "lesson_call": 12,
+   "lesson_raw": {
+    "lesson_title": "Present perfect vs Simple Past",
+    "detected_level": "Klasse 7",
+    "concepts": [
+     {
+      "name": "Simple past vs Present perfect",
+      "evidence": "Unterschiede in Zeit und Ergebnis"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Ziel der Stunde",
+      "body": "Du lernst, wann du Simple Past und wann du Present Perfect benutzt. Das hilft dir, im Alltag und bei Prüfungen korrekte Sätze zu bilden.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "rule",
+      "title": "Regel für die Zeitformen",
+      "body": "Simple Past beschreibt eine abgeschlossene Handlung zu einem bestimmten Zeitpunkt. Present Perfect beschreibt eine Handlung, deren Ergebnis jetzt wichtig ist, ohne einen genauen Zeitpunkt anzugeben.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "structure",
+      "title": "Satzmuster",
+      "body": "Simple Past: Subjekt + Verb in 2. Form + Rest. \nPresent Perfect: Subjekt + have/has + Verb in 3. Form + Rest.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "example",
+      "title": "Beispiele aus den Notizen",
+      "body": "1) We visited London last summer. (Simple Past) \n2) I have already done my homework. (Present Perfect) \n3) Have you ever been to Scotland? (Present Perfect)",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "mistakes",
+      "title": "Typische Fehler",
+      "body": "Falsch: I have seen him yesterday. Richtig: I saw him yesterday. (yesterday = bestimmter Zeitpunkt)",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "terms",
+      "title": "Wichtige Begriffe",
+      "body": "Simple past – Vergangene Handlung, die zu einem bestimmten Zeitpunkt abgeschlossen ist. \nPresent perfect – Vergangene Handlung, deren Ergebnis jetzt wichtig ist.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Übung – Lücken füllen",
+      "body": "1) Tom ____ (lose) his key. He can't open the door. \n2) We ____ (go) to the zoo last Saturday. \n3) ____ you ever ____ (eat) sushi? \n4) My parents ____ (be) married for 15 years.",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Verwende Simple Past, weil ein bestimmter Zeitpunkt angegeben ist."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Verwende Simple Past, weil ein bestimmter Zeitpunkt angegeben ist."
+       },
+       {
+        "label": "Hinweis 3",
+        "text": "Verwende Present Perfect, weil die Frage nach einer Erfahrung ist."
+       },
+       {
+        "label": "Hinweis 4",
+        "text": "Verwende Present Perfect, weil die Dauer bis jetzt wichtig ist."
+       }
+      ],
+      "answer": "1) Tom lost his key. He can't open the door.\n2) We went to the zoo last Saturday.\n3) Have you ever eaten sushi?\n4) My parents have been married for 15 years.",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "summary",
+      "title": "Kurzfassung",
+      "body": "Simple Past: abgeschlossene Handlung zu einem bestimmten Zeitpunkt. \nPresent Perfect: Handlung mit Ergebnis jetzt, kein genauer Zeitpunkt. \nAchte auf Signalwörter wie yesterday (Simple Past) und ever (Present Perfect).",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     }
+    ],
+    "explanation": "Du lernst, wann du Simple Past und wann du Present Perfect benutzt und wie du die Sätze richtig bildest.",
+    "worked_example": {},
+    "teacher_tips": [
+     "Achte immer auf die Signalwörter, sie geben dir den Hinweis, welche Zeitform du brauchst."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Simple past vs Present perfect",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Welcher Satz verwendet das Present Perfect korrekt?",
+     "hint": "Denke an die Bedeutung des Satzes.",
+     "options": [
+      {
+       "id": "a",
+       "label": "I saw him yesterday."
+      },
+      {
+       "id": "b",
+       "label": "I have seen him yesterday."
+      },
+      {
+       "id": "c",
+       "label": "I have seen him."
+      },
+      {
+       "id": "d",
+       "label": "I saw him."
+      }
+     ],
+     "expected_answer": "c"
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Simple past vs Present perfect",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Welcher Satz verwendet das Present Perfect korrekt?",
+    "hint": "Denke an die Bedeutung des Satzes.",
+    "options": [
+     {
+      "id": "a",
+      "label": "I saw him yesterday."
+     },
+     {
+      "id": "b",
+      "label": "I have seen him yesterday."
+     },
+     {
+      "id": "c",
+      "label": "I have seen him."
+     },
+     {
+      "id": "d",
+      "label": "I saw him."
+     }
+    ],
+    "expected_answer": "c",
+    "subject": "English",
+    "concepts": [
+     "Simple past vs Present perfect"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Ziel der Stunde",
+     "body": "Du lernst, wann du Simple Past und wann du Present Perfect benutzt. Das hilft dir, im Alltag und bei Prüfungen korrekte Sätze zu bilden.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "rule",
+     "title": "Regel für die Zeitformen",
+     "body": "Simple Past beschreibt eine abgeschlossene Handlung zu einem bestimmten Zeitpunkt. Present Perfect beschreibt eine Handlung, deren Ergebnis jetzt wichtig ist, ohne einen genauen Zeitpunkt anzugeben.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "structure",
+     "title": "Satzmuster",
+     "body": "Simple Past: Subjekt + Verb in 2. Form + Rest.\nPresent Perfect: Subjekt + have/has + Verb in 3. Form + Rest.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "example",
+     "title": "Beispiele aus den Notizen",
+     "body": "1) We visited London last summer. (Simple Past)\n2) I have already done my homework. (Present Perfect)\n3) Have you ever been to Scotland? (Present Perfect)",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "mistakes",
+     "title": "Typische Fehler",
+     "body": "Falsch: I have seen him yesterday. Richtig: I saw him yesterday. (yesterday = bestimmter Zeitpunkt)",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe",
+     "body": "Simple past – Vergangene Handlung, die zu einem bestimmten Zeitpunkt abgeschlossen ist.\nPresent perfect – Vergangene Handlung, deren Ergebnis jetzt wichtig ist.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „Simple past“?",
+       "text": "Vergangene Handlung, die zu einem bestimmten Zeitpunkt abgeschlossen ist.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Present perfect“?",
+       "text": "Vergangene Handlung, deren Ergebnis jetzt wichtig ist.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Verneinung“?",
+       "text": "Verneinung der Handlung.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Signalwörter“?",
+       "text": "Hinweiswörter für die Zeitform.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Typische Fehler“?",
+       "text": "Typische Fehler, die vermieden werden sollten.",
+       "from_notes": true
+      },
+      {
+       "label": "Erkläre die Regel: Bildung Simple Past",
+       "text": "Verb + -ed oder 2. Form bei unregelmäßigen Verben.",
+       "from_notes": true
+      },
+      {
+       "label": "Erkläre die Regel: Bildung Present Perfect",
+       "text": "have/has + 3. Form (Partizip Perfekt).",
+       "from_notes": true
+      },
+      {
+       "label": "Was zeigt das Beispiel „Simple Past Beispiel“?",
+       "text": "We visited London last summer.",
+       "from_notes": true
+      },
+      {
+       "label": "Was zeigt das Beispiel „Present Perfect Beispiel“?",
+       "text": "I have already done my homework.",
+       "from_notes": true
+      },
+      {
+       "label": "Was zeigt das Beispiel „Übung“?",
+       "text": "1) Tom ____ (lose) his key. He can't open the door. 2) We ____ (go) to the zoo last Saturday. 3) ____ you ever ____ (eat) sushi? 4) My parents ____ (be) married for 15 years.",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 6,
+     "study_url": "/flashcards/6/study",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Übung – Lücken füllen",
+     "body": "1) Tom ____ (lose) his key. He can't open the door.\n2) We ____ (go) to the zoo last Saturday.\n3) ____ you ever ____ (eat) sushi?\n4) My parents ____ (be) married for 15 years.",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Verwende Simple Past, weil ein bestimmter Zeitpunkt angegeben ist."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Verwende Simple Past, weil ein bestimmter Zeitpunkt angegeben ist."
+      },
+      {
+       "label": "Hinweis 3",
+       "text": "Verwende Present Perfect, weil die Frage nach einer Erfahrung ist."
+      },
+      {
+       "label": "Hinweis 4",
+       "text": "Verwende Present Perfect, weil die Dauer bis jetzt wichtig ist."
+      }
+     ],
+     "answer": "1) Tom lost his key. He can't open the door.\n2) We went to the zoo last Saturday.\n3) Have you ever eaten sushi?\n4) My parents have been married for 15 years.",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "summary",
+     "title": "Kurzfassung",
+     "body": "Simple Past: abgeschlossene Handlung zu einem bestimmten Zeitpunkt.\nPresent Perfect: Handlung mit Ergebnis jetzt, kein genauer Zeitpunkt.\nAchte auf Signalwörter wie yesterday (Simple Past) und ever (Present Perfect).",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      6
+     ],
+     "source_labels": [
+      "Englisch_Present_Perfect.pdf S. 1"
+     ]
+    }
+   ]
+  },
+  "history2": {
+   "subject": "Geschichte",
+   "grade": "9",
+   "file": "Geschichte_Weimarer_Verfassung.pdf",
+   "notes": [
+    {
+     "label": "[Geschichte_Weimarer_Verfassung.pdf, p. 1]",
+     "text": "Geschichte Klasse 9 - Die Weimarer Verfassung: Chancen und Schwächen\nZeitleiste\n9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II.\nwird bekanntgegeben.\n19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.\nDie Nationalversammlung tagt in Weimar, weil es in Berlin unruhig ist.\n11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.\nMärz 1920: Der Kapp-Putsch gegen die Republik scheitert an einem Generalstreik.\n1923: Krisenjahr mit Ruhrbesetzung, Hyperinflation und Hitler-Putsch in München.\n1930: Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten (Präsidialkabinett).\n30. Januar 1933: Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler.\nDie Verfassung\nGrundrechte: Gleichheit vor dem Gesetz, Meinungsfreiheit, Versammlungsfreiheit.\nDer Reichstag wird nach dem Verhältniswahlrecht gewählt, ohne Sperrklausel (keine\n5-Prozent-Hürde).\nDer Reichspräsident wird direkt vom Volk für sieben Jahre gewählt. Er ernennt und entlässt den\nReichskanzler (Art. 53), kann den Reichstag auflösen (Art. 25) und hat das Notverordnungsrecht\n(Art. 48).\nUrsachen und Folgen\nOhne Sperrklausel kamen viele kleine Parteien in den Reichstag. Folge: Regierungen fanden schwer\neine Mehrheit und zerbrachen oft.\nWeil der Reichspräsident so viel Macht hatte, nannten Kritiker ihn einen Ersatzkaiser.\nWenn der Reichstag keine Mehrheit fand, konnte der Präsident mit Art. 48 am Parlament vorbei\nregieren. Ab 1930 wurde das zur Regel. Folge: Das Parlament verlor an Bedeutung, der Weg zur\nDiktatur wurde leichter.\nQuelle: Art. 48 Abs. 2 der Weimarer Reichsverfassung (1919)\n\"Der Reichspräsident kann, wenn im Deutschen Reiche die öffentliche Sicherheit und Ordnung\nerheblich gestört oder gefährdet wird, die zur Wiederherstellung der öffentlichen Sicherheit und\nOrdnung nötigen Maßnahmen treffen, erforderlichenfalls mit Hilfe der bewaffneten Macht\neinschreiten. Zu diesem Zwecke darf er vorübergehend die in den Artikeln 114, 115, 117, 118, 123,\n124 und 153 festgesetzten Grundrechte ganz oder zum Teil außer Kraft setzen.\"\nAufgabe: Erkläre mit Hilfe der Quelle, warum Art. 48 als Schwachstelle der Verfassung gilt."
+    }
+   ],
+   "section": {
+    "title": "Weimarer Verfassung – Chancen und Schwächen",
+    "topic_map": {
+     "summary": "Die Weimarer Verfassung von 1919 legte die Grundlagen der deutschen Republik fest. Sie enthielt Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten mit Notverordnungsrecht. Diese Regelungen führten zu politischen Instabilitäten und erleichterten den Weg zur Diktatur.",
+     "simple_summary": "Die Verfassung von 1919 hatte Stärken, aber auch Schwächen, die die Demokratie gefährdeten.",
+     "kind": "main",
+     "terms": [
+      {
+       "term": "Weimarer Verfassung",
+       "definition": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah.",
+       "simple_definition": "Die Verfassung, die 1919 die deutsche Republik regelte.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "Die Weimarer Verfassung: Chancen und Schwächen",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "verfass-weimar"
+      },
+      {
+       "term": "Art. 48",
+       "definition": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte.",
+       "simple_definition": "Ein Paragraph, der dem Präsidenten Notverordnungen erlaubte.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "48-art"
+      },
+      {
+       "term": "Reichspräsident",
+       "definition": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflösen und Notverordnungen erließ.",
+       "simple_definition": "Der Präsident, der die Regierung ernennt und Notverordnungen machen kann.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "Der Reichspräsident wird direkt vom Volk für sieben Jahre gewählt. Er ernennt und entlässt den Reichskanzler (Art. 53), kann den Reichstag auflösen (Art. 25) und hat das Notverordnungsrecht (Art. 48).",
+       "in_notes": true,
+       "definition_from_notes": true,
+       "key": "reichspraesident"
+      },
+      {
+       "term": "Reichstag",
+       "definition": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt.",
+       "simple_definition": "Das Parlament, das Gesetze macht.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "reichstag"
+      },
+      {
+       "term": "Reichskanzler",
+       "definition": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt.",
+       "simple_definition": "Der Regierungschef, der vom Präsidenten ernannt wird.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "reichskanzl"
+      },
+      {
+       "term": "Notverordnungen",
+       "definition": "Recht des Reichspräsidenten, ohne Zustimmung des Reichstags Maßnahmen zu ergreifen, um die öffentliche Sicherheit wiederherzustellen.",
+       "simple_definition": "Notfallmaßnahmen, die der Präsident allein ergreifen kann.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "notverordn"
+      },
+      {
+       "term": "Sperrklausel",
+       "definition": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie.",
+       "simple_definition": "Eine Grenze, die Parteien erreichen müssen, um im Parlament zu sitzen.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "sperrklausel"
+      },
+      {
+       "term": "Kapp‑Putsch",
+       "definition": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde.",
+       "simple_definition": "Ein gescheiterter Versuch, die Republik zu stürzen, im März 1920.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "kapp-putsch"
+      },
+      {
+       "term": "Hyperinflation",
+       "definition": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte.",
+       "simple_definition": "Eine sehr hohe Inflation, die 1923 auftrat.",
+       "example": "",
+       "page_id": 7,
+       "page_ids": [
+        7
+       ],
+       "quote": "",
+       "in_notes": true,
+       "definition_from_notes": false,
+       "key": "hyperinflation"
+      }
+     ],
+     "items": [
+      {
+       "kind": "event",
+       "name": "Ausruf der Republik",
+       "detail": "9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II. wird bekanntgegeben.",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "date",
+       "name": "Wahl zur Nationalversammlung",
+       "detail": "19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Unterzeichnung der Verfassung",
+       "detail": "11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Kapp‑Putsch",
+       "detail": "März 1920: Der Kapp‑Putsch gegen die Republik scheitert an einem Generalstreik.",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Hyperinflation",
+       "detail": "1923: Krisenjahr mit Ruhrbesetzung, Hyperinflation und Hitler‑Putsch in München.",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Reichskanzler Brüning",
+       "detail": "1930: Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten (Präsidialkabinett).",
+       "page_id": 7,
+       "in_notes": true
+      },
+      {
+       "kind": "event",
+       "name": "Hitler zum Reichskanzler",
+       "detail": "30. Januar 1933: Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler.",
+       "page_id": 7,
+       "in_notes": true
+      }
+     ],
+     "exam_questions": [
+      "Erkläre, warum Art. 48 der Weimarer Verfassung als Schwachstelle galt.",
+      "Beschreibe die Folgen der fehlenden Sperrklausel im Verhältniswahlrecht.",
+      "Welche Ereignisse im Jahr 1923 trugen zur Instabilität der Weimarer Republik bei?"
+     ],
+     "related": []
+    },
+    "source_page_ids": "[7]"
+   },
+   "plan_item_kinds": [
+    "event",
+    "date",
+    "term",
+    "source"
+   ],
+   "lesson_call": 15,
+   "lesson_raw": {
+    "lesson_title": "Weimarer Verfassung – Chancen und Schwächen",
+    "detected_level": "Klasse 9",
+    "concepts": [
+     {
+      "name": "Weimarer Verfassung",
+      "evidence": "Grundrechte, Verhältniswahlrecht ohne Sperrklausel, starkes Amt des Reichspräsidenten"
+     },
+     {
+      "name": "Art. 48",
+      "evidence": "Notverordnungsrecht des Reichspräsidenten"
+     },
+     {
+      "name": "Kapp‑Putsch",
+      "evidence": "Beispiel für politische Instabilität"
+     }
+    ],
+    "parts": [
+     {
+      "kind": "objective",
+      "title": "Lernziel und Bedeutung",
+      "body": "In dieser Stunde lernst du, welche Rechte und Institutionen die Weimarer Verfassung vorsah, warum Art. 48 als Schwachstelle galt und wie wichtige Ereignisse wie der Kapp‑Putsch und die Hyperinflation in die Zeit der Weimarer Republik passen. Das Thema ist wichtig, weil es erklärt, wie die Verfassung zur Instabilität und schließlich zur Diktatur beitrug.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "explanation",
+      "title": "Historischer Kontext",
+      "body": "Die Weimarer Verfassung wurde 1919 in der deutschen Republik festgelegt. Vor ihr herrschte das Kaiserreich, das 1918 nach dem Ersten Weltkrieg zusammenbrach. Die Verfassung sollte die Grundlagen einer demokratischen Ordnung schaffen, indem sie Grundrechte garantierte und die Staatsorgane definierte.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "timeline",
+      "title": "Chronologie der wichtigsten Ereignisse",
+      "body": "",
+      "items": [
+       {
+        "label": "9. Nov. 1918",
+        "text": "Philipp Scheidemann ruft die Republik aus; Kaiser Wilhelm II. tritt ab."
+       },
+       {
+        "label": "19. Jan. 1919",
+        "text": "Wahl zur Nationalversammlung; Frauen dürfen erstmals wählen."
+       },
+       {
+        "label": "11. Aug. 1919",
+        "text": "Reichspräsident Friedrich Ebert unterzeichnet die Verfassung."
+       },
+       {
+        "label": "März 1920",
+        "text": "Kapp‑Putsch scheitert an einem Generalstreik."
+       },
+       {
+        "label": "1923",
+        "text": "Krisenjahr: Ruhrbesetzung, Hyperinflation, Hitler‑Putsch in München."
+       },
+       {
+        "label": "1930",
+        "text": "Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten."
+       },
+       {
+        "label": "30. Jan. 1933",
+        "text": "Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "terms",
+      "title": "Wichtige Begriffe und Personen",
+      "body": "",
+      "items": [
+       {
+        "label": "Weimarer Verfassung",
+        "text": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah."
+       },
+       {
+        "label": "Art. 48",
+        "text": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte."
+       },
+       {
+        "label": "Reichspräsident",
+        "text": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflöste und Notverordnungen erließ."
+       },
+       {
+        "label": "Reichstag",
+        "text": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt."
+       },
+       {
+        "label": "Reichskanzler",
+        "text": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt."
+       },
+       {
+        "label": "Notverordnungen",
+        "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann."
+       },
+       {
+        "label": "Sperrklausel",
+        "text": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie."
+       },
+       {
+        "label": "Kapp‑Putsch",
+        "text": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde."
+       },
+       {
+        "label": "Hyperinflation",
+        "text": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "cause_effect",
+      "title": "Ursachen und Folgen",
+      "body": "",
+      "items": [
+       {
+        "label": "Fehlende Sperrklausel",
+        "text": "Viele kleine Parteien kamen in den Reichstag, was Regierungen schwer machte, eine stabile Mehrheit zu finden und häufig zum Zerbrechen führte."
+       },
+       {
+        "label": "Starke Macht des Reichspräsidenten",
+        "text": "Der Präsident konnte mit Art. 48 am Parlament vorbeiregieren, wenn keine Mehrheit bestand; ab 1930 wurde dies zur Regel, was die Bedeutung des Parlaments verringerte und den Weg zur Diktatur erleichterte."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "perspectives",
+      "title": "Zeitgenössische Sicht und heutige Bewertung",
+      "body": "Viele Kritiker sahen den Reichspräsidenten als \"Ersatzkaiser\" an, weil er so viel Macht hatte. Heute wird Art. 48 oft als Schwachstelle der Verfassung bezeichnet, weil er die Demokratie schwächte.",
+      "items": [],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "source_analysis",
+      "title": "Analyse einer Quelle",
+      "body": "",
+      "items": [
+       {
+        "label": "Autor",
+        "text": "Unbekannt, aber vermutlich ein Verfassungsrechtler"
+       },
+       {
+        "label": "Datum",
+        "text": "1919"
+       },
+       {
+        "label": "Typ",
+        "text": "Verfassungsartikel"
+       },
+       {
+        "label": "Adressat",
+        "text": "Volksgemeinschaft"
+       },
+       {
+        "label": "Intention",
+        "text": "Rechtliche Regelung für Notfälle"
+       },
+       {
+        "label": "Inhalt",
+        "text": "Der Reichspräsident kann, wenn die öffentliche Sicherheit und Ordnung erheblich gestört oder gefährdet wird, Notverordnungen erlassen und Grundrechte teilweise außer Kraft setzen."
+       },
+       {
+        "label": "Vertrauenswürdigkeit",
+        "text": "Als Teil der Verfassung gilt die Quelle als sehr zuverlässig für die Frage nach Art. 48."
+       }
+      ],
+      "answer": "",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     },
+     {
+      "kind": "guided_exercise",
+      "title": "Beispielaufgabe",
+      "body": "Erkläre mit Hilfe der Quelle, warum Art. 48 als Schwachstelle der Verfassung gilt.",
+      "items": [
+       {
+        "label": "Hinweis 1",
+        "text": "Art. 48 erlaubt dem Präsidenten, ohne Zustimmung des Reichstags zu regieren."
+       },
+       {
+        "label": "Hinweis 2",
+        "text": "Ab 1930 wurde das Notverordnungsrecht häufig genutzt, wodurch das Parlament an Bedeutung verlor."
+       }
+      ],
+      "answer": "Art. 48 gilt als Schwachstelle, weil er dem Reichspräsidenten die Möglichkeit gab, ohne Zustimmung des Reichstags zu regieren. Dadurch konnte er die Demokratie schwächen und die Macht des Parlaments reduzieren, was den Weg zur Diktatur erleichterte.",
+      "from_notes": true,
+      "source_pages": [
+       1
+      ]
+     }
+    ],
+    "explanation": "In dieser Stunde lernst du die wichtigsten Punkte der Weimarer Verfassung kennen, beginnst mit dem historischen Kontext, ordnest die Ereignisse chronologisch, definierst zentrale Begriffe, analysierst Ursachen und Folgen, betrachtest unterschiedliche Perspektiven und prüfst eine Quelle. Danach übst du das Gelernte in einer Beispielaufgabe.",
+    "worked_example": {},
+    "teacher_tips": [
+     "Achte darauf, dass du die Begriffe genau so schreibst, wie sie in den Notizen stehen. Das hilft dir, die Fragen richtig zu beantworten."
+    ],
+    "exceptions": [],
+    "question": {
+     "id": "q1",
+     "concept": "Art. 48",
+     "difficulty": 1,
+     "type": "multiple_choice",
+     "prompt": "Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?",
+     "hint": "Denke an die Macht des Reichspräsidenten und die Rolle des Reichstags.",
+     "options": [
+      {
+       "id": "a",
+       "label": "Es erlaubte dem Reichspräsidenten, ohne Zustimmung des Reichstags zu regieren."
+      },
+      {
+       "id": "b",
+       "label": "Es schränkte die Grundrechte der Bürger stark ein."
+      },
+      {
+       "id": "c",
+       "label": "Es verlangte eine 5‑Prozent‑Sperrklausel für Parteien."
+      },
+      {
+       "id": "d",
+       "label": "Es begrenzte die Amtszeit des Reichspräsidenten auf vier Jahre."
+      }
+     ],
+     "expected_answer": "a"
+    }
+   },
+   "question_shown": {
+    "id": "q1",
+    "concept": "Art. 48",
+    "difficulty": 1,
+    "type": "multiple_choice",
+    "prompt": "Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?",
+    "hint": "Denke an die Macht des Reichspräsidenten und die Rolle des Reichstags.",
+    "options": [
+     {
+      "id": "a",
+      "label": "Es erlaubte dem Reichspräsidenten, ohne Zustimmung des Reichstags zu regieren."
+     },
+     {
+      "id": "b",
+      "label": "Es schränkte die Grundrechte der Bürger stark ein."
+     },
+     {
+      "id": "c",
+      "label": "Es verlangte eine 5‑Prozent‑Sperrklausel für Parteien."
+     },
+     {
+      "id": "d",
+      "label": "Es begrenzte die Amtszeit des Reichspräsidenten auf vier Jahre."
+     }
+    ],
+    "expected_answer": "a",
+    "subject": "History",
+    "concepts": [
+     "Art. 48"
+    ]
+   },
+   "parts_shown": [
+    {
+     "kind": "objective",
+     "title": "Lernziel und Bedeutung",
+     "body": "In dieser Stunde lernst du, welche Rechte und Institutionen die Weimarer Verfassung vorsah, warum Art. 48 als Schwachstelle galt und wie wichtige Ereignisse wie der Kapp‑Putsch und die Hyperinflation in die Zeit der Weimarer Republik passen. Das Thema ist wichtig, weil es erklärt, wie die Verfassung zur Instabilität und schließlich zur Diktatur beitrug.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "explanation",
+     "title": "Historischer Kontext",
+     "body": "Die Weimarer Verfassung wurde 1919 in der deutschen Republik festgelegt.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "explanation",
+     "title": "Historischer Kontext",
+     "body": "Vor ihr herrschte das Kaiserreich, das 1918 nach dem Ersten Weltkrieg zusammenbrach. Die Verfassung sollte die Grundlagen einer demokratischen Ordnung schaffen, indem sie Grundrechte garantierte und die Staatsorgane definierte.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "timeline",
+     "title": "Chronologie der wichtigsten Ereignisse",
+     "body": "",
+     "items": [
+      {
+       "label": "9. Nov. 1918",
+       "text": "Philipp Scheidemann ruft die Republik aus; Kaiser Wilhelm II. tritt ab."
+      },
+      {
+       "label": "19. Jan. 1919",
+       "text": "Wahl zur Nationalversammlung; Frauen dürfen erstmals wählen."
+      },
+      {
+       "label": "11. Aug. 1919",
+       "text": "Reichspräsident Friedrich Ebert unterzeichnet die Verfassung."
+      },
+      {
+       "label": "März 1920",
+       "text": "Kapp‑Putsch scheitert an einem Generalstreik."
+      },
+      {
+       "label": "1923",
+       "text": "Krisenjahr: Ruhrbesetzung, Hyperinflation, Hitler‑Putsch in München."
+      },
+      {
+       "label": "1930",
+       "text": "Reichskanzler Brüning regiert mit Notverordnungen des Reichspräsidenten."
+      },
+      {
+       "label": "30. Jan. 1933",
+       "text": "Reichspräsident Hindenburg ernennt Hitler zum Reichskanzler."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe und Personen",
+     "body": "",
+     "items": [
+      {
+       "label": "Weimarer Verfassung",
+       "text": "Die Verfassung der deutschen Republik von 1919, die Grundrechte, ein Verhältniswahlrecht ohne Sperrklausel und ein starkes Amt des Reichspräsidenten vorsah."
+      },
+      {
+       "label": "Art. 48",
+       "text": "Artikel 48 der Weimarer Reichsverfassung, der dem Reichspräsidenten das Notverordnungsrecht einräumte."
+      },
+      {
+       "label": "Reichspräsident",
+       "text": "Der direkt vom Volk gewählte Präsident, der den Reichskanzler ernannte und entließ, den Reichstag auflöste und Notverordnungen erließ."
+      },
+      {
+       "label": "Reichstag",
+       "text": "Das Parlament, gewählt nach dem Verhältniswahlrecht ohne Sperrklausel, das Gesetze beschließt."
+      },
+      {
+       "label": "Reichskanzler",
+       "text": "Der Regierungschef, der vom Reichspräsidenten ernannt wird und die Regierung führt."
+      },
+      {
+       "label": "Notverordnungen",
+       "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann."
+      },
+      {
+       "label": "Sperrklausel",
+       "text": "Eine Mindeststimmquote (z. B. 5 %), die Parteien erreichen müssen, um in den Reichstag einzuziehen; in der Weimarer Verfassung fehlte sie."
+      },
+      {
+       "label": "Kapp‑Putsch",
+       "text": "Ein gescheiterter Putsch gegen die Republik im März 1920, der durch einen Generalstreik verhindert wurde."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "flashcards",
+     "title": "Karteikarten",
+     "body": "",
+     "items": [
+      {
+       "label": "Was bedeutet der Begriff „Weimarer Verfassung“?",
+       "text": "Die Verfassung, die 1919 die deutsche Republik regelte.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Art. 48“?",
+       "text": "Ein Paragraph, der dem Präsidenten Notverordnungen erlaubte.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichspräsident“?",
+       "text": "Der Präsident, der die Regierung ernennt und Notverordnungen machen kann.",
+       "from_notes": true
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichstag“?",
+       "text": "Das Parlament, das Gesetze macht.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Reichskanzler“?",
+       "text": "Der Regierungschef, der vom Präsidenten ernannt wird.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Notverordnungen“?",
+       "text": "Notfallmaßnahmen, die der Präsident allein ergreifen kann.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Sperrklausel“?",
+       "text": "Eine Grenze, die Parteien erreichen müssen, um im Parlament zu sitzen.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Kapp‑Putsch“?",
+       "text": "Ein gescheiterter Versuch, die Republik zu stürzen, im März 1920.",
+       "from_notes": false
+      },
+      {
+       "label": "Was bedeutet der Begriff „Hyperinflation“?",
+       "text": "Eine sehr hohe Inflation, die 1923 auftrat.",
+       "from_notes": false
+      },
+      {
+       "label": "Was geschah: Ausruf der Republik?",
+       "text": "9. November 1918: Philipp Scheidemann ruft die Republik aus; die Abdankung Kaiser Wilhelms II. wird bekanntgegeben.",
+       "from_notes": true
+      },
+      {
+       "label": "Wofür steht das Datum Wahl zur Nationalversammlung?",
+       "text": "19. Januar 1919: Wahl zur Nationalversammlung, erstmals dürfen Frauen wählen.",
+       "from_notes": true
+      },
+      {
+       "label": "Was geschah: Unterzeichnung der Verfassung?",
+       "text": "11. August 1919: Reichspräsident Friedrich Ebert unterzeichnet die Verfassung.",
+       "from_notes": true
+      }
+     ],
+     "answer": "",
+     "set_id": 7,
+     "study_url": "/flashcards/7/study",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "terms",
+     "title": "Wichtige Begriffe und Personen",
+     "body": "",
+     "items": [
+      {
+       "label": "Hyperinflation",
+       "text": "Ein starkes Preisniveauwachstum, das die deutsche Wirtschaft im Jahr 1923 erschütterte."
+      }
+     ],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "cause_effect",
+     "title": "Ursachen und Folgen",
+     "body": "",
+     "items": [
+      {
+       "label": "Fehlende Sperrklausel",
+       "text": "Viele kleine Parteien kamen in den Reichstag, was Regierungen schwer machte, eine stabile Mehrheit zu finden und häufig zum Zerbrechen führte."
+      },
+      {
+       "label": "Starke Macht des Reichspräsidenten",
+       "text": "Der Präsident konnte mit Art. 48 am Parlament vorbeiregieren, wenn keine Mehrheit bestand; ab 1930 wurde dies zur Regel, was die Bedeutung des Parlaments verringerte und den Weg zur Diktatur erleichterte."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "perspectives",
+     "title": "Zeitgenössische Sicht und heutige Bewertung",
+     "body": "Viele Kritiker sahen den Reichspräsidenten als \"Ersatzkaiser\" an, weil er so viel Macht hatte.",
+     "items": [],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "perspectives",
+     "title": "Zeitgenössische Sicht und heutige Bewertung",
+     "body": "Heute wird Art. 48 oft als Schwachstelle der Verfassung bezeichnet, weil er die Demokratie schwächte.",
+     "items": [],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "source_analysis",
+     "title": "Analyse einer Quelle",
+     "body": "",
+     "items": [
+      {
+       "label": "Datum",
+       "text": "1919"
+      },
+      {
+       "label": "Typ",
+       "text": "Verfassungsartikel"
+      },
+      {
+       "label": "Adressat",
+       "text": "Volksgemeinschaft"
+      },
+      {
+       "label": "Inhalt",
+       "text": "Der Reichspräsident kann, wenn die öffentliche Sicherheit und Ordnung erheblich gestört oder gefährdet wird, Notverordnungen erlassen und Grundrechte teilweise außer Kraft setzen."
+      },
+      {
+       "label": "Vertrauenswürdigkeit",
+       "text": "Als Teil der Verfassung gilt die Quelle als sehr zuverlässig für die Frage nach Art. 48."
+      }
+     ],
+     "answer": "",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    },
+    {
+     "kind": "source_analysis",
+     "title": "Analyse einer Quelle",
+     "body": "",
+     "items": [
+      {
+       "label": "Autor",
+       "text": "Unbekannt, aber vermutlich ein Verfassungsrechtler"
+      },
+      {
+       "label": "Intention",
+       "text": "Rechtliche Regelung für Notfälle"
+      }
+     ],
+     "answer": "",
+     "from_notes": false,
+     "source_pages": []
+    },
+    {
+     "kind": "guided_exercise",
+     "title": "Beispielaufgabe",
+     "body": "Erkläre mit Hilfe der Quelle, warum Art. 48 als Schwachstelle der Verfassung gilt.",
+     "items": [
+      {
+       "label": "Hinweis 1",
+       "text": "Art. 48 erlaubt dem Präsidenten, ohne Zustimmung des Reichstags zu regieren."
+      },
+      {
+       "label": "Hinweis 2",
+       "text": "Ab 1930 wurde das Notverordnungsrecht häufig genutzt, wodurch das Parlament an Bedeutung verlor."
+      }
+     ],
+     "answer": "Art. 48 gilt als Schwachstelle, weil er dem Reichspräsidenten die Möglichkeit gab, ohne Zustimmung des Reichstags zu regieren. Dadurch konnte er die Demokratie schwächen und die Macht des Parlaments reduzieren, was den Weg zur Diktatur erleichterte.",
+     "from_notes": true,
+     "source_pages": [
+      1
+     ],
+     "source_page_ids": [
+      7
+     ],
+     "source_labels": [
+      "Geschichte_Weimarer_Verfassung.pdf S. 1"
+     ]
+    }
+   ],
+   "answer": "b",
+   "evaluation_raw_text": "{\"evaluation\":{\"is_correct\":false,\"score\":0,\"feedback\":\"Du hast die Option b gewählt, die besagt, dass Art. 48 die Grundrechte stark einschränkt. In der Quelle steht jedoch, dass Art. 48 dem Reichspräsidenten die Möglichkeit gab, ohne Zustimmung des Reichstags zu regieren. Das macht die Verfassung schwach, weil der Präsident das Parlament umgehen konnte. Du hast also die falsche Folge der Artikelnummer gewählt.\",\"correction\":\"1. Art. 48 erlaubt dem Reichspräsidenten Notverordnungen ohne Reichstagszustimmung.\\n2. Dadurch konnte er regieren, ohne die Mehrheit des Reichstags zu haben.\\n3. Das schwächte die demokratische Kontrolle und machte die Verfassung verletzlich.\",\"teacher_tip\":\"Wenn du dich fragst, ob ein Artikel die Rechte einschränkt oder die Macht vergrößert, frage dich: \\\"Wer bekommt mehr Entscheidungsfreiheit?\\\" – der Präsident oder das Parlament?\",\"exception_note\":\"\",\"skill_status\":\"needs_practice\"},\"next_question\":{\"id\":\"q2\",\"concept\":\"Art. 48\",\"difficulty\":1,\"type\":\"ordering\",\"prompt\":\"Ordne die folgenden Aussagen zur Art. 48 in die richtige Reihenfolge, beginnend mit der wichtigsten Schwachstelle.\",\"hint\":\"Denke daran, welche Macht Art. 48 dem Präsidenten gibt.\",\"options\":[{\"id\":\"a\",\"label\":\"Der Präsident kann Notverordnungen ohne Reichstagszustimmung erlassen.\"},{\"id\":\"b\",\"label\":\"Art. 48 schränkt die Grundrechte der Bürger stark ein.\"},{\"id\":\"c\",\"label\":\"Der Reichstag kann den Präsidenten jederzeit absetzen.\"},{\"id\":\"d\",\"label\":\"Art. 48 erlaubt dem Präsidenten, das Parlament aufzulösen.\"}],\"expected_answer\":\"a,d,b,c\"},\"summary\":null,\"retry\":{\"misunderstanding\":\"Du hast Art. 48 als Einschränkung der Grundrechte missverstanden.\",\"reteach\":\"Art. 48 gibt dem Reichspräsidenten die Möglichkeit, ohne Reichstagszustimmung zu regieren – das ist die Schwachstelle, nicht die Einschränkung der Bürgerrechte.\",\"simpler_example\":\"Stell dir vor, du hast einen Klassenrat. Wenn der Klassenlehrer ohne Zustimmung der Schüler entscheiden darf, was passiert, hat das den Rat weniger Macht. Das ist ähnlich wie Art. 48.\"}}",
+   "evaluation_call": 16,
+   "diagnosis_raw_text": "{\n  \"analysis_version\": \"diagnosis:v2\",\n  \"correctness_status\": \"incorrect\",\n  \"score\": {\n    \"points\": 0,\n    \"max_points\": 1,\n    \"rubric_evidence\": [\n      {\n        \"criterion\": \"correct answer\",\n        \"met\": false,\n        \"evidence_ids\": [\"e1\", \"e2\", \"e3\"]\n      }\n    ]\n  },\n  \"concepts_assessed\": [\"Art. 48 der Weimarer Verfassung\"],\n  \"primary_diagnosis\": {\n    \"tag\": \"conceptual_misconception\",\n    \"statement\": \"Der Schüler wählte Option b und glaubt, Art. 48 schränke die Grundrechte ein, was nicht dem Inhalt des Lernmaterials entspricht.\",\n    \"evidence_ids\": [\"e3\", \"e4\"]\n  },\n  \"secondary_diagnoses\": [],\n  \"evidence\": [\n    {\n      \"id\": \"e1\",\n      \"source\": \"question\",\n      \"quote\": \"Warum gilt Art. 48 der Weimarer Verfassung als Schwachstelle?\"\n    },\n    {\n      \"id\": \"e2\",\n      \"source\": \"expected_answer\",\n      \"quote\": \"a\"\n    },\n    {\n      \"id\": \"e3\",\n      \"source\": \"student_answer\",\n      \"quote\": \"b\"\n    },\n    {\n      \"id\": \"e4\",\n      \"source\": \"source_material\",\n      \"quote\": \"Wenn der Reichstag keine Mehrheit fand, konnte der Präsident mit Art. 48 am Parlament vorbei regieren.\"\n    }\n  ],\n  \"misconception_description\": \"Art. 48 ermöglichte dem Reichspräsidenten, ohne Zustimmung des Reichstags zu regieren, nicht die Einschränkung von Grundrechten.\",\n  \"prerequisite_gaps\": [],\n  \"missing_evidence\": false,\n  \"missing_evidence_reason\": \"\",\n  \"confidence\": {\n    \"value\": 0.95,\n    \"basis\": \"Klare Diskrepanz zwischen gewählter Option (b) und dem im Lerntext beschriebenen Inhalt von Art. 48.\"\n  },\n  \"recommended_intervention\": \"explain_correction\",\n  \"candidate_question_constraints\": {\n    \"concept\": \"Art. 48\",\n    \"prerequisite_focus\": \"Verständnis der Befugnisse des Reichspräsidenten nach Art. 48\",\n    \"difficulty\": 1,\n    \"cognitive_demand\": \"recall\",\n    \"question_type\": \"multiple_choice\",\n    \"target_misconception\": \"Art. 48 schränkt Grundrechte ein\",\n    \"purpose\": \"Überprüfung des Wissens über die Schwäche von Art. 48\"\n  },\n  \"student_facing_explanation\": \"Du hast die falsche Aussage gewählt; Art. 48 erlaubte dem Reichspräsidenten, ohne Zustimmung des Reichstags zu regieren, nicht die Grundrechte zu beschränken. Lies noch einmal den Abschnitt zu Art. 48 im Lerntext.\",\n  \"internal_diagnostic_summary\": \"Der Schüler wählte Option b, was auf ein Missverständnis der Funktion von Art. 48 hinweist.\"\n}",
+   "diagnosis_call": 17
+  }
+ }
+}

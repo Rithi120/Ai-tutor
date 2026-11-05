@@ -1,32 +1,84 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Assistant') }} — Learnova{% endblock %}
+{% block title %}{{ _('Chat') }} — Learnova{% endblock %}
+{# Chrome on Android shrinks the page when the keyboard opens (the composer stays above
+   it); iOS ignores this and static/js/assistant.js follows window.visualViewport. #}
+{% block viewport %}width=device-width, initial-scale=1, interactive-widget=resizes-content{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant.css', v=static_version) }}">
 {% endblock %}
+{% block body_class %}assistant-body{% endblock %}
+{# The chat fills the screen under the navigation bar; no footer under the conversation. #}
+{% block footer %}{% endblock %}
+{% macro icon(name) -%}
+<svg class="asst-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+{#- The conversation list's buttons use the panel shape, never the hamburger of the
+    navigation menu right above them on a phone. #}
+{%- if name == 'panel' %}<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>
+{%- elif name == 'pen' %}<path d="M12 20h8"/><path d="M16.4 3.6a2 2 0 0 1 2.9 2.9L7.5 18.3 3.6 19.4l1.1-3.9Z"/>
+{%- elif name == 'search' %}<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>
+{%- elif name == 'archive' %}<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>
+{%- elif name == 'chevron' %}<path d="m8 10 4 4 4-4"/>
+{%- elif name == 'book' %}<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5"/>
+{%- elif name == 'folder' %}<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
+{%- elif name == 'cards' %}<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/>
+{%- elif name == 'target' %}<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>
+{%- elif name == 'camera' %}<path d="M14.5 4h-5L7.5 7H4.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3.5"/>
+{%- elif name == 'image' %}<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4-4L6 21"/>
+{%- elif name == 'sparkle' %}<path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5 10.2 15A2 2 0 0 0 9 13.8L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/>
+{%- elif name == 'stop' %}<rect x="7" y="7" width="10" height="10" rx="2" class="asst-icon-fill"/>
+{%- elif name == 'down' %}<path d="M12 5v14M5.5 12.5 12 19l6.5-6.5"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
 {% block content %}
-<main class="assistant-page" id="main-content">
+<main class="assistant-page" id="main-content" data-sidebar="open"
+      data-home-path="{{ home_path|default('/assistant') }}"
+      data-initial-conversation="{{ initial_conversation_id|default('') }}"
+      data-continue-learning="{{ 'on' if continue_learning else 'off' }}">
   <div id="asstToast" class="toast hidden" role="status" aria-live="polite"></div>
+  {# A reply arriving is said here in one sentence; the thread itself is not a live region. #}
+  <p id="asstAnnounce" class="visually-hidden" role="status"></p>
 
-  <aside class="asst-sidebar" aria-label="{{ _('Conversations') }}">
+  <aside id="asstSidebar" class="asst-sidebar" aria-label="{{ _('Conversations') }}">
     <div class="asst-sidebar-head">
-      <h1 class="asst-title">{{ _('Assistant') }}</h1>
-      <button type="button" class="primary-button asst-new" id="asstNew">
-        <span aria-hidden="true">+</span> {{ _('New chat') }}
-      </button>
+      <h2 class="asst-title">{{ _('Conversations') }}</h2>
+      <button type="button" class="asst-icon-button" id="asstSidebarToggle" aria-expanded="true"
+              aria-controls="asstSidebar" aria-label="{{ _('Hide conversations') }}"
+              title="{{ _('Hide conversations') }}">{{ icon('panel') }}</button>
     </div>
-    <label class="visually-hidden" for="asstSearch">{{ _('Search conversations') }}</label>
-    <input type="search" id="asstSearch" placeholder="{{ _('Search conversations') }}" autocomplete="off">
-    <nav id="asstList" class="asst-list" aria-live="polite"></nav>
-    <p id="asstListEmpty" class="asst-empty-note hidden">{{ _('No conversations yet.') }}</p>
-    <label class="asst-archived-toggle">
-      <input type="checkbox" id="asstShowArchived"> {{ _('Show archived') }}
-    </label>
+    <button type="button" class="asst-new" id="asstNew">{{ icon('pen') }}<span>{{ _('New chat') }}</span></button>
+    <div class="asst-search">
+      <label class="visually-hidden" for="asstSearch">{{ _('Search conversations') }}</label>
+      {{ icon('search') }}
+      <input type="search" id="asstSearch" placeholder="{{ _('Search conversations') }}" autocomplete="off"
+             enterkeyhint="search" maxlength="100">
+    </div>
+    <div class="asst-lists" data-tour-target="chat-history">
+      <nav id="asstList" class="asst-list" aria-label="{{ _('Recent conversations') }}"></nav>
+      <p id="asstListEmpty" class="asst-empty-note hidden">{{ _('No conversations yet.') }}</p>
+      <button type="button" class="asst-load-more" id="asstLoadMore" hidden>{{ _('Load more') }}</button>
+      <button type="button" class="asst-archived-toggle" id="asstShowArchived" aria-expanded="false"
+              aria-controls="asstArchivedList">{{ icon('archive') }}<span>{{ _('Archived') }}</span>{{ icon('chevron') }}</button>
+      <nav id="asstArchivedList" class="asst-list asst-list-archived" hidden
+           aria-label="{{ _('Archived conversations') }}"></nav>
+    </div>
+    <nav id="asstTools" class="asst-tools" aria-label="{{ _('Learning tools') }}">
+      <a href="{{ url_for('short_lesson') }}">{{ icon('book') }}<span>{{ _('New Lesson') }}</span></a>
+      <a href="{{ url_for('projects') }}">{{ icon('folder') }}<span>{{ _('Project Mode') }}</span></a>
+      {% if feature_flags.private_flashcards %}<a href="{{ url_for('flashcards_page') }}">{{ icon('cards') }}<span>{{ _('Flashcards') }}</span></a>{% endif %}
+      <a href="{{ url_for('todays_practice') }}">{{ icon('target') }}<span>{{ _("Today's Practice") }}</span></a>
+    </nav>
   </aside>
+  <div id="asstScrim" class="asst-scrim" hidden></div>
 
-  <section class="asst-main" aria-label="{{ _('Conversation') }}">
+  <section id="asstMain" class="asst-main" aria-label="{{ _('Conversation') }}">
     <header class="asst-thread-head">
+      <button type="button" class="asst-icon-button asst-drawer-toggle" id="asstDrawerToggle"
+              aria-controls="asstSidebar" aria-expanded="false" aria-label="{{ _('Open conversations') }}"
+              title="{{ _('Open conversations') }}" data-label-mobile="{{ _('Open conversations') }}"
+              data-label-desktop="{{ _('Show conversations') }}">{{ icon('panel') }}</button>
       <div class="asst-thread-title">
-        <h2 id="asstThreadTitle">{{ _('Assistant') }}</h2>
+        <h1 id="asstThreadTitle">{{ _('New chat') }}</h1>
         <p id="asstThreadMeta" class="asst-meta"></p>
       </div>
       <div class="asst-thread-actions">
@@ -36,54 +88,94 @@
           <option value="{{ preset.name }}" title="{{ preset.description }}">{{ preset.label }}</option>
           {% endfor %}
         </select>
-        <button type="button" class="ghost-button" id="asstRename" hidden>{{ _('Rename') }}</button>
-        <button type="button" class="ghost-button" id="asstArchive" hidden>{{ _('Archive') }}</button>
-        <button type="button" class="ghost-button danger" id="asstDelete" hidden>{{ _('Delete') }}</button>
+        <button type="button" class="asst-icon-button asst-head-new" id="asstHeadNew"
+                aria-label="{{ _('New chat') }}" title="{{ _('New chat') }}">{{ icon('pen') }}</button>
       </div>
     </header>
 
-    <div id="asstThread" class="asst-thread" aria-live="polite">
-      <div class="asst-welcome" id="asstWelcome">
-        <h3>{{ _('Ask anything') }}</h3>
-        <p>{{ _('A direct line to the assistant — no lesson needed. Pick a style above to change how it answers.') }}</p>
-        <ul class="asst-suggestions">
-          <li><button type="button" class="asst-suggestion">{{ _('Explain the chain rule with a worked example') }}</button></li>
-          <li><button type="button" class="asst-suggestion">{{ _('What is the evidence for and against this claim?') }}</button></li>
-          <li><button type="button" class="asst-suggestion">{{ _('Help me plan revision for an exam in three weeks') }}</button></li>
-        </ul>
+    <div class="asst-thread-wrap">
+      <div id="asstThread" class="asst-thread">
+        <div class="asst-welcome" id="asstWelcome">
+          <img class="asst-welcome-logo" src="{{ url_for('static', filename='learnova-logo.svg') }}" alt="" width="48" height="48">
+          <h2>{{ _('What do you want to learn today?') }}</h2>
+          <p>{{ _('Ask a question, send a photo of your homework, or let me test you. I explain at your class level and check that it made sense.') }}</p>
+          <ul class="asst-suggestions" data-tour-target="chat-ideas">
+            <li><button type="button" class="asst-suggestion" data-prompt="{{ _('Explain this topic to me step by step:') }}">{{ _('Explain a difficult topic') }}</button></li>
+            <li><button type="button" class="asst-suggestion" data-prompt="{{ _('Help me solve this exercise:') }}">{{ _('Help me solve this exercise') }}</button></li>
+            {% if chat_images %}<li><button type="button" class="asst-suggestion" data-action="photo" data-prompt="{{ _('Explain this textbook page to me.') }}">{{ _('Explain this textbook page') }}</button></li>{% endif %}
+            <li><button type="button" class="asst-suggestion" data-prompt="{{ _('Test my knowledge on:') }}">{{ _('Test my knowledge') }}</button></li>
+            <li><button type="button" class="asst-suggestion" data-prompt="{{ _('Help me prepare for my exam on:') }}">{{ _('Help me prepare for an exam') }}</button></li>
+          </ul>
+        </div>
       </div>
+      <button type="button" class="asst-scroll-down" id="asstScrollDown" hidden
+              aria-label="{{ _('Scroll to the newest message') }}" title="{{ _('Scroll to the newest message') }}">{{ icon('down') }}</button>
     </div>
+    {% if chat_images %}<div id="asstDropZone" class="asst-dropzone" hidden>{{ icon('image') }}<span>{{ _('Drop photos here') }}</span></div>{% endif %}
 
     <form id="asstComposer" class="asst-composer">
       <div class="asst-composer-shell">
-        {% if chat_images %}<div id="asstAttachTray" class="attach-tray hidden" aria-live="polite" aria-label="{{ _('Attached photos') }}"></div>{% endif %}
-        <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
-        <textarea id="asstInput" rows="1" maxlength="16000"
-                  placeholder="{{ _('Send a message…') }}" autocomplete="off"></textarea>
-        <div class="asst-composer-actions">
+        {% if chat_images %}<div id="asstAttachTray" class="attach-tray hidden" data-max-photos="{{ photo_limit or 2 }}" role="group" aria-label="{{ _('Attached photos') }}"></div>{% endif %}
+        <div class="asst-composer-row">
           {% if chat_images %}
-          <span class="attach-buttons">
-            <label class="attach-button" title="{{ _('Take a photo') }}">
+          <span class="attach-buttons asst-attach" data-tour-target="chat-photo">
+            <label class="attach-button asst-camera" title="{{ _('Take a photo') }}">
               <input id="asstCamera" class="attach-input" type="file" accept="image/*" capture="environment">
-              <span aria-hidden="true">📷</span><span class="visually-hidden">{{ _('Take a photo') }}</span>
+              {{ icon('camera') }}<span class="visually-hidden">{{ _('Take a photo') }}</span>
             </label>
             <label class="attach-button" title="{{ _('Add photos') }}">
               <input id="asstGallery" class="attach-input" type="file" accept="image/*" multiple>
-              <span aria-hidden="true">🖼</span><span class="visually-hidden">{{ _('Add photos') }}</span>
+              {{ icon('image') }}<span class="visually-hidden">{{ _('Add photos') }}</span>
             </label>
           </span>
           {% endif %}
-          <label class="asst-deep" title="{{ _('Use the stronger model. Slower, better on hard questions.') }}">
-            <input type="checkbox" id="asstDeep"> {{ _('Think harder') }}
-          </label>
-          <span id="asstCount" class="asst-count" aria-live="polite"></span>
-          <button type="submit" class="asst-send" id="asstSend" title="{{ _('Send') }}"
-                  aria-label="{{ _('Send') }}"><span aria-hidden="true">&uarr;</span></button>
+          <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
+          <textarea id="asstInput" rows="1" maxlength="16000" enterkeyhint="send"
+                    placeholder="{{ _('Send a message…') }}" autocomplete="off"></textarea>
+          <div class="asst-composer-actions">
+            <label class="asst-deep" title="{{ _('Use the stronger model. Slower, better on hard questions.') }}" data-tour-target="chat-deep">
+              <input type="checkbox" id="asstDeep" class="visually-hidden">
+              {{ icon('sparkle') }}<span class="asst-deep-text">{{ _('Think harder') }}</span>
+            </label>
+            <span id="asstCount" class="asst-count"></span>
+            <button type="button" class="asst-stop" id="asstStop" hidden title="{{ _('Stop') }}"
+                    aria-label="{{ _('Stop') }}">{{ icon('stop') }}</button>
+            <button type="submit" class="asst-send" id="asstSend" title="{{ _('Send') }}"
+                    aria-label="{{ _('Send') }}"><span aria-hidden="true">&uarr;</span></button>
+          </div>
         </div>
       </div>
-      <p class="asst-disclaimer">{{ _('The assistant can be wrong. Check anything that matters.') }}{% if chat_images %} {{ _('Photos are read by AI and kept with this conversation.') }}{% endif %}</p>
+      <p class="asst-disclaimer">{{ _('The assistant can be wrong. Check anything that matters.') }}{% if chat_images %}<span class="asst-disclaimer-photos"> {{ _('Photos are read by AI. The text read from them stays in this conversation; the photos themselves are deleted after {days} days.', days=photo_retention_days|default(30)) }}</span>{% endif %}</p>
     </form>
   </section>
+
+  {# One menu for every conversation row (static/js/assistant.js moves it under the row's ⋯ button). #}
+  <div id="asstItemMenu" class="asst-item-menu" role="menu" hidden aria-label="{{ _('More options') }}">
+    <button type="button" role="menuitem" tabindex="-1" id="asstRename">{{ _('Rename') }}</button>
+    <button type="button" role="menuitem" tabindex="-1" id="asstArchive">{{ _('Archive') }}</button>
+    <button type="button" role="menuitem" tabindex="-1" class="danger" id="asstDelete">{{ _('Delete') }}</button>
+  </div>
+
+  <dialog id="asstRenameDialog" class="asst-dialog" aria-labelledby="asstRenameTitle">
+    <form id="asstRenameForm" method="dialog">
+      <h2 id="asstRenameTitle">{{ _('Rename conversation') }}</h2>
+      <input id="asstRenameInput" type="text" maxlength="120" required autocomplete="off" aria-labelledby="asstRenameTitle">
+      <div class="asst-dialog-actions">
+        <button type="button" class="secondary-button" id="asstRenameCancel">{{ _('Cancel') }}</button>
+        <button type="submit" class="primary-button" id="asstRenameSave">{{ _('Save') }}</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="asstDeleteDialog" class="asst-dialog" aria-labelledby="asstDeleteHeading" aria-describedby="asstDeleteText">
+    <h2 id="asstDeleteHeading" data-template="{{ _('Delete “{title}”?') }}"></h2>
+    <p id="asstDeleteText">{{ _('This permanently deletes the conversation with all its messages and photos. It cannot be undone. Archive it instead to keep its messages.') }}</p>
+    <div class="asst-dialog-actions">
+      <button type="button" class="secondary-button" id="asstDeleteCancel" autofocus>{{ _('Cancel') }}</button>
+      <button type="button" class="secondary-button" id="asstDeleteArchive">{{ _('Archive instead') }}</button>
+      <button type="button" class="primary-button asst-danger-button" id="asstDeleteConfirm">{{ _('Delete permanently') }}</button>
+    </div>
+  </dialog>
 </main>
 {% endblock %}
 {% block scripts %}

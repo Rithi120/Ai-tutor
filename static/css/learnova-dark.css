@@ -174,10 +174,10 @@
   background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
 /* Answer option pills */
-:root[data-theme="dark"] .answer-option span {
+:root[data-theme="dark"] .answer-option > span {
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
-:root[data-theme="dark"] .answer-option span:before { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .answer-option > span:before { border-color: var(--ln-line-strong); }
 :root[data-theme="dark"] .answer-option input:checked + span {
   background: rgba(110, 92, 255, .22); border-color: var(--ln-violet); color: var(--ln-ink);
 }
@@ -398,3 +398,54 @@
 :root[data-theme="dark"] .pm-stats > div { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
 :root[data-theme="dark"] .project-more-options textarea { background: var(--fc-input-bg); border-color: var(--ln-line-strong); color: var(--ln-ink); }
 
+/* ---- Lesson parts (learnova-study.css) ----
+   The parts are drawn from --ln-* tokens, so their tints follow the theme. Two things
+   need a rule here: the .content-card override above resets every border colour, which
+   erased the guided-exercise / mistakes / summary accent, and the in-lesson retry card's
+   amber edge. */
+:root[data-theme="dark"] .lp-card.lp-kind-guided_exercise { border-top-color: var(--ln-violet); }
+:root[data-theme="dark"] .lp-card.lp-kind-mistakes { border-top-color: var(--ln-amber); }
+:root[data-theme="dark"] .lp-card.lp-kind-summary { border-top-color: var(--ln-success); }
+:root[data-theme="dark"] .question-card.result-retry { border-color: var(--ln-amber); }
+/* The classic lesson cards' reading text is #4d5871 in styles.css: on the dark card that
+   was about 2.4:1, so a lesson without parts was hard to read in dark mode. */
+:root[data-theme="dark"] :is(.prose, .example-card ol, .teacher-notes-grid ul) { color: var(--ln-muted); }
+
+
+/* ---- Topic Notes page (templates/section_learning.html, styles.css) ----
+   The recall cards, their answer field and the formula boxes are white or cream in
+   styles.css; under the dark theme's light text their words disappeared. */
+:root[data-theme="dark"] .recall-card { background: var(--ln-surface-solid); border-color: var(--ln-line); color: var(--ln-ink); }
+:root[data-theme="dark"] .recall-card input { background: var(--fc-input-bg, var(--ln-surface-raised)); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .recall-card button { background: var(--ln-violet); color: #fff; }
+:root[data-theme="dark"] .recall-result.correct { color: var(--ln-success); }
+:root[data-theme="dark"] .recall-result.incorrect { color: var(--ln-danger); }
+:root[data-theme="dark"] .formula-list div { background: var(--ln-surface-raised); color: var(--ln-ink); }
+:root[data-theme="dark"] .source-note { color: var(--ln-ink); }
+
+/* The chat (assistant.css): its filled controls - New chat, Send, Open lesson, the
+   dialog's Save - keep the light theme's violet stops, so their white text stays at 4.5:1
+   or more (on the dark theme's own #9588ff / #7b6dff it measured 2.9:1 and 3.9:1). */
+:root[data-theme="dark"] .assistant-page {
+  --asst-fill: linear-gradient(135deg, #6e5cff, #4d3de0);
+  --asst-fill-solid: #5a49ef;
+}
+
+/* Filled primary buttons everywhere (Next and Finish in the tutorial, the hub, forms):
+   white text on the dark theme's #9588ff measured 2.9:1 (3.8:1 on hover). The chat's
+   deeper violet stops give 5.8:1 and more. :where() keeps this at the specificity of a
+   plain class, so a variant with its own fill (the chat dialog, a danger button) keeps it. */
+:root[data-theme="dark"] :where(.primary-button:not([class*="danger"])) { background: #5a49ef; color: #fff; }
+:root[data-theme="dark"] :where(.primary-button:not([class*="danger"])):hover { background: #4d3de0; }
+
+/* The guided tutorial (tour.css): on dark pages the light theme's .55 dimming was barely
+   visible, so the lit element did not stand out; a darker veil and a lighter ring. */
+:root[data-theme="dark"] .tour-root {
+  --tour-mask: rgba(0, 0, 0, .72);
+  --tour-ring: #a99bff;
+  --tour-ring-soft: rgba(169, 155, 255, .32);
+}
+:root[data-theme="dark"] .tour-choice-text { color: var(--ln-violet); }
+/* The tutorial hub (tutorial.css) and the dashboard invite: the deep violet is too dim on
+   dark surfaces for small text; the lighter one reads. */
+:root[data-theme="dark"] :is(a.tour-invite, .tutorial-card.is-in-progress .tutorial-status) { color: var(--ln-violet); }

@@ -35,6 +35,25 @@ def plan_for(grade, ev=None, **kwargs):
     return el.choose_level(grade=grade, evidence=ev, pattern=pattern, prerequisites=gaps, **kwargs)
 
 
+_MISSING = object()
+
+
+def keep_app_config(case, *keys):
+    """Restore these app.config keys after the test: AI_MODE="cached" left behind made
+    test_create_response_wrapper fail whenever it ran after this module."""
+
+    saved = {key: application.app.config.get(key, _MISSING) for key in keys}
+
+    def restore():
+        for key, value in saved.items():
+            if value is _MISSING:
+                application.app.config.pop(key, None)
+            else:
+                application.app.config[key] = value
+
+    case.addCleanup(restore)
+
+
 class MasteryLabelTests(unittest.TestCase):
     def test_labels_cover_the_five_states(self):
         self.assertEqual(el.mastery_label(None), "not_assessed")
@@ -158,6 +177,7 @@ class SessionStateTests(unittest.TestCase):
 
 class AdaptiveTutorIntegrationTests(unittest.TestCase):
     def setUp(self):
+        keep_app_config(self, "TESTING", "FEATURE_ADAPTIVE_DIAGNOSTICS", "FEATURE_DIAGNOSTIC_VERIFICATION", "AI_MODE")
         application.app.config.update(
             TESTING=True, FEATURE_ADAPTIVE_DIAGNOSTICS=True,
             FEATURE_DIAGNOSTIC_VERIFICATION=True, AI_MODE="cached")

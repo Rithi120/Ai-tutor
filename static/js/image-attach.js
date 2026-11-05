@@ -48,8 +48,20 @@ export async function normalizeImage(file) {
   }
 }
 
+/* Why an upload failed, in words the student can act on. The server's own JSON message
+ * wins; a response that is not JSON (an expired session redirected to the login page, a
+ * proxy's 413 or 502 page) is named by its status instead of "Upload failed". */
+export function uploadErrorText(status, data, responseUrl = "") {
+  if (data && typeof data.error === "string" && data.error) return data.error;
+  if (status === 401 || /\/login(?:[/?#]|$)/.test(String(responseUrl || ""))) return t("asstSessionExpired");
+  if (status === 413) return t("imgTooLarge");
+  return t("imgUploadFailed");
+}
+
 /* One upload with real progress. fetch() has no upload progress, so this is XHR - which
- * also means the CSRF header core.js adds to fetch() is added here by hand. */
+ * also means the CSRF header core.js adds to fetch() is added here by hand. Resolves
+ * {attachment, duplicate}: the server answers the same photo chosen twice with the
+ * attachment it already has. */
 export function uploadImage(file, purpose, onProgress) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -60,11 +72,12 @@ export function uploadImage(file, purpose, onProgress) {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);
     });
     request.addEventListener("load", () => {
-      const data = request.response || {};
-      if (request.status >= 200 && request.status < 300 && data.ok !== false && data.attachment) {
-        resolve(data.attachment);
+      // responseType "json" gives null for an HTML page (a login redirect, a proxy error).
+      const data = request.response && typeof request.response === "object" ? request.response : null;
+      if (request.status >= 200 && request.status < 300 && data && data.ok !== false && data.attachment) {
+        resolve({ attachment: data.attachment, duplicate: Boolean(data.duplicate) });
       } else {
-        reject(new Error(data.error || t("imgUploadFailed")));
+        reject(new Error(uploadErrorText(request.status, data, request.responseURL)));
       }
     });
     request.addEventListener("error", () => reject(new Error(t("imgUploadFailed"))));
@@ -83,10 +96,14 @@ export function uploadImage(file, purpose, onProgress) {
  *   count()   how many photos are in the tray
  *   clear()   empty the tray after the photos were sent (they belong to the message now)
  *   add(files)
+ *   restore(attachments)  show photos the server still holds unsent (after a refresh)
+ * The limit comes from the tray's data-max-photos (the server's effective per-message
+ * limit for the configured vision model), else `max`.
  */
 export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max = 4, onChange, onError }) {
   const items = [];
   let counter = 0;
+  max = Number(tray?.dataset?.maxPhotos) || max;
 
   function notify() {
     tray.classList.toggle("hidden", items.length === 0);
@@ -132,19 +149,22 @@ export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max 
       }
       const actions = document.createElement("div");
       actions.className = "attach-actions";
-      if (item.status === "failed") actions.appendChild(button("↻", t("imgRetry"), () => start(item)));
-      if (items.length > 1 && index > 0) actions.appendChild(button("←", t("imgMoveEarlier"), () => move(index, -1)));
-      if (items.length > 1 && index < items.length - 1) actions.appendChild(button("→", t("imgMoveLater"), () => move(index, 1)));
-      actions.appendChild(button("×", t("imgRemove"), () => remove(item)));
+      // Classes let a surface lay the controls out its own way (the chat composer puts ×
+      // on the corner and the others under the thumbnail).
+      if (item.status === "failed") actions.appendChild(button("↻", t("imgRetry"), () => start(item), "attach-retry"));
+      if (items.length > 1 && index > 0) actions.appendChild(button("←", t("imgMoveEarlier"), () => move(index, -1), "attach-move"));
+      if (items.length > 1 && index < items.length - 1) actions.appendChild(button("→", t("imgMoveLater"), () => move(index, 1), "attach-move"));
+      actions.appendChild(button("×", t("imgRemove"), () => remove(item), "attach-remove"));
       figure.appendChild(actions);
       return figure;
     }));
     notify();
   }
 
-  function button(symbol, label, handler) {
+  function button(symbol, label, handler, className = "") {
     const control = document.createElement("button");
     control.type = "button";
+    if (className) control.className = className;
     control.textContent = symbol;
     control.title = label;
     control.setAttribute("aria-label", label);
@@ -158,14 +178,26 @@ export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max 
     render();
   }
 
+  function release(item) {
+    // Only previews made here are object URLs; a restored photo shows the server's URL.
+    if (String(item.previewUrl || "").startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
+  }
+
+  function heldElsewhere(item) {
+    const id = item.attachment?.id;
+    return Boolean(id) && items.some(other => other !== item && other.attachment?.id === id);
+  }
+
   function remove(item) {
     const index = items.indexOf(item);
     if (index < 0) return;
     items.splice(index, 1);
-    URL.revokeObjectURL(item.previewUrl);
+    release(item);
     // Not sent yet, so it is deleted on the server too; a failure only leaves it to the
-    // one-day clean-up.
-    if (item.attachment?.id) fetch(`/api/chat-attachments/${encodeURIComponent(item.attachment.id)}`, { method: "DELETE" }).catch(() => {});
+    // one-day clean-up. Never while another thumbnail still holds the same attachment.
+    if (item.attachment?.id && !heldElsewhere(item)) {
+      fetch(`/api/chat-attachments/${encodeURIComponent(item.attachment.id)}`, { method: "DELETE" }).catch(() => {});
+    }
     render();
   }
 
@@ -176,7 +208,7 @@ export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max 
     render();
     try {
       const file = await normalizeImage(item.file);
-      item.attachment = await uploadImage(file, purpose, progress => {
+      const { attachment } = await uploadImage(file, purpose, progress => {
         item.progress = progress;
         const figure = tray.querySelector(`[data-key="${item.key}"]`);
         const bar = figure?.querySelector(".attach-progress");
@@ -187,10 +219,29 @@ export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max 
         const caption = figure?.querySelector(".attach-status");
         if (caption) caption.textContent = statusLabel(item);
       });
+      item.attachment = attachment;
       item.status = "ready";
+      if (heldElsewhere(item)) {
+        // The same photo chosen twice is one attachment on the server: keep one thumbnail,
+        // and do not delete the attachment the other one still holds.
+        const index = items.indexOf(item);
+        if (index >= 0) items.splice(index, 1);
+        release(item);
+        onError?.(t("imgDuplicate"));
+      }
     } catch (error) {
       item.status = "failed";
       item.error = error.message;
+    }
+    render();
+  }
+
+  function restore(attachments) {
+    for (const attachment of attachments || []) {
+      if (!attachment?.id || !attachment.url || items.length >= max) continue;
+      if (items.some(item => item.attachment?.id === attachment.id)) continue;
+      counter += 1;
+      items.push({ key: `a${counter}`, file: null, previewUrl: attachment.url, status: "ready", progress: null, attachment });
     }
     render();
   }
@@ -226,9 +277,11 @@ export function createAttachmentTray({ tray, inputs = [], purpose = "chat", max 
     busy: () => items.some(item => item.status === "uploading"),
     failed: () => items.some(item => item.status === "failed"),
     count: () => items.length,
+    max: () => max,
     add,
+    restore,
     clear() {
-      items.splice(0).forEach(item => URL.revokeObjectURL(item.previewUrl));
+      items.splice(0).forEach(release);
       render();
     },
   };

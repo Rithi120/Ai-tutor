@@ -6,7 +6,10 @@
   <div class="dashboard-heading"><div><div class="eyebrow">{{ lesson.subject }}</div><h1>{{ lesson.title }}</h1><p>{{ lesson.created_at.strftime('%d.%m.%Y %H:%M') }}</p></div>{% if lesson.study_session %}<form method="post" action="{{ url_for('resume_lesson', lesson_id=lesson.id) }}"><button class="primary-button">{{ _('Resume') }} →</button></form>{% endif %}</div>
   <section class="dashboard-grid">
     <article class="dashboard-card"><h2>{{ _('Attempts') }}</h2>{% if lesson.attempts %}{% for item in lesson.attempts|sort(attribute='timestamp', reverse=true) %}<div class="mistake"><div><b>{{ item.concept }}</b><span>{{ item.score }}% · {{ _('Level') }} {{ item.difficulty }}</span></div><p>{{ item.question }}</p><small>{{ _('Your answer') }}: {{ item.student_answer }}</small><small>{{ item.feedback }}</small></div>{% endfor %}{% else %}<p>{{ _('No test results yet.') }}</p>{% endif %}</article>
-    <article class="dashboard-card chat-history"><h2>Chat</h2>{% if lesson.chat_messages %}{% for message in lesson.chat_messages|sort(attribute='timestamp') %}<div class="history-message {{ message.role }}"><b>{{ _('You') if message.role == 'student' else 'Learnova' }}</b><p>{{ message.content }}</p><small>{{ message.timestamp.strftime('%d.%m.%Y %H:%M') }}</small></div>{% endfor %}{% else %}<p>{{ _('No chat messages yet.') }}</p>{% endif %}</article>
+    <article class="dashboard-card chat-history"><h2>{{ _('Chat') }}</h2>{% if lesson.chat_messages %}{% for message in lesson.chat_messages|sort(attribute='timestamp') %}<div class="history-message {{ message.role }}"><b>{{ _('You') if message.role == 'student' else 'Learnova' }}</b>{% if message.role == 'student' %}<p>{{ message.content }}</p>{% else %}<div class="history-message-body" data-rich-text data-no-math>{{ message.content|normalize_math }}</div>{% endif %}<small>{{ message.timestamp.strftime('%d.%m.%Y %H:%M') }}</small></div>{% endfor %}{% else %}<p>{{ _('No chat messages yet.') }}</p>{% endif %}</article>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/rich-history.js') }}"></script>
 {% endblock %}

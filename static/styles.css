@@ -873,6 +873,8 @@ body:before {
 
 .start-test-card h2 {
   margin: 7px 0 5px;
+  /* learnova-components.css colours every h2 --ln-ink: dark navy on this dark card. */
+  color: #fff;
   font: 700 24px "Manrope", sans-serif;
 }
 
@@ -1015,6 +1017,13 @@ body:before {
   box-shadow: 0 10px 35px #d95e4720;
 }
 
+/* "Try again" after a first wrong answer in a teach-first lesson: amber, not red - the
+   student is still on this question. */
+.question-card.result-retry {
+  border-color: var(--ln-amber);
+  box-shadow: 0 10px 35px #d9951b20;
+}
+
 .answer-control {
   margin: 17px 0 12px;
 }
@@ -1037,7 +1046,9 @@ body:before {
   opacity: 0;
 }
 
-.answer-option span {
+/* Only the option's own label span: ".answer-option span" also hit every span KaTeX
+   builds inside a formula label, so "$2^5$" became a 300px stack of padded boxes. */
+.answer-option > span {
   display: block;
   padding: 13px 14px 13px 44px;
   border: 1px solid #dedad1;
@@ -1046,7 +1057,7 @@ body:before {
   background: #fdfcf9;
 }
 
-.answer-option span:before {
+.answer-option > span:before {
   content: "";
   position: absolute;
   left: 15px;
@@ -1420,6 +1431,45 @@ body:before {
 .feedback.incorrect {
   background: #fff1ec;
   color: #9a492c;
+}
+
+/* The retry panel keeps the feedback's own light surface and dark text in both themes,
+   like the correct/incorrect panels; its blocks inherit that text colour. */
+.feedback.retry {
+  background: #fff6e6;
+  color: #74480a;
+}
+
+.retry-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #ffffffa6;
+}
+
+.retry-block > b {
+  display: block;
+}
+
+.retry-block .feedback-steps {
+  margin-top: 4px;
+}
+
+.retry-missing {
+  border-inline-start: 3px solid #d9951b;
+}
+
+/* inherit: learnova-components.css paints every <p> --ln-muted, which is a light grey
+   in dark mode, on this light panel. */
+.retry-prompt {
+  margin: 12px 0 0;
+  color: inherit;
+  font-weight: 700;
+}
+
+.feedback .retry-button {
+  min-height: 44px;
+  padding: 10px 18px;
 }
 
 .feedback strong {

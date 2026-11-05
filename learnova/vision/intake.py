@@ -205,6 +205,12 @@ LOW_CONTRAST = 45.0
 BLUR_RATIO = 0.18
 LOW_RESOLUTION_PIXELS = 450_000
 LOW_RESOLUTION_LONG_SIDE = 800
+# A small photo is only "too small" when its writing is: the 75th percentile of its text
+# line heights below this many pixels. Measured: lines of 33-47 px in legible crops of one
+# exercise (the live 1180x340 crop: 47), 15-24 px in pages or crops shrunk until hard to
+# read, 24 in the synthetic low_resolution case (CHAT_FIX2 D8). The app tells students to
+# crop to the task, so a crop must not then be told to move closer.
+LEGIBLE_LINE_PIXELS = 28
 EDGE_BAND = 0.015
 
 
@@ -280,6 +286,41 @@ def _writing_at_edge(mask: Image.Image) -> bool:
     return False
 
 
+def _text_line_heights(gray: Image.Image) -> list[int]:
+    """Heights in pixels of the text lines: runs of rows with clearly more ink than the
+    paper's own background (ruled or squared paper included), gaps of up to 2 rows bridged.
+    Runs under 6 px (a ruled line) or over a third of the picture (a drawing) are not text."""
+
+    mask = _ink_mask(gray)
+    width, height = mask.size
+    data = mask.tobytes()
+    counts = [data[row * width:(row + 1) * width].count(255) for row in range(height)]
+    background = sorted(counts)[len(counts) // 5]
+    threshold = background + max(2, width // 100)
+    runs: list[int] = []
+    length = gap = 0
+    for value in [*counts, 0, 0, 0]:
+        if value >= threshold:
+            length, gap = (length + gap + 1, 0) if length else (1, 0)
+        elif length:
+            gap += 1
+            if gap > 2:
+                if 6 <= length <= max(12, height // 3):
+                    runs.append(length)
+                length = gap = 0
+    return runs
+
+
+def _writing_too_small(image: Image.Image) -> bool:
+    """For a small photo: is its writing too small to read? Without text lines to measure
+    (a drawing, an empty page) it is judged by its size alone, as before."""
+
+    heights = sorted(_text_line_heights(image.convert("L")))
+    if len(heights) < 1:
+        return True
+    return heights[min(len(heights) - 1, int(len(heights) * 0.75))] < LEGIBLE_LINE_PIXELS
+
+
 def assess_quality(image: Image.Image) -> QualityReport:
     """Blur, darkness, contrast, resolution and cut-off writing, as advisory issue codes."""
 
@@ -294,7 +335,8 @@ def assess_quality(image: Image.Image) -> QualityReport:
         issues.append("dark")
     elif contrast < LOW_CONTRAST:
         issues.append("low_contrast")
-    if width * height < LOW_RESOLUTION_PIXELS or max(width, height) < LOW_RESOLUTION_LONG_SIDE:
+    if (width * height < LOW_RESOLUTION_PIXELS or max(width, height) < LOW_RESOLUTION_LONG_SIDE) \
+            and _writing_too_small(image):
         issues.append("low_resolution")
 
     # Blur as a ratio, so the amount of writing on the page does not decide it: a sharp

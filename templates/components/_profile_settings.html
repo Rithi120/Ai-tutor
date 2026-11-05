@@ -25,13 +25,13 @@
 
   <form method="post" action="{{ url_for('update_profile_preferences') }}" class="settings-grade settings-toggles">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="toggle-row">
+    <label class="toggle-row" data-tour-target="settings-public">
       <input type="checkbox" name="profile_public" {{ 'checked' if current_user.profile_public }}>
       <span><b>{{ _('Public profile') }}</b>
         <small>{{ _('Others can see your level, streak and achievements. Your avatar, username and Premium badge are always shown where you publish.') }}</small></span>
     </label>
     {% if leagues_on %}
-    <label class="toggle-row">
+    <label class="toggle-row" data-tour-target="settings-leagues">
       <input type="checkbox" name="leaderboard_enabled" {{ 'checked' if current_user.leaderboard_enabled }}>
       <span><b>{{ _('Take part in weekly leagues') }}</b>
         <small>{{ _('Leagues rank learners by the XP they earn each week; the top places move up a league, the bottom ones move down.') }}</small></span>

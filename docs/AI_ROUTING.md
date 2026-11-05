@@ -46,7 +46,7 @@ a Groq model from configuration.
 | fast | `GROQ_FAST_MODEL` | tutor_chat, flashcard_back_suggestion, translation, diagnosis_verification |
 | standard | `GROQ_TUTOR_MODEL` | lesson/quiz/question/adaptive/project/exam generation, flashcard generation & review, answer_evaluation, content_moderation, assistant_chat |
 | strong | `GROQ_ANALYSIS_MODEL` | final_exam_evaluation, answer_diagnosis, mistake_analysis, assistant_chat with "think harder" |
-| vision | `GROQ_VISION_MODEL` | ocr_document_recognition, handwriting_region_review, vocabulary_page_extraction, lesson_generation from photos |
+| vision | `GROQ_VISION_MODEL` | image_understanding (every chat, lesson and answer photo, [VISION.md](VISION.md)), ocr_document_recognition, handwriting_region_review, vocabulary_page_extraction, and any request that carries an image |
 
 For one request the router produces an ordered list of **candidates**:
 
@@ -122,6 +122,28 @@ Everything else is routine and never leaves Groq, however much budget there is.
   instructions – or on the same model only when nothing else is left. The usage log showed
   `answer_evaluation` failing validation on 7 of 21 live calls on gpt‑oss‑20b and the
   same‑model retry rescuing 0 of 7.
+- **An answer cut off by its output cap** (PF6.1: Responses `status` `incomplete` with
+  `incomplete_details.reason` `max_output_tokens`, or `incomplete` with no reason; Chat
+  Completions `finish_reason` `length`; Anthropic `stop_reason` `max_tokens`;
+  `adapters.stop_reason_of`) is recorded and logged, see [Watching it](#watching-it). If it
+  then fails validation, its corrective retry is **not** sent to the same model: the cap is
+  the same, so the answer stops in the same place (the section-generation and exam calls did
+  exactly that before their caps were raised, `learnova/config.py`). A *different* next
+  candidate – the fallback model – still gets the retry, on purpose: another model can fit
+  the same answer into the same cap. A cut-off answer that still validates (a repaired
+  missing closer, a salvaged chat photo reading) is used. The error category stays
+  `invalid_json` / `schema_validation`, so callers are unchanged.
+- **A JSON syntax slip is repaired first** (`contracts.repair_json_syntax`, PF4 L9): a stray
+  quote after `]` or `}`, or a missing closing brace, is repaired before the answer counts
+  as invalid, so it costs no corrective call (live 2026-11-01: 2 of 17 lesson and grading
+  answers had such a slip). Logged as `ai.json_repaired task=… kind=…` at INFO. Valid JSON
+  is never touched, a repair never changes a value, and a cut-off lesson is accepted only
+  when its last one or two characters are missing (review B fuzzing).
+- **A model that is cooling down** after a 429 is skipped without a call while another
+  candidate follows it. When it is the last candidate it is asked again, except by
+  `ocr_document_recognition` (`COOLDOWN_FAIL_FAST_TASKS`): a Project Mode page reading then
+  fails at once with the cooldown's category and remaining seconds, and the page is read
+  offline meanwhile (review B B-1). Chat photos and their close-up second look still ask.
 - **A limit or budget error stops the request at once.** Nothing is retried around a cap.
 - **Every provider call is bounded.** Clients are built with `max_retries=0` (the gateway
   does its own rotating and cooling down) and a `timeout` of `AI_PROVIDER_TIMEOUT_SECONDS`
@@ -156,6 +178,34 @@ student can act on.
 | `AI_RATE_<PROVIDER>_REQUESTS_PER_MINUTE` | one provider | no limit |
 | `AI_COST_<PROVIDER>_INPUT_PER_MILLION` / `_OUTPUT_PER_MILLION` | prices | fall back to `AI_INPUT/OUTPUT_COST_PER_MILLION`, else 0 |
 | `AI_BUDGET_GLOBAL_SPEND_PER_MONTH` | currency, priced providers only | no limit |
+| `AI_VISION_REQUEST_TOKEN_CEILING` | one request that carries images: input estimate (`AI_IMAGE_TOKEN_ESTIMATE` 2048 per image) + output cap | 8000, Groq's on_demand tokens per minute for qwen3.8-27b; `0` turns it off. The output cap is lowered to fit; a request that cannot keep `AI_<TASK>_MIN_OUTPUT_TOKENS` is refused as `request_too_large` before anything is reserved or sent. Text requests are never clamped. Details: [VISION.md](VISION.md#fitting-the-vision-model-2026-11-01) |
+| `AI_VISION_OUTPUT_TOKEN_CEILING` | output cap of every image request (page readings included) | 0 = learnt from the provider's output-per-minute refusal: photo readings (`image_understanding`) get one retry just below it, and the cap is remembered for an hour, in `AI_CACHE_DIR/_limits` too so every process knows it. A value pins the cap instead; 950 on Groq on_demand ([OPERATIONS.md](OPERATIONS.md#the-groq-tier) says what it costs a long page) |
+| `AI_TEXT_REQUEST_TOKEN_CEILING` | one text request: input estimate + output allowance + max(200, ceiling/20) | 0 = off. A larger request is refused as `request_too_large` before anything is reserved or sent (usage `event_kind` `refused`); the **output cap is never lowered**. Lessons, mixed practice, the practice exam, similar-mistake practice and a topic split fit their notes to it (below). Recommended: the tier's tokens per minute (Groq on_demand 8000). |
+| `AI_TEXT_REQUEST_OUTPUT_ALLOWANCE` | the share (0–1) of a text request's `max_output_tokens` counted against the ceiling, at admission and when notes are fitted | 0.4. Groq counts part of the output cap at admission, and how much changed overnight: "Requested 8305" for about 8 000 input tokens at `max_output_tokens` 5000 on 2026-11-01, but input + about 2,350 on 2026-11-02 ("Limit 8000, Requested 10363" for a gateway estimate of 8,619 and "Requested 9151" for 7,316: Requested ≈ 0.93 × estimate + 2,346, about 47 % of the cap). Our estimate runs about 8 % above Groq's input count, so 0.4 plus the 5 % margin covers that day. 0 restores the input-only rule. |
+| `AI_REQUEST_TOKEN_CEILINGS` | one model, `provider:model=tokens,…` | no override; an entry wins over the general (image or text) ceiling for that model |
+
+After `request_too_large` on a **text** request (a provider 413 or the admission check) no
+other model at the same provider is tried unless its own ceiling is known and larger than
+the limit that refused (`next_candidate_after`): Groq's 20b and 120b have the same
+per-minute limit, and the fallback only doubled the refusal. Another provider is still
+tried. Image requests keep their own handling (VISION.md).
+
+**Text requests that carry notes are fitted, not clamped** (FIX_PLAN PF4 L4, review B B-6):
+
+| | `AI_TEXT_REQUEST_TOKEN_CEILING` set | `AI_TEXT_REQUEST_TOKEN_CEILING` 0 |
+| --- | --- | --- |
+| Topic lesson, mixed practice (`fit_lesson_source`) | A request that fits as it is goes unchanged. Otherwise the notes get the room the rest of the request leaves under the ceiling minus the output allowance minus the margin; when that room is small the topic map first shrinks to 2 500 characters; never below `LESSON_SOURCE_MIN_CHARS` (4000) characters of notes. A shortened lesson says so in its notice. | Sent in full. A provider 413 that names its limit is rebuilt **once** (`refit_input_room`): within the limit minus the allowance and, when the refusal says "Requested R", smaller than the refused request's estimate by R − L plus a tenth plus the margin (`lesson.fit_retry limit=… requested=… sent=… rebuilt=…` at INFO). A rebuild that cannot be that small is **not sent** (`lesson.fit_retry_skipped`): the student gets the "too large" message, never a second identical request. The same rule applies after a 413 with the ceiling set. |
+| Practice exam, similar-mistake practice, topic split (`fit_text_sources`) | Fitted the same way (the allowance counted on the task's output cap: 6000 for the exam and the split, the lesson cap for similar-mistake practice), only when the request would not fit (`exam.fitted` at INFO for the exam). | Sent unchanged; a 413 fails the request. |
+| Everything else | Refused before sending when it does not fit. | Sent; the provider decides. |
+
+Every page or topic keeps a labelled fair share of what is sent. Grading and the tutor keep
+the unfitted pages. Replayed from the stored six-page Utilitarismus refusal (PF_FIX2 F1,
+`tests/test_live_final_limits.py`): the rebuild room is min(8000 − 400 − 0.4 × 5000,
+8619 − 2363 − 236 − 400) = 5,600, which the calibrated provider admits at about 7,554; the
+lesson through the real route: 413 at 8,570, then one lesson at 5,314 (about 7,289 counted),
+or one call at 5,314 with the ceiling set. A request the gateway refuses reaches the student as 413
+`ai_request_too_large`: "This request is too large for the AI. Send less at once and try
+again. Your saved work remains safe."
 
 A paid provider is **off until it has a cap**. That is the one asymmetry, and it is
 deliberate: a provider that bills must be switched on by a decision, never by omission.
@@ -187,8 +237,28 @@ requests are recorded for the diagnostics page but **never counted**: they cost 
 | the site or a provider is out of budget | 503 | `ai_budget_exhausted` | "AI help is paused until {time} because the budget for this period is used up…" + `Retry-After` |
 | a provider is rate‑limiting us | 503 | `ai_provider_busy` | "The AI provider is busy right now…" |
 | nothing permitted can answer | 503 | `ai_unavailable` | "AI is temporarily unavailable…" |
+| a text request too large for the model's per-minute limit, after fitting | 413 | `ai_request_too_large` | "This request is too large for the AI. Send less at once and try again…" |
+| a photo could not be read (chat, lesson chat, photographed answer, New lesson) | 413 / 503 / 400 / 504 / 422 | `photos_too_large`, `photo_reader_busy`, `photo_reader_daily_limit`, `photo_reader_unavailable`, `image_rejected`, `photo_read_timeout`, `photo_read_failed` | one specific sentence per case, photos stay attached ([VISION.md](VISION.md#fitting-the-vision-model-2026-11-01)) |
 
 `details.retry_after` and `details.resets_at` carry the same information for scripts.
+
+Three failure categories came with the vision fixes (2026-11-01). `AIProviderError` now
+carries the provider's HTTP status, error code and type, `Retry-After`, and the limit and
+requested figures parsed from the message (integers only; the text is never logged). The
+usage row records `provider_status`, `provider_error_code` and `provider_error_type`.
+- **`request_too_large`.** An HTTP 413, or the gateway's own preflight refusal. It is about
+  this request, so it is neither provider-wide nor a limit hop. A smaller request can
+  still succeed, and a vision fallback model is still tried.
+- **`provider_daily_limit`.** A 429 that names a per-day limit (tokens or requests per
+  day). It is model-scoped: that model cools down for 10 minutes. It counts as a limit
+  hop, not as an empty account.
+- **`image_rejected`.** A 400 (`invalid_request`) on a request that carries an image:
+  the picture itself was refused (format, size, count).
+
+`image_understanding` gets no same-model corrective retry, because a truncated reading
+would truncate again; since PF6.1 no task retries a cut-off answer on the same model
+([above](#failures-retries-and-the-call-bound)). A timeout is never retried on the same
+provider.
 Pages append the retry time to the toast (`static/js/ai-limit-rules.js`); as‑you‑type
 suggestions pause on a spent budget and resume on reload.
 
@@ -199,6 +269,18 @@ or coalesced request), written through `DatabaseLedger` in `app.py`. The JSONL l
 `instance/ai_usage.jsonl` is still written, one line per request, for the diagnostics page
 and for a checkout with no database wiring (`JsonlLedger`). Rows carry the hashed
 `user_reference` the log always carried, never a raw user id.
+
+Rows also carry `prompt_version` (`learnova/ai_services/prompts.py: PROMPT_VERSIONS`), so
+`/internal/ai-diagnostics` can split a task by feature. A feature that reuses a task
+appends its own suffix:
+
+| Label | What it is |
+| --- | --- |
+| `assistant_chat:v5` | The chat assistant: tutoring layer, STUDENT CONTEXT, hidden CHIPS/TOPIC lines, one line per table row, decimal commas in formulas as `{,}` ([ASSISTANT.md](ASSISTANT.md)) |
+| `tutor_chat:v6` | The lesson tutor chat: `\( … \)` / `\[ … \]` with single backslashes, the lesson state as plain text, one line per table row, decimal commas as `{,}` |
+| `image_understanding:chat1+chat` | A chat photo's compact reading (no bbox, author or confidence; cut-off readings kept as partial) ([VISION.md](VISION.md)) |
+| `image_understanding:v2+lesson` / `+solution` | A photo reading for a New lesson, or for a photographed answer (the full reading) |
+| `lesson_generation:<version>+chat1` | A lesson built with Continue Learning, derived from the current `lesson_generation` version (today `lesson_generation:v9+chat1`) |
 
 Ledger rows are buffered during a request and written on a separate connection after the
 request's own transaction ends, so a route cannot commit half‑built work by accident and
@@ -214,6 +296,10 @@ one gunicorn worker. A multi‑worker deployment would need a database‑level r
 - Identical requests within `AI_DEDUP_WINDOW_SECONDS` (15; 0 = off) share one provider
   call: the second waits on the first and takes its result, recorded as `coalesced` with
   zero tokens. Per process. Off under the test runner unless a test sets `AI_DEDUP_IN_TESTS`.
+- `fresh=True` (server code only, never forwarded to the provider) skips both the cache read
+  and the coalescing window, so the provider is really asked again; the new answer is
+  cached as usual. Used by the chat's Regenerate and by Project Mode's "Try reading again"
+  (a cached page reading used to come back unchanged for free; PF3 D3).
 - The cache key names the provider explicitly, so `x` and `groq:x` are one entry and a
   future change of default provider cannot serve another provider's answer. (Existing
   entries missed once when this changed.)
@@ -224,6 +310,21 @@ one gunicorn worker. A multi‑worker deployment would need a database‑level r
 empty hides it everywhere) and shows every configured limit with used/remaining/reset,
 usage by provider and by task, the routing table, coalesced requests and recent failures.
 Nothing on it is student content.
+
+**Cut-off answers (PF6.1).** Every line of the JSONL usage log carries `output_truncated`
+(true when any provider call of the request stopped at its output cap) and `finish_reason`
+(the provider's own word, sanitised: that cut-off call's, else the last answer's –
+`completed`, `stop`, `end_turn`, `max_output_tokens`, `length`, `max_tokens`; empty for a
+cache hit or a refusal). Each cut-off call also logs one WARNING, which production keeps
+(INFO is off there):
+
+```
+ai.output_truncated task=lesson_generation model=openai/gpt-oss-20b max_output_tokens=5000 provider=groq output_tokens=5000 finish_reason=max_output_tokens attempt=1
+```
+
+Numbers and names only, never the answer. A task that shows up here often needs a larger
+`AI_<TASK>_MAX_OUTPUT_TOKENS` (or a smaller request); photo readings at
+`AI_VISION_OUTPUT_TOKEN_CEILING=950` are the expected case ([VISION.md](VISION.md)).
 
 `scripts/live_budget_check.py` proves the budget mechanics against real Groq calls on a
 scratch database: one call → one settled row with the billed tokens; a repeated OCR page →

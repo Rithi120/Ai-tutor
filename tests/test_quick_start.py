@@ -24,6 +24,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 
 
 class FakeResponse:
@@ -75,6 +76,8 @@ LESSON = {
 
 class QuickStartTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE")
         application.app.config.update(TESTING=True, AI_MODE="cached")
         application.SESSIONS.clear()
         with application.app.app_context():
@@ -227,7 +230,7 @@ class QuickStartTests(unittest.TestCase):
         self.assertIn("CONTINUE WHERE YOU LEFT OFF", overview)
         self.assertIn("Mitochondria lesson", overview)
         self.assertIn("Not started yet", overview)
-        fresh = self.client.get("/").data.decode()
+        fresh = self.client.get("/lesson").data.decode()   # the New Lesson page (/ is the chat)
         self.assertIn("CONTINUE WHERE YOU LEFT OFF", fresh)
         # The banner is a plain link, so resuming must work as a GET (it used to be POST-only: 405).
         link = fresh.split('class="primary-button" href="')[1].split('"')[0]

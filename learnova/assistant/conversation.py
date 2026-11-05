@@ -16,6 +16,10 @@ The rules, in order of precedence:
    marker, because silently discarding what someone just typed is the worst option.
 4. What was dropped is reported, so the interface can say so instead of letting the
    learner wonder why the assistant forgot.
+5. With `pin_first` (the assistant chat), the student's first message - which usually
+   says what the whole thread is about - survives a long thread: it is kept (shortened to
+   PIN_FIRST_CHARACTERS if needed) and the turns dropped are the oldest after it, with a
+   visible "[… n earlier messages left out]" line in the transcript.
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ MAX_TITLE_LENGTH = 80
 # costs a little context while under-counting costs a refused request.
 CHARACTERS_PER_TOKEN = 4
 TRUNCATION_MARKER = "\n[… this message was shortened to fit the context window]"
+# How much of a pinned first message is kept when the thread no longer fits.
+PIN_FIRST_CHARACTERS = 1500
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,8 @@ class ConversationWindow:
     dropped_messages: int = 0
     truncated_messages: int = 0
     estimated_tokens: int = 0
+    # The first message is the pinned opening turn and the dropped turns lie right after it.
+    pinned_first: bool = False
 
     @property
     def complete(self) -> bool:
@@ -81,12 +89,16 @@ def clean_message(text: str | None, *, limit: int = MAX_MESSAGE_CHARACTERS) -> s
 
 def build_window(
     history: list[dict[str, str]], *, token_budget: int,
-    reserve_for_reply: int = 0,
+    reserve_for_reply: int = 0, pin_first: bool = False,
 ) -> ConversationWindow:
     """Choose the turns to send, newest-first, within a token budget.
 
     `history` is the full conversation oldest-first, each entry `{"role", "content"}`.
     `reserve_for_reply` is subtracted from the budget so the model has room to answer.
+    `pin_first`: when the thread does not fit, keep the first user turn (shortened to
+    PIN_FIRST_CHARACTERS with the marker if needed) and fill the rest of the budget
+    newest-first; `dropped_messages` then counts the turns after it that were left out.
+    A thread that fits is sent exactly as without the pin.
     """
 
     usable = max(0, token_budget - max(0, reserve_for_reply))
@@ -97,6 +109,61 @@ def build_window(
     ]
     if not turns:
         return ConversationWindow(messages=(), estimated_tokens=0)
+
+    selected, truncated, spent = _newest_first(turns, usable)
+    # A conversation that opens on an assistant turn reads as if the model is answering
+    # something the learner cannot see; drop the orphan.
+    while selected and selected[0]["role"] == ASSISTANT:
+        selected.pop(0)
+    window = ConversationWindow(
+        messages=tuple(selected),
+        dropped_messages=len(turns) - len(selected),
+        truncated_messages=truncated,
+        estimated_tokens=spent,
+    )
+    if not pin_first or not window.dropped_messages:
+        return window
+    return _pinned_window(turns, usable) or window
+
+
+def _pinned_window(turns: list[dict[str, str]], usable: int) -> ConversationWindow | None:
+    """The window with the first user turn pinned, or None when it cannot help.
+
+    None when the first user turn is the newest one, or when the newest turn would not
+    fit beside it at all: the question just asked always wins over the opening one.
+    """
+
+    first = next((index for index, turn in enumerate(turns) if turn["role"] == USER), None)
+    if first is None or first == len(turns) - 1:
+        return None
+    content = turns[first]["content"]
+    truncated = 0
+    if len(content) > PIN_FIRST_CHARACTERS:
+        content = content[:PIN_FIRST_CHARACTERS] + TRUNCATION_MARKER
+        truncated = 1
+    pinned = {"role": USER, "content": content}
+    cost = estimate_tokens(content)
+    tail = turns[first + 1:]
+    selected, tail_truncated, spent = _newest_first(tail, usable - cost)
+    gap = len(selected) < len(tail)
+    if gap:
+        # The reply to a question that was left out would read as an answer to the pinned one.
+        while selected and selected[0]["role"] == ASSISTANT:
+            selected.pop(0)
+    if not selected:
+        return None
+    messages = (pinned, *selected)
+    return ConversationWindow(
+        messages=messages,
+        dropped_messages=len(turns) - len(messages),
+        truncated_messages=truncated + tail_truncated,
+        estimated_tokens=cost + spent,
+        pinned_first=gap,
+    )
+
+
+def _newest_first(turns: list[dict[str, str]], usable: int) -> tuple[list[dict[str, str]], int, int]:
+    """(turns kept oldest-first, how many were truncated, tokens spent), newest kept first."""
 
     selected: list[dict[str, str]] = []
     truncated = 0
@@ -124,16 +191,13 @@ def build_window(
         break
 
     selected.reverse()
-    # A conversation that opens on an assistant turn reads as if the model is answering
-    # something the learner cannot see; drop the orphan.
-    while selected and selected[0]["role"] == ASSISTANT:
-        selected.pop(0)
-    return ConversationWindow(
-        messages=tuple(selected),
-        dropped_messages=len(turns) - len(selected),
-        truncated_messages=truncated,
-        estimated_tokens=spent,
-    )
+    return selected, truncated, spent
+
+
+def left_out_marker(count: int) -> str:
+    """The transcript line standing for turns that were not sent."""
+
+    return f"[… {count} earlier message{'' if count == 1 else 's'} left out]"
 
 
 def render_transcript(window: ConversationWindow, *, speaker: str = "Learner",
@@ -142,13 +206,16 @@ def render_transcript(window: ConversationWindow, *, speaker: str = "Learner",
 
     A single text block rather than a message array, because the gateway's canonical
     request carries one `input` string and every task already speaks that shape. The
-    labels are explicit so the model cannot mistake who said what.
+    labels are explicit so the model cannot mistake who said what. A pinned window says
+    where turns were left out after the opening message.
     """
 
     lines = []
-    for turn in window.messages:
+    for index, turn in enumerate(window.messages):
         label = speaker if turn["role"] == USER else responder
         lines.append(f"{label}: {turn['content']}")
+        if index == 0 and window.pinned_first and window.dropped_messages:
+            lines.append(left_out_marker(window.dropped_messages))
     return "\n\n".join(lines)
 
 

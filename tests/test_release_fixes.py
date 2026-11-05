@@ -23,6 +23,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from tests.test_community import REVIEW_HIGH, SET_CARDS, ai_responder  # noqa: E402
 from tests.test_knowledge_gate_integration import KnowledgeGateIntegrationTests  # noqa: E402
 from tests.test_quick_start import FakeResponse, image_bytes, recognition_payload, section_payload  # noqa: E402
@@ -90,6 +91,9 @@ class LessonLoopFixTests(unittest.TestCase):
 
 class CommunityFixTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE", "FEATURE_COMMUNITY_LIBRARY",
+                    "FEATURE_COMMUNITY_PUBLISHING", "FEATURE_PRIVATE_FLASHCARDS")
         application.app.config.update(TESTING=True, AI_MODE="cached", FEATURE_COMMUNITY_LIBRARY=True,
                                       FEATURE_COMMUNITY_PUBLISHING=True, FEATURE_PRIVATE_FLASHCARDS=True)
         application.SESSIONS.clear()
@@ -166,6 +170,8 @@ class CommunityFixTests(unittest.TestCase):
 
 class ProjectFlowFixTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE")
         application.app.config.update(TESTING=True, AI_MODE="cached")
         application.SESSIONS.clear()
         with application.app.app_context():

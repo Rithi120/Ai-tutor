@@ -105,6 +105,82 @@ class StudyProjectHelperTests(unittest.TestCase):
             normalize_section({"title": "Unsupported", "source_page_ids": [99]}, 1, {1, 2})
 
 
+class HeaderFooterCleaningTests(unittest.TestCase):
+    """clean_extracted_pages only strips running headers/footers where they stand.
+
+    The cleaned text is saved over the page, so a heading it removed by mistake was lost
+    for topic extraction and lessons for good ("Utilitarismus" vanished mid-page)."""
+
+    def test_running_header_is_removed_only_at_the_edge_never_mid_page(self):
+        pages = clean_extracted_pages([
+            "Utilitarismus\nBentham: das hedonistische Kalkül.\nSeite 1",
+            "Utilitarismus\nMill: höhere und niedere Freuden.\nSeite 2",
+            "Utilitarismus\nHandlungs- und Regelutilitarismus.\nSeite 3",
+            "Kant\nDer kategorische Imperativ.\nUtilitarismus\nDer Vergleich mit Kant.\nSeite 4",
+        ])
+        self.assertEqual(pages[0], "Bentham: das hedonistische Kalkül.\nSeite 1")
+        self.assertNotIn("Utilitarismus", pages[2])
+        self.assertIn("Utilitarismus", pages[3])          # a mid-page heading stays
+        self.assertTrue(pages[3].startswith("Kant\n"))
+        self.assertIn("Seite 4", pages[3])                # page numbers differ, so they are not a footer
+
+    def test_footer_needs_three_pages_and_the_edge_position(self):
+        pages = clean_extracted_pages([
+            "Kant\nPflicht\n© Schulbuchverlag",
+            "Mill\nNutzen\n© Schulbuchverlag",
+            "Bentham\nKalkül\n© Schulbuchverlag",
+            "Jonas\n© Schulbuchverlag\nVerantwortung",
+        ])
+        self.assertEqual(pages[:3], ["Kant\nPflicht", "Mill\nNutzen", "Bentham\nKalkül"])
+        self.assertIn("© Schulbuchverlag", pages[3])       # not at the edge of this page
+        twice = ["Kopf\nText A", "Kopf\nText B", "Anderer Kopf\nText C"]
+        self.assertEqual(clean_extracted_pages(twice), twice)
+
+    def test_a_page_is_never_emptied(self):
+        pages = clean_extracted_pages([
+            "Ethik Klasse 9\nSeite",
+            "Ethik Klasse 9\nSeite",
+            "Ethik Klasse 9\nInhalt\nSeite",
+            "Ethik Klasse 9",
+        ])
+        self.assertEqual(pages[0], "Ethik Klasse 9\nSeite")
+        self.assertEqual(pages[2], "Inhalt")
+        self.assertEqual(pages[3], "Ethik Klasse 9")
+        # Two identical one-line pages used to count as four sightings and were both emptied.
+        self.assertEqual(clean_extracted_pages(["Utilitarismus", "Utilitarismus"]),
+                         ["Utilitarismus", "Utilitarismus"])
+
+    def test_a_page_is_one_sighting_even_when_the_line_opens_and_closes_it(self):
+        # Counted per occurrence these two pages are four sightings and lose both lines;
+        # the never-empty rule cannot catch it because text is left between them.
+        pages = ["Utilitarismus\nBentham\nUtilitarismus", "Utilitarismus\nMill\nUtilitarismus"]
+        self.assertEqual(clean_extracted_pages(pages), pages)
+        third = pages + ["Utilitarismus\nRegeln\nUtilitarismus"]
+        self.assertEqual(clean_extracted_pages(third), ["Bentham", "Mill", "Regeln"])
+
+    def test_windows_line_endings_and_inner_layout_survive(self):
+        pages = clean_extracted_pages([
+            "Ethik 9\r\n  1. Bentham\r\n\r\n  - Kalkül\r\n",
+            "Ethik 9\r\nMill\r\n",
+            "Ethik 9\r\nKant\r\n",
+        ])
+        self.assertEqual(pages, ["  1. Bentham\n\n  - Kalkül", "Mill", "Kant"])
+
+    def test_long_lines_and_untouched_pages_are_kept_exactly(self):
+        long_line = "Eine Handlung ist moralisch richtig, wenn sie das größte Glück der größten Zahl bewirkt, sagt Bentham."
+        self.assertGreater(len(long_line), 100)
+        pages = [f"{long_line}\nText {index}" for index in range(4)]
+        self.assertEqual(clean_extracted_pages(pages), pages)
+        formatted = ["  Aufgabe 1\n\n  a) Erkläre den Begriff.\n", None, ""]
+        self.assertEqual(clean_extracted_pages(formatted), ["  Aufgabe 1\n\n  a) Erkläre den Begriff.\n", "", ""])
+
+    def test_spacing_differences_do_not_hide_a_header(self):
+        pages = clean_extracted_pages([
+            "Ethik  Klasse 9\nA", " Ethik Klasse 9 \nB", "Ethik Klasse\t9\nC",
+        ])
+        self.assertEqual(pages, ["A", "B", "C"])
+
+
 class StudyProjectIntegrationTests(unittest.TestCase):
     def setUp(self):
         application.app.config.update(TESTING=True)

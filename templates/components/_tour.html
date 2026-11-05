@@ -1,32 +1,52 @@
-{# The first-time walkthrough shell. tour.js fills it: four mask panels darken everything
-   except the thing to tap, the spot outlines that thing, and the panel says what to do. The
-   steps themselves live in static/js/tour-rules.js; their words come from the frontend
-   catalogue (window.LEARNOVA_I18N), so this file carries no step text.
+{# The guided tutorial shell (docs/TUTORIAL.md). static/js/tour.js fills it: four mask
+   panels darken everything except the real thing being explained, the spot outlines it,
+   and the panel says what it does - with Previous, Next (Finish on the last step) and
+   Exit (the quick tour) or Skip (a feature chapter) on every step. The steps themselves
+   come from the Python registry (learnova/tutorial/registry.py), translated by the server:
+   inline in #tourData while the first-time offer is still open (or on the tutorial hub),
+   otherwise fetched once from /api/tutorial/steps and cached per tab under
+   data-tutorial-sig.
 
-   It opens by itself for an account that has never finished or skipped it (the server
-   remembers that in User.tour_completed_at) and can be restarted from Account -> Tutorial. #}
+   The offer opens by itself for an account that has never settled it (the server remembers
+   that in User.tour_completed_at). data-tutorial-auto lists the chapters of this page that
+   may still start by themselves (empty when the student switched automatic tips off).
+   data-tutorial-user tags what tour.js keeps in sessionStorage, so a run or offer choice
+   another account left in this tab is ignored. The page key comes from the view
+   (`tour_page`: "index" on the lesson page, "chat" on the chat home), else from the
+   endpoint. #}
+{% set tour_page_key = tour_page|default(tutorial_page_key(request.endpoint)) %}
 <div id="tourRoot" class="tour-root" hidden
      data-tour-autostart="{{ 'true' if current_user.tour_completed_at is none else 'false' }}"
-     data-tour-page="{{ 'index' if request.endpoint == 'index' else ('dashboard' if request.endpoint == 'dashboard' else 'other') }}">
+     data-tour-page="{{ tour_page_key }}"
+     data-tutorial-sig="{{ tutorial_sig() }}"
+     data-tutorial-auto="{{ tutorial_auto_chapters(tour_page_key) }}"
+     data-tutorial-user="{{ tutorial_user_tag() }}">
   <div class="tour-mask" data-mask="top"></div>
   <div class="tour-mask" data-mask="bottom"></div>
   <div class="tour-mask" data-mask="left"></div>
   <div class="tour-mask" data-mask="right"></div>
   <div class="tour-spot" aria-hidden="true" hidden></div>
-  <section class="tour-panel" role="dialog" aria-labelledby="tourText" aria-live="polite" tabindex="-1">
+  <section class="tour-panel" role="dialog" aria-labelledby="tourTitle" aria-describedby="tourText" tabindex="-1">
     <div class="tour-head">
       <span class="tour-progress" id="tourProgress"></span>
-      <button type="button" class="tour-skip" data-tour-skip>{{ _('Skip') }}</button>
+      <button type="button" class="tour-skip" data-tour-skip>{{ _('Exit tutorial') }}</button>
     </div>
     <div class="tour-body">
       <span class="tour-icon" id="tourIcon" aria-hidden="true"></span>
       <div>
-        <h2 class="tour-title" id="tourTitle" hidden></h2>
+        <h2 class="tour-title" id="tourTitle" tabindex="-1"></h2>
         <p class="tour-text" id="tourText"></p>
+        <p class="tour-note" id="tourNote" hidden></p>
       </div>
     </div>
+    <div class="tour-choices" id="tourChoices" hidden></div>
     <div class="tour-actions">
-      <button type="button" class="primary-button tour-next" data-tour-next hidden></button>
+      <button type="button" class="secondary-button tour-prev" data-tour-prev>{{ _('Previous') }}</button>
+      <button type="button" class="primary-button tour-next" data-tour-next>{{ _('Next') }}</button>
     </div>
   </section>
+  <p id="tourAnnounce" class="visually-hidden" role="status" aria-live="polite"></p>
 </div>
+{% if current_user.tour_completed_at is none or tour_page_key == 'tutorial' %}
+<script type="application/json" id="tourData" nonce="{{ csp_nonce() }}">{{ tutorial_payload_json()|tojson }}</script>
+{% endif %}

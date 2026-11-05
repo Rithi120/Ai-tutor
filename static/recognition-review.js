@@ -7,13 +7,23 @@ if (recognizeForm) recognizeForm.addEventListener("submit", async event => {
   overlay.classList.remove("hidden");
   const pageIds = JSON.parse(recognizeForm.dataset.pageIds || "[]");
   let failures = 0;
+  let paused = "";
   for (let index = 0; index < pageIds.length; index += 1) {
     label.textContent = `${ui("recognizingPage")} ${index + 1} ${ui("of")} ${pageIds.length}…`;
     const url = recognizeForm.dataset.pageUrl.replace(/\/0\/recognize$/, `/${pageIds[index]}/recognize`);
-    try { const response = await fetch(url, {method:"POST"}); if (!response.ok) failures += 1; }
+    try {
+      const response = await fetch(url, {method:"POST", headers:{Accept:"application/json"}});
+      const data = await response.json().catch(() => ({}));
+      // "waiting": the provider is busy or the hourly AI allowance is nearly used up. The
+      // next pages would only spend requests to learn the same (and could trip the
+      // cooldown), so reading stops here, like the start page does.
+      if (response.status === 202 || data.status === "waiting") { paused = data.message || ui("startReadingPaused"); break; }
+      if (!response.ok) failures += 1;
+    }
     catch { failures += 1; }
   }
-  label.textContent = failures ? `${failures} ${ui("reviewPages")}` : ui("readyReview");
+  label.textContent = paused || (failures ? `${failures} ${ui("reviewPages")}` : ui("readyReview"));
+  if (paused) await new Promise(resolve => setTimeout(resolve, 2500));
   location.reload();
 });
 

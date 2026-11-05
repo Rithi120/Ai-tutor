@@ -25,6 +25,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 
 NOTES = "Mitochondria produce ATP by aerobic respiration. Mitochondria have a double membrane."
 
@@ -89,6 +90,8 @@ LESSON = {
 
 class ExamAutopilotTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE")
         application.app.config.update(TESTING=True, AI_MODE="cached")
         application.SESSIONS.clear()
         with application.app.app_context():

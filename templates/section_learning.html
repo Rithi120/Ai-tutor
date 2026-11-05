@@ -3,30 +3,55 @@
 {% block title %}{{ section.title }} — Learnova{% endblock %}
 {% block body_class %}project-page learning-page{% endblock %}
 {% block content %}
+{#- Track DASH context (app.py learn_section + section_notes_context): terms[] = {term, simple, definition,
+    example, source, from_notes}; item_groups[] = {kind, label, entries[] = {name, detail, source, from_notes}};
+    source_labels ("<file> p. 3–4"); topic_summary; state_label; flashcard_set. Old list columns are
+    shown through the entry_text filter (they may hold objects). -#}
   <main class="learning-shell">
-    <div class="learning-breadcrumb"><a href="{{ url_for('project_dashboard', project_id=project.id) }}">{{ project.title }}</a><span>›</span><span>Section {{ section.position }}</span></div>
-    <section class="learning-heading"><div><span class="eyebrow">{{ project.subject }} · {{ section.estimated_minutes }} MINUTES</span><h1>{{ section.title }}</h1><p>{{ section.main_topic }}</p></div><div class="mastery-dial"><strong data-count-progress="{{ section.mastery_score|round|int }}" data-count-suffix="%">{{ section.mastery_score|round|int }}%</strong><span>{{ section.status|replace('_', ' ') }}</span></div></section>
+    <div class="learning-breadcrumb"><a href="{{ url_for('project_dashboard', project_id=project.id) }}">{{ project.title }}</a><span>›</span><span>{{ _('Topic') }} {{ section.position }}</span></div>
+    <section class="learning-heading"><div><span class="eyebrow">{{ _(project.subject) }} · {{ section.estimated_minutes }} {{ _('minutes') }}</span><h1>{{ section.title }}</h1>{% if section.main_topic and section.main_topic != section.title %}<p>{{ section.main_topic }}</p>{% endif %}</div><div class="mastery-dial"><strong data-count-progress="{{ section.mastery_score|round|int }}" data-count-suffix="%">{{ section.mastery_score|round|int }}%</strong><span>{{ state_label }}</span></div></section>
     <nav class="explanation-levels" aria-label="{{ _('Explanation level') }}"><span>{{ _('Explanation level') }}</span><a class="{{ 'active' if level == 'simple' }}" href="?level=simple">{{ _('Simple') }}</a><a class="{{ 'active' if level == 'standard' }}" href="?level=standard">{{ _('Standard') }}</a><a class="{{ 'active' if level == 'detailed' }}" href="?level=detailed">{{ _('Detailed') }}</a></nav>
 
     <section class="learning-content-grid">
       <div class="learning-main-column">
-        <article class="learning-block explanation-block"><span class="block-number">01</span><div><span class="card-kicker">{{ _('UNDERSTAND') }}</span><h2>{{ _('Build the idea step by step') }}</h2><div id="sectionExplanation" class="structured-prose">{{ explanation }}</div>{{ listen_control('#sectionExplanation', 'sectionExplanationListenControl') }}</div></article>
-        {% if fields.important_facts %}<article class="learning-block"><span class="block-number">02</span><div><span class="card-kicker">{{ _('CORE KNOWLEDGE') }}</span><h2>{{ _('Important facts') }}</h2><ul class="study-list">{% for item in fields.important_facts %}<li>{{ item }}</li>{% endfor %}</ul></div></article>{% endif %}
-        {% if fields.formulas %}<article class="learning-block formula-block"><span class="block-number">ƒx</span><div><span class="card-kicker">{{ _('FORMULAS') }}</span><h2>{{ _('Symbols and formulas') }}</h2><div class="formula-list">{% for item in fields.formulas %}<div>{{ item }}</div>{% endfor %}</div></div></article>{% endif %}
-        {% if fields.examples %}<article class="learning-block"><span class="block-number">03</span><div><span class="card-kicker">{{ _('WORKED EXAMPLES') }}</span><h2>{{ _('See it in context') }}</h2><ol class="study-list numbered">{% for item in fields.examples %}<li>{{ item }}</li>{% endfor %}</ol></div></article>{% endif %}
-        {% if fields.relationships %}<article class="learning-block"><span class="block-number">↔</span><div><span class="card-kicker">{{ _('CONNECTIONS') }}</span><h2>{{ _('How the ideas fit together') }}</h2><ul class="study-list">{% for item in fields.relationships %}<li>{{ item }}</li>{% endfor %}</ul></div></article>{% endif %}
+        <article class="learning-block explanation-block"><span class="block-number">01</span><div><span class="card-kicker">{{ _('UNDERSTAND') }}</span><h2>{{ _('Build the idea step by step') }}</h2><div id="sectionExplanation" class="structured-prose">{{ explanation or topic_summary }}</div>{{ listen_control('#sectionExplanation', 'sectionExplanationListenControl') }}</div></article>
+        {% if terms %}
+        <article class="learning-block notes-terms"><span class="block-number">Aa</span><div><span class="card-kicker">{{ _('KEY TERMS') }}</span><h2>{{ _('Key terms') }}</h2>
+          <dl class="pm-terms">
+            {% for term in terms %}
+            <div class="pm-term">
+              <dt>{{ term.term }}</dt>
+              {% if term.simple %}<dd>{{ term.simple }}</dd>{% endif %}
+              {% if term.definition and term.definition != term.simple %}<dd class="pm-term-precise"><span class="pm-term-label">{{ _('Precise definition') }}:</span> {{ term.definition }}</dd>{% endif %}
+              {% if term.example %}<dd class="pm-term-example">{{ _('Example: {example}', example=term.example) }}</dd>{% endif %}
+              <dd class="pm-term-source">{% if term.source %}{{ term.source }} · {% endif %}<span class="pm-origin{{ ' is-added' if term.unverified or not term.from_notes }}">{% if term.unverified %}{{ _('From a page that still needs checking') }}{% else %}{{ _('From your notes') if term.from_notes else _('Added explanation') }}{% endif %}</span></dd>
+            </div>
+            {% endfor %}
+          </dl>
+          {% if flashcard_set %}<p class="pm-links"><a href="{{ url_for('flashcards_study_page', set_id=flashcard_set.id) }}">{{ _('Study the project flashcards') }} →</a></p>{% endif %}
+        </div></article>
+        {% endif %}
+        {% for group in item_groups %}
+        <article class="learning-block notes-items" data-kind="{{ group.kind }}"><span class="block-number">{{ loop.index + 1 }}</span><div><h2>{{ group.label }}</h2>
+          <ul class="study-list">{% for item in group.entries %}<li><b>{{ item.name }}</b>{% if item.detail %} – {{ item.detail }}{% endif %}{% if item.source or not item.from_notes or item.unverified %} <small class="pm-term-source">{% if item.source %}{{ item.source }}{% endif %}{% if item.unverified %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('From a page that still needs checking') }}</span>{% elif not item.from_notes %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('Added explanation') }}</span>{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
+        </div></article>
+        {% endfor %}
+        {% if fields.important_facts %}<article class="learning-block"><span class="block-number">!</span><div><span class="card-kicker">{{ _('CORE KNOWLEDGE') }}</span><h2>{{ _('Important facts') }}</h2><ul class="study-list">{% for item in fields.important_facts %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></div></article>{% endif %}
+        {% if fields.formulas and not item_groups|selectattr('kind', 'equalto', 'formula')|list %}<article class="learning-block formula-block"><span class="block-number">ƒx</span><div><span class="card-kicker">{{ _('FORMULAS') }}</span><h2>{{ _('Symbols and formulas') }}</h2><div class="formula-list">{% for item in fields.formulas %}<div>{{ item|entry_text }}</div>{% endfor %}</div></div></article>{% endif %}
+        {% if fields.examples and not item_groups|selectattr('kind', 'equalto', 'example')|list %}<article class="learning-block"><span class="block-number">→</span><div><span class="card-kicker">{{ _('WORKED EXAMPLES') }}</span><h2>{{ _('See it in context') }}</h2><ol class="study-list numbered">{% for item in fields.examples %}<li>{{ item|entry_text }}</li>{% endfor %}</ol></div></article>{% endif %}
+        {% if fields.relationships %}<article class="learning-block"><span class="block-number">↔</span><div><span class="card-kicker">{{ _('CONNECTIONS') }}</span><h2>{{ _('How the ideas fit together') }}</h2><ul class="study-list">{% for item in fields.relationships %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></div></article>{% endif %}
       </div>
       <aside class="learning-side-column">
-        {% if fields.learning_goals %}<article class="side-study-card"><h3>{{ _('Learning goals') }}</h3><ul>{% for item in fields.learning_goals %}<li>{{ item }}</li>{% endfor %}</ul></article>{% endif %}
-        {% if fields.definitions %}<article class="side-study-card"><h3>{{ _('Definitions') }}</h3><ul>{% for item in fields.definitions %}<li>{{ item }}</li>{% endfor %}</ul></article>{% endif %}
-        {% if fields.vocabulary %}<article class="side-study-card"><h3>{{ _('Vocabulary') }}</h3><ul>{% for item in fields.vocabulary %}<li>{{ item }}</li>{% endfor %}</ul></article>{% endif %}
-        <article class="side-study-card source-note"><h3>{{ _('Grounded in your upload') }}</h3><p>{{ _('Source pages') }}: {% for page_number in source_page_orders(project.id, section.source_page_ids_json) %}<b>{{ page_number }}</b>{{ ', ' if not loop.last }}{% endfor %}</p><p>{{ _('The tutor is instructed not to introduce unsupported facts.') }}</p></article>
+        {% if fields.learning_goals %}<article class="side-study-card"><h3>{{ _('Learning goals') }}</h3><ul>{% for item in fields.learning_goals %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></article>{% endif %}
+        {% if fields.definitions and not terms %}<article class="side-study-card"><h3>{{ _('Definitions') }}</h3><ul>{% for item in fields.definitions %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></article>{% endif %}
+        {% if fields.vocabulary and not terms %}<article class="side-study-card"><h3>{{ _('Vocabulary') }}</h3><ul>{% for item in fields.vocabulary %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></article>{% endif %}
+        <article class="side-study-card source-note"><h3>{{ _('Grounded in your upload') }}</h3>{% if source_labels %}<p>{{ _('Source pages') }}: {% for label in source_labels %}<b>{{ label }}</b>{{ '; ' if not loop.last }}{% endfor %}</p><p>{{ _('The tutor is instructed not to introduce unsupported facts.') }}</p>{% else %}<p>{{ _('No pages: explained as standard school content') }}</p>{% endif %}</article>
       </aside>
     </section>
 
-    {% if section.recall_cards %}<section class="recall-section"><div class="section-heading"><div><span class="eyebrow">{{ _('ACTIVE RECALL') }}</span><h2>{{ _('Remember without looking') }}</h2><p>{{ _('Answer first, then reveal the source-grounded correction.') }}</p></div></div><div class="recall-grid">{% for card in section.recall_cards %}<form class="recall-card" method="post" action="{{ url_for('answer_recall_card', project_id=project.id, section_id=section.id, card_id=card.id) }}"><span>{{ card.kind|replace('_', ' ') }}</span><h3 id="recallPrompt{{ card.id }}">{{ card.prompt }}</h3>{{ listen_control('#recallPrompt' ~ card.id, 'recallListen' ~ card.id) }}<input id="recallAnswer{{ card.id }}" name="answer" autocomplete="off" placeholder="{{ _('Write what you remember') }}" required>{{ microphone_control('#recallAnswer' ~ card.id, 'recallMicrophone' ~ card.id) }}<button type="submit">{{ _('Check recall') }}</button><div class="recall-result" aria-live="polite"></div></form>{% endfor %}</div></section>{% endif %}
+    {% if section.recall_cards %}<section class="recall-section"><div class="section-heading"><div><span class="eyebrow">{{ _('ACTIVE RECALL') }}</span><h2>{{ _('Remember without looking') }}</h2><p>{{ _('Answer first, then reveal the source-grounded correction.') }}</p></div></div><div class="recall-grid">{% for card in section.recall_cards %}<form class="recall-card" method="post" action="{{ url_for('answer_recall_card', project_id=project.id, section_id=section.id, card_id=card.id) }}"><span>{{ _('Recall') }}</span><h3 id="recallPrompt{{ card.id }}">{{ card.prompt }}</h3>{{ listen_control('#recallPrompt' ~ card.id, 'recallListen' ~ card.id) }}<input id="recallAnswer{{ card.id }}" name="answer" autocomplete="off" placeholder="{{ _('Write what you remember') }}" required>{{ microphone_control('#recallAnswer' ~ card.id, 'recallMicrophone' ~ card.id) }}<button type="submit">{{ _('Check recall') }}</button><div class="recall-result" aria-live="polite"></div></form>{% endfor %}</div></section>{% endif %}
 
-    <section class="section-test-callout"><div><span class="eyebrow">{{ _('SECTION CHECK') }}</span><h2>{{ _('Test your understanding') }}</h2><p>{{ _('Your attempts are saved and update this section’s mastery.') }}</p></div><form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=section.id) }}"><button class="primary-button" type="submit">{{ _('Start section test') }} →</button></form></section>
+    <section class="section-test-callout"><div><span class="eyebrow">{{ _('SECTION CHECK') }}</span><h2>{{ _('Test your understanding') }}</h2><p>{{ _('Your attempts are saved and update this section’s mastery.') }}</p></div><form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=section.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="primary-button" type="submit">{{ _('Start section test') }} →</button></form></section>
   </main>
 {% endblock %}
 {% block scripts %}<script nonce="{{ csp_nonce() }}">

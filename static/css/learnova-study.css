@@ -123,3 +123,334 @@
 .diagnosis .dx-next { margin: .65rem 0 .2rem; }
 .diagnosis .dx-confidence,
 .diagnosis .dx-loading { margin: .35rem 0 0; color: var(--ln-subtle); font-size: .82rem; }
+
+/* ---------------------------------------------------------------------------
+   Lesson parts (static/app.js renderParts): one numbered card per teaching step.
+   Colours come from the --ln-* tokens; text colours are mixed with --ln-ink, so
+   they stay readable on both themes' tints. The card surface itself is the
+   .content-card override in learnova-dark.css. Phone first: one column at 360px,
+   every control at least 44px tall, wide code scrolls inside its own box.
+   --------------------------------------------------------------------------- */
+.lesson-parts > .listen-control { margin: 0 0 16px; }
+.lp-card .wide { display: grid; gap: 12px; align-content: start; }
+.lp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.lp-kicker { text-transform: uppercase; }
+.lp-origin, .lp-page, .lp-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.lp-origin-notes, .lp-badge-notes {
+  background: color-mix(in srgb, var(--ln-success) 13%, transparent);
+  color: color-mix(in srgb, var(--ln-success) 62%, var(--ln-ink));
+}
+.lp-origin-added, .lp-badge-added {
+  background: color-mix(in srgb, var(--ln-amber) 16%, transparent);
+  color: color-mix(in srgb, var(--ln-amber) 55%, var(--ln-ink));
+}
+.lp-page { background: var(--ln-canvas-deep); color: var(--ln-muted); font-weight: 600; }
+/* Page labels carry the file name ("Ethik-Arbeitsblatt-2.pdf p. 1"): wrap inside the pill. */
+.lp-page { max-width: 100%; overflow-wrap: anywhere; }
+/* Diagrams from the student's own page under a diagram, process or experiment part. */
+.lp-figures { display: grid; gap: 10px; }
+.lp-figure { margin: 0; display: grid; gap: 6px; }
+.lp-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--ln-line);
+  border-radius: 10px;
+  background: var(--ln-surface-solid);
+}
+.lp-figure figcaption { color: var(--ln-muted); font-size: .85rem; overflow-wrap: anywhere; }
+/* A server note above the parts (the topic's pages could not be read). */
+.lesson-notice {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ln-amber) 14%, transparent);
+  color: color-mix(in srgb, var(--ln-amber) 45%, var(--ln-ink));
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.content-card .lp-title { margin: 0; }
+.lp-body { display: grid; gap: .7em; color: var(--ln-ink); font-size: var(--ln-text-body); line-height: var(--ln-leading-read); }
+/* pre-wrap, not the explanation card's pre-line: indentation in a body is meaning. */
+.lp-text { margin: 0; color: inherit; white-space: pre-wrap; }
+.lp-code {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--ln-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ln-ink) 5%, var(--ln-surface-solid));
+  color: var(--ln-ink);
+  font: .9rem/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
+}
+.lp-items {
+  display: grid;
+  gap: .45em;
+  margin: 0;
+  padding-inline-start: 1.3em;
+  color: var(--ln-ink);
+  font-size: var(--ln-text-body);
+  line-height: 1.6;
+}
+.lp-item-label { font-weight: 700; }
+.lp-kind-guided_exercise { border-top: 4px solid var(--ln-violet); }
+.lp-kind-mistakes { border-top: 4px solid var(--ln-amber); }
+.lp-kind-summary { border-top: 4px solid var(--ln-success); }
+
+/* Fachbegriffe and flashcards: tap to flip. Both faces share one grid cell, so a card
+   is as tall as its longer face and nothing is clipped. */
+.lp-flip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lp-flip-grid > li { display: grid; min-width: 0; }
+.lp-flip {
+  display: grid;
+  width: 100%;
+  min-height: 112px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  perspective: 900px;
+}
+.lp-flip-inner { display: grid; transform-style: preserve-3d; transition: transform .45s var(--ln-ease); }
+.lp-flip-face {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 14px;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.lp-flip-front { background: color-mix(in srgb, var(--ln-violet) 8%, var(--ln-surface-solid)); }
+.lp-flip-back { background: color-mix(in srgb, var(--ln-cyan) 10%, var(--ln-surface-solid)); transform: rotateY(180deg); }
+.lp-flip[aria-pressed="true"] .lp-flip-inner { transform: rotateY(180deg); }
+.lp-flip:hover .lp-flip-face { border-color: var(--ln-violet); }
+.lp-flip:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 3px; }
+.lp-flip-label { color: var(--ln-ink); font: 700 1.05rem/1.35 var(--ln-font-display); }
+.lp-flip-cue { color: var(--ln-muted); font-size: .8rem; font-weight: 600; }
+.lp-flip-text { color: var(--ln-ink); line-height: 1.55; }
+.lp-flip-back .lp-badge { align-self: flex-start; }
+.lp-flip-static {
+  padding: 14px 16px;
+  border: 1px solid var(--ln-line);
+  border-radius: 14px;
+  background: var(--ln-surface-raised);
+  color: var(--ln-ink);
+  line-height: 1.55;
+}
+.lp-study-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  gap: 8px;
+  min-height: var(--ln-tap);
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: var(--ln-violet);
+  color: var(--ln-surface-solid);
+  font-weight: 800;
+  text-decoration: none;
+}
+.lp-study-link:hover { background: var(--ln-violet-deep); }
+.lp-study-link:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 2px; }
+
+/* Timeline: a vertical line with one dot per date. */
+.lp-timeline { display: grid; margin: 0; padding: 0; list-style: none; }
+.lp-timeline > li { position: relative; display: grid; gap: 2px; padding: 0 0 16px; padding-inline-start: 28px; }
+.lp-timeline > li::before {
+  position: absolute;
+  top: 8px;
+  bottom: -8px;
+  inset-inline-start: 6px;
+  width: 2px;
+  background: var(--ln-line-strong);
+  content: "";
+}
+.lp-timeline > li:last-child { padding-bottom: 0; }
+.lp-timeline > li:last-child::before { display: none; }
+.lp-timeline > li::after {
+  position: absolute;
+  top: 4px;
+  inset-inline-start: 0;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ln-violet);
+  border-radius: 50%;
+  background: var(--ln-surface-solid);
+  content: "";
+}
+.lp-timeline-when { color: color-mix(in srgb, var(--ln-violet) 70%, var(--ln-ink)); font-weight: 800; }
+.lp-timeline-what { color: var(--ln-ink); line-height: 1.55; }
+
+/* Experiment: labelled steps (question, hypothesis, setup, procedure, observation,
+   result, explanation); a recognised label tints its step marker. */
+.lp-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: lp-step; }
+.lp-step {
+  --step-accent: var(--ln-violet);
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  padding-inline-start: 50px;
+  border: 1px solid var(--ln-line);
+  border-radius: 12px;
+  background: var(--ln-surface-raised);
+  counter-increment: lp-step;
+}
+.lp-step::before {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--step-accent) 16%, var(--ln-surface-solid));
+  color: color-mix(in srgb, var(--step-accent) 65%, var(--ln-ink));
+  font-size: .8rem;
+  font-weight: 800;
+  content: counter(lp-step);
+}
+.lp-step:is([data-step="hypothesis"], [data-step="question"]) { --step-accent: var(--ln-amber); }
+.lp-step:is([data-step="setup"], [data-step="procedure"]) { --step-accent: var(--ln-cyan); }
+.lp-step:is([data-step="observation"], [data-step="result"], [data-step="explanation"]) { --step-accent: var(--ln-success); }
+.lp-step-label { color: var(--ln-ink); }
+.lp-step-text { color: var(--ln-ink); line-height: 1.55; }
+
+/* Cause -> effect rows; stacked with a downward arrow on phones. */
+.lp-causes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.lp-cause-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.lp-cause-row.lp-cause-single { grid-template-columns: minmax(0, 1fr); }
+.lp-cause, .lp-effect { padding: 10px 12px; border-radius: 12px; color: var(--ln-ink); line-height: 1.5; }
+.lp-cause { background: color-mix(in srgb, var(--ln-coral) 11%, var(--ln-surface-solid)); }
+.lp-effect { background: color-mix(in srgb, var(--ln-cyan) 11%, var(--ln-surface-solid)); }
+.lp-cause-arrow { align-self: center; justify-self: center; color: var(--ln-muted); font-size: 1.2rem; font-weight: 800; }
+html[dir="rtl"] .lp-cause-arrow { transform: scaleX(-1); }
+.lp-sr {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 560px) {
+  .lp-cause-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .lp-cause-arrow, html[dir="rtl"] .lp-cause-arrow { transform: rotate(90deg); }
+}
+
+/* Guided exercise: a self-check. Hint and solution open on a tap, never graded. */
+.lp-try-first { margin: 0; color: var(--ln-muted); font-size: .95rem; }
+.lp-reveal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lp-reveal {
+  flex: 1 1 150px;
+  min-height: var(--ln-tap);
+  padding: 9px 16px;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 12px;
+  background: var(--ln-surface-raised);
+  color: color-mix(in srgb, var(--ln-violet) 75%, var(--ln-ink));
+  font: 700 .95rem var(--ln-font-body);
+  cursor: pointer;
+}
+.lp-reveal[aria-expanded="true"] { border-color: var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 12%, var(--ln-surface-solid)); }
+.lp-reveal:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 2px; }
+.lp-reveal-panel { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; }
+.lp-reveal-panel[hidden] { display: none; }
+.lp-hint { background: color-mix(in srgb, var(--ln-violet) 9%, var(--ln-surface-solid)); }
+.lp-solution { border-inline-start: 3px solid var(--ln-success); background: color-mix(in srgb, var(--ln-success) 10%, var(--ln-surface-solid)); }
+.lp-solution-label { color: color-mix(in srgb, var(--ln-success) 62%, var(--ln-ink)); }
+
+/* Typical mistakes: a warning list. */
+.lp-warnings { gap: 8px; padding: 0; list-style: none; }
+.lp-warnings > li {
+  position: relative;
+  padding: 10px 12px;
+  padding-inline-start: 42px;
+  border-inline-start: 3px solid var(--ln-amber);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ln-amber) 10%, var(--ln-surface-solid));
+}
+.lp-warnings > li::before {
+  position: absolute;
+  top: 11px;
+  inset-inline-start: 12px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ln-amber);
+  color: var(--ln-surface-solid);
+  font-size: .8rem;
+  font-weight: 800;
+  content: "!";
+  content: "!" / "";
+}
+
+/* Summary: a recap box with a checklist. */
+.lp-recap {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--ln-success) 30%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ln-success) 8%, var(--ln-surface-solid));
+}
+.lp-checklist { padding: 0; list-style: none; }
+.lp-checklist > li { position: relative; padding-inline-start: 26px; }
+.lp-checklist > li::before {
+  position: absolute;
+  top: 0;
+  inset-inline-start: 2px;
+  color: var(--ln-success);
+  font-weight: 800;
+  content: "✓";
+  content: "✓" / "";
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-flip-inner { transition: none; }
+}

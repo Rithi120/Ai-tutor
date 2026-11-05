@@ -1,0 +1,15 @@
+NwT Klasse 9 - Versuch: Wärmedämmung
+Fragestellung: Welches Material hält heißes Wasser am längsten warm?
+Vermutung (Hypothese): Wolle dämmt am besten, weil Winterkleidung aus Wolle ist.
+Material und Aufbau: 4 gleiche Bechergläser (250 ml), je 200 ml Wasser mit 70 °C, Digitalthermometer, Stoppuhr. Becher A ohne Hülle, Becher B mit Alufolie umwickelt, Becher C mit einem Wollschal umwickelt, Becher D in einer Styropor-Hülle. Alle Becher haben den gleichen Deckel.
+Durchführung: Wasser gleichzeitig einfüllen, Starttemperatur messen, 20 Minuten lang alle 5 Minuten die Temperatur ablesen und in eine Tabelle eintragen.
+Wichtig: Nur das Hüllmaterial wird verändert (unabhängige Variable). Wassermenge, Starttemperatur, Becherart und Raumtemperatur bleiben gleich (Kontrollvariablen). Gemessen wird die Temperatur (abhängige Variable).
+Beobachtung (Messwerte nach 20 min): A ohne Hülle 48 °C, B Alufolie 52 °C, C Wolle 60 °C, D Styropor 62 °C.
+Ergebnis: Styropor dämmt in unserem Versuch am besten, knapp vor Wolle. Die Hypothese ist damit nicht bestätigt. Ohne Hülle kühlt das Wasser am schnellsten ab.
+Erklärung: Styropor und Wolle enthalten viele kleine Lufteinschlüsse. Ruhende Luft ist ein schlechter Wärmeleiter. Dadurch wird weniger Wärme durch Wärmeleitung nach außen abgegeben. Alufolie leitet Wärme gut, wirft aber einen Teil der Wärmestrahlung zurück.
+Fachbegriffe
+Wärmeleitung: Wärme wird in einem Stoff von Teilchen zu Teilchen weitergegeben.
+Wärmedämmung: Verringerung des Wärmeflusses durch schlecht leitende Stoffe.
+Wärmestrahlung: Wärmetransport ohne Stoff, zum Beispiel von der Sonne zur Erde.
+Konvektion (Wärmeströmung): Wärme wird mit einem strömenden Stoff (Luft, Wasser) mitgenommen.
+Fehlerquellen: Thermometer nicht immer gleich tief eingetaucht; Deckel nicht ganz dicht.

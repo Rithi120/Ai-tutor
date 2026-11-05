@@ -24,6 +24,12 @@ pretending otherwise.
 
 Spaced review starts at 1, 3 and 7 days after learning when the exam date allows, and
 `next_review` moves a topic along (or back down) that ladder from each graded result.
+
+Topics that do not fit are always reported (`insufficient_time`), with or without an exam
+date: a project without an exam and a daily budget smaller than one topic session used to
+get no task at all and no word about it. The warning carries the daily minutes that would
+fit everything (`minutes_needed`, one of DAILY_MINUTE_OPTIONS), so the student can fix it
+with one tap instead of guessing.
 """
 
 from __future__ import annotations
@@ -41,6 +47,9 @@ MIN_SPLIT_MINUTES = 15
 FINAL_REVIEW_MINUTES = 20
 MIN_MOCK_MINUTES = 20
 FLEXIBLE_HORIZON_DAYS = 14   # projects without an exam date get a rolling two-week plan
+# The daily study times a student can choose (the workspace's plan settings offer these),
+# and so the only values `minutes_needed` suggests.
+DAILY_MINUTE_OPTIONS = (15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480)
 
 
 @dataclass(frozen=True)
@@ -179,8 +188,15 @@ def _learn_parts(topic: TopicInput, cap: int) -> list[int]:
 
 
 def build_plan(projects: Iterable[ProjectInput], availability: Availability, *, today: date,
-               preserved: Iterable[dict[str, Any]] = ()) -> Plan:
-    """Plan every active project together over one shared daily budget."""
+               preserved: Iterable[dict[str, Any]] = (), suggest_minutes: bool = True) -> Plan:
+    """Plan every active project together over one shared daily budget.
+
+    Each `insufficient_time` warning names the topics left out (`topic_ids`), whether the
+    project has an exam (`exam`), whether it got no learning task at all (`planned_none`),
+    the current budget (`daily_minutes`) and the smallest of DAILY_MINUTE_OPTIONS that fits
+    every topic of that project (`minutes_needed`, None when no daily time is enough, e.g.
+    no study day is left). `suggest_minutes=False` skips that search (it plans again with
+    each larger option)."""
 
     projects = [project for project in projects if any(topic.selected for topic in project.topics)]
     preserved = [dict(task) for task in preserved]
@@ -222,9 +238,10 @@ def build_plan(projects: Iterable[ProjectInput], availability: Availability, *, 
         (topic.next_review_on, topic.id, topic.next_review_on.isoformat())
         for topic in topics_by_id.values() if topic.learned and topic.next_review_on
     ]
+    # A topic marked for reteaching gets its reteach session, not a second first lesson.
     pending_learn: dict[str, list[int]] = {
         topic.id: _learn_parts(topic, availability.session_cap)
-        for topic in topics_by_id.values() if not topic.learned
+        for topic in topics_by_id.values() if not topic.learned and not topic.reteach
     }
     # How many parts each topic has *now* (a split adds one), so part ids stay unique.
     part_totals = {topic_id: len(parts) for topic_id, parts in pending_learn.items()}
@@ -408,17 +425,31 @@ def build_plan(projects: Iterable[ProjectInput], availability: Availability, *, 
                                      ident=f"mixed:{project.id}:{day_date.isoformat()}",
                                      reason="Mixed questions across topics, aimed at the weakest"))
 
-    unscheduled = sorted(pending_learn, key=lambda topic_id: (-priority(topic_id), topic_id))
+    # A reteach session that found no day is left out too (a not-learned reteach topic has
+    # no learn task to fall back on), so it is reported like a topic that does not fit.
+    unscheduled = sorted(set(pending_learn) | reteach_left, key=lambda topic_id: (-priority(topic_id), topic_id))
     by_project: dict[int, list[str]] = {}
     for topic_id in unscheduled:
         by_project.setdefault(topics_by_id[topic_id].project_id, []).append(topic_id)
+    # Every project with topics left out says so, with or without an exam date. Without an
+    # exam the plan is a rolling two weeks: the topics are not lost, but a student whose
+    # budget is smaller than one session would otherwise wait for ever without being told.
+    learning_projects = {task["project_id"] for day in days.values() for task in day.tasks
+                         if task.get("kind") in ("learn", "reteach")}
+    needed = (_minutes_needed(projects, availability, today=today, preserved=preserved,
+                              project_ids=set(by_project))
+              if suggest_minutes and by_project else {})
     for project_id, topic_ids in by_project.items():
-        if project_by_id[project_id].exam_date:
-            warnings.append({
-                "code": "insufficient_time", "project_id": project_id, "topic_ids": topic_ids,
-                "message": f"{len(topic_ids)} topic(s) do not fit before the exam with the time available. "
-                           "The most important topics are planned first.",
-            })
+        exam = bool(project_by_id[project_id].exam_date)
+        warnings.append({
+            "code": "insufficient_time", "project_id": project_id, "topic_ids": topic_ids,
+            "exam": exam, "planned_none": project_id not in learning_projects,
+            "daily_minutes": int(availability.daily_minutes), "minutes_needed": needed.get(project_id),
+            "message": (f"{len(topic_ids)} topic(s) do not fit before the exam with the time available. "
+                        "The most important topics are planned first." if exam else
+                        f"{len(topic_ids)} topic(s) do not fit into the next {FLEXIBLE_HORIZON_DAYS} days "
+                        "with the time available."),
+        })
     for project in projects:
         if not project.exam_date:
             continue
@@ -428,3 +459,27 @@ def build_plan(projects: Iterable[ProjectInput], availability: Availability, *, 
             warnings.append({"code": "reviews_squeezed", "project_id": project.id, "topic_ids": squeezed,
                              "message": "Some reviews do not fit; the practice exam covers them."})
     return Plan(days=[days[day] for day in all_dates], warnings=warnings, unscheduled=unscheduled)
+
+
+def _minutes_needed(projects: list[ProjectInput], availability: Availability, *, today: date,
+                    preserved: list[dict[str, Any]], project_ids: set[int]) -> dict[int, int | None]:
+    """{project id: the smallest DAILY_MINUTE_OPTIONS value above the current budget with
+    which every topic of that project is planned, or None when none is enough}.
+
+    The plan is simply built again with each larger option (it is pure and fast), so the
+    suggestion is exactly what the scheduler would do, reviews and practice exams included.
+    """
+
+    needed: dict[int, int | None] = {project_id: None for project_id in project_ids}
+    for minutes in DAILY_MINUTE_OPTIONS:
+        if minutes <= availability.daily_minutes:
+            continue
+        trial = build_plan(projects, replace(availability, daily_minutes=minutes), today=today,
+                           preserved=preserved, suggest_minutes=False)
+        short = {warning["project_id"] for warning in trial.warnings if warning["code"] == "insufficient_time"}
+        for project_id in project_ids:
+            if needed[project_id] is None and project_id not in short:
+                needed[project_id] = minutes
+        if all(value is not None for value in needed.values()):
+            break
+    return needed

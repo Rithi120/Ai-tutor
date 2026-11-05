@@ -81,6 +81,23 @@ def _diagnosis(answer: dict[str, Any], concept: str) -> dict[str, Any]:
 
 def run_scenario(application, data: dict[str, Any], scenario: dict[str, Any],
                  reply_for: Callable[[dict[str, Any], dict[str, Any]], str]) -> dict[str, Any]:
+    """Run one scenario; the app's config is restored afterwards.
+
+    The scenario switches TESTING, the diagnostics flags and AI_MODE="cached" on. Left in
+    place, AI_MODE leaked into every later test of the same process (test_create_response_
+    wrapper then answered from the cache and never reached its fake provider).
+    """
+
+    saved = dict(application.app.config)
+    try:
+        return _run_scenario(application, data, scenario, reply_for)
+    finally:
+        application.app.config.clear()
+        application.app.config.update(saved)
+
+
+def _run_scenario(application, data: dict[str, Any], scenario: dict[str, Any],
+                  reply_for: Callable[[dict[str, Any], dict[str, Any]], str]) -> dict[str, Any]:
     app = application.app
     # The runner recreates the schema; refuse anything but a throwaway SQLite file.
     url = str(app.config.get("SQLALCHEMY_DATABASE_URI", ""))

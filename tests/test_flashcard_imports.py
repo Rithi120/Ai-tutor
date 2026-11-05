@@ -17,6 +17,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 import pymupdf  # noqa: E402  # pyright: ignore[reportMissingImports]
 from learnova.flashcards import imports  # noqa: E402
 from learnova.flashcards.image_extraction import extract_image_text  # noqa: E402
@@ -163,6 +164,12 @@ class FlashcardImportServiceTests(unittest.TestCase):
 class FlashcardImportWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.storage = tempfile.TemporaryDirectory()
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_PRIVATE_FLASHCARDS",
+                    "FEATURE_FLASHCARD_PDF_IMPORT", "FEATURE_FLASHCARD_IMAGE_IMPORT",
+                    "FLASHCARD_IMPORT_STORAGE_DIR", "MAX_FLASHCARD_PDF_SIZE", "MAX_FLASHCARD_IMAGE_SIZE",
+                    "MAX_FLASHCARD_PDF_PAGES", "MAX_FLASHCARD_IMAGE_PIXELS",
+                    "MAX_FLASHCARD_EXTRACTED_TEXT_LENGTH")
         application.app.config.update(
             TESTING=True, FEATURE_PRIVATE_FLASHCARDS=True,
             FEATURE_FLASHCARD_PDF_IMPORT=True, FEATURE_FLASHCARD_IMAGE_IMPORT=True,

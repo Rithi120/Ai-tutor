@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{#- The tutorial hub (docs/TUTORIAL.md). Read-only: app.tutorial_hub_context gives the quick
+    tour and every feature chapter this student can see (by group, registry order,
+    translated) with its stored state, a way to replay it - or, when the student has no
+    record for it yet, when it starts by itself - the overall percent, the automatic-tips
+    switch and the "What Learnova can do" lines (only features that are on).
+    Every button is handled by static/js/tour.js (#tourData is inline on this page):
+      [data-tutorial-start="overview"][data-tutorial-from=step]  the quick tour, here
+      a[data-tutorial-replay=id][data-tutorial-from=step]  a chapter, on its own page
+      [data-tutorial-restart=id] / [data-tutorial-restart-all]  start again from nothing (all: after a confirm)
+      [data-tutorial-done=id]  mark it as done
+    The guided tour is a script; without JavaScript the <noscript> note says so. -#}
+{% macro status_line(item) -%}
+<p class="tutorial-status">{% if item.status == 'completed' %}<span aria-hidden="true">✓</span> {{ _('Done') }}{% elif item.status == 'skipped' %}{{ _('Skipped') }}{% elif item.status == 'in_progress' %}{{ _('In progress · step {current} of {total}', current=[item.current, 1]|max, total=item.total) }}{% else %}{{ _('Not seen') }}{% endif %} · {{ _('Tips: {count}', count=item.count) }}</p>
+{%- endmacro %}
+{% macro start_label(item) -%}
+{% if item.status == 'in_progress' %}{{ _('Resume') }}{% elif item.status == 'not_started' %}{{ _('Start') }}{% else %}{{ _('Replay') }}{% endif %}
+{%- endmacro %}
+{% macro more_buttons(item) -%}
+{% if item.status != 'not_started' %}<button type="button" class="secondary-button" data-tutorial-restart="{{ item.id }}" aria-describedby="tutorialSection-{{ item.id }}">{{ _('Restart') }}</button>{% endif %}
+{% if item.status != 'completed' %}<button type="button" class="ghost-button" data-tutorial-done="{{ item.id }}" aria-describedby="tutorialSection-{{ item.id }}">{{ _('Mark as done') }}</button>{% endif %}
+{%- endmacro %}
+{% block title %}{{ _('Tutorial') }} — Learnova{% endblock %}
+{% block body_class %}tutorial-page{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/tutorial.css', v=static_version) }}">{% endblock %}
+{% block content %}
+<main id="main-content" class="tutorial-shell">
+  <section class="tutorial-hero" aria-labelledby="tutorialTitle">
+    <p class="eyebrow">{{ _('LEARNOVA TUTORIAL') }}</p>
+    <h1 id="tutorialTitle">{{ _('Welcome to Learnova') }}</h1>
+    <p class="tutorial-lead">{{ _('Learnova is your personal study tutor. Here you learn how every part works, one short tour at a time.') }}</p>
+    <div class="tutorial-progress">
+      <div class="tutorial-bar" role="progressbar" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ _('Tutorial progress') }}"><i style="width: {{ percent }}%"></i></div>
+      <p class="tutorial-percent" data-tutorial-percent>{{ _('{percent}% done', percent=percent) }}</p>
+    </div>
+    <div class="tutorial-actions">
+      <button type="button" class="secondary-button" data-tutorial-restart-all data-tutorial-confirm="{{ _('This resets every tip and the quick tour. The tips then start by themselves again.') }}">{{ _('Reset all tips') }}</button>
+    </div>
+    <noscript><p class="tutorial-note">{{ _('The guided tutorial needs JavaScript. Turn it on in your browser to use it.') }}</p></noscript>
+  </section>
+
+  {% if overview %}
+  <section class="tutorial-card tutorial-overview is-{{ overview.status|replace('_', '-') }}" data-tutorial-section="{{ overview.id }}" data-tutorial-status="{{ overview.status }}" aria-labelledby="tutorialSection-{{ overview.id }}">
+    <div class="tutorial-card-head">
+      <span class="tutorial-card-icon" aria-hidden="true">{{ overview.icon }}</span>
+      <div>
+        <h2 id="tutorialSection-{{ overview.id }}">{{ overview.title }}</h2>
+        {{ status_line(overview) }}
+      </div>
+    </div>
+    <p class="tutorial-summary">{{ overview.summary }}</p>
+    <div class="tutorial-card-actions">
+      <button type="button" class="primary-button" data-tutorial-start="{{ overview.id }}" data-tutorial-from="{{ overview.step if overview.status == 'in_progress' else '' }}" aria-describedby="tutorialSection-{{ overview.id }}">{{ start_label(overview) }}</button>
+      {{ more_buttons(overview) }}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="tutorial-tips" id="tips" aria-labelledby="tutorialTipsTitle">
+    <h2 id="tutorialTipsTitle">{{ _('Learn one feature at a time') }}</h2>
+    {% set tips_back = 'hub' %}{% include "components/_tutorial_tips.html" %}
+  </section>
+
+  {#- One collapsible block per feature group: open while something in it is left to do,
+      closed once every chapter in it is done or skipped (the student can open it again). -#}
+  {% for group in groups %}
+  {% set finished = group.chapters|selectattr('status', 'in', ['completed', 'skipped'])|list|length %}
+  <details class="tutorial-group" data-tutorial-group="{{ group.id }}"{% if finished < group.chapters|length %} open{% endif %}>
+    <summary><h2 id="tutorialGroup-{{ group.id }}"><span class="tutorial-group-icon" aria-hidden="true">{{ group.icon }}</span> {{ group.title }}</h2>
+      <span class="tutorial-group-count">{{ _('Done: {done} of {total}', done=group.chapters|selectattr('status', 'equalto', 'completed')|list|length, total=group.chapters|length) }}</span></summary>
+    <ul class="tutorial-grid" aria-labelledby="tutorialGroup-{{ group.id }}">
+      {% for item in group.chapters %}
+      <li class="tutorial-card is-{{ item.status|replace('_', '-') }}" data-tutorial-section="{{ item.id }}" data-tutorial-status="{{ item.status }}">
+        <div class="tutorial-card-head">
+          <span class="tutorial-card-icon" aria-hidden="true">{{ item.icon }}</span>
+          <div>
+            <h3 id="tutorialSection-{{ item.id }}">{{ item.title }}</h3>
+            {{ status_line(item) }}
+          </div>
+        </div>
+        {% if not item.url %}<p class="tutorial-when" data-tutorial-when>{{ item.when }}</p>{% endif %}
+        <div class="tutorial-card-actions">
+          {% if item.url %}<a class="primary-button" href="{{ item.url }}" data-tutorial-replay="{{ item.id }}" data-tutorial-from="{{ item.step if item.status == 'in_progress' else '' }}" aria-describedby="tutorialSection-{{ item.id }}">{{ start_label(item) }}</a>
+          {% elif item.where %}<a class="secondary-button" href="{{ item.where }}" aria-describedby="tutorialSection-{{ item.id }}">{{ _('Take me there') }}</a>{% endif %}
+          {{ more_buttons(item) }}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+
+  {% if can_do %}
+  <section class="tutorial-can-do" aria-labelledby="tutorialCanDoTitle">
+    <h2 id="tutorialCanDoTitle">{{ _('What Learnova can do') }}</h2>
+    <ul>
+      {% for icon, line in can_do %}<li><span class="tutorial-can-do-icon" aria-hidden="true">{{ icon }}</span><span>{{ _(line) }}</span></li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="tutorial-help" aria-labelledby="tutorialHelpTitle">
+    <h2 id="tutorialHelpTitle">{{ _('Still stuck?') }}</h2>
+    <p>{{ _('Read how Learnova works, or write to us with your question.') }}</p>
+    <div class="tutorial-help-links">
+      <a class="secondary-button" href="{{ url_for('about') }}">{{ _('About Learnova') }}</a>
+      <a class="secondary-button" href="{{ url_for('contact') }}">{{ _('Contact us') }}</a>
+    </div>
+  </section>
+</main>
+{% endblock %}

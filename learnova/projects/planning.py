@@ -15,17 +15,48 @@ ALLOWED_QUESTION_TYPES = {
 }
 
 
+HEADER_FOOTER_MAX_CHARS = 100
+HEADER_FOOTER_MIN_PAGES = 3
+
+
+def _edge_key(line):
+    return " ".join(line.split())
+
+
 def clean_extracted_pages(pages):
-    """Remove repeated short header/footer lines without changing source meaning."""
-    page_lines = []
-    candidates = []
-    for text in pages:
-        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
-        page_lines.append(lines)
-        if lines:
-            candidates.extend([line for line in (lines[0], lines[-1]) if len(line) <= 100])
-    repeated = {line for line, count in Counter(candidates).items() if count >= 3}
-    return ["\n".join(line for line in lines if line not in repeated) for lines in page_lines]
+    """Remove running headers and footers without changing source meaning.
+
+    A line is a header/footer only where it stands: the first or last non-empty line of
+    a page, at most 100 characters, and the first/last line of at least 3 pages. Only
+    that edge line is removed. The same words in the middle of a page are a heading or a
+    sentence and stay (removing them everywhere erased topic headings, and the cleaned
+    text is saved over the page). A page is never emptied: if removing its edge lines
+    would leave nothing, it keeps its text. Pages with nothing to remove are returned
+    exactly as given.
+    """
+
+    texts = [str(text or "") for text in pages]
+    page_edges = []
+    counts = Counter()
+    for text in texts:
+        lines = text.splitlines()
+        filled = [index for index, line in enumerate(lines) if line.strip()]
+        edges = sorted({filled[0], filled[-1]}) if filled else []
+        edges = [index for index in edges if len(lines[index].strip()) <= HEADER_FOOTER_MAX_CHARS]
+        page_edges.append((lines, edges))
+        # A page counts once per line, so a one-line page is not two pages of evidence.
+        counts.update({_edge_key(lines[index]) for index in edges})
+    repeated = {line for line, count in counts.items() if count >= HEADER_FOOTER_MIN_PAGES}
+    cleaned = []
+    for text, (lines, edges) in zip(texts, page_edges, strict=True):
+        drop = {index for index in edges if _edge_key(lines[index]) in repeated}
+        kept = [line for index, line in enumerate(lines) if index not in drop]
+        while kept and not kept[0].strip():
+            kept.pop(0)
+        while kept and not kept[-1].strip():
+            kept.pop()
+        cleaned.append("\n".join(kept) if drop and kept else text)
+    return cleaned
 
 
 def normalize_section(section, position, valid_page_ids):

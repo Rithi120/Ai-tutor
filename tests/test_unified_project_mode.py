@@ -156,10 +156,14 @@ class CreationTests(Base):
         self.assertIsNone(project.exam_date)
 
     def test_any_subject_can_still_be_typed(self):
+        # A typed subject is stored by its canonical name ("Latein" -> "Latin", so the
+        # subject-aware rules find it); one the list does not know is kept as typed.
         self.create(title="Latein", subject="Other", subject_other="Latein", topics="a-Deklination")
         self.create(title="Mathe", subject="Mathematics", subject_other="ignored", topics="Brüche")
         self.create(title="Sonstiges", subject="Other", topics="Etwas")
-        self.assertEqual(sorted(project.subject for project in self.projects()), ["Latein", "Mathematics", "Other"])
+        self.create(title="Sterne", subject="Other", subject_other="Astronomie", topics="Planeten")
+        self.assertEqual(sorted(project.subject for project in self.projects()),
+                         ["Astronomie", "Latin", "Mathematics", "Other"])
 
     def test_superscript_digits_in_ids_are_ignored_not_a_crash(self):
         # "²".isdigit() is True but int("²") raises, so isdigit() guards turned this into a 500.

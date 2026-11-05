@@ -27,8 +27,13 @@ navigation?.querySelectorAll(".app-menu-trigger").forEach(trigger => {
   });
 });
 navigation?.querySelectorAll(".app-dropdown a").forEach(link => link.addEventListener("click", () => closeDesktopMenus()));
+// The tutorial (static/js/tour.js) can light a link inside an open menu: its own card
+// taking focus or a click on Next must not close that menu under it.
+function heldByTour(node, scope) {
+  return node instanceof Element && Boolean(node.closest("#tourRoot")) && Boolean(scope?.querySelector("[data-tour-lit]"));
+}
 navigation?.querySelectorAll(".app-menu").forEach(menu => menu.addEventListener("focusout", event => {
-  if (!menu.contains(event.relatedTarget)) closeDesktopMenus();
+  if (!menu.contains(event.relatedTarget) && !heldByTour(event.relatedTarget, menu)) closeDesktopMenus();
 }));
 
 const mobileToggle = navigation?.querySelector(".mobile-nav-toggle");
@@ -63,7 +68,7 @@ navigation?.querySelectorAll("[data-mobile-nav-close]").forEach(item => item.add
 mobileMenu?.querySelectorAll("a").forEach(link => link.addEventListener("click", () => setMobileMenu(false)));
 
 document.addEventListener("click", event => {
-  if (!event.target.closest(".app-menu")) closeDesktopMenus();
+  if (!event.target.closest(".app-menu") && !heldByTour(event.target, navigation)) closeDesktopMenus();
 });
 
 // Rotating a tablet or widening the window past the phone layout hides the menu button;

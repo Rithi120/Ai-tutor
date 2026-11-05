@@ -353,13 +353,28 @@ def targets_if(
     return if_correct, if_wrong
 
 
-def question_type_for(number: int, *, pictures: int = 0) -> str:
-    """The answer format for question `number` (1-based). Pictures only ever fill slots 4-5."""
+def question_type_for(number: int, *, pictures: int = 0, preferred: Sequence[str] | None = None,
+                      stage: str | None = None) -> str:
+    """The answer format for question `number` (1-based). Pictures only ever fill slots 4-5.
+
+    `preferred` is a subject's own rotation (a teaching strategy's question_types: an
+    Ethics lesson asks for written justifications more often than a maths lesson asks
+    for ordering). Slot 1 stays multiple choice, an easy start, and the rest rotate
+    exactly like `learnova.lessons.lesson_plan.exercise_type`; without it the slot table
+    below applies. The picture slots win either way: the student's own diagrams are the
+    best material a question can have. `stage` "exam" (the subject's exam task, which asks
+    for a justified answer: learnova.lessons.lesson_plan.question_stage) is a written
+    answer whatever the rotation slot holds."""
 
     if number == 4 and pictures >= 2:
         return "photo_ordering"
     if number == 5 and pictures >= 1:
         return "photo_response"
+    if stage == "exam" and number > 1:
+        return "text"
+    types = [str(value) for value in (preferred or ()) if value]
+    if types:
+        return "multiple_choice" if number <= 1 else types[(number - 1) % len(types)]
     if number in EARLY_TYPES:
         return EARLY_TYPES[number]
     if number < 2:

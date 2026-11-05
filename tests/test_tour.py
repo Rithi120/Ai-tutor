@@ -1,8 +1,10 @@
-"""The first-time walkthrough: when it offers itself, how it is remembered, what it says.
+"""The first-time tutorial offer: when it offers itself, how it is remembered, what it says.
 
-The steps live in static/js/tour-rules.js and run in the browser; what the server owns is
-the shell markup on every signed-in page, the per-account "finished" flag behind
-POST /api/tour/complete, and the translated step texts in the frontend catalogue.
+The steps live in the Python registry (learnova/tutorial/registry.py) and run in the
+browser (static/js/tour.js); what the server owns is the shell markup on every signed-in
+page, the per-account "offer settled" flag behind POST /api/tour/complete, and the
+translated steps (inline in #tourData while the offer is open). The sections, progress API
+and hooks are tested in tests/test_tutorial.py.
 """
 
 import os
@@ -14,10 +16,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///" + os.path.join(tempfile.gette
 
 import app as application  # noqa: E402
 from learnova.translations import catalog  # noqa: E402
-
-TOUR_KEYS = ("tourWelcomeTitle", "tourWelcomeText", "tourLetsGo", "tourOpenMenu", "tourGoNewLesson",
-             "tourSubject", "tourGoal", "tourBuild", "tourLesson", "tourStartTest", "tourChat",
-             "tourGoOverview", "tourDoneTitle", "tourDoneText", "tourFinish", "tourStepOf")
+from learnova.tutorial import registry  # noqa: E402
 
 
 class TourTests(unittest.TestCase):
@@ -36,14 +35,16 @@ class TourTests(unittest.TestCase):
 
     def test_a_new_account_is_offered_the_tour_wherever_it_lands(self):
         landing = self.register().data.decode()
-        # Registration ends on the New Lesson page, so that is where the tour must begin.
+        # Registration ends on the home page - the chat - where the first-time offer opens;
+        # the lesson builder (/lesson) is the "index" page.
         self.assertIn('id="tourRoot"', landing)
         self.assertIn('data-tour-autostart="true"', landing)
-        self.assertIn('data-tour-page="index"', landing)
+        self.assertIn('data-tour-page="chat"', landing)
+        self.assertIn('data-tour-page="index"', self.client.get("/lesson").data.decode())
         dashboard = self.client.get("/dashboard").data.decode()
         self.assertIn('data-tour-autostart="true"', dashboard)
         self.assertIn('data-tour-page="dashboard"', dashboard)
-        self.assertIn('data-tour-page="other"', self.client.get("/projects").data.decode())
+        self.assertIn('data-tour-page="projects"', self.client.get("/projects").data.decode())
 
     def test_finishing_or_skipping_is_remembered_per_account_not_per_browser(self):
         self.register()
@@ -58,7 +59,10 @@ class TourTests(unittest.TestCase):
         fresh_browser.post("/login", data={"identifier": "alice", "password": "correct-horse-battery"})
         page = fresh_browser.get("/").data.decode()
         self.assertIn('data-tour-autostart="false"', page)
-        self.assertIn("data-tour-open", page, "it can still be restarted by hand")
+        # Afterwards the tutorial is opened by hand from its hub (/tutorial, PLAN 7.3): the
+        # interim [data-tour-open] links that re-showed the welcome card are gone.
+        self.assertIn('href="/tutorial" data-tutorial-link', page, "it can still be opened by hand")
+        self.assertNotIn("data-tour-open", page)
 
     def test_completing_twice_keeps_the_first_time(self):
         self.register()
@@ -79,7 +83,10 @@ class TourTests(unittest.TestCase):
     def test_the_shell_points_at_the_real_navigation_and_can_be_reopened(self):
         self.register()
         page = self.client.get("/dashboard").data.decode()
-        self.assertEqual(page.count("data-tour-open"), 3, "profile menu, mobile menu, dashboard invite")
+        # Every entry point opens the hub (PLAN 7.3): More menu, Account menu, phone menu,
+        # the Overview invite and the footer.
+        self.assertEqual(page.count("data-tutorial-link"), 5, "More, Account, mobile menu, dashboard invite, footer")
+        self.assertNotIn("data-tour-open", page)
         for target in ("overview", "new-lesson", "projects"):
             self.assertIn(f'data-tour-target="{target}"', page)
         for mask in ("top", "bottom", "left", "right"):
@@ -95,24 +102,27 @@ class TourTests(unittest.TestCase):
     def test_the_lesson_page_still_has_everything_the_steps_point_at(self):
         # tour-rules.js names these selectors; if the page changes, the tour must follow.
         self.register()
-        page = self.client.get("/").data.decode()
+        page = self.client.get("/lesson").data.decode()
         for marker in ('class="subject-picker"', 'class="goal-field"', 'class="prompt-ideas"',
                        'begin-button', 'class="content-card explanation-card"', 'id="startTest"',
-                       'id="chatToggle"'):
+                       'id="chatToggle"', 'id="lessonParts"', 'data-tour-target="lesson-explanation"'):
             self.assertIn(marker, page, marker)
 
     def test_every_step_text_reaches_the_browser_in_the_students_language(self):
         self.register(language="de")
         page = self.client.get("/").data.decode()
-        self.assertIn('"tourGoNewLesson": "Tippe auf Neue Lektion', page)
-        self.assertIn('"tourStepOf": "Schritt {current} von {total}"', page)
-        self.assertNotIn("Tap New Lesson", page)
+        data = page.split('id="tourData"', 1)[1].split("</script>", 1)[0]
+        # The lesson chapter keeps the old lesson tour's sentences (tojson escapes non-ASCII).
+        self.assertIn("Tippe auf Meine Lektion erstellen", data)
+        self.assertIn("Bau eine kurze Lektion mit Erkl", data, "the quick tour's New Lesson step")
+        self.assertIn("Schritt {current} von {total}", data)
+        self.assertNotIn("Tap Build my lesson", page)
+        self.assertNotIn("Das erscheint, sobald du es zum ersten Mal benutzt hast", data)
         for code in catalog.SUPPORTED_LANGUAGES:
             if code == "en":
                 continue
-            strings = catalog.frontend_catalog(code)
-            for key in TOUR_KEYS:
-                self.assertNotEqual(strings[key], catalog.FRONTEND_MESSAGES[key], f"{code} leaks English for {key}")
+            for msgid in sorted(registry.all_msgids()):
+                self.assertIn(msgid, catalog.CATALOGS[code], f"{code} has no translation for {msgid!r}")
 
     def test_the_old_card_tour_strings_are_gone(self):
         self.assertNotIn("Start my first lesson", catalog.GERMAN)

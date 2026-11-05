@@ -24,6 +24,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from tests.test_exam_autopilot_integration import (  # noqa: E402
     LESSON, NOTES, FakeResponse, competencies, image_bytes, recognition, sections,
 )
@@ -48,6 +49,10 @@ def evaluation(score, number):
 
 class ReleaseFlowTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE", "FEATURE_ADAPTIVE_DIAGNOSTICS",
+                    "FEATURE_DIAGNOSTIC_VERIFICATION", "TEST_MIN_QUESTIONS", "TEST_MAX_QUESTIONS",
+                    "EXAM_DIAGNOSIS_LIMIT")
         application.app.config.update(TESTING=True, AI_MODE="cached", FEATURE_ADAPTIVE_DIAGNOSTICS=True,
                                       FEATURE_DIAGNOSTIC_VERIFICATION=True, TEST_MIN_QUESTIONS=3,
                                       TEST_MAX_QUESTIONS=15, EXAM_DIAGNOSIS_LIMIT=3)
@@ -130,7 +135,11 @@ class ReleaseFlowTests(unittest.TestCase):
         wrong = self.answer(session_id, 20)
         self.assertFalse(wrong["complete"])
         self.assertEqual(wrong["diagnosis"]["primary_tag"], "procedural_error")
-        self.assertIn("correction", wrong["evaluation"])
+        # A teach-first project lesson gives a first wrong answer "Try again" - but not on this
+        # two-option question, where a second try is solved by elimination (FIX2): it is
+        # graded at once and shows the correction (the retry flow: test_lesson_teaching_engine).
+        self.assertIsNone(wrong["retry"])
+        self.assertTrue(wrong["evaluation"]["correction"])
         self.assertEqual(wrong["progress"]["knowledge"]["next_concept"], A, "remediation stays on the concept")
         # ... then right answers until the knowledge gate is satisfied - never after one.
         results = []

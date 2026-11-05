@@ -184,6 +184,31 @@ class LanguageSystemTests(unittest.TestCase):
         self.assertIn("Fehlernotizbuch".encode(), dashboard.data)
         self.assertNotIn(b"language-switch", dashboard.data)
 
+    def test_canonical_subjects_are_shown_in_the_students_language(self):
+        """Subjects are stored as canonical English names ("Ethik" -> "Ethics"), so every
+        page that shows one translates it; a subject that is not canonical stays as typed."""
+
+        self.register(language="de")
+        with application.app.app_context():
+            user = application.db.session.scalar(
+                application.db.select(application.User).where(application.User.username == "alice"))
+            for title, subject in (("Klassenarbeit", "History"), ("Ethikprojekt", "Ethics"),
+                                   ("AG", "Astronomie AG")):
+                application.db.session.add(application.LearningProject(
+                    user_id=user.id, title=title, subject=subject, status="confirmed"))
+            application.db.session.commit()
+        page = self.client.get("/dashboard").data.decode()
+        self.assertIn("<span>Geschichte</span><b>Klassenarbeit</b>", page)
+        self.assertIn("<span>Ethik</span><b>Ethikprojekt</b>", page)
+        self.assertIn("<span>Astronomie AG</span><b>AG</b>", page)
+        # The study-plan pages show the project's subject the same way.
+        root = Path(__file__).resolve().parents[1] / "templates"
+        for name in ("study_plan_calendar.html", "study_plan_session.html", "dashboard.html"):
+            source = (root / name).read_text(encoding="utf-8")
+            self.assertNotIn("{{ plan.project.subject }}", source, name)
+            self.assertNotIn("{{ project.subject }}", source, name)
+            self.assertNotIn("{{ coach.plan.project.subject }}", source, name)
+
     def test_ai_learning_content_uses_account_language_not_request_payload(self):
         self.register(language="de")
         with patch.object(application, "create_response", return_value=FakeResponse(LESSON)) as mocked:
@@ -234,6 +259,16 @@ class CatalogueLoadingTests(unittest.TestCase):
                 self.assertIsNone(catalog._load_catalog("zz"))
         finally:
             broken.unlink()
+
+    def test_every_subject_has_a_subject_name_in_each_language(self):
+        from learnova.lessons.subjects import LANGUAGE_SUBJECTS, SUBJECT_CHOICES
+        from learnova.translations import catalog
+        for language in ("de", "fr", "es"):
+            for subject in (*SUBJECT_CHOICES, *sorted(LANGUAGE_SUBJECTS)):
+                self.assertTrue(catalog.CATALOGS[language].get(subject, "").strip(), f"{language}: {subject}")
+        # "History" is only used as the school subject - not "Historique"/"Historial" (a log).
+        self.assertEqual([catalog.translate("History", code) for code in ("de", "fr", "es")],
+                         ["Geschichte", "Histoire", "Historia"])
 
     def test_a_complete_locale_loads(self):
         from learnova.translations import catalog

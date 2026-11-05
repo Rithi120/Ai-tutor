@@ -11,6 +11,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.flashcards import modes  # noqa: E402
 from learnova.gamification import service as gamification  # noqa: E402
 
@@ -55,6 +56,12 @@ class GamificationRuleTests(unittest.TestCase):
 
 class FlashcardModeWorkflowTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_PRIVATE_FLASHCARDS",
+                    "FEATURE_FLASHCARD_LEARN_MODE", "FEATURE_FLASHCARD_TEST_MODE",
+                    "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
+                    "FEATURE_FLASHCARD_BLOCKS_GAME", "FEATURE_GAMIFICATION", "FEATURE_MISSIONS",
+                    "FEATURE_BADGES", "FEATURE_DAILY_GOALS")
         application.app.config.update(
             TESTING=True, FEATURE_PRIVATE_FLASHCARDS=True,
             FEATURE_FLASHCARD_LEARN_MODE=True, FEATURE_FLASHCARD_TEST_MODE=True,

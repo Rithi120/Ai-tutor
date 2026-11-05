@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from learnova.lessons.subjects import canonical_subject
+
 from .schema import DIAGNOSIS_VERSION
 from .taxonomy import (
     COGNITIVE_DEMANDS,
@@ -90,13 +92,61 @@ _SUBJECT_RULES = {
         "Accept any correct algorithm and equivalent code; judge logic and complexity, not exact syntax. "
         "An off-by-one is a procedural_error, a wrong algorithm is conceptual."
     ),
+    "ethics": (
+        "Judge whether the text, thought experiment or position is rendered correctly, whether the terms are used "
+        "precisely and whether a judgement is justified. A misread passage is interpretation_error; a missing "
+        "reason is incomplete_reasoning. Never diagnose an error for the opinion a student holds."
+    ),
+    "religion": (
+        "Judge whether the text or teaching is rendered correctly and the terms are precise. A misread text is "
+        "interpretation_error. Never diagnose a personal belief as an error."
+    ),
+    "politics": (
+        "Judge factual accuracy about institutions and processes, the use of terms, and whether a judgement weighs "
+        "perspectives with reasons; a one-sided answer is incomplete_reasoning, not a misconception."
+    ),
+    "science and technology": (
+        "Check the formula, the substitutions and especially the units; a missing or wrong unit is a "
+        "procedural_error unless the quantity itself was misunderstood. In an experiment, describing what was "
+        "observed is not yet explaining it: a missing explanation is incomplete_reasoning. Accept synonyms and "
+        "valid paraphrases of a mechanism or of how a device works; a wrong working principle is "
+        "conceptual_misconception."
+    ),
+    "technology": (
+        "Judge whether the function, structure, materials and safety of the system are described correctly and in "
+        "the right order. A missing step is incomplete_reasoning, a wrong working principle is "
+        "conceptual_misconception. Accept valid paraphrases."
+    ),
+    "music": (
+        "Judge the terms (notation, intervals, form, instruments), facts about works and composers, and whether a "
+        "description of what is heard is supported. Accept any defensible interpretation with reasons; a misread "
+        "score or passage is interpretation_error."
+    ),
+    "art": (
+        "Judge the terms (composition, colour, technique, epoch), facts about works and artists, and whether an "
+        "interpretation is supported by what is visible in the work. Accept any defensible interpretation with "
+        "reasons; a misread detail of the work is interpretation_error."
+    ),
+    "physical education": (
+        "Judge rules, techniques, movement phases and training principles for accuracy; accept valid paraphrases. "
+        "A missing technique or safety point is incomplete_reasoning."
+    ),
 }
+# The same rule for subjects that share a method.
+_SUBJECT_RULES.update({
+    "philosophy": _SUBJECT_RULES["ethics"],
+    "economics": _SUBJECT_RULES["politics"],
+    "french": _SUBJECT_RULES["english"],
+    "spanish": _SUBJECT_RULES["english"],
+    "latin": _SUBJECT_RULES["english"],
+})
 
 
 def subject_rule(subject: str) -> str:
     """Subject-specific grading guidance, with a neutral default for unlisted subjects."""
 
-    key = str(subject or "").strip().casefold()
+    # Canonical names, so "Mathematik", "Physik" or "Ethik" get their subject's rule.
+    key = canonical_subject(subject).casefold()
     return _SUBJECT_RULES.get(key, (
         "Judge accuracy and reasoning fairly, accept valid alternative answers and equivalent wording, "
         "and only name a cause you can quote evidence for."
@@ -133,7 +183,8 @@ def diagnosis_system_prompt(subject: str, language: str, grade: str = "") -> str
         "CHECK THE KEY. For any objectively decidable question, work out the answer yourself first. If your "
         "own result differs from the supplied expected answer, the key is wrong: set the tag to "
         "question_or_key_flawed, treat a response matching your result as correct, and never penalise the "
-        "student. Do the same when the question omits information needed to answer it.\n"
+        "student. Do the same when the question omits information needed to answer it. An answer the source "
+        "material supports is never classified as an error.\n"
         "\n"
         "BE FAIR. A brief but logically valid justification is fully correct. A correct answer reached by a "
         "different valid method is correct. Only downgrade a correct answer when the stated reasoning is "
@@ -146,9 +197,11 @@ def diagnosis_system_prompt(subject: str, language: str, grade: str = "") -> str
         f"{grade_line}"
         f"SUBJECT GUIDANCE. {subject_rule(subject)}\n"
         "\n"
-        f"Write `student_facing_explanation` in {language}, addressed to the student, at most three "
-        "sentences: what was right, the one thing that went wrong, and the single next step. No praise "
+        f"Write `student_facing_explanation` in {language}, addressed to the student in the informal second "
+        "person (German du, French tu, Spanish tú), at most three sentences: what was right, the one thing that went wrong, and the single next step. No praise "
         "padding, no generic advice such as 'review the topic' or 'be more careful'.\n"
+        "Every `statement` is shown to the student too: write it the same way, in the informal second person "
+        "('Du hast …'), never 'Der Schüler' or 'Der Student'.\n"
         "`internal_diagnostic_summary` is one or two sentences of findings for the teacher record. Do not "
         "write your reasoning process anywhere; report conclusions and the quotes behind them.\n"
         f"`recommended_intervention` is one of: {', '.join(INTERVENTIONS)}.\n"
@@ -197,6 +250,9 @@ def verification_user_prompt(bundle: dict[str, Any]) -> str:
 def question_system_prompt(subject: str, language: str, grade: str = "") -> str:
     """Instructions for generating one question that satisfies a specification."""
 
+    # Imported here: learnova.ai_services.prompts imports this module at its own import.
+    from learnova.ai_services.prompts import STUDENT_ADDRESS_RULE  # noqa: PLC0415
+
     grade_line = f"The student is at this level: {grade}. Match vocabulary and depth to it.\n" if grade else ""
     return (
         "You write one diagnostic practice question that satisfies an exact specification.\n"
@@ -218,6 +274,7 @@ def question_system_prompt(subject: str, language: str, grade: str = "") -> str:
         f"{grade_line}"
         f"Write every student-facing string in {language}. Use only facts the supplied source material "
         "supports when source material is present.\n"
+        f"{STUDENT_ADDRESS_RULE}\n"
         "Return ONLY one JSON object matching this schema exactly, with no markdown and no commentary:\n"
         f"{QUESTION_SCHEMA_SUMMARY}"
     )

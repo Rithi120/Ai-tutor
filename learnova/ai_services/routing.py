@@ -96,11 +96,15 @@ PROVIDER_WIDE_FAILURES = frozenset({
 # Failure categories that mean "this *model*, right now". Providers meter rate limits per
 # model, so a 429 on gpt-oss-20b says nothing about gpt-oss-120b at the same provider -
 # which is exactly the slower model the student should get instead of an error.
-MODEL_SCOPED_FAILURES = frozenset({"provider_rate_limit", "provider_overloaded"})
+MODEL_SCOPED_FAILURES = frozenset({"provider_rate_limit", "provider_overloaded", "provider_daily_limit"})
 # Hops that mean a limit was hit on the way to the answer: the student is told that a
-# slower model answered (see GatewayResponse.degraded).
+# slower model answered (see GatewayResponse.degraded). Project Mode also reads this set as
+# "provider-wide and temporary". `request_too_large` (a 413) is deliberately not here: it is
+# about this request, so a smaller one (half a topic batch, a smaller output cap) can still
+# succeed; it is neither terminal nor provider-wide either, so a vision fallback is tried.
 LIMIT_FAILURES = frozenset({
     "provider_rate_limit", "provider_overloaded", "provider_quota_exhausted", "model_cooldown",
+    "provider_daily_limit",
 })
 # Categories after which nothing further should be tried at all.
 TERMINAL_FAILURES = frozenset({"request_limit_reached", "budget_exhausted", "token_limit_exceeded"})

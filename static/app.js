@@ -1,6 +1,7 @@
 import {escapeHtml} from "./js/dom.js";
-import {renderMath} from "./js/math.js";
+import {markFormulaScrollers, renderMath} from "./js/math.js";
 import {parseChips, renderMarkdown} from "./js/markdown.js";
+import {highlightCode} from "./js/code-highlight.js";
 import {announceXp} from "./js/xp.js";
 import {bindDiagnosisDetails, diagnosisMarkup} from "./js/diagnosis.js";
 import {selectedLanguage, t} from "./js/i18n.js";
@@ -9,6 +10,22 @@ import {createAttachmentTray, normalizeImage, photoNotesNode, sentPhotosNode, up
 
 const uploadView = document.querySelector("#uploadView");
 const lessonView = document.querySelector("#lessonView");
+
+/* Typeset the formulas in `root`; a display formula wider than the column then becomes a
+ * named, focusable region with an edge cue (math.js markFormulaScrollers), as in the chat -
+ * and again when the width changes (a phone turned). */
+function renderFormulas(root) {
+  return renderMath(root).then(() => markFormulaScrollers(root, t("asstScrollFormula")));
+}
+let formulaScrollFrame = 0;
+window.addEventListener("resize", () => {
+  window.cancelAnimationFrame(formulaScrollFrame);
+  formulaScrollFrame = window.requestAnimationFrame(() => {
+    for (const root of [lessonView, document.querySelector("#questionCard")]) {
+      markFormulaScrollers(root, t("asstScrollFormula"));
+    }
+  });
+});
 const uploadForm = document.querySelector("#uploadForm");
 const imageInput = document.querySelector("#images");
 const previews = document.querySelector("#previews");
@@ -67,9 +84,12 @@ function showError(message) {
   setTimeout(() => toast.classList.add("hidden"), 4500);
 }
 
+// The server's photo limit for one lesson (what the vision model can read in one request).
+const photoLimit = Number(imageInput?.dataset.maxPhotos) || 2;
+
 function previewFiles() {
   previews.innerHTML = "";
-  [...imageInput.files].slice(0, 4).forEach(file => {
+  [...imageInput.files].slice(0, photoLimit).forEach(file => {
     const image = document.createElement("img");
     image.src = URL.createObjectURL(file);
     previews.appendChild(image);
@@ -157,14 +177,20 @@ function enableSymbolKeyboard() {
 
 const CLOSED_TYPES = new Set(["multiple_choice", "checkboxes", "dropdown", "ordering"]);
 
-function renderQuestion(question) {
+function renderQuestion(question, { retry = false } = {}) {
   // The server does the same; this is the belt to its braces: no choices, no ordering task.
   if (CLOSED_TYPES.has(question.type) && !(Array.isArray(question.options) && question.options.length >= 2)) {
     question = { ...question, type: "text", options: [] };
   }
   currentQuestion = question;
-  hintUsed = false;
-  answerRetryCount = 0;
+  if (retry) {
+    // "Try again": the same question once more. A hint already seen stays counted, and the
+    // server learns this is a second attempt.
+    answerRetryCount += 1;
+  } else {
+    hintUsed = false;
+    answerRetryCount = 0;
+  }
   answerSource = "typed";
   const neutralConfidence = answerForm.querySelector('input[name="responseConfidence"][value="50"]');
   if (neutralConfidence) neutralConfidence.checked = true;
@@ -177,8 +203,9 @@ function renderQuestion(question) {
   document.querySelector("#hint").classList.add("hidden");
   document.querySelector("#hintButton").classList.toggle("hidden", question.has_hint === false && !question.hint);
   document.querySelector("#hintListenControl")?.classList.add("hidden");
-  document.querySelector("#feedback").className = "feedback hidden";
-  document.querySelector("#feedbackListenControl")?.classList.add("hidden");
+  // "Try again" keeps the reteach in view while the student answers again.
+  if (!retry) document.querySelector("#feedback").className = "feedback hidden";
+  if (!retry) document.querySelector("#feedbackListenControl")?.classList.add("hidden");
   document.querySelector("#questionCard").className = "content-card question-card";
   const control = document.querySelector("#answerControl");
   const options = question.options || [];
@@ -215,7 +242,7 @@ function renderQuestion(question) {
   document.querySelector("#answerMicrophoneControl")?.classList.toggle("hidden", !document.querySelector("#writtenAnswer"));
   answerForm.classList.remove("hidden");
   answerForm.querySelector(".primary-button").classList.remove("hidden");
-  renderMath(document.querySelector("#questionCard"));
+  renderFormulas(document.querySelector("#questionCard"));
   updateProgress(questionNumber);
 }
 
@@ -240,7 +267,7 @@ function enableAnswerPhoto() {
     note.classList.add("hidden");
     status.textContent = t("imgUploading");
     try {
-      const attachment = await uploadImage(await normalizeImage(file), "answer", progress => {
+      const { attachment } = await uploadImage(await normalizeImage(file), "answer", progress => {
         status.textContent = t("imgUploadingPercent", { percent: Math.round(progress * 100) });
       });
       status.textContent = t("imgReadingWorking");
@@ -249,8 +276,9 @@ function enableAnswerPhoto() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, attachments: [attachment.id] })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      // A proxy error page or a login redirect is not JSON; never show a parser error.
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || t("imgUploadFailed"));
       if (!data.readable || !data.transcription) {
         status.textContent = "";
         note.textContent = t("imgWorkingUnreadable");
@@ -317,6 +345,468 @@ function renderMedia(lesson) {
   }
 }
 
+/* lesson-parts:start
+ * A lesson from the teaching engine arrives with `lesson.parts`: the subject's own teaching
+ * order (objective, why, explanation, Fachbegriffe, examples, flashcards, guided exercise,
+ * mistakes, summary ...). Each part is drawn as one numbered card. Every string in a part is
+ * model output, so this block builds the DOM with textContent only - nothing a model writes
+ * can become markup, and no part field is ever parsed as HTML. Lessons without parts keep
+ * the fixed explanation / worked example / teacher notes cards exactly as before. */
+const PART_LABEL_KEYS = {
+  objective: "lpKind_objective",
+  why: "lpKind_why",
+  explanation: "lpKind_explanation",
+  terms: "lpKind_terms",
+  rule: "lpKind_rule",
+  structure: "lpKind_structure",
+  example: "lpKind_example",
+  worked_example: "lpKind_worked_example",
+  experiment: "lpKind_experiment",
+  thought_experiment: "lpKind_thought_experiment",
+  theory: "lpKind_theory",
+  argument: "lpKind_argument",
+  perspectives: "lpKind_perspectives",
+  timeline: "lpKind_timeline",
+  cause_effect: "lpKind_cause_effect",
+  process: "lpKind_process",
+  diagram: "lpKind_diagram",
+  source_analysis: "lpKind_source_analysis",
+  model_analysis: "lpKind_model_analysis",
+  mistakes: "lpKind_mistakes",
+  guided_exercise: "lpKind_guided_exercise",
+  summary: "lpKind_summary",
+  flashcards: "lpKind_flashcards",
+};
+// Items of these kinds are a sequence (steps of a process or a worked solution), so they
+// are numbered; every other kind lists its items as "label — text".
+const ORDERED_PART_KINDS = new Set(["process", "worked_example", "structure"]);
+// The <ol> numbers steps itself; models often number them too ("1. 1. Das Problem ...").
+// Only a leading "N." / "N)" / "Schritt N:" followed by a space is removed, so "4.5 kg"
+// and "2 + 3 = 5" stay intact.
+const OWN_NUMBER = /^\s*(?:(?:Schritt|Step|Étape|Paso|Passo|Stap)\s*)?\d{1,2}\s*[.):]\s+/i;
+// An experiment's items are labelled in the content language ("Vermutung", "Hypothesis");
+// a recognised label gets its step's marker. The label shown is always the item's own.
+const EXPERIMENT_STEPS = [
+  ["question", /^(research question|question|forschungsfrage|fragestellung|frage|problemstellung|problem|probl[eè]me|pregunta)/],
+  ["hypothesis", /^(hypothes[ei]s|hypoth[eè]se|vermutung|hip[oó]tesis)/],
+  ["setup", /^(set ?-?up|materials?|equipment|versuchsaufbau|aufbau|materialien|ger[aä]te|mat[eé]riel|dispositif|montage|materiales|montaje)/],
+  ["procedure", /^(procedure|method|steps|versuchsdurchf[uü]hrung|durchf[uü]hrung|vorgehen|ablauf|protocole|proc[eé]dure|mode op[eé]ratoire|procedimiento)/],
+  ["observation", /^(observations?|beobachtung(en)?|observaci[oó]n(es)?)/],
+  ["result", /^(results?|ergebnis(se)?|auswertung|messwerte|r[eé]sultats?|resultados?)/],
+  ["explanation", /^(explanation|conclusion|interpretation|erkl[aä]rung|deutung|schlussfolgerung|fazit|explication|explicaci[oó]n|conclusi[oó]n)/],
+];
+const PART_RENDERERS = {
+  terms: flipCardsContent,
+  flashcards: flipCardsContent,
+  timeline: timelineContent,
+  experiment: experimentContent,
+  cause_effect: causeEffectContent,
+  guided_exercise: guidedExerciseContent,
+  mistakes: mistakesContent,
+  summary: summaryContent,
+};
+let partPanelCounter = 0;
+
+function partText(value) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function partItems(part) {
+  // An item may carry its own origin (a key-terms card whose definition Learnova wrote,
+  // among cards from the notes); it is kept only when the server said so explicitly.
+  return (Array.isArray(part.items) ? part.items : [])
+    .map(item => (item && typeof item === "object"
+      ? { label: partText(item.label), text: partText(item.text), ...(typeof item.from_notes === "boolean" ? { from_notes: item.from_notes } : {}) }
+      : { label: "", text: partText(item) }))
+    .filter(item => item.label || item.text);
+}
+
+function usableParts(parts) {
+  if (!Array.isArray(parts)) return [];
+  return parts.filter(part => {
+    if (!part || typeof part !== "object") return false;
+    const items = partItems(part);
+    if (part.kind === "flashcards") return items.length > 0;
+    return Boolean(partText(part.title) || partText(part.body) || items.length || partText(part.answer));
+  });
+}
+
+function el(tag, className = "", text = "") {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+
+// "**word**" is the one inline mark drawn, as a <strong> element built here; everything
+// else stays literal text (a single "*" is a multiplication sign in maths lessons).
+function appendRichText(parent, text) {
+  String(text).split(/\*\*([^*\n]+)\*\*/).forEach((piece, index) => {
+    if (piece) parent.appendChild(index % 2 ? el("strong", "", piece) : document.createTextNode(piece));
+  });
+}
+
+// Body text keeps its line breaks and indentation (white-space: pre-wrap), because bodies
+// carry code and traces where indentation is meaning; ``` fences become <pre><code>, which
+// renderMath leaves alone. Paragraphs split on blank lines.
+function bodyContent(text) {
+  const body = el("div", "lp-body");
+  String(text || "").split(/^[ \t]*```[\w+#-]*[ \t]*$/m).forEach((chunk, index) => {
+    if (index % 2) {
+      const pre = el("pre", "lp-code");
+      pre.appendChild(el("code", "", chunk.replace(/^\n/, "").replace(/\n$/, "")));
+      body.appendChild(pre);
+      return;
+    }
+    chunk.split(/\n[ \t]*\n/).forEach(paragraph => {
+      const clean = paragraph.replace(/^\n+/, "").replace(/\s+$/, "");
+      if (!clean.trim()) return;
+      const line = el("p", "lp-text");
+      appendRichText(line, clean);
+      body.appendChild(line);
+    });
+  });
+  return body.childNodes.length ? body : null;
+}
+
+function itemNode(item, { ordered = false } = {}) {
+  const row = el("li");
+  const text = ordered ? item.text.replace(OWN_NUMBER, "") : item.text;
+  if (item.label) row.appendChild(el("b", "lp-item-label", item.label));
+  if (item.label && text) row.appendChild(el("span", "lp-item-sep", " — "));
+  if (text) row.appendChild(el("span", "lp-item-text", text));
+  return row;
+}
+
+function itemList(items, { ordered = false, className = "lp-items" } = {}) {
+  const list = el(ordered ? "ol" : "ul", className);
+  items.forEach(item => list.appendChild(itemNode(item, { ordered })));
+  return list;
+}
+
+function originBadge(fromNotes) {
+  return el("span", `lp-origin ${fromNotes ? "lp-origin-notes" : "lp-origin-added"}`,
+    fromNotes ? t("lpFromNotes") : t("lpAddedByLearnova"));
+}
+
+function sourcePages(part) {
+  // The server names the lesson's own pages ("Ethik-2.pdf p. 1"): in a topic from two files
+  // a bare "p. 1" would be either. Older lessons only have the numbers.
+  const labels = (Array.isArray(part.source_labels) ? part.source_labels : []).map(partText).filter(Boolean);
+  if (labels.length) return [...new Set(labels)].map(label => el("span", "lp-page", label));
+  const pages = (Array.isArray(part.source_pages) ? part.source_pages : [])
+    .map(Number).filter(page => Number.isInteger(page) && page > 0);
+  return [...new Set(pages)].map(page => el("span", "lp-page", t("lpPage", { page })));
+}
+
+// A link the server built (the project set's study page). Only a same-site path is used:
+// "//host" and "/\host" would leave the site, anything else is not a path at all. The URL
+// parser drops tabs and line breaks, so "/<tab>/host" became "//host": any whitespace or
+// control character rejects the value, and the resolved link must stay on this origin.
+function internalUrl(value) {
+  const url = partText(value);
+  if (!url.startsWith("/") || url.startsWith("//") || url.includes("\\") || /[\s\u0000-\u001f\u007f]/.test(url)) return "";
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin ? url : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+/* Fachbegriffe and flashcards: tap-to-flip cards. Both faces stay in the DOM (one grid
+ * cell, so the card is as tall as its longer face) and are read by screen readers and
+ * read-aloud; the flip is a visual aid, never hidden content. */
+function flipCardsContent(part, items) {
+  const fromNotes = part.from_notes === true;
+  const fragment = document.createDocumentFragment();
+  const intro = bodyContent(part.body);
+  if (intro) fragment.appendChild(intro);
+  const grid = el("ul", "lp-flip-grid");
+  items.forEach(item => {
+    const cell = el("li");
+    if (!item.label || !item.text) {
+      cell.appendChild(el("div", "lp-flip-static", item.label || item.text));
+      grid.appendChild(cell);
+      return;
+    }
+    const card = el("button", "lp-flip");
+    card.type = "button";
+    card.setAttribute("aria-pressed", "false");
+    const inner = el("span", "lp-flip-inner");
+    const front = el("span", "lp-flip-face lp-flip-front");
+    front.appendChild(el("span", "lp-flip-label", item.label));
+    const cue = el("span", "lp-flip-cue", t("lpTapToFlip"));
+    cue.setAttribute("aria-hidden", "true");
+    front.appendChild(cue);
+    const back = el("span", "lp-flip-face lp-flip-back");
+    back.appendChild(el("span", "lp-flip-text", item.text));
+    // The part's origin is announced once in its header; on each card it is a visual cue,
+    // and a card with its own origin (a definition Learnova wrote) shows that one.
+    const itemFromNotes = typeof item.from_notes === "boolean" ? item.from_notes : fromNotes;
+    const badge = el("span", `lp-badge ${itemFromNotes ? "lp-badge-notes" : "lp-badge-added"}`,
+      itemFromNotes ? t("lpFromNotes") : t("lpAddedExplanation"));
+    badge.setAttribute("aria-hidden", "true");
+    back.appendChild(badge);
+    inner.append(front, back);
+    card.appendChild(inner);
+    cell.appendChild(card);
+    grid.appendChild(cell);
+  });
+  fragment.appendChild(grid);
+  const studyUrl = internalUrl(part.study_url);
+  if (studyUrl) {
+    const link = el("a", "lp-study-link", t("lpStudyAllTerms"));
+    link.href = studyUrl;
+    const arrow = el("span", "", "→");
+    arrow.setAttribute("aria-hidden", "true");
+    link.appendChild(arrow);
+    fragment.appendChild(link);
+  }
+  return fragment;
+}
+
+function timelineContent(part, items) {
+  const fragment = document.createDocumentFragment();
+  const intro = bodyContent(part.body);
+  if (intro) fragment.appendChild(intro);
+  if (items.length) {
+    const list = el("ol", "lp-timeline");
+    items.forEach(item => {
+      const row = el("li");
+      if (item.label) row.appendChild(el("span", "lp-timeline-when", item.label));
+      if (item.text) row.appendChild(el("span", "lp-timeline-what", item.text));
+      list.appendChild(row);
+    });
+    fragment.appendChild(list);
+  }
+  return fragment;
+}
+
+function experimentStep(label) {
+  const key = label.toLocaleLowerCase().replace(/[:\s]+$/, "");
+  return EXPERIMENT_STEPS.find(([, pattern]) => pattern.test(key))?.[0] || "";
+}
+
+function experimentContent(part, items) {
+  const fragment = document.createDocumentFragment();
+  const intro = bodyContent(part.body);
+  if (intro) fragment.appendChild(intro);
+  if (items.length) {
+    const list = el("ol", "lp-steps");
+    items.forEach(item => {
+      const row = el("li", "lp-step");
+      const step = item.label ? experimentStep(item.label) : "";
+      if (step) row.dataset.step = step;
+      if (item.label) row.appendChild(el("b", "lp-step-label", item.label));
+      if (item.text) row.appendChild(el("span", "lp-step-text", item.text.replace(OWN_NUMBER, "")));
+      list.appendChild(row);
+    });
+    fragment.appendChild(list);
+  }
+  return fragment;
+}
+
+function causeEffectContent(part, items) {
+  const fragment = document.createDocumentFragment();
+  const intro = bodyContent(part.body);
+  if (intro) fragment.appendChild(intro);
+  if (items.length) {
+    const list = el("ul", "lp-causes");
+    items.forEach(item => {
+      const row = el("li", "lp-cause-row");
+      if (item.label && item.text) {
+        row.appendChild(el("span", "lp-cause", item.label));
+        const arrow = el("span", "lp-cause-arrow", "→");
+        arrow.setAttribute("aria-hidden", "true");
+        // Spoken and read by screen readers in place of the arrow: "war leads to hunger".
+        row.append(arrow, el("span", "lp-sr", ` ${t("lpLeadsTo")} `), el("span", "lp-effect", item.text));
+      } else {
+        row.classList.add("lp-cause-single");
+        row.appendChild(el("span", "lp-effect", item.label || item.text));
+      }
+      list.appendChild(row);
+    });
+    fragment.appendChild(list);
+  }
+  return fragment;
+}
+
+// A self-check, never graded: the hint (items) and the solution (answer) open on a tap.
+// Closed panels carry aria-hidden as well as hidden, because read-aloud skips aria-hidden
+// nodes - the solution must not be spoken before the student asks for it.
+function revealPanel(className, buttonLabel, hideLabel, content) {
+  partPanelCounter += 1;
+  const id = `lessonPartPanel${partPanelCounter}`;
+  const button = el("button", "lp-reveal", buttonLabel);
+  button.type = "button";
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-controls", id);
+  button.dataset.showLabel = buttonLabel;
+  button.dataset.hideLabel = hideLabel;
+  const panel = el("div", `lp-reveal-panel ${className}`);
+  panel.id = id;
+  panel.hidden = true;
+  panel.setAttribute("aria-hidden", "true");
+  panel.appendChild(content);
+  return { button, panel };
+}
+
+function guidedExerciseContent(part, items) {
+  const fragment = document.createDocumentFragment();
+  const task = bodyContent(part.body);
+  if (task) fragment.appendChild(task);
+  const answer = partText(part.answer);
+  if (!items.length && !answer) return fragment;
+  fragment.appendChild(el("p", "lp-try-first", t("lpTryFirst")));
+  const actions = el("div", "lp-reveal-actions");
+  const panels = [];
+  if (items.length) {
+    const hint = revealPanel("lp-hint", t("showHint"), t("lpHideHint"), itemList(items));
+    actions.appendChild(hint.button);
+    panels.push(hint.panel);
+  }
+  if (answer) {
+    const solution = document.createDocumentFragment();
+    solution.appendChild(el("b", "lp-solution-label", t("lpSolution")));
+    const solutionBody = bodyContent(answer);
+    if (solutionBody) solution.appendChild(solutionBody);
+    const reveal = revealPanel("lp-solution", t("lpShowSolution"), t("lpHideSolution"), solution);
+    actions.appendChild(reveal.button);
+    panels.push(reveal.panel);
+  }
+  fragment.append(actions, ...panels);
+  return fragment;
+}
+
+function mistakesContent(part, items) {
+  const fragment = document.createDocumentFragment();
+  const intro = bodyContent(part.body);
+  if (intro) fragment.appendChild(intro);
+  if (items.length) fragment.appendChild(itemList(items, { className: "lp-items lp-warnings" }));
+  return fragment;
+}
+
+function summaryContent(part, items) {
+  const recap = el("div", "lp-recap");
+  const body = bodyContent(part.body);
+  if (body) recap.appendChild(body);
+  if (items.length) recap.appendChild(itemList(items, { className: "lp-items lp-checklist" }));
+  return recap;
+}
+
+function genericContent(part, items, kind) {
+  const fragment = document.createDocumentFragment();
+  const body = bodyContent(part.body);
+  if (body) fragment.appendChild(body);
+  if (items.length) fragment.appendChild(itemList(items, { ordered: ORDERED_PART_KINDS.has(kind) }));
+  // Only a guided exercise hides its answer; anywhere else it is content to read.
+  const answer = bodyContent(part.answer);
+  if (answer) fragment.appendChild(answer);
+  return fragment;
+}
+
+function partCard(part, number) {
+  const kind = Object.prototype.hasOwnProperty.call(PART_LABEL_KEYS, part.kind) ? part.kind : "explanation";
+  const label = t(PART_LABEL_KEYS[kind]);
+  const title = partText(part.title);
+  const card = el("article", `content-card lp-card lp-kind-${kind}`);
+  card.dataset.partKind = kind;
+  const badge = el("div", "card-number", String(number).padStart(2, "0"));
+  badge.setAttribute("aria-hidden", "true");
+  const main = el("div", "wide");
+  const meta = el("div", "lp-meta");
+  if (title) meta.appendChild(el("span", "card-kicker lp-kicker", label));
+  meta.appendChild(originBadge(part.from_notes === true));
+  meta.append(...sourcePages(part));
+  main.append(meta, el("h2", "lp-title", title || label));
+  const render = PART_RENDERERS[kind] || genericContent;
+  main.appendChild(render(part, partItems(part), kind));
+  const figures = partFigures(part);
+  if (figures) main.appendChild(figures);
+  card.append(badge, main);
+  return card;
+}
+
+// Diagrams from the student's own page under a diagram, process or experiment part. The
+// server verified each picture and built its URL; only a same-site path is drawn.
+function partFigures(part) {
+  const media = (Array.isArray(part.media) ? part.media : [])
+    .map(item => ({ url: internalUrl(item && item.url), labels: partText(item && item.labels) }))
+    .filter(item => item.url);
+  if (!media.length) return null;
+  const wrap = el("div", "lp-figures");
+  media.forEach(item => {
+    const figure = el("figure", "lp-figure");
+    const image = el("img");
+    image.src = item.url;
+    image.alt = item.labels || t("photoFromYourPage");
+    image.loading = "lazy";
+    figure.appendChild(image);
+    if (item.labels) figure.appendChild(el("figcaption", "", item.labels));
+    wrap.appendChild(figure);
+  });
+  return wrap;
+}
+
+// Read-aloud speaks the list's textContent, and elements built one by one have no text
+// between them: a term card was spoken "PflichtNotwendigkeit einer Handlung", a timeline
+// row "1724Geburt", a title ran into its body. One space between sibling elements keeps
+// the words apart. It draws nothing: the containers are grid/flex (whitespace between
+// their children is not rendered) and inline runs collapse it into the existing space.
+// Text paragraphs and code keep their own whitespace (pre-wrap / pre), so they are skipped.
+function spaceForSpeech(root) {
+  root.querySelectorAll("*").forEach(node => {
+    if (node.parentElement?.closest(".lp-text, pre")) return;
+    if (node.nextSibling?.nodeType === Node.ELEMENT_NODE) node.after(document.createTextNode(" "));
+  });
+}
+
+/* Draws `lesson.parts` into #lessonParts; returns how many parts were drawn (0 hides it). */
+function renderParts(lesson) {
+  const container = document.querySelector("#lessonParts");
+  const list = document.querySelector("#lessonPartsList");
+  if (!container || !list) return 0;
+  const parts = usableParts(lesson.parts);
+  list.replaceChildren(...parts.map((part, index) => partCard(part, index + 1)));
+  spaceForSpeech(list);
+  container.classList.toggle("hidden", parts.length === 0);
+  container.dataset.strategy = partText(lesson.strategy?.key);
+  container.dataset.knowledgeState = partText(lesson.knowledge_state);
+  return parts.length;
+}
+
+// With parts, the cards that still show (teacher notes with tips, media) continue the parts'
+// numbering instead of repeating 03 / 04 after card 07.
+function numberCardsAfterParts(count) {
+  let number = count;
+  [".teacher-notes-card", "#mediaCard"].forEach(selector => {
+    const card = document.querySelector(selector);
+    if (!card || card.classList.contains("hidden")) return;
+    number += 1;
+    const badge = card.querySelector(".card-number");
+    if (badge) badge.textContent = String(number).padStart(2, "0");
+  });
+}
+
+// One delegated listener: flip a card, or open/close a hint or solution.
+document.querySelector("#lessonPartsList")?.addEventListener("click", event => {
+  const card = event.target.closest(".lp-flip");
+  if (card) {
+    card.setAttribute("aria-pressed", String(card.getAttribute("aria-pressed") !== "true"));
+    return;
+  }
+  const button = event.target.closest(".lp-reveal");
+  const panel = button ? document.getElementById(button.getAttribute("aria-controls")) : null;
+  if (!panel) return;
+  const open = button.getAttribute("aria-expanded") !== "true";
+  button.setAttribute("aria-expanded", String(open));
+  button.textContent = open ? button.dataset.hideLabel : button.dataset.showLabel;
+  panel.hidden = !open;
+  if (open) panel.removeAttribute("aria-hidden");
+  else panel.setAttribute("aria-hidden", "true");
+});
+/* lesson-parts:end */
+
 function renderLesson(data) {
   const { lesson, question } = data;
   if (data.subject) currentSubject = data.subject;
@@ -328,24 +818,34 @@ function renderLesson(data) {
   document.querySelector("#sideTitle").textContent = lesson.lesson_title;
   document.querySelector("#levelBadge").textContent = lesson.detected_level;
   document.querySelector("#explanation").textContent = lesson.explanation;
+  // A teaching-engine lesson carries its content in `parts`; the explanation and worked
+  // example cards would repeat it, so they are hidden - only then. A lesson without parts
+  // renders exactly as before.
+  const partCount = renderParts(lesson);
+  const hasParts = partCount > 0;
+  // Server-translated note, e.g. that the topic's pages could not be read.
+  const notice = document.querySelector("#lessonNotice");
+  if (notice) {
+    notice.textContent = partText(lesson.notice);
+    notice.classList.toggle("hidden", !notice.textContent);
+  }
+  document.querySelector(".explanation-card")?.classList.toggle("hidden", hasParts);
   // A lesson can arrive without a usable worked example; the card is hidden then, and an
   // example without a stated problem or answer shows only what it has.
   const worked = lesson.worked_example && typeof lesson.worked_example === "object" ? lesson.worked_example : null;
   const workedSteps = Array.isArray(worked?.steps) ? worked.steps : [];
-  document.querySelector(".example-card")?.classList.toggle("hidden", !worked || (!worked.problem && !workedSteps.length));
+  document.querySelector(".example-card")?.classList.toggle("hidden", hasParts || !worked || (!worked.problem && !workedSteps.length));
   document.querySelector("#exampleProblem").textContent = worked?.problem || "";
   document.querySelector("#exampleProblem").classList.toggle("hidden", !worked?.problem);
-  // The <ol> numbers the steps; models often number them too ("1. 1. Das Problem ...").
-  // Only a leading "N." / "N)" / "Schritt N:" followed by a space is removed, so "4.5 kg"
-  // and "2 + 3 = 5" stay intact.
-  const ownNumber = /^\s*(?:(?:Schritt|Step|Étape|Paso|Passo|Stap)\s*)?\d{1,2}\s*[.):]\s+/i;
   document.querySelector("#exampleSteps").innerHTML = workedSteps
-    .map(step => `<li>${escapeHtml(String(step).replace(ownNumber, ""))}</li>`).join("");
+    .map(step => `<li>${escapeHtml(String(step).replace(OWN_NUMBER, ""))}</li>`).join("");
   document.querySelector("#exampleAnswer").dataset.answer = worked?.answer || "";
   document.querySelector("#exampleAnswer").textContent = worked?.answer ? `${t("answer")}: ${worked.answer}` : "";
   document.querySelector("#exampleAnswer").classList.toggle("hidden", !worked?.answer);
   const tips = lesson.teacher_tips || [];
   const exceptions = lesson.exceptions || [];
+  // Next to parts, teacher notes only earn their card when there are tips to show.
+  document.querySelector(".teacher-notes-card")?.classList.toggle("hidden", hasParts && !tips.length);
   document.querySelector("#teacherTips").innerHTML = tips.map(item => `<li>${escapeHtml(item)}</li>`).join("");
   document.querySelector("#exceptionsList").innerHTML = exceptions.length
     ? exceptions.map(item => `<li>${escapeHtml(item)}</li>`).join("")
@@ -359,12 +859,13 @@ function renderLesson(data) {
   document.querySelector("#testProgress").classList.add("hidden");
   document.querySelector("#testSummary").classList.add("hidden");
   renderMedia(lesson);
-  renderMath(lessonView);
+  if (hasParts) numberCardsAfterParts(partCount);
+  renderFormulas(lessonView);
 }
 
 uploadForm.addEventListener("submit", async event => {
   event.preventDefault();
-  if (imageInput.files.length > 4) return showError(t("photoLimit"));
+  if (imageInput.files.length > photoLimit) return showError(t("photoLimitCount", { count: photoLimit }));
   if (!studyGoal.value.trim() && imageInput.files.length === 0) {
     return showError(t("goalRequired"));
   }
@@ -376,14 +877,20 @@ uploadForm.addEventListener("submit", async event => {
   try {
     const formData = new FormData(uploadForm);
     formData.delete("images");
-    for (const file of [...imageInput.files].slice(0, 4)) {
+    for (const file of [...imageInput.files].slice(0, photoLimit)) {
       const prepared = await normalizeImage(file);
       formData.append("images", prepared, prepared.name || file.name);
     }
     currentSubject = uploadForm.querySelector('input[name="subject"]:checked')?.value || currentSubject;
     const response = await fetch("/api/analyze", { method: "POST", body: formData });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error);
+    // A proxy's 413/502/504 page or a login redirect is HTML: the student gets a sentence,
+    // never "Unexpected token '<'".
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.session_id) {
+      const failure = new Error(data.error || (response.status === 413 ? t("imgTooLarge") : t("lessonStartFailed")));
+      failure.userFacing = true;
+      throw failure;
+    }
     sessionId = data.session_id;
     renderLesson(data);
     showMaterialNotes(data.material_notes);
@@ -392,7 +899,7 @@ uploadForm.addEventListener("submit", async event => {
   } catch (error) {
     lessonView.classList.add("hidden");
     uploadView.classList.remove("hidden");
-    showError(error.message || t("lessonStartFailed"));
+    showError(error?.userFacing && error.message ? error.message : t("lessonStartFailed"));
   } finally {
     uploadForm.querySelector("button").disabled = false;
   }
@@ -492,6 +999,75 @@ function renderSummary(data) {
   document.querySelector("#testSummary").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/* A wrong first answer in a teach-first lesson: the server withholds the correction and
+ * sends a short reteach instead. The student sees what is missing, the idea explained
+ * another way and a simpler example, then answers the SAME question again. Nothing here
+ * shows the answer; the second result is graded and shown as usual. */
+function showRetry(data, retry) {
+  const feedback = document.querySelector("#feedback");
+  const evaluation = data.evaluation || {};
+  // What the student gave, so "Try again" starts from it (a long written answer on a phone
+  // must not have to be typed again).
+  const previous = collectAnswer();
+  latestKnowledge = data.progress?.knowledge || latestKnowledge;
+  // Same question: the number and the results so far stay as they are.
+  updateProgress(questionResults.length + 1, latestKnowledge);
+  document.querySelector("#questionCard").classList.add("result-retry");
+  document.querySelectorAll("#answerControl input, #answerControl select, #answerControl textarea, #answerControl button").forEach(control => { control.disabled = true; });
+  feedback.className = "feedback incorrect retry";
+  // Model text, escaped; a field that is not text (or is empty) leaves its block out.
+  const section = (className, label, text) => partText(text)
+    ? `<div class="retry-block ${className}"><b>${label}</b><div class="feedback-steps">${escapeHtml(partText(text))}</div></div>` : "";
+  const said = partText(evaluation.feedback);
+  feedback.innerHTML = `<div id="feedbackSpeechText"><strong>${t("incorrectTitle")}</strong>`
+    + `${said ? `<div class="feedback-steps">${escapeHtml(said)}</div>` : ""}`
+    + `${diagnosisMarkup(data.diagnosis)}`
+    + section("retry-missing", t("retryMissing"), retry.misunderstanding)
+    + section("retry-reteach", t("retryReteach"), retry.reteach)
+    + section("retry-example", t("retrySimplerExample"), retry.simpler_example)
+    + `<p class="retry-prompt">${t("retryPrompt")}</p></div>`
+    + `<button class="next-button retry-button" type="button">${t("lessonTryAgain")}</button>`;
+  renderMath(feedback);
+  bindDiagnosisDetails(feedback);
+  document.querySelector("#feedbackListenControl")?.classList.remove("hidden");
+  answerForm.querySelector(".primary-button").classList.add("hidden");
+  if (data.progress) {
+    document.querySelector("#score").textContent = data.progress.average_score;
+    document.querySelector("#answered").textContent = `${data.progress.answered} ${data.progress.answered === 1 ? t("question") : t("questions")} ${t("answered")}`;
+    renderMastery(data.progress.mastery);
+  }
+  feedback.querySelector(".retry-button").addEventListener("click", () => {
+    renderQuestion(retry.question && typeof retry.question === "object" ? retry.question : currentQuestion, { retry: true });
+    restoreAnswer(previous);
+    // The reteach stays where it is; only its button goes.
+    feedback.querySelector(".retry-button")?.remove();
+    document.querySelector("#questionCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+/* Put an earlier answer back into freshly drawn controls (the second try of "Try again"). */
+function restoreAnswer(previous) {
+  if (Array.isArray(previous)) {
+    const list = document.querySelector("#orderingList");
+    if (list) {
+      previous.forEach(id => {
+        const item = [...list.querySelectorAll(".ordering-item")].find(node => node.dataset.id === String(id));
+        if (item) list.appendChild(item);
+      });
+      return;
+    }
+    document.querySelectorAll('input[name="answerOption"]').forEach(input => { input.checked = previous.includes(input.value); });
+    return;
+  }
+  if (typeof previous !== "string" || !previous) return;
+  const written = document.querySelector("#writtenAnswer");
+  if (written) { written.value = previous; return; }
+  const dropdown = document.querySelector("#dropdownAnswer");
+  if (dropdown) { dropdown.value = previous; return; }
+  const option = [...document.querySelectorAll('input[name="answerOption"]')].find(input => input.value === previous);
+  if (option) option.checked = true;
+}
+
 answerForm.addEventListener("submit", async event => {
   event.preventDefault();
   const button = answerForm.querySelector(".primary-button");
@@ -516,7 +1092,11 @@ answerForm.addEventListener("submit", async event => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
-    announceXp(data, `lesson:${sessionId}:${questionResults.length}`);
+    announceXp(data, `lesson:${sessionId}:${questionResults.length}${answerRetryCount ? `:${answerRetryCount}` : ""}`);
+    if (data.retry?.allowed && !data.complete) {
+      showRetry(data, data.retry);
+      return;
+    }
     nextQuestion = data.next_question;
     const feedback = document.querySelector("#feedback");
     const correct = data.evaluation.is_correct;
@@ -544,7 +1124,8 @@ answerForm.addEventListener("submit", async event => {
       }
     });
   } catch (error) {
-    answerRetryCount += 1;
+    // A failed request is not an attempt: counting it made the first real answer after a
+    // 422 look like a second try, and it lost its "Try again".
     showError(error.message || t("answerFailed"));
   } finally {
     button.disabled = false;
@@ -589,10 +1170,12 @@ function addChatMessage(text, role, extraClass = "") {
   message.className = `message ${role === "student" ? "student-message" : "tutor-message"} ${extraClass}`;
   if (role === "tutor" && !extraClass.includes("typing-message")) {
     // Tutor replies are untrusted model text: the shared escape-first renderer builds
-    // the only tags that appear, then KaTeX typesets the $…$ delimiters it finds.
+    // the only tags that appear (formulas become slots before markdown runs), then KaTeX
+    // typesets them. A resumed lesson's history goes through this same path.
     message.innerHTML = renderMarkdown(text);
     message.dataset.speechListenAuto = "";
     renderMath(message);
+    highlightCode(message);
   } else {
     message.textContent = text; // student text and the typing indicator stay verbatim
   }
@@ -639,8 +1222,14 @@ async function sendChat(message, control = null) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error);
+    // A killed worker's 502/504 page or a login redirect is HTML, not JSON: the student
+    // reads the server's own message or "Tutor chat failed.", never a parser error.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || typeof data.reply !== "string") {
+      const failure = new Error(data.error || t("chatError"));
+      failure.userFacing = true;
+      throw failure;
+    }
     typing.remove();
     if (data.attachments?.length) {
       studentBubble.appendChild(sentPhotosNode(data.attachments));
@@ -659,7 +1248,7 @@ async function sendChat(message, control = null) {
     // Photos stay in the tray, already read, so sending again costs no second reading.
     if (attachments.length && !chatInput.value) chatInput.value = message;
     addChatMessage(t("chatFailed"), "tutor");
-    showError(error.message || t("chatError"));
+    showError(error?.userFacing && error.message ? error.message : t("chatError"));
   }
 }
 
@@ -670,6 +1259,12 @@ if (lessonBootstrap) {
   uploadView.classList.add("hidden");
   lessonView.classList.remove("hidden");
   renderLesson(lessonBootstrap);
+  // A resumed or refreshed lesson shows the tutor chat it already had, rendered exactly
+  // like a live reply (the server stores tutor text without its CHIPS line).
+  for (const item of lessonBootstrap.chat_history || []) {
+    const content = String(item?.content || "");
+    if (content) addChatMessage(content, item.role === "student" ? "student" : "tutor");
+  }
 } else {
   // The assistant's "start a short lesson" button lands here with the question as
   // ?goal=..., so the student taps "Build my lesson" instead of retyping it.

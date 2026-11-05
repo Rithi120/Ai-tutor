@@ -3,6 +3,14 @@
 {% block title %}{{ project.title }} · {{ _('Project overview') }} — Learnova{% endblock %}
 {% block body_class %}project-page workspace-page{% endblock %}
 {% block content %}
+{#- Track DASH context (app.py project_workspace_context): topics[] = {section, state, state_label,
+    importance, importance_label, knowledge, terms, terms_count, items_count, source_labels, summary,
+    next_activity, next_label, planned_on, unplanned, evidence, pages, curriculum, uncertain};
+    material / material_rows / material_notes; coverage / coverage_checks / coverage_missing /
+    project_complete; not_taught_important; overlaps[] = {a, b, explanation, mergeable, blocked_reason};
+    dropped {count, titles, pages}; unplaced [titles]; unread {pages, documents, waiting, message};
+    stale_message; page_picker; flashcard_set, flashcard_count, due_cards, flashcards_enabled;
+    reviews, practise_first; time_warnings; minute_options; workspace_sections. -#}
 {% set csrf %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endset %}
 {% macro task_label(task) -%}
   {%- if task.kind == 'learn' -%}{{ _('Learn') }}: {{ task.title }}{% if task.parts and task.parts > 1 %} ({{ task.part }}/{{ task.parts }}){% endif %}
@@ -13,6 +21,131 @@
   {%- elif task.kind == 'mock_exam' -%}{{ _('Practice exam') }}
   {%- else -%}{{ task.title }}{%- endif -%}
 {%- endmacro %}
+{% macro topic_facts(item) -%}
+  <p class="pm-facts">
+    <span class="pm-chip importance-{{ item.importance }}">{{ item.importance_label }}</span>
+    <span>{{ _('{count} key term(s)', count=item.terms_count) }}</span>
+    {% if item.source_labels %}<span class="pm-sources">{{ item.source_labels|join('; ') }}</span>{% else %}<span class="pm-sources">{{ _('No pages: explained as standard school content') }}</span>{% endif %}
+  </p>
+{%- endmacro %}
+{% macro material_list(rows, fixes) -%}
+  <ul class="pm-files">
+    {% for file in rows %}
+    <li class="pm-file-row{{ ' is-ok' if file.ok }}" data-state="{{ file.state }}" data-reading="{{ file.reading_state }}" data-file-id="{{ file.file_id }}">
+      <div class="pm-file-head"><strong>{{ file.message }}</strong><small>{{ file.filename }}</small></div>
+      {% if file.detail %}<p class="pm-file-detail">{{ file.detail }}</p>{% endif %}
+      {% for line in file.extra %}<p class="pm-file-detail">{{ line }}</p>{% endfor %}
+      {% if fixes and file.failed_upload %}
+      {# A file the upload could not use (it has no pages): retry, replace or remove it. #}
+      <div class="pm-failed-actions">
+        {% if file.retryable %}<form method="post" action="{{ url_for('retry_project_file', project_id=project.id, file_id=file.file_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Try this file again') }}</button></form>{% endif %}
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('replace_project_file', project_id=project.id, file_id=file.file_id) }}">{{ csrf }}
+          <label class="pm-file">{{ _('Choose a new file') }}<input name="replacement_file" type="file" accept=".pdf,application/pdf,image/*" required></label>
+          <button class="secondary-button" type="submit">{{ _('Replace file') }}</button>
+        </form>
+        <form method="post" action="{{ url_for('remove_project_file', project_id=project.id, file_id=file.file_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Remove file') }}</button></form>
+      </div>
+      {% endif %}
+      {% if fixes and file.problem_pages %}
+      <ul class="pm-file-pages">
+        {% for page in file.problem_pages %}
+        <li data-reading="{{ page.reading }}"><span>{{ page.message }}</span>
+          <span class="pm-row-actions">
+          {% if page.reading == 'unreadable' %}
+            <form method="post" action="{{ url_for('retry_project_page', project_id=project.id, page_id=page.page_id) }}">{{ csrf }}<input type="hidden" name="next" value="workspace"><button class="secondary-button" type="submit">{{ _('Try reading again') }}</button></form>
+            <a href="#pagefix-{{ page.page_id }}">{{ _('Type or retake it') }}</a>
+          {% elif page.reading == 'needs_review' %}
+            <a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check the text') }}</a>
+            {% if page.text_source in ('text_layer', 'local_ocr') %}<form method="post" action="{{ url_for('retry_project_page', project_id=project.id, page_id=page.page_id) }}">{{ csrf }}<input type="hidden" name="next" value="workspace"><button class="secondary-button" type="submit">{{ _('Try reading again') }}</button></form>{% endif %}
+          {% else %}
+            <a href="{{ url_for('project_start', project_id=project.id, auto=1) }}">{{ _('Continue reading') }}</a>
+          {% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+{%- endmacro %}
+{% macro next_button(item) -%}
+  {%- set section = item.section -%}
+  {%- if section.excluded -%}
+  {%- elif item.next_activity == 'study_terms' and flashcard_set and flashcards_enabled -%}
+    <a class="secondary-button" href="{{ url_for('flashcards_study_page', set_id=flashcard_set.id) }}">{{ item.next_label }}</a>
+  {%- elif item.next_activity == 'exam_practice' -%}
+    <form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=section.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ item.next_label }}</button></form>
+  {%- else -%}
+    <form method="post" action="{{ url_for('start_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ item.next_label }}</button></form>
+  {%- endif -%}
+{%- endmacro %}
+{% macro add_topic_form(id_suffix) -%}
+  <form class="pm-add-topic" method="post" action="{{ url_for('add_project_topic', project_id=project.id) }}">{{ csrf }}
+    <label for="newTopic{{ id_suffix }}">{{ _('A topic the scan missed') }}</label>
+    <div class="pm-inline"><input id="newTopic{{ id_suffix }}" name="title" maxlength="255" required><button class="secondary-button" type="submit">{{ _('Add topic') }}</button></div>
+    {% if page_picker %}
+    <fieldset class="pm-page-picker"><legend>{{ _('Which pages is it on? (optional)') }}</legend>
+      <p class="pm-note">{{ _('Pages no topic covers yet are ticked. Without a page, Learnova explains the topic as standard school content and marks it as an addition.') }}</p>
+      {% for group in page_picker %}
+      <div class="pm-picker-group"><span class="pm-picker-file">{{ group.label }} · {{ group.filename }}</span>
+        <div class="pm-picker-pages">{% for page in group.pages %}<label><input type="checkbox" name="page_ids" value="{{ page.id }}" {{ 'checked' if page.checked }}><span>{{ _('p. {page}', page=page.number) }}</span></label>{% endfor %}</div>
+      </div>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+  </form>
+{%- endmacro %}
+{% macro overlap_list() -%}
+  {% if overlaps %}
+  <div class="pm-overlaps" aria-labelledby="overlapTitle">
+    <h3 id="overlapTitle">{{ _('These topics may be the same') }}</h3>
+    <ul>
+      {% for pair in overlaps %}
+      <li><p><b>{{ pair.a.title }}</b> + <b>{{ pair.b.title }}</b></p><p class="pm-note">{{ pair.explanation }}</p>
+        {% if pair.mergeable %}<form method="post" action="{{ url_for('merge_sections', project_id=project.id) }}">{{ csrf }}<input type="hidden" name="section_ids" value="{{ pair.a.id }}"><input type="hidden" name="section_ids" value="{{ pair.b.id }}"><button class="secondary-button" type="submit">{{ _('Merge into one topic') }}</button></form>
+        {% else %}<p class="pm-note"><button class="secondary-button" type="button" disabled>{{ _('Merge into one topic') }}</button> {{ pair.blocked_reason }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+{%- endmacro %}
+{% macro edit_topics(id_suffix, hook='') -%}
+  <details class="pm-edit"{% if hook %} data-tour-target="{{ hook }}"{% endif %}><summary>{{ _('Rename or merge topics') }}</summary>
+    {% for item in topics %}{% set section = item.section %}
+    <form class="pm-inline" method="post" action="{{ url_for('rename_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}
+      <label class="visually-hidden" for="rename{{ id_suffix }}-{{ section.id }}">{{ _('Topic name') }}</label>
+      <input id="rename{{ id_suffix }}-{{ section.id }}" name="title" value="{{ section.title }}" maxlength="255">
+      <button class="secondary-button" type="submit">{{ _('Rename') }}</button>
+    </form>
+    {% endfor %}
+    {% if topics|length > 1 %}
+    <form class="pm-merge" method="post" action="{{ url_for('merge_sections', project_id=project.id) }}">{{ csrf }}
+      <fieldset><legend>{{ _('Merge two topics') }}</legend>
+        <label>{{ _('First topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.first }}>{{ item.section.title }}</option>{% endfor %}</select></label>
+        <label>{{ _('Second topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.index == 2 }}>{{ item.section.title }}</option>{% endfor %}</select></label>
+        <button class="secondary-button" type="submit">{{ _('Merge') }}</button>
+      </fieldset>
+    </form>
+    {% endif %}
+  </details>
+  <details class="pm-edit"{% if hook %} data-tour-target="project-add-topic"{% endif %}><summary>{{ _('Add a missing topic') }}</summary>{{ add_topic_form(id_suffix) }}</details>
+{%- endmacro %}
+{% macro dropped_note() -%}
+  {% if unplaced %}
+  <div class="pm-dropped" role="note">
+    <p>{{ _('{count} topic(s) the AI named could not be linked to a page of your notes. Add one under “Add a missing topic” and tick its pages if you need it.', count=unplaced|length) }}</p>
+    <p class="pm-note">{{ unplaced|join(' · ') }}</p>
+  </div>
+  {% endif %}
+  {% if dropped.count %}
+  <div class="pm-dropped" role="note">
+    <p>{{ _('Learnova kept the most important topics; {count} more were left out to keep the list manageable. Add one back if you need it.', count=dropped.count) }}</p>
+    {% if dropped.titles %}<ul class="pm-chips">{% for title in dropped.titles %}<li><form method="post" action="{{ url_for('add_project_topic', project_id=project.id) }}">{{ csrf }}<input type="hidden" name="title" value="{{ title }}">{% for page_id in (dropped.pages or {}).get(title, []) %}<input type="hidden" name="page_ids" value="{{ page_id }}">{% endfor %}<button class="text-link" type="submit">+ {{ title }}</button></form></li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}
 <main class="pm-shell">
   <nav class="pm-breadcrumb" aria-label="{{ _('Breadcrumb') }}"><a href="{{ url_for('projects') }}">{{ _('Project Mode') }}</a> <span aria-hidden="true">›</span> <span>{{ _('Project overview') }}</span></nav>
   <header class="pm-head">
@@ -21,103 +154,125 @@
     <p class="pm-meta">
       {% if days_left is not none %}<span>{{ _('{days} days left', days=days_left) }}</span>{% else %}<span>{{ _('No exam date: ongoing plan') }}</span>{% endif %}
       {% if project.topics_confirmed %}<span>{{ _('{learned} of {total} topics learned', learned=learned, total=total) }}</span>{% endif %}
+      {% if material.reading.documents_total %}<span>{{ material.summary }}</span>{% endif %}
     </p>
   </header>
 
-  {% if warnings %}
-  <section id="pages" class="pm-card pm-attention" aria-labelledby="attentionTitle">
-    <h2 id="attentionTitle">{{ _('Some of your pages need a look') }}</h2>
-    <p>{{ _('Learnova will not guess what these parts say. Correct the text or retake the photo; everything else is kept.') }}</p>
-    {% for warning in warnings %}{% set page = (project.pages|selectattr('id', 'equalto', warning.page_id)|first) %}
-    <details class="pm-page-fix" {{ 'open' if loop.first }}>
-      <summary><b>{{ _('Page') }} {{ warning.page_order }}</b> · {% if warning.issue == 'unreadable' %}{{ _('could not be read') }}{% elif warning.issue == 'pending' %}{{ _('not read yet') }}{% else %}{{ _('partly unclear') }}{% endif %}</summary>
-      <img src="{{ url_for('project_page_image', project_id=project.id, page_id=page.id, variant='processed') }}" alt="{{ _('Page') }} {{ warning.page_order }}" loading="lazy">
-      <form method="post" action="{{ url_for('correct_project_page', project_id=project.id, page_id=page.id) }}">{{ csrf }}
-        <label for="fix-{{ page.id }}">{{ _('What does the page say?') }}</label>
-        <textarea id="fix-{{ page.id }}" name="text" rows="6">{{ page.extracted_text }}</textarea>
-        <button class="secondary-button" type="submit">{{ _('Save correction') }}</button>
-      </form>
-      <form method="post" enctype="multipart/form-data" action="{{ url_for('replace_project_page', project_id=project.id, page_id=page.id) }}">{{ csrf }}
-        <input type="hidden" name="next" value="workspace">
-        <label class="pm-file">{{ _('Retake photo') }}<input name="replacement_{{ page.id }}" type="file" accept="image/*" capture="environment" required></label>
-        <button class="secondary-button" type="submit">{{ _('Upload new photo') }}</button>
-      </form>
-    </details>
-    {% endfor %}
+  {# "Update topics" opens the start page, which reads what is unread and works the topics
+     out in short steps (one request per part), so no tap can start a second analysis. While
+     another request works them out, its progress is said here. #}
+  {% if project.topics_stale or material.analysis_progress %}
+  <section class="pm-card pm-stale" role="status">
+    {% if material.analysis_progress %}
+    <p>{{ _('Working out the topics: part {done} of {total}', done=[material.analysis_progress.done + 1, material.analysis_progress.total]|min, total=material.analysis_progress.total) }}</p>
+    {% else %}
+    <p>{{ stale_message }}</p>
+    {% endif %}
+    <a class="primary-button" href="{{ url_for('project_start', project_id=project.id, auto=1, then='topics') }}">{{ _('Update topics') }}</a>
   </section>
   {% endif %}
 
-  {% if project.topics_stale %}
-  <section class="pm-card pm-stale" role="status">
-    <p>{{ _('Your pages changed since the topics were made. Update them - your progress and renamed topics are kept.') }}</p>
-    <form method="post" action="{{ url_for('reanalyze_project', project_id=project.id) }}">{{ csrf }}<button class="primary-button" type="submit">{{ _('Update topics') }}</button></form>
+  {% if unread.pages %}
+  <section id="readingPaused" class="pm-card pm-stale" role="status">
+    <p><b>{{ _('{count} page(s) in {documents} document(s) are not read yet – topics from them are still missing.', count=unread.pages, documents=unread.documents) }}</b></p>
+    {% if unread.message %}<p>{{ unread.message }}</p>{% endif %}
+    <a class="primary-button" href="{{ url_for('project_start', project_id=project.id, auto=1) }}">{{ _('Continue reading') }} <span aria-hidden="true">→</span></a>
   </section>
   {% endif %}
 
   {% if not project.topics_confirmed %}
-  {# ---- Stage B: confirm the topics ------------------------------------------------- #}
+  {# ---- Stage B: check the material, then confirm the topics ---------------------------- #}
+  {% if material_rows %}
+  <section id="materialCheck" class="pm-card pm-material-check" aria-labelledby="materialCheckTitle">
+    <h2 id="materialCheckTitle">{{ _('Material check') }}</h2>
+    {% if material.summary %}<p>{{ material.summary }}{% if material.analysis_summary %} · {{ material.analysis_summary }}{% endif %}</p>{% endif %}
+    {{ material_list(material_rows, False) }}
+    {% for note in material_notes %}<p class="pm-note">{{ note }}</p>{% endfor %}
+    {% if not material.complete %}<p class="pm-links"><a href="#materials">{{ _('Fix or retry these pages') }} →</a></p>{% endif %}
+  </section>
+  {% endif %}
   <section id="topics" class="pm-card" aria-labelledby="topicsTitle">
-    <h2 id="topicsTitle">{{ _('We found {count} topics in your notes', count=topics|length) }}</h2>
+    <h2 id="topicsTitle" data-tour-target="project-topic-review">{{ _('We found {count} topics in your notes', count=topics|length) }}</h2>
     {% if not curriculum_available %}<p class="pm-note">{{ _('No official curriculum documents are imported yet, so the topics come from your notes only.') }}</p>{% endif %}
+    <p class="pm-note">{{ _('Every topic is included. Untick a topic you do not need.') }}</p>
+    {{ dropped_note() }}
+    {{ overlap_list() }}
     <form id="confirmTopics" method="post" action="{{ url_for('confirm_project_topics', project_id=project.id) }}">{{ csrf }}
-      <fieldset class="pm-choice"><legend class="visually-hidden">{{ _('Which topics?') }}</legend>
-        <label><input type="radio" name="choice" value="auto" checked> {{ _('Let Learnova choose (recommended)') }}</label>
-        <label><input type="radio" name="choice" value="manual"> {{ _('I choose the topics') }}</label>
-      </fieldset>
+      <input type="hidden" name="choice" value="manual">
+      <div class="pm-select-all">
+        <button class="secondary-button" type="submit" formaction="{{ url_for('select_project_topics', project_id=project.id) }}" name="select" value="all">{{ _('Select all') }}</button>
+        <button class="secondary-button" type="submit" formaction="{{ url_for('select_project_topics', project_id=project.id) }}" name="select" value="none">{{ _('Select none') }}</button>
+      </div>
       <ol class="pm-topics">
         {% for item in topics %}{% set section = item.section %}
-        <li>
+        <li data-topic-id="{{ section.id }}">
           <label class="pm-topic-select"><input type="checkbox" name="topic_ids" value="{{ section.id }}" {{ 'checked' if not section.excluded }}><span>{{ section.title }}</span></label>
+          {{ topic_facts(item) }}
           <details><summary>{{ _('Details') }}</summary>
-            <p>{% if item.pages %}{{ _('Pages') }} {{ item.pages|join(', ') }}{% endif %}{% if item.uncertain %} · <b>{{ _('partly unclear in the scan') }}</b>{% endif %}</p>
-            {% set goals = json_value(section.learning_goals_json) %}{% if goals %}<ul>{% for goal in goals[:3] %}<li>{{ goal }}</li>{% endfor %}</ul>{% endif %}
+            {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
+            {% if item.uncertain %}<p><b>{{ _('partly unclear in the scan') }}</b></p>{% endif %}
+            {% set goals = json_value(section.learning_goals_json) %}{% if goals %}<ul>{% for goal in goals[:3] %}<li>{{ goal|entry_text }}</li>{% endfor %}</ul>{% endif %}
             {% if item.curriculum.status == 'matched' %}<p class="pm-note">{{ _('Bildungsplan') }}: {% for match in item.curriculum.matches %}{{ match.band }}{% if not loop.last %}, {% endif %}{% endfor %}{% if item.curriculum.review %} · {{ _('later grade - check with your teacher') }}{% endif %}</p>{% endif %}
           </details>
         </li>
         {% endfor %}
       </ol>
-      <button class="primary-button pm-primary" type="submit">{{ _('Start learning') }} <span aria-hidden="true">→</span></button>
-    </form>
-    <details class="pm-edit"><summary>{{ _('Rename, merge or add a topic') }}</summary>
-      {% for item in topics %}{% set section = item.section %}
-      <form class="pm-inline" method="post" action="{{ url_for('rename_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}
-        <label class="visually-hidden" for="rename-{{ section.id }}">{{ _('Topic name') }}</label>
-        <input id="rename-{{ section.id }}" name="title" value="{{ section.title }}" maxlength="255">
-        <button class="secondary-button" type="submit">{{ _('Rename') }}</button>
-      </form>
-      {% endfor %}
-      <form class="pm-inline" method="post" action="{{ url_for('add_project_topic', project_id=project.id) }}">{{ csrf }}
-        <label class="visually-hidden" for="newTopic">{{ _('New topic') }}</label>
-        <input id="newTopic" name="title" maxlength="255" placeholder="{{ _('A topic the scan missed') }}">
-        <button class="secondary-button" type="submit">{{ _('Add topic') }}</button>
-      </form>
-      {% if topics|length > 1 %}
-      <form class="pm-merge" method="post" action="{{ url_for('merge_sections', project_id=project.id) }}">{{ csrf }}
-        <fieldset><legend>{{ _('Merge two topics') }}</legend>
-          <label>{{ _('First topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.first }}>{{ item.section.title }}</option>{% endfor %}</select></label>
-          <label>{{ _('Second topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.index == 2 }}>{{ item.section.title }}</option>{% endfor %}</select></label>
-          <button class="secondary-button" type="submit">{{ _('Merge') }}</button>
-        </fieldset>
-      </form>
+      {% if not material.get('nothing_missing', material.complete) and material.reading.documents_total %}
+      <p class="pm-note" id="incompleteNote">{{ _('Not all of your material is read and analysed yet ({summary}), so topics from the missing pages are not in this list. You can start now – Learnova adds them when the pages are read.', summary=material.summary ~ ((' · ' ~ material.analysis_summary) if material.analysis_summary else '')) }}{% if unread.pages %} <a href="{{ url_for('project_start', project_id=project.id, auto=1) }}">{{ _('Continue reading') }} →</a>{% else %} <a href="#materials">{{ _('Fix or retry these pages') }} →</a>{% endif %}</p>
+      {% elif not material.complete and material.reading.documents_total %}
+      {# Everything is read and in a topic, but a reading still needs the student's check (review A F2). #}
+      <p class="pm-note" id="checkNote">{{ _('Some pages still need checking – the text recognition may be wrong. Their topics are already in this list; check the pages so you learn from the right words.') }} <a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check the text') }} →</a></p>
       {% endif %}
-    </details>
+      <button class="primary-button pm-primary" type="submit" data-tour-target="project-start-learning">{{ _('Start learning') }} <span aria-hidden="true">→</span></button>
+    </form>
+    {{ edit_topics('', 'project-edit-topics') }}
   </section>
   {% else %}
-  {# ---- Stage C: learn and revise ----------------------------------------------------- #}
-  <section class="pm-card pm-next" aria-labelledby="nextTitle">
+  {# ---- Stage C: learn and revise -------------------------------------------------------- #}
+  <nav class="pm-nav" aria-label="{{ _('Sections of this project') }}" data-tour-target="project-sections">
+    <ul>{% for anchor, label in workspace_sections %}<li><a href="#{{ anchor }}">{{ label }}</a></li>{% endfor %}</ul>
+  </nav>
+
+  <section id="overview" class="pm-card pm-next" aria-labelledby="nextTitle">
     {% if next_task %}
       <span class="eyebrow">{{ _('Next') }}{% if next_date and next_date != today %} · {{ _('planned for') }} {{ next_date.strftime('%d.%m.') }}{% endif %}</span>
       <h2 id="nextTitle">{{ task_label(next_task) }}</h2>
       <p>{{ next_task.minutes }} {{ _('minutes') }}{% if next_task.reason %} · {{ _(next_task.reason) }}{% endif %}</p>
-      <form method="post" action="{{ url_for('project_next', project_id=project.id) }}">{{ csrf }}<button class="primary-button pm-primary" type="submit">{{ _('Next') }} <span aria-hidden="true">→</span></button></form>
+      <form method="post" action="{{ url_for('project_next', project_id=project.id) }}">{{ csrf }}<button class="primary-button pm-primary" type="submit" data-tour-target="project-next">{{ _('Next') }} <span aria-hidden="true">→</span></button></form>
     {% else %}
       <h2 id="nextTitle">{{ _('Everything planned is done') }}</h2>
       <p>{{ _('Take a practice exam or pick any topic below.') }}</p>
     {% endif %}
+    <div class="pm-coverage" aria-labelledby="coverageTitle">
+      {% if project_complete %}
+      <h3 id="coverageTitle" class="pm-complete">{{ _('Project complete') }}</h3>
+      <p>{{ _('Every document is read, every topic was taught and you showed that you understand each one. Keep your revision going.') }}</p>
+      {% else %}
+      <h3 id="coverageTitle">{{ _('Project progress: {percent}%', percent=coverage.percent) }}</h3>
+      <div class="pm-bar" aria-hidden="true"><i style="width:{{ coverage.percent }}%"></i></div>
+      <p class="pm-note">{{ _('Missing before your project is complete:') }}</p>
+      <ul class="pm-missing">{% for line in coverage_missing %}<li>{{ line }}</li>{% endfor %}</ul>
+      {% endif %}
+      <ul class="pm-checks">{% for check in coverage_checks %}<li class="{{ 'is-ok' if check.ok else 'is-open' }}"><span aria-hidden="true">{{ '✓' if check.ok else '○' }}</span> {{ check.label }}{% if check.total %} <small>{{ check.done }} / {{ check.total }}</small>{% endif %}</li>{% endfor %}</ul>
+      {% if not_taught_important %}
+      <p class="pm-note">{{ _('Important topics not taught yet:') }}</p>
+      <ul class="pm-chips">{% for section in not_taught_important %}<li><a class="pm-chip importance-3" href="#topic-{{ section.id }}">{{ section.title }}</a></li>{% endfor %}</ul>
+      {% elif not_taught %}
+      <p class="pm-note">{{ _('{count} topic(s) not taught yet.', count=not_taught|length) }}</p>
+      {% endif %}
+    </div>
   </section>
 
-  {% for warning in plan_warnings if warning.code in ['insufficient_time', 'no_study_days', 'no_mock_time'] %}
-  <p class="pm-warning" role="alert">{% if warning.code == 'insufficient_time' %}{{ _('Not everything fits before the exam: {count} topic(s) are not planned. The most important ones come first. More study time per day would help.', count=warning.topic_ids|length) }}{% elif warning.code == 'no_mock_time' %}{{ _('There is no room for a full practice exam before the exam.') }}{% else %}{{ _('There is no study day left before this exam.') }}{% endif %}</p>
+  {% for warning in time_warnings %}
+  <div class="pm-warning" role="alert">
+    <p>{% if warning.exam %}{{ _('Not everything fits before the exam: {count} topic(s) are not planned. The most important ones come first. More study time per day would help.', count=warning.count) }}{% elif warning.planned_none %}{{ _('With {minutes} minutes a day no topic fits into your plan yet: one study session takes longer than that.', minutes=availability.daily_minutes) }}{% else %}{{ _('{count} topic(s) are not in the next two weeks of your plan yet. They come later, or sooner with more study time.', count=warning.count) }}{% endif %}</p>
+    {% if warning.minutes_needed %}
+    <form method="post" action="{{ url_for('update_project_plan_settings', project_id=project.id) }}">{{ csrf }}<input type="hidden" name="daily_minutes" value="{{ warning.minutes_needed }}"><button class="primary-button" type="submit">{{ _('Plan {minutes} minutes per day', minutes=warning.minutes_needed) }}</button></form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% for warning in plan_warnings if warning.code in ['no_study_days', 'no_mock_time'] %}
+  <p class="pm-warning" role="alert">{% if warning.code == 'no_mock_time' %}{{ _('There is no room for a full practice exam before the exam.') }}{% else %}{{ _('There is no study day left before this exam.') }}{% endif %}</p>
   {% endfor %}
 
   <section id="today" class="pm-card" aria-labelledby="todayTitle">
@@ -130,14 +285,114 @@
     </ul>
     {% else %}<p>{{ _('Nothing planned today. Rest, or work ahead with the Next button.') }}</p>{% endif %}
     {% if upcoming %}<details><summary>{{ _('Coming up') }}</summary><ul class="pm-tasks">{% for day, task in upcoming %}<li><span>{{ day.strftime('%a %d.%m.') }} · {{ task_label(task) }}</span><small>{{ task.minutes }} {{ _('min') }}</small></li>{% endfor %}</ul></details>{% endif %}
-    {% if plan %}<p class="pm-links"><a href="{{ url_for('study_plan_calendar', plan_id=plan.id) }}">{{ _('Calendar view') }} →</a></p>{% endif %}
   </section>
 
-  {# ---- Progress: what the old plan page showed, adapted to exam or no exam ------------ #}
+  <section id="topics" class="pm-card" aria-labelledby="topicListTitle" data-tour-target="project-topic-list">
+    <h2 id="topicListTitle">{{ _('Learning topics') }}</h2>
+    <ul class="pm-topic-list">
+      {% for item in topics %}{% set section = item.section %}
+      <li id="topic-{{ section.id }}" class="{{ 'is-excluded' if section.excluded }}" data-state="{{ item.state }}">
+        <div class="pm-topic-row">
+          <span class="pm-topic-title">{{ section.title }}{% if item.uncertain %} <small>({{ _('partly unclear in the scan') }})</small>{% endif %}</span>
+          <span class="pm-chip state-{{ item.state }}">{% if section.excluded %}{{ _('not in the plan') }}{% elif section.reteach %}{{ _('needs another explanation') }}{% else %}{{ item.state_label }}{% endif %}</span>
+        </div>
+        {{ topic_facts(item) }}
+        <p class="pm-facts">
+          <span>{{ _('Knowledge level: {percent}%', percent=item.knowledge) }}</span>
+          {% set level = {1: 'easy', 3: 'hard'}.get(section.difficulty or 2, 'medium') %}<span class="pm-chip difficulty-{{ level }}">{{ _('Easy') if level == 'easy' else (_('Hard') if level == 'hard' else _('Medium')) }}</span>
+          {% if not section.excluded %}
+            {% if item.planned_on %}<span>{{ _('Next in the plan: {date}', date=item.planned_on.strftime('%d.%m.')) }}</span>
+            {% elif item.unplanned %}<span class="pm-unplanned">{{ _('Not in the plan yet: not enough study time') }}</span>{% endif %}
+            {% if section.next_review_on and section.learned_at %}<small class="pm-review">{{ _('Revision') }} {{ section.next_review_on.strftime('%d.%m.') }}</small>{% elif item.state == 'practising' %}<small class="pm-review">{{ _('Practise first') }}</small>{% endif %}
+          {% endif %}
+        </p>
+        <div class="pm-topic-actions">
+          {{ next_button(item) }}
+          <a href="{{ url_for('learn_section', project_id=project.id, section_id=section.id) }}">{{ _('Notes') }}</a>
+          <form method="post" action="{{ url_for('toggle_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('Add to plan') if section.excluded else _('Remove from plan') }}</button></form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {{ dropped_note() }}
+    {{ overlap_list() }}
+    {{ edit_topics('2') }}
+  </section>
+
+  <section id="explanations" class="pm-card" aria-labelledby="explanationsTitle">
+    <h2 id="explanationsTitle">{{ _('Explanations') }}</h2>
+    {% for item in topics if not item.section.excluded %}
+    <details class="pm-explanation" {{ 'open' if loop.first }}><summary>{{ item.section.title }}</summary>
+      {% if item.summary %}<p>{{ item.summary }}</p>{% else %}<p class="pm-note">{{ _('The lesson explains this topic step by step.') }}</p>{% endif %}
+      <p class="pm-links"><a href="{{ url_for('learn_section', project_id=project.id, section_id=item.section.id) }}">{{ _('Open the notes for this topic') }} →</a></p>
+    </details>
+    {% else %}<p>{{ _('Choose at least one topic first.') }}</p>{% endfor %}
+  </section>
+
+  <section id="terms" class="pm-card" aria-labelledby="termsTitle">
+    <h2 id="termsTitle">{{ _('Key terms & flashcards') }}</h2>
+    {% if flashcard_set and flashcards_enabled %}
+    <p>{{ _('{count} flashcard(s) in your project set · {due} due now', count=flashcard_count, due=due_cards) }}</p>
+    <p><a class="primary-button" href="{{ url_for('flashcards_study_page', set_id=flashcard_set.id) }}">{{ _('Study the project flashcards') }}</a></p>
+    {% elif terms_total %}<p class="pm-note">{{ _('Flashcards for these key terms appear after your first lesson.') }}</p>{% endif %}
+    {% for item in topics if item.terms and not item.section.excluded %}
+    <details class="pm-term-group" {{ 'open' if loop.first }}><summary>{{ item.section.title }} <small>({{ item.terms_count }})</small></summary>
+      <dl class="pm-terms">
+        {% for term in item.terms %}
+        <div class="pm-term">
+          <dt>{{ term.term }}</dt>
+          <dd>{{ term.simple or term.definition }}</dd>
+          {% if term.example %}<dd class="pm-term-example">{{ _('Example: {example}', example=term.example) }}</dd>{% endif %}
+          <dd class="pm-term-source">{% if term.source %}{{ term.source }} · {% endif %}<span class="pm-origin{{ ' is-added' if term.unverified or not term.from_notes }}">{% if term.unverified %}{{ _('From a page that still needs checking') }}{% else %}{{ _('From your notes') if term.from_notes else _('Added explanation') }}{% endif %}</span></dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </details>
+    {% else %}<p>{{ _('No key terms were found in your notes yet.') }}</p>{% endfor %}
+  </section>
+
+  <section id="exercises" class="pm-card" aria-labelledby="exercisesTitle">
+    <h2 id="exercisesTitle" data-tour-target="project-exercises">{{ _('Exercises') }}</h2>
+    <p>{{ _('Practise one topic, take its topic test, or mix questions from all your topics.') }}</p>
+    <ul class="pm-tasks">
+      {% for item in topics if not item.section.excluded %}
+      <li><span>{{ item.section.title }}</span>
+        <span class="pm-row-actions">
+          <form method="post" action="{{ url_for('start_project_topic', project_id=project.id, section_id=item.section.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Practise') }}</button></form>
+          <form method="post" action="{{ url_for('start_section_test', project_id=project.id, section_id=item.section.id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('Topic test') }}</button></form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {# Mixed questions only over topics that were taught (spec: never an unexplained exam question). #}
+    {% set taught = topics|rejectattr('section.excluded')|rejectattr('state', 'equalto', 'not_started')|list %}
+    {% if taught %}<form method="post" action="{{ url_for('start_project_mixed_practice', project_id=project.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Mixed practice') }}</button></form>
+    {% elif included %}<p class="pm-note">{{ _('Mixed practice opens once you have learned a topic.') }}</p>{% endif %}
+  </section>
+
+  <section id="tests" class="pm-card" aria-labelledby="examTitle">
+    <h2 id="examTitle">{{ _('Practice exam') }}</h2>
+    <p>{{ _('Timed questions over your chosen topics. Answers and corrections appear after you submit. It is practice, not a prediction of your real exam.') }}</p>
+    <form method="post" action="{{ url_for('start_project_practice_exam', project_id=project.id) }}">{{ csrf }}<button class="secondary-button" type="submit" data-tour-target="project-mock-exam">{{ _('Take practice exam') }}</button></form>
+    <p class="pm-links"><a href="{{ url_for('new_final_exam', project_id=project.id) }}">{{ _('Customise the practice exam') }} →</a></p>
+    {% if exams %}<ul class="pm-tasks">{% for exam in exams %}<li><span>{{ exam.started_at.strftime('%d.%m.') if exam.started_at else '' }} · {% if exam.status == 'submitted' %}{{ (exam.score or 0)|round|int }}%{% else %}{{ _('in progress') }}{% endif %}</span><a href="{{ url_for('final_exam_results', exam_id=exam.id) if exam.status == 'submitted' else url_for('take_final_exam', exam_id=exam.id) }}">{{ _('Open') }}</a></li>{% endfor %}</ul>{% endif %}
+  </section>
+
+  <section id="revision" class="pm-card" aria-labelledby="revisionTitle">
+    <h2 id="revisionTitle">{{ _('Revision schedule') }}</h2>
+    {% if reviews %}<ul class="pm-tasks">{% for section in reviews %}<li><span>{{ section.title }}</span><small>{{ _('Today') if section.next_review_on <= today else section.next_review_on.strftime('%d.%m.') }}</small></li>{% endfor %}</ul>
+    {% else %}<p>{{ _('Topics come back for revision after you have learned them: after 1, 3, 7, 14 and 30 days.') }}</p>{% endif %}
+    {% if practise_first %}<p class="pm-note">{{ _('Not on the revision schedule yet – practise these first until your answers show you know them:') }}</p>
+    <ul class="pm-tasks">{% for section in practise_first %}<li><span>{{ section.title }}</span><small>{{ _('Practise first') }}</small></li>{% endfor %}</ul>{% endif %}
+    {% if plan %}<p class="pm-links"><a href="{{ url_for('study_plan_calendar', plan_id=plan.id) }}" data-tour-target="project-calendar">{{ _('Calendar view') }} →</a></p>{% endif %}
+  </section>
+
+  {# ---- Progress: this project's topics and concepts only ------------------------------- #}
   <section id="progress" class="pm-card pm-progress" aria-labelledby="progressTitle">
-    <h2 id="progressTitle">{{ _('Progress') }}</h2>
+    <h2 id="progressTitle">{{ _('Progress & weaknesses') }}</h2>
     <div class="pm-stats">
       <div><span>{{ _('Topics learned') }}</span><strong>{{ learned }} / {{ total }}</strong><div class="pm-bar" aria-hidden="true"><i style="width:{{ topic_progress }}%"></i></div></div>
+      <div><span>{{ _('Understood') }}</span><strong>{{ coverage.counts.understood + coverage.counts.mastered }} / {{ total }}</strong></div>
       {% if metrics %}
       {% if project.exam_date %}<div><span>{{ _('Exam readiness') }}</span><strong>{{ metrics.readiness }}%</strong><small>{{ _('{days} days left', days=days_left) if days_left is not none else '' }}</small></div>{% endif %}
       <div><span>{{ _('Plan progress') }}</span><strong>{{ metrics.progress }}%</strong><small>{{ metrics.completed_sessions }} / {{ plan.sessions|length }} {{ _('study days done') }}</small></div>
@@ -146,76 +401,16 @@
     </div>
     {% if not project.exam_date %}<p class="pm-note">{{ _('No exam date: your plan keeps a steady pace and brings topics back for revision. Add a date under "Exam date and study time" to plan towards an exam.') }}</p>{% endif %}
     {% if growth %}<div class="pm-growth" role="img" aria-label="{{ _('Mastery from recent practice') }}">{% for item in growth %}<i style="height:{{ [item.mastery_after|round|int, 6]|max }}%" title="{{ item.concept }}: {{ item.mastery_after|round|int }}%"></i>{% endfor %}</div>{% endif %}
+    <div id="knowledge">
+      <h3>{{ _('Knowledge and weak spots') }}</h3>
+      <p class="pm-chips">{% for key, label in [('easy', _('Easy')), ('medium', _('Medium')), ('hard', _('Hard'))] %}<span class="pm-chip difficulty-{{ key }}">{{ label }}: {{ difficulty_counts[key] }}</span>{% endfor %}</p>
+      {% if weakest %}<ul class="pm-tasks">{% for item in weakest %}<li><a href="{{ url_for('concept_detail', mastery_id=item.id) }}">{{ item.concept }}</a><small>{{ item.mastery_score|round|int }}%</small></li>{% endfor %}</ul>
+      {% else %}<p>{{ _('Answer a few questions and your weak spots appear here.') }}</p>{% endif %}
+    </div>
   </section>
-
-  <section id="knowledge" class="pm-card" aria-labelledby="knowledgeTitle">
-    <h2 id="knowledgeTitle">{{ _('Knowledge and weak spots') }}</h2>
-    <p class="pm-chips">{% for key, label in [('easy', _('Easy')), ('medium', _('Medium')), ('hard', _('Hard'))] %}<span class="pm-chip difficulty-{{ key }}">{{ label }}: {{ difficulty_counts[key] }}</span>{% endfor %}</p>
-    {% if weakest %}<ul class="pm-tasks">{% for item in weakest %}<li><a href="{{ url_for('concept_detail', mastery_id=item.id) }}">{{ item.concept }}</a><small>{{ item.mastery_score|round|int }}%</small></li>{% endfor %}</ul>
-    {% else %}<p>{{ _('Answer a few questions and your weak spots appear here.') }}</p>{% endif %}
-  </section>
-
-  <section id="revision" class="pm-card" aria-labelledby="revisionTitle">
-    <h2 id="revisionTitle">{{ _('Revision schedule') }}</h2>
-    {% if reviews %}<ul class="pm-tasks">{% for section in reviews %}<li><span>{{ section.title }}</span><small>{{ _('Today') if section.next_review_on <= today else section.next_review_on.strftime('%d.%m.') }}</small></li>{% endfor %}</ul>
-    {% else %}<p>{{ _('Topics come back for revision after you have learned them: after 1, 3, 7, 14 and 30 days.') }}</p>{% endif %}
-  </section>
-
-  <section class="pm-card" aria-labelledby="examTitle">
-    <h2 id="examTitle">{{ _('Practice exam') }}</h2>
-    <p>{{ _('Timed questions over your chosen topics. Answers and corrections appear after you submit. It is practice, not a prediction of your real exam.') }}</p>
-    <form method="post" action="{{ url_for('start_project_practice_exam', project_id=project.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Take practice exam') }}</button></form>
-    <p class="pm-links"><a href="{{ url_for('new_final_exam', project_id=project.id) }}">{{ _('Customise the practice exam') }} →</a></p>
-    {% if exams %}<ul class="pm-tasks">{% for exam in exams %}<li><span>{{ exam.started_at.strftime('%d.%m.') if exam.started_at else '' }} · {% if exam.status == 'submitted' %}{{ (exam.score or 0)|round|int }}%{% else %}{{ _('in progress') }}{% endif %}</span><a href="{{ url_for('final_exam_results', exam_id=exam.id) if exam.status == 'submitted' else url_for('take_final_exam', exam_id=exam.id) }}">{{ _('Open') }}</a></li>{% endfor %}</ul>{% endif %}
-  </section>
-
-  <section id="topics" class="pm-card" aria-labelledby="topicListTitle">
-    <h2 id="topicListTitle">{{ _('Topics') }}</h2>
-    <ul class="pm-topic-list">
-      {% for item in topics %}{% set section = item.section %}
-      <li class="{{ 'is-excluded' if section.excluded }}">
-        <div class="pm-topic-row">
-          <span class="pm-topic-title">{{ section.title }}{% if item.uncertain %} <small>({{ _('partly unclear in the scan') }})</small>{% endif %}</span>
-          <span class="pm-chip">{% if section.excluded %}{{ _('not in the plan') }}{% elif section.reteach %}{{ _('needs another explanation') }}{% elif section.learned_at %}{{ (section.mastery_score or 0)|round|int }}%{% else %}{{ _('new') }}{% endif %}</span>
-          {% set level = {1: 'easy', 3: 'hard'}.get(section.difficulty or 2, 'medium') %}<span class="pm-chip difficulty-{{ level }}">{{ _('Easy') if level == 'easy' else (_('Hard') if level == 'hard' else _('Medium')) }}</span>
-          {% if section.next_review_on and not section.excluded %}<small class="pm-review">{{ _('Revision') }} {{ section.next_review_on.strftime('%d.%m.') }}</small>{% endif %}
-        </div>
-        <div class="pm-topic-actions">
-          {% if not section.excluded %}<form method="post" action="{{ url_for('start_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Review') if section.learned_at else _('Learn now') }}</button></form>{% endif %}
-          <a href="{{ url_for('learn_section', project_id=project.id, section_id=section.id) }}">{{ _('Notes') }}</a>
-          <form method="post" action="{{ url_for('toggle_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('Add to plan') if section.excluded else _('Remove from plan') }}</button></form>
-        </div>
-      </li>
-      {% endfor %}
-    </ul>
-    <details class="pm-edit"><summary>{{ _('Rename, merge or add a topic') }}</summary>
-      {% for item in topics %}{% set section = item.section %}
-      <form class="pm-inline" method="post" action="{{ url_for('rename_project_topic', project_id=project.id, section_id=section.id) }}">{{ csrf }}
-        <label class="visually-hidden" for="rename2-{{ section.id }}">{{ _('Topic name') }}</label>
-        <input id="rename2-{{ section.id }}" name="title" value="{{ section.title }}" maxlength="255">
-        <button class="secondary-button" type="submit">{{ _('Rename') }}</button>
-      </form>
-      {% endfor %}
-      <form class="pm-inline" method="post" action="{{ url_for('add_project_topic', project_id=project.id) }}">{{ csrf }}
-        <label class="visually-hidden" for="newTopic2">{{ _('New topic') }}</label>
-        <input id="newTopic2" name="title" maxlength="255" placeholder="{{ _('A topic the scan missed') }}">
-        <button class="secondary-button" type="submit">{{ _('Add topic') }}</button>
-      </form>
-      {% if topics|length > 1 %}
-      <form class="pm-merge" method="post" action="{{ url_for('merge_sections', project_id=project.id) }}">{{ csrf }}
-        <fieldset><legend>{{ _('Merge two topics') }}</legend>
-          <label>{{ _('First topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.first }}>{{ item.section.title }}</option>{% endfor %}</select></label>
-          <label>{{ _('Second topic') }}<select name="section_ids">{% for item in topics %}<option value="{{ item.section.id }}" {{ 'selected' if loop.index == 2 }}>{{ item.section.title }}</option>{% endfor %}</select></label>
-          <button class="secondary-button" type="submit">{{ _('Merge') }}</button>
-        </fieldset>
-      </form>
-      {% endif %}
-    </details>
-  </section>
-
   {% endif %}
 
-  <section id="plan" class="pm-card" aria-labelledby="planTitle">
+  <section id="plan" class="pm-card" aria-labelledby="planTitle" data-tour-target="project-plan">
     <details {{ 'open' if not project.topics_confirmed and not project.exam_date }}><summary id="planTitle">{{ _('Exam date and study time') }}</summary>
       <form method="post" action="{{ url_for('update_project_plan_settings', project_id=project.id) }}">{{ csrf }}
         <input type="hidden" name="weekdays_submitted" value="1">
@@ -225,7 +420,7 @@
         <label>{{ _('Target grade') }} <small>({{ _('optional') }})</small><input name="target_grade" maxlength="40" value="{{ preferences.target_grade }}" placeholder="{{ _('e.g. 2') }}"></label>
         <label>{{ _('How challenging should the plan be?') }}<select name="difficulty_preference">{% for value, label in [('easy', _('Easy')), ('medium', _('Medium')), ('hard', _('Hard'))] %}<option value="{{ value }}" {{ 'selected' if preferences.difficulty_preference == value }}>{{ label }}</option>{% endfor %}</select></label>
         <label>{{ _('Study time per day, for all projects') }}
-          <select name="daily_minutes">{% for minutes in [15, 20, 30, 45, 60, 90, 120, 180] %}<option value="{{ minutes }}" {{ 'selected' if availability.daily_minutes == minutes }}>{{ minutes }} {{ _('minutes') }}</option>{% endfor %}</select>
+          <select name="daily_minutes">{% for minutes in minute_options %}<option value="{{ minutes }}" {{ 'selected' if availability.daily_minutes == minutes }}>{{ minutes }} {{ _('minutes') }}</option>{% endfor %}</select>
         </label>
         {% set free = json_value(availability.unavailable_weekdays_json) %}
         <fieldset class="pm-days"><legend>{{ _('Days without study') }}</legend>
@@ -237,14 +432,44 @@
     </details>
   </section>
 
-  <section class="pm-card" aria-labelledby="pagesTitle">
-    <details><summary id="pagesTitle">{{ _('Your pages') }} ({{ project.pages|length }})</summary>
+  {# ---- Original materials: always present (#pages is the old anchor of the fix card) ---- #}
+  <section id="materials" class="pm-card pm-materials" aria-labelledby="materialsTitle">
+    <span id="pages" class="pm-anchor" aria-hidden="true"></span>
+    <h2 id="materialsTitle">{{ _('Original materials') }}</h2>
+    {% if material.summary %}<p>{{ material.summary }}{% if material.analysis_summary %} · {{ material.analysis_summary }}{% endif %}</p>{% endif %}
+    {% if material_rows %}{{ material_list(material_rows, True) }}{% else %}<p class="pm-note">{{ _('No pages uploaded yet. Add photos or PDFs of your notes below.') }}</p>{% endif %}
+    {% for note in material_notes %}<p class="pm-note">{{ note }}</p>{% endfor %}
+    {% if warnings %}
+    <div class="pm-attention" aria-labelledby="attentionTitle">
+      <h3 id="attentionTitle">{{ _('Some of your pages need a look') }}</h3>
+      <p>{{ _('Learnova will not guess what these parts say. Correct the text or retake the photo; everything else is kept.') }}</p>
+      {% if warnings|selectattr('issue', 'equalto', 'uncertain')|list %}<p class="pm-note">{{ _('Flashcards from these pages are made once you have checked them: save the text, corrected or as it is.') }}</p>{% endif %}
+      {% for warning in warnings %}{% set page = (project.pages|selectattr('id', 'equalto', warning.page_id)|first) %}
+      <details id="pagefix-{{ page.id }}" class="pm-page-fix" {{ 'open' if loop.first }}>
+        <summary><b>{% if warning.document %}{{ warning.document }} · {% endif %}{{ _('p. {page}', page=warning.page_number) }}</b> · {% if warning.issue == 'unreadable' %}{{ _('could not be read') }}{% elif warning.issue == 'pending' %}{{ _('not read yet') }}{% else %}{{ _('partly unclear') }}{% endif %}</summary>
+        {% if warning.filename %}<p class="pm-note">{{ warning.filename }}</p>{% endif %}
+        <img src="{{ url_for('project_page_image', project_id=project.id, page_id=page.id, variant='processed') }}" alt="{{ _('Page') }} {{ warning.page_order }}" loading="lazy">
+        <form method="post" action="{{ url_for('correct_project_page', project_id=project.id, page_id=page.id) }}">{{ csrf }}
+          <label for="fix-{{ page.id }}">{{ _('What does the page say?') }}</label>
+          <textarea id="fix-{{ page.id }}" name="text" rows="6">{{ page.extracted_text }}</textarea>
+          <button class="secondary-button" type="submit">{{ _('Save correction') }}</button>
+        </form>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('replace_project_page', project_id=project.id, page_id=page.id) }}">{{ csrf }}
+          <input type="hidden" name="next" value="workspace">
+          <label class="pm-file">{{ _('Retake photo') }}<input name="replacement_{{ page.id }}" type="file" accept="image/*" capture="environment" required></label>
+          <button class="secondary-button" type="submit">{{ _('Upload new photo') }}</button>
+        </form>
+      </details>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <details><summary>{{ _('Your pages') }} ({{ project.pages|length }}) · {{ _('Add more pages') }}</summary>
       <form method="post" enctype="multipart/form-data" action="{{ url_for('add_project_pages', project_id=project.id) }}">{{ csrf }}
         <label class="pm-file">{{ _('Add more pages') }}<input name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required></label>
         <button class="secondary-button" type="submit">{{ _('Add and read') }}</button>
       </form>
-      <p><a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check every recognized page in detail') }} →</a></p>
     </details>
+    <p class="pm-links"><a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check every recognized page in detail') }} →</a></p>
   </section>
 </main>
 {% endblock %}
