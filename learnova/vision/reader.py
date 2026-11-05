@@ -17,18 +17,28 @@ The stages, each spent only when the previous one leaves a reason to:
    is unreadable. A re-read only replaces a word when it is more confident.
 
 Nothing here retries a failed call; the gateway's own candidate list does that, bounded.
+
+Time: with a `time_budget_seconds` every call is told how long it may still take
+(`timeout_seconds`), and stages 2 and 3 are optional - each starts only while at least
+`min_optional_seconds` of the budget remain after `reserve_seconds` (the reply still to be
+written). A photo message must finish inside the worker timeout; a skipped close-up only
+leaves an unclear word marked unclear, which the reply already handles.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Sequence
 
+from learnova.ai_services.contracts import json_cut_off, salvage_cut_off_json
 from learnova.ocr.service import build_region_sheet, normalize_region_review, region_review_instructions
 from learnova.vision import intake
 from learnova.vision.prompts import SYSTEM, reading_instructions
-from learnova.vision.reading import UNCLEAR_MARK, Block, VisualReading, normalize_reading
+from learnova.vision.reading import UNCLEAR_MARK, Block, VisualReading, mark_partial, normalize_reading
 
+# The most images any request may carry; the caller passes the configured model's own limit
+# (VISION_MAX_IMAGES_PER_REQUEST: qwen/qwen3.8-27b takes at most 3).
 MAX_IMAGES = 4
 SECOND_LOOK_CONFIDENCE = 0.8
 
@@ -46,12 +56,36 @@ class ReadOutcome:
     provider_calls: int
     rotated: tuple[int, ...] = ()      # 1-based indices of images that were turned
     second_look_improved: int = 0
+    skipped: tuple[str, ...] = ()      # optional passes left out for time: "rotate", "second_look"
+
+
+# Top-level keys that come after every line and diagram in both reading shapes: a cut-off
+# response that reached one of them had read all the content (only the summary or the
+# uncertainty list was lost - and inline [?...] marks are listed again from the lines).
+_AFTER_CONTENT = frozenset({"uncertain", "clarification_question", "summary", "language"})
+
+
+def parse_reading(text: str, parse: Callable[[str], Any], count: int, *, salvage: bool = False) -> VisualReading:
+    """A model's reading text as a VisualReading.
+
+    With `salvage` (the chat reading), a response its output limit cut off keeps its
+    complete lines and is marked partial from the image it stopped in; nothing after
+    the last complete line is guessed. Otherwise the text is parsed as it is.
+    """
+
+    if salvage and json_cut_off(text):
+        kept = salvage_cut_off_json(text)
+        if kept is not None:
+            payload, reached = kept
+            reading = normalize_reading(payload, count)
+            return reading if reached & _AFTER_CONTENT else mark_partial(reading)
+    return normalize_reading(parse(text), count)
 
 
 def _request(images: Sequence[ImageSource], purpose: str, subject: str, question: str,
-             limits: intake.IntakeLimits) -> list[dict[str, Any]]:
+             limits: intake.IntakeLimits, compact: bool = False) -> list[dict[str, Any]]:
     parts: list[dict[str, Any]] = [{"type": "input_text", "text": reading_instructions(
-        purpose, subject=subject, image_count=len(images), question=question)}]
+        purpose, subject=subject, image_count=len(images), question=question, compact=compact)}]
     for number, image in enumerate(images, start=1):
         data, mime = intake.provider_copy(image.data, limits)
         if len(images) > 1:
@@ -66,26 +100,52 @@ def read_images(
     limits: intake.IntakeLimits | None = None, max_output_tokens: int = 2500,
     region_task_type: str = "handwriting_region_review", region_tokens: int = 900,
     second_look: bool = True, second_look_regions: int = 8,
+    max_images: int = MAX_IMAGES, time_budget_seconds: float | None = None,
+    reserve_seconds: float = 0.0, min_optional_seconds: float = 15.0,
+    clock: Callable[[], float] = time.monotonic, compact: bool = False,
 ) -> ReadOutcome:
-    """Read up to four images as one request. Raises whatever `call` raises."""
+    """Read up to `max_images` images as one request. Raises whatever `call` raises.
+
+    `compact`: the chat reading (vision/prompts.COMPACT_*, image_understanding:chat1) - no
+    bbox, so no close-up second look - whose cut-off responses are kept as partial readings.
+    """
 
     if not images:
         raise ValueError("no images to read")
-    if len(images) > MAX_IMAGES:
-        raise ValueError(f"at most {MAX_IMAGES} images can be read together")
+    allowed = max(1, min(int(max_images), MAX_IMAGES))
+    if len(images) > allowed:
+        raise ValueError(f"at most {allowed} images can be read together")
     limits = limits or intake.IntakeLimits()
     current = tuple(images)
+    started = clock()
+    skipped: list[str] = []
+
+    def remaining() -> float | None:
+        if time_budget_seconds is None:
+            return None
+        return float(time_budget_seconds) - (clock() - started) - float(reserve_seconds)
+
+    def timing() -> dict[str, float]:
+        left = remaining()
+        return {} if left is None else {"timeout_seconds": left}
+
+    def optional_pass_allowed() -> bool:
+        left = remaining()
+        return left is None or left >= float(min_optional_seconds)
 
     def read(batch: Sequence[ImageSource]) -> VisualReading:
         response = call(task_type=task_type, model=model, instructions=SYSTEM,
-                        input=_request(batch, purpose, subject, question, limits),
-                        max_output_tokens=max_output_tokens, temperature=0)
-        return normalize_reading(parse(str(getattr(response, "output_text", "") or "")), len(batch))
+                        input=_request(batch, purpose, subject, question, limits, compact),
+                        max_output_tokens=max_output_tokens, temperature=0, **timing())
+        return parse_reading(str(getattr(response, "output_text", "") or ""), parse, len(batch), salvage=compact)
 
     reading = read(current)
     calls = 1
     rotated: tuple[int, ...] = ()
     turns = {info.index: info.rotation for info in reading.images if info.rotation}
+    if turns and not optional_pass_allowed():
+        skipped.append("rotate")
+        turns = {}
     if turns:
         upright = []
         for number, image in enumerate(current, start=1):
@@ -105,15 +165,22 @@ def read_images(
     improved = 0
     if second_look:
         for number, image in enumerate(current, start=1):
+            if not any(block.image == number and _unclear(block) for block in reading.blocks):
+                continue
+            if not optional_pass_allowed():
+                if "second_look" not in skipped:
+                    skipped.append("second_look")
+                continue
             reading, gained, spent = _second_look(
                 reading, number, image, call=call, parse=parse, model=model, subject=subject,
-                task_type=region_task_type, max_output_tokens=region_tokens, limit=second_look_regions)
+                task_type=region_task_type, max_output_tokens=region_tokens, limit=second_look_regions,
+                timing=timing())
             improved += gained
             calls += spent
     if improved:
         reading = reading.with_warnings(
             f"Re-read {improved} unclear {'part' if improved == 1 else 'parts'} in close-up.")
-    return ReadOutcome(reading, current, calls, rotated, improved)
+    return ReadOutcome(reading, current, calls, rotated, improved, tuple(skipped))
 
 
 def _unclear(block: Block) -> bool:
@@ -124,6 +191,7 @@ def _unclear(block: Block) -> bool:
 
 def _second_look(reading: VisualReading, number: int, image: ImageSource, *, call, parse, model: str,
                  subject: str, task_type: str, max_output_tokens: int, limit: int,
+                 timing: dict[str, float] | None = None,
                  ) -> tuple[VisualReading, int, int]:
     """Re-read one image's unclear blocks enlarged. Returns (reading, improved, calls made).
 
@@ -150,7 +218,7 @@ def _second_look(reading: VisualReading, number: int, image: ImageSource, *, cal
                 {"type": "input_text", "text": region_review_instructions(subject or "school", chosen)},
                 {"type": "input_image", "image_url": intake.data_url(sheet.data, sheet.mime_type), "detail": "high"},
             ]}],
-            max_output_tokens=max_output_tokens, temperature=0)
+            max_output_tokens=max_output_tokens, temperature=0, **(timing or {}))
         answers = normalize_region_review(parse(str(getattr(response, "output_text", "") or "")), sheet.orders)
     except Exception:  # noqa: BLE001 - see the docstring
         return reading, 0, 1

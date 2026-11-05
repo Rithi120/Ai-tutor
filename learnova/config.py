@@ -61,6 +61,44 @@ def _database_uri(instance_path: str) -> str:
     return "postgresql://" + value[len("postgres://"):] if value.startswith("postgres://") else value
 
 
+def _configure_database(app) -> None:
+    """Engine options and boot-time migration safety. The pool options are PostgreSQL only;
+    hidden bound parameters apply to every dialect.
+
+    Must run before `db.init_app(app)`, which reads SQLALCHEMY_ENGINE_OPTIONS once. Nothing
+    here connects to the database.
+    """
+
+    def bounded(name: str, default: int, low: int, high: int) -> int:
+        raw = os.getenv(name, str(default)).strip() or str(default)
+        try:
+            value = int(raw)
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+        if not low <= value <= high:
+            raise RuntimeError(f"{name} must be between {low} and {high}")
+        return value
+
+    # Every migration transaction in ensure_database() starts with SET LOCAL lock_timeout,
+    # so a boot that would queue behind a long request gives up (rolled back, retried by the
+    # next start) instead of freezing the table for everyone. 0 = off. learnova/db_ops.py.
+    app.config["DB_MIGRATION_LOCK_TIMEOUT_MS"] = bounded("DB_MIGRATION_LOCK_TIMEOUT_MS", 10000, 0, 600_000)
+    # Hosted PostgreSQL drops idle connections; the first request after a quiet spell then
+    # failed on a dead pooled connection. Pre-ping revalidates on checkout, recycle replaces
+    # connections older than this many seconds. 0 = no recycling (pre-ping stays on).
+    app.config["DB_POOL_RECYCLE_SECONDS"] = bounded("DB_POOL_RECYCLE_SECONDS", 280, 0, 86_400)
+    options = dict(app.config.get("SQLALCHEMY_ENGINE_OPTIONS") or {})
+    # Every dialect: a failed statement's error - and every log line or error report made from
+    # it - shows the SQL but not its bound parameters, which carry student content (answers,
+    # notes, names, e-mail addresses).
+    options["hide_parameters"] = True
+    if str(app.config.get("SQLALCHEMY_DATABASE_URI", "")).startswith("postgresql"):
+        options["pool_pre_ping"] = True
+        if app.config["DB_POOL_RECYCLE_SECONDS"]:
+            options["pool_recycle"] = app.config["DB_POOL_RECYCLE_SECONDS"]
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = options
+
+
 # Model ids Groq has withdrawn from this account, as observed. Append, never remove: a
 # name that comes back can be un-retired by the next measurement, but a name that is
 # gone and not listed here fails silently for every student.
@@ -107,7 +145,76 @@ def _configure_vision(app, selected: str) -> None:
     # Images in chats and photographed answers.
     app.config["FEATURE_CHAT_IMAGES"] = os.getenv("FEATURE_CHAT_IMAGES", "true").strip().lower() in {
         "1", "true", "yes", "on"}
-    app.config["CHAT_IMAGES_PER_MESSAGE"] = bounded("CHAT_IMAGES_PER_MESSAGE", 4, 1, 4)
+    # The owner's cap on photos per message. The limit students actually get is lower when
+    # the vision model takes fewer images or the request would not fit its token ceiling
+    # (app.chat_image_limit): at the default 8000-token ceiling that is 2.
+    app.config["CHAT_IMAGES_PER_MESSAGE"] = bounded("CHAT_IMAGES_PER_MESSAGE", 3, 1, 4)
+    # How many images GROQ_VISION_MODEL accepts in one request. Groq documents "a maximum of
+    # 3 images" for qwen/qwen3.8-27b; a fourth one was refused with a 400.
+    app.config["VISION_MAX_IMAGES_PER_REQUEST"] = bounded("VISION_MAX_IMAGES_PER_REQUEST", 3, 1, 4)
+    # Tokens one image counts as in every estimate. Groq: "Each image counts as 2048 input
+    # tokens"; the old fixed 1500 under-reserved every photo request.
+    app.config["AI_IMAGE_TOKEN_ESTIMATE"] = bounded("AI_IMAGE_TOKEN_ESTIMATE", 2048, 256, 16384)
+    # Input + output ceiling for a request that carries images (0 = off). 8000 is the
+    # tokens-per-minute limit Groq applies to qwen/qwen3.8-27b on the on_demand tier
+    # (measured 2026-11-01): a larger request is refused with "Request too large". The
+    # gateway lowers the reading's output cap to fit and refuses, before any call, a
+    # request that cannot fit its minimum output. Text requests are never clamped.
+    app.config["AI_VISION_REQUEST_TOKEN_CEILING"] = bounded("AI_VISION_REQUEST_TOKEN_CEILING", 8000, 0, 2_000_000)
+    # Output tokens one image request may ask for (0 = learn it from the provider). Groq's
+    # on_demand tier allows qwen/qwen3.8-27b only 1000 output tokens per minute and refuses
+    # a request whose expected output is larger; the gateway learns that limit from the
+    # refusal and retries once below it, so this is only needed to skip that first refusal.
+    app.config["AI_VISION_OUTPUT_TOKEN_CEILING"] = bounded("AI_VISION_OUTPUT_TOKEN_CEILING", 0, 0, 200_000)
+    # Admission ceiling for TEXT requests (0 = off): the gateway refuses, before anything is
+    # sent, a text request whose input estimate plus its output allowance (below) plus a 5 %
+    # margin exceeds it, and lessons fit their notes to it. The output cap of a text request
+    # is never lowered. Recommended: the tier's tokens per minute (Groq on_demand: 8000).
+    # Off, a lesson refused with HTTP 413 is rebuilt once, smaller by the overshoot the
+    # provider named, at the price of that one refused request.
+    app.config["AI_TEXT_REQUEST_TOKEN_CEILING"] = bounded("AI_TEXT_REQUEST_TOKEN_CEILING", 0, 0, 2_000_000)
+    # The share of a text request's output cap (max_output_tokens) counted against the
+    # ceiling at admission and when notes are fitted (0..1; 0 = input only, the old rule).
+    # Groq on_demand counted input + about 2,350 tokens at max_output_tokens 5000 on
+    # 2026-11-02 ("Limit 8000, Requested 10363" for an input estimate of 8,619 and "Requested
+    # 9151" for 7,316: Requested ≈ 0.93 × estimate + 2,346, about 47 % of the cap), against
+    # input + 300-470 the day before. 0.4 on top of the estimate (which runs about 8 % above
+    # Groq's input count) plus the 5 % margin covers that.
+    try:
+        allowance = float(os.getenv("AI_TEXT_REQUEST_OUTPUT_ALLOWANCE", "0.4"))
+    except ValueError as error:
+        raise RuntimeError("AI_TEXT_REQUEST_OUTPUT_ALLOWANCE must be a number between 0 and 1") from error
+    if not 0.0 <= allowance <= 1.0:
+        raise RuntimeError("AI_TEXT_REQUEST_OUTPUT_ALLOWANCE must be a number between 0 and 1")
+    app.config["AI_TEXT_REQUEST_OUTPUT_ALLOWANCE"] = allowance
+    # Optional per-model ceilings, "provider:model=tokens,..." (a bare model is Groq's). An
+    # entry overrides AI_VISION_REQUEST_TOKEN_CEILING for image requests and
+    # AI_TEXT_REQUEST_TOKEN_CEILING for text requests to that model. Empty by default: set
+    # only measured values.
+    raw_ceilings = os.getenv("AI_REQUEST_TOKEN_CEILINGS", "").strip()
+    for entry in filter(None, (item.strip() for item in raw_ceilings.split(","))):
+        model, separator, tokens = entry.rpartition("=")
+        if not separator or not model.strip() or not tokens.strip().isdigit() or int(tokens) < 1:
+            raise RuntimeError(
+                "AI_REQUEST_TOKEN_CEILINGS must look like provider:model=tokens,provider:model=tokens")
+    app.config["AI_REQUEST_TOKEN_CEILINGS"] = raw_ceilings
+    # A reading that cannot get at least this many output tokens is refused before any
+    # call: a truncated reading is invalid JSON and would only fail after being paid for.
+    app.config["AI_IMAGE_UNDERSTANDING_MIN_OUTPUT_TOKENS"] = bounded(
+        "AI_IMAGE_UNDERSTANDING_MIN_OUTPUT_TOKENS", 1500, 200, 16_000)
+    # Output tokens per photo for a CHAT photo's reading (the compact image_understanding:chat1
+    # shape; lessons and answer photos keep AI_IMAGE_UNDERSTANDING_MAX_OUTPUT_TOKENS). 900 is
+    # under Groq on_demand's 1000 output tokens per minute for qwen/qwen3.8-27b, so the first
+    # reading is never refused for it; a 10-line worksheet takes about 360. Photos of one
+    # message are read together with this much each, or one per request once a per-minute
+    # output limit is known (AI_VISION_OUTPUT_TOKEN_CEILING or learned) that they would exceed.
+    app.config["AI_CHAT_PHOTO_READING_MAX_OUTPUT_TOKENS"] = bounded(
+        "AI_CHAT_PHOTO_READING_MAX_OUTPUT_TOKENS", 900, 300, 16_000)
+    # Wall clock for reading a message's photos and writing the reply (gunicorn kills a
+    # request at 120 s). The optional passes (a turned photo read again, close-ups of
+    # unclear words) start only while this many seconds of that budget are left.
+    app.config["VISION_TIME_BUDGET_SECONDS"] = bounded("VISION_TIME_BUDGET_SECONDS", 100, 20, 600)
+    app.config["VISION_OPTIONAL_PASS_MIN_SECONDS"] = bounded("VISION_OPTIONAL_PASS_MIN_SECONDS", 15, 1, 120)
     # Unsent attachments are deleted after a day; sent ones keep their picture this many
     # days (the reading stays with the conversation until it is deleted).
     app.config["CHAT_ATTACHMENT_RETENTION_DAYS"] = bounded("CHAT_ATTACHMENT_RETENTION_DAYS", 30, 1, 365)
@@ -124,7 +231,50 @@ ADSENSE_CMPS = {"google_privacy_messaging"}
 
 # Where community reports and review findings are emailed. The address is not a secret;
 # the SMTP credentials that send to it are, and they only ever come from the environment.
-DEFAULT_COMMUNITY_ALERT_EMAIL = "maheswariskillbridge@gmail.com"
+DEFAULT_COMMUNITY_ALERT_EMAIL = "contact.studylearnova@gmail.com"
+
+# Pages per project, across every file and later additions (learnova/uploads/service.py).
+# Twenty was already exceeded by six four-page worksheets, and the whole upload was
+# refused. Forty keeps one exam's material in one project. Env: PROJECT_MAX_PAGES.
+DEFAULT_PROJECT_MAX_PAGES = 40
+
+
+def _configure_assistant_chat(app) -> None:
+    """Conversation persistence and per-account limits for the assistant chat (docs/ASSISTANT.md)."""
+
+    def bounded(name: str, default: int, low: int, high: int) -> int:
+        raw = os.getenv(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+        if not low <= value <= high:
+            raise RuntimeError(f"{name} must be between {low} and {high}")
+        return value
+
+    # How long a send holds its conversation before another send may take it over. Longer
+    # than a photo reading (75 s) plus a reply (40 s); a crashed request frees it after this.
+    app.config["ASSISTANT_REPLY_CLAIM_SECONDS"] = bounded("ASSISTANT_REPLY_CLAIM_SECONDS", 180, 30, 1800)
+    # Per signed-in account (not per address: a school shares one), every assistant route.
+    app.config["ASSISTANT_MESSAGES_PER_HOUR"] = bounded("ASSISTANT_MESSAGES_PER_HOUR", 40, 1, 10000)
+    app.config["ASSISTANT_CONVERSATIONS_PER_HOUR"] = bounded("ASSISTANT_CONVERSATIONS_PER_HOUR", 30, 1, 10000)
+    app.config["ASSISTANT_SEARCH_PER_MINUTE"] = bounded("ASSISTANT_SEARCH_PER_MINUTE", 60, 1, 10000)
+    app.config["ASSISTANT_LIST_PAGE_SIZE"] = bounded("ASSISTANT_LIST_PAGE_SIZE", 50, 1, 100)
+    # Trusted reverse proxies in front of the app (Werkzeug ProxyFix x_for/x_proto). 0 = off:
+    # X-Forwarded-For is only believed when the operator says exactly how many hops set it.
+    app.config["PROXY_FIX_X_FOR"] = bounded("PROXY_FIX_X_FOR", 0, 0, 5)
+    # Continue Learning (a lesson built from a conversation): how long a build in progress
+    # blocks a second build of the same reply (a crashed request frees it after this; longer
+    # than a lesson call with its fallback), and how many builds an account may start per hour.
+    app.config["CONTINUE_LEARNING_PENDING_SECONDS"] = bounded("CONTINUE_LEARNING_PENDING_SECONDS", 180, 30, 1800)
+    app.config["CONTINUE_LEARNING_PER_HOUR"] = bounded("CONTINUE_LEARNING_PER_HOUR", 10, 1, 1000)
+    # What of the conversation a Continue Learning lesson request carries: the transcript
+    # (estimated tokens) and the stored photo readings (characters). With the lesson
+    # instructions and teaching method (~3.5k tokens) the defaults keep one request near
+    # 7.5k tokens, inside the 8000 tokens-per-minute a free Groq tier admits per model
+    # (measured 2026-11-01); raise them on a paid tier.
+    app.config["CONTINUE_LEARNING_TRANSCRIPT_TOKENS"] = bounded("CONTINUE_LEARNING_TRANSCRIPT_TOKENS", 3000, 500, 20000)
+    app.config["CONTINUE_LEARNING_PHOTO_CHARACTERS"] = bounded("CONTINUE_LEARNING_PHOTO_CHARACTERS", 4000, 0, 24000)
 
 
 def _configure_community_alerts(app, selected: str) -> None:
@@ -175,6 +325,64 @@ def _configure_community_alerts(app, selected: str) -> None:
         selected != "testing" if raw is None else raw.strip().lower() in {"1", "true", "yes", "on"})
 
 
+# The public contact address (shown on /contact, and where contact form messages are
+# forwarded once MAIL_SMTP_HOST and MAIL_FROM are set). Not a secret. docs/CONTACT.md.
+DEFAULT_CONTACT_EMAIL = "contact.studylearnova@gmail.com"
+# Shown on /about under "Meet the founder". FOUNDER_NAME and FOUNDER_INTRO override it.
+DEFAULT_FOUNDER_NAME = "Rithivik Velusamy"
+
+
+def _configure_contact(app, selected: str) -> None:
+    """The contact form (docs/CONTACT.md) and the founder shown on /about."""
+
+    from learnova.contact import is_valid_email
+
+    def bounded(name: str, default: int, low: int, high: int) -> int:
+        raw = os.getenv(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+        if not low <= value <= high:
+            raise RuntimeError(f"{name} must be between {low} and {high}")
+        return value
+
+    contact_email = os.getenv("CONTACT_EMAIL", DEFAULT_CONTACT_EMAIL).strip() or DEFAULT_CONTACT_EMAIL
+    if not is_valid_email(contact_email):
+        raise RuntimeError("CONTACT_EMAIL must be an email address")
+    app.config["CONTACT_EMAIL"] = contact_email
+    founder = " ".join(os.getenv("FOUNDER_NAME", "").split())[:60].strip()
+    app.config["FOUNDER_NAME"] = founder or DEFAULT_FOUNDER_NAME
+    # Empty means the translated default introduction. A value set here is shown as
+    # written, in every interface language.
+    app.config["FOUNDER_INTRO"] = os.getenv("FOUNDER_INTRO", "").strip()[:600]
+    # Messages are personal data, often of minors: deleted after this many days whatever
+    # their status (on each new message and by `flask contact cleanup`).
+    app.config["CONTACT_MESSAGE_RETENTION_DAYS"] = bounded("CONTACT_MESSAGE_RETENTION_DAYS", 90, 7, 730)
+    # Steady-abuse ceilings kept in the database, on top of the per-IP limiter (which
+    # may see one shared proxy address for everybody).
+    app.config["CONTACT_MAX_PER_EMAIL_DAY"] = bounded("CONTACT_MAX_PER_EMAIL_DAY", 5, 1, 100)
+    app.config["CONTACT_MAX_PER_HOUR"] = bounded("CONTACT_MAX_PER_HOUR", 30, 1, 1000)
+    app.config["CONTACT_DUPLICATE_WINDOW_MINUTES"] = bounded("CONTACT_DUPLICATE_WINDOW_MINUTES", 10, 1, 1440)
+    # A form sent sooner than this after it was rendered is treated as automated.
+    app.config["CONTACT_MIN_FILL_SECONDS"] = bounded("CONTACT_MIN_FILL_SECONDS", 3, 0, 60)
+    # Flask-Limiter string for POST /contact, per client address. Checked here: a value
+    # Flask-Limiter cannot parse is only logged at request time and then limits nothing.
+    rate_limit = os.getenv("CONTACT_RATE_LIMIT", "10 per hour").strip() or "10 per hour"
+    try:
+        from limits import parse_many
+
+        parse_many(rate_limit)
+    except ValueError as error:
+        raise RuntimeError('CONTACT_RATE_LIMIT must be a rate limit such as "10 per hour"') from error
+    app.config["CONTACT_RATE_LIMIT"] = rate_limit
+    if selected != "testing" and not (app.config["MAIL_SMTP_HOST"] and app.config["MAIL_FROM"]):
+        # Not fatal: every message is stored first and listed for the operator.
+        app.logger.warning(
+            "Contact form email forwarding is not configured (MAIL_SMTP_HOST, MAIL_FROM): "
+            "messages are stored and listed at /admin/contact-messages.")
+
+
 def _configure_ads(app) -> None:
     """Google AdSense (docs/ADSENSE.md). Ads load only once a certified consent message is
     confirmed; the defaults load no ad code at all."""
@@ -215,6 +423,7 @@ def configure_app(app, environment: str | None = None) -> str:
         raise RuntimeError(f"Unsupported APP_ENV {selected!r}; use development, testing, or production")
     app.config.from_object(CONFIGS[selected])
     app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri(app.instance_path)
+    _configure_database(app)
     configured_secret = os.getenv("SECRET_KEY")
     if selected == "production" and not configured_secret:
         raise RuntimeError("SECRET_KEY must be configured in production")
@@ -364,14 +573,16 @@ def configure_app(app, environment: str | None = None) -> str:
         # TUTOR_CHAT was 350, which forced one-hint answers; a coaching turn (method +
         # worked micro-example + modeled rewrite of the student's attempt) needs room,
         # and gpt-oss models also spend hidden reasoning tokens against this budget.
-        "TUTOR_CHAT": 1200, "ANSWER_EVALUATION": 2200, "MISTAKE_ANALYSIS": 3000, "TRANSLATION": 2500,
+        # ANSWER_EVALUATION 2600: the retry fields of a first wrong answer (answer_evaluation:v6).
+        # LESSON_GENERATION 5000: typed teaching parts per subject (lesson_generation:v7).
+        "TUTOR_CHAT": 1200, "ANSWER_EVALUATION": 2600, "MISTAKE_ANALYSIS": 3000, "TRANSLATION": 2500,
         "ANSWER_DIAGNOSIS": 2600, "DIAGNOSIS_VERIFICATION": 300, "QUESTION_GENERATION": 1200,
-        "LESSON_GENERATION": 2200, "QUIZ_GENERATION": 600,
+        "LESSON_GENERATION": 5000, "QUIZ_GENERATION": 600,
         # Both were capped below what their own prompts demand, so the model ran out
         # mid-JSON, failed invalid_json and paid a corrective retry that truncated in
-        # the same place. Section generation returns three explanations plus nine list
-        # fields per section; a 20-question exam had 60 tokens per question.
-        "PROJECT_SECTION_GENERATION": 4000, "FINAL_EXAM_GENERATION": 6000,
+        # the same place. Section generation (v4) returns a topic map with terms, items and
+        # exam questions for up to four pages; a 20-question exam had 60 tokens per question.
+        "PROJECT_SECTION_GENERATION": 6000, "FINAL_EXAM_GENERATION": 6000,
         # Vision models (e.g. Qwen3) spend hidden reasoning tokens against this budget in
         # the Responses API; too small a cap leaves zero visible output ("response was
         # empty") and rejects readable pages. 4000 fits reasoning + JSON within Groq's
@@ -379,9 +590,11 @@ def configure_app(app, environment: str | None = None) -> str:
         "OCR_DOCUMENT_RECOGNITION": 4000, "HANDWRITING_REGION_REVIEW": 900,
         # A whole textbook page as rows (word, translation, examples) in one call.
         "VOCABULARY_PAGE_EXTRACTION": 3000,
-        # The shared image reader (learnova/vision): up to four images, every line, LaTeX
-        # for formulas and an uncertainty list, plus the vision model's hidden reasoning.
-        "IMAGE_UNDERSTANDING": 5000,
+        # The shared image reader (learnova/vision): every line, LaTeX for formulas and an
+        # uncertainty list. 3500 since image_understanding:v2 (bbox only where a close-up
+        # needs it); the request ceiling may lower it further per request. 5000 plus
+        # ~3.3k input per photo did not fit Groq's 8000 tokens per minute.
+        "IMAGE_UNDERSTANDING": 3500,
         "ADAPTIVE_PRACTICE": 2200,
         # Grades every open exam answer in one call, with partial credit; the call site
         # asks for 5000 and was being cut to 600, i.e. a few words per answer.
@@ -401,7 +614,8 @@ def configure_app(app, environment: str | None = None) -> str:
         # was read from up to four photos (capped at 6000 characters, ~1500 tokens).
         "TUTOR_CHAT": 8000, "ANSWER_EVALUATION": 5000, "MISTAKE_ANALYSIS": 6000, "TRANSLATION": 9000,
         "ANSWER_DIAGNOSIS": 7000, "DIAGNOSIS_VERIFICATION": 4000, "QUESTION_GENERATION": 6000,
-        "LESSON_GENERATION": 9000, "QUIZ_GENERATION": 6000,
+        # LESSON_GENERATION: 16 000 characters of pages + the topic map + the teaching method.
+        "LESSON_GENERATION": 12000, "QUIZ_GENERATION": 6000,
         "PROJECT_SECTION_GENERATION": 16000, "FINAL_EXAM_GENERATION": 20000,
         "OCR_DOCUMENT_RECOGNITION": 8000, "HANDWRITING_REGION_REVIEW": 6000,
         "VOCABULARY_PAGE_EXTRACTION": 8000,
@@ -563,6 +777,7 @@ def configure_app(app, environment: str | None = None) -> str:
         if item.strip()
     }
     _configure_community_alerts(app, selected)
+    _configure_contact(app, selected)
 
     import_limits = {
         "MAX_FLASHCARD_PDF_SIZE": 10 * 1024 * 1024,
@@ -583,12 +798,53 @@ def configure_app(app, environment: str | None = None) -> str:
         "FLASHCARD_IMPORT_STORAGE_DIR",
         str(Path(app.instance_path) / "flashcard_imports"),
     )
+    try:
+        app.config["PROJECT_MAX_PAGES"] = max(
+            1, int(os.getenv("PROJECT_MAX_PAGES", str(DEFAULT_PROJECT_MAX_PAGES))))
+    except ValueError as error:
+        raise RuntimeError("PROJECT_MAX_PAGES must be a positive integer") from error
 
     def _feature_flag(name: str, default: bool) -> bool:
         raw = os.getenv(name)
         if raw is None:
             return default
         return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    # ---- Project uploads (FIX_PLAN PF1) ----
+    # The upload request no longer renders or preprocesses pages (a 40-page PDF took 55 s,
+    # 40 phone photos 96 s, in one request); each page's picture is made when it is first
+    # read or shown. true restores rendering at upload: the rollback switch.
+    app.config["PROJECT_PREPROCESS_ON_UPLOAD"] = _feature_flag("PROJECT_PREPROCESS_ON_UPLOAD", False)
+    # Share of a PDF page covered by raster images (0..1) from which its text layer counts
+    # as partial: the page is read by vision, not stored from the text layer alone (a pasted
+    # photo of a handwritten note, a scanner app's OCR layer over a photo).
+    try:
+        share = float(os.getenv("PDF_TEXT_SHORTCUT_MAX_IMAGE_SHARE", "0.10"))
+    except ValueError as error:
+        raise RuntimeError("PDF_TEXT_SHORTCUT_MAX_IMAGE_SHARE must be a number between 0 and 1") from error
+    if not 0.0 <= share <= 1.0:
+        raise RuntimeError("PDF_TEXT_SHORTCUT_MAX_IMAGE_SHARE must be a number between 0 and 1")
+    app.config["PDF_TEXT_SHORTCUT_MAX_IMAGE_SHARE"] = share
+
+    # ---- Topic analysis in steps (FIX_PLAN PF2) ----
+    # The start page works out the topics in short requests (POST /projects/<id>/analysis/step),
+    # each making at most ANALYSIS_STEP_CALLS extraction calls, so no request runs into a proxy
+    # timeout. One analysis per project at a time: the per-project lease lasts this many
+    # seconds and is renewed before every extraction call (one call can take up to ~120 s:
+    # 40 s provider timeout, a corrective retry, a fallback model), so a killed request's
+    # lease expires by itself and the next step takes over.
+    def _bounded(name: str, default: int, low: int, high: int) -> int:
+        raw = os.getenv(name, str(default)).strip() or str(default)
+        try:
+            value = int(raw)
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number between {low} and {high}") from error
+        if not low <= value <= high:
+            raise RuntimeError(f"{name} must be a whole number between {low} and {high}")
+        return value
+
+    app.config["ANALYSIS_STEP_CALLS"] = _bounded("ANALYSIS_STEP_CALLS", 2, 1, 6)
+    app.config["ANALYSIS_LEASE_SECONDS"] = _bounded("ANALYSIS_LEASE_SECONDS", 150, 30, 900)
 
     # ---- The tap-a-word scanner: local OCR plus translation APIs, no language model ----
     # LOCAL_OCR_ENGINE: auto (use RapidOCR when it is installed) | rapidocr | off.
@@ -624,6 +880,8 @@ def configure_app(app, environment: str | None = None) -> str:
     # The direct assistant. On by default: it is a first-class surface, not an
     # experiment, and it degrades safely when no provider key is configured.
     app.config["FEATURE_ASSISTANT_CHAT"] = _feature_flag("FEATURE_ASSISTANT_CHAT", True)
+    # "Continue learning": one click turns a chat into a lesson (counts as a free lesson).
+    app.config["FEATURE_CONTINUE_LEARNING"] = _feature_flag("FEATURE_CONTINUE_LEARNING", True)
     app.config["FEATURE_COMMUNITY_LIBRARY"] = _feature_flag(
         "FEATURE_COMMUNITY_LIBRARY", not is_production)
     # Publishing is available in development and testing so the full workflow can be
@@ -703,6 +961,7 @@ def configure_app(app, environment: str | None = None) -> str:
     app.config["HANDWRITING_SECOND_LOOK_MAX_REGIONS"] = max(
         1, min(12, int(os.getenv("HANDWRITING_SECOND_LOOK_MAX_REGIONS", "8"))))
     _configure_vision(app, selected)
+    _configure_assistant_chat(app)
     _configure_ads(app)
     app.config["GAMIFICATION_MIN_DAILY_EVENTS"] = max(
         1, int(os.getenv("GAMIFICATION_MIN_DAILY_EVENTS", "3")))
@@ -729,8 +988,13 @@ def configure_app(app, environment: str | None = None) -> str:
         # Wrong open exam answers that get a full diagnosis at submission (lowest scores
         # first); each one is one or two model calls made while the student waits.
         "EXAM_DIAGNOSIS_LIMIT": 3,
-        "LESSON_TOKEN_LIMIT": 2200,
-        "ANSWER_TOKEN_LIMIT": 2200,
+        # The call-site caps for lessons (lesson_generation:v7 parts) and answer evaluation
+        # (retry fields). An environment pin (render.yaml, .env) below these cuts lessons off.
+        "LESSON_TOKEN_LIMIT": 5000,
+        "ANSWER_TOKEN_LIMIT": 2600,
+        # The smallest share of a topic's notes (characters) a lesson fitted to
+        # AI_TEXT_REQUEST_TOKEN_CEILING keeps; below it the request is refused honestly.
+        "LESSON_SOURCE_MIN_CHARS": 4000,
         # Chat replies were capped at 350 tokens ("at most 120 words"), which made the
         # tutor a hint widget; a teaching turn needs room for a method + one example.
         "CHAT_TOKEN_LIMIT": 1100,

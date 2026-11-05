@@ -1,9 +1,10 @@
 // Unit tests for the pure formula-detection rules. Run with: node --test tests/js/*.test.mjs
-// (Node is not installed in the current CI image. tests/test_math_rendering.py checks the
-// same corpus against a transcription of this module, and fails if the two drift.)
+// (Node is not installed in the current CI image; tests/test_js_browser.py runs this file
+// in Chrome/Edge, and tests/test_math_rendering.py checks the same corpus against a
+// transcription of this module, failing if the two drift.)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hasMath, looksLikeMath, splitMath, MAX_INLINE_LENGTH } from "../../static/js/math-rules.js";
+import { hasMath, looksLikeMath, readableTex, splitMath, MAX_INLINE_LENGTH } from "../../static/js/math-rules.js";
 
 const formulas = (text) => splitMath(text).filter(s => s.type === "math").map(s => s.value);
 
@@ -66,4 +67,24 @@ test("hasMath is a cheap yes/no for the renderer", () => {
   assert.equal(hasMath("nothing here"), false);
   assert.equal(hasMath("costs $5 and $10"), false);
   assert.equal(hasMath("value $x$"), true);
+});
+
+test("\\( \\) is never a price: spaces, digits only and newlines are fine", () => {
+  assert.deepEqual(formulas("Setze \\( a = 2 \\) ein."), [" a = 2 "]);
+  assert.deepEqual(formulas("| \\(8\\) |"), ["8"]);
+  assert.deepEqual(formulas("\\(x +\n y\\)"), ["x +\n y"]);
+  assert.deepEqual(formulas("\\(\\)"), []);
+});
+
+test("a closer after an odd run of backslashes is escaped", () => {
+  assert.deepEqual(formulas("\\[ a \\\\] b \\]"), [" a \\\\] b "]);
+  assert.deepEqual(formulas("\\[ a \\\\\\]"), [" a \\\\"]);
+});
+
+test("the strict readable fallback never drops a backslash", () => {
+  assert.equal(readableTex("\\frac{1}{2} \\cdot 2^{3}", { strict: true }), "(1)/(2) · 2^{3}");
+  assert.equal(readableTex("\\frac{x^{2}}{\\left(a+b\\right)}", { strict: true }), "(x^{2})/((a+b))");
+  assert.equal(readableTex("\\begin{pmatrix} 1 \\\\ 2 \\end{pmatrix}", { strict: true }), null);
+  assert.equal(readableTex("\\boxed{x}", { strict: true }), null);
+  assert.equal(readableTex("\\boxed{x}"), "boxed{x}");      // read aloud: the name is spoken
 });

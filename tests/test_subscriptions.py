@@ -29,6 +29,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from tests.typing_helpers import fetch, match_group, present  # noqa: E402
 from learnova.ai_services import service as ai_service  # noqa: E402
 from learnova.subscriptions import codes, periods  # noqa: E402
@@ -172,6 +173,13 @@ class SettingsTests(unittest.TestCase):
 
 class AppTestCase(unittest.TestCase):
     def setUp(self):
+        # Restored in tearDown: AI_MODE="cached" left behind made later modules (the
+        # create_response wrapper tests) answer from the cache instead of their provider.
+        self._saved_config = dict(application.app.config)
+        self._saved_limiter = application.limiter.enabled
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE", "PREMIUM_ADMIN_IDENTIFIERS",
+                    "SUBSCRIPTION_QUOTAS_ENFORCED", "SUBSCRIPTION_SETTINGS", "RATELIMIT_ENABLED")
         application.app.config.update(
             TESTING=True, AI_MODE="cached", PREMIUM_ADMIN_IDENTIFIERS={"admin"},
             SUBSCRIPTION_QUOTAS_ENFORCED=True, SUBSCRIPTION_SETTINGS=SubscriptionSettings(),
@@ -184,7 +192,10 @@ class AppTestCase(unittest.TestCase):
         self.client = application.app.test_client()
 
     def tearDown(self):
+        application.app.config.clear()
+        application.app.config.update(self._saved_config)
         application.app.config.update(SUBSCRIPTION_QUOTAS_ENFORCED=False)
+        application.limiter.enabled = self._saved_limiter
 
     def register(self, username="student", client=None):
         client = client or self.client
@@ -329,8 +340,13 @@ class ActivationCodeTests(AppTestCase):
         for attempt in (expired, revoked, used, "LN-00000-00000-00000-00000", "nonsense"):
             page = self.redeem(attempt)
             self.assertIn(generic, page, attempt)
+            # What the student can read: the page without its scripts. The frontend message
+            # catalogue shipped in a <script> on every page holds unrelated sentences (the
+            # chat's "Your session has expired. Log in again.") that are not this answer.
+            readable = re.sub(r"<script\b[^>]*>.*?</script>", "", page, flags=re.S | re.I)
+            self.assertIn(generic, readable, attempt)
             for telltale in ("has been revoked", "already been redeemed", "has expired", "is invalid"):
-                self.assertNotIn(telltale, page, "the answer never says which codes exist")
+                self.assertNotIn(telltale, readable, "the answer never says which codes exist")
         self.assertIsNone(self.entitlement())
         with application.app.app_context():
             reasons = [json.loads(row.detail_json)["reason"] for row in application.db.session.scalars(

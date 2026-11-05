@@ -24,6 +24,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.ocr import local as local_ocr  # noqa: E402
 from learnova.vocabulary import language, layout, translate  # noqa: E402
 
@@ -272,6 +273,9 @@ class ScannerFlowTests(unittest.TestCase):
             "à travers le village et achète du pain pour sa mère."]
 
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_VOCABULARY_TRAINER", "LOCAL_OCR_ENGINE",
+                    "TRANSLATION_PROVIDERS", "DEEPL_API_KEY", "LIBRETRANSLATE_URL")
         application.app.config.update(
             TESTING=True, FEATURE_VOCABULARY_TRAINER=True, LOCAL_OCR_ENGINE="auto",
             TRANSLATION_PROVIDERS="mymemory", DEEPL_API_KEY="", LIBRETRANSLATE_URL="")

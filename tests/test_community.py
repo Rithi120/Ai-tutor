@@ -13,6 +13,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.community import service as community  # noqa: E402
 from learnova import moderation  # noqa: E402
 from learnova.config import configure_app  # noqa: E402
@@ -167,6 +168,9 @@ class CommunityServiceTests(unittest.TestCase):
 
 class CommunityApiTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_COMMUNITY_PUBLISHING", "FEATURE_COMMUNITY_LIBRARY",
+                    "FEATURE_PRIVATE_FLASHCARDS")
         application.app.config.update(
             TESTING=True, FEATURE_COMMUNITY_PUBLISHING=True,
             FEATURE_COMMUNITY_LIBRARY=True, FEATURE_PRIVATE_FLASHCARDS=True)

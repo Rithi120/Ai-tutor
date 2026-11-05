@@ -1,0 +1,13 @@
+{# "Show tips automatically" (docs/TUTORIAL.md): on the tutorial hub and in Settings ->
+   Help and support. A plain form (POST /tutorial/tips), so it works without JavaScript;
+   `tips_back` says where the student comes back to. #}
+<form method="post" action="{{ url_for('tutorial_auto_tips') }}" class="tutorial-tips-form" data-tutorial-tips>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="back" value="{{ tips_back|default('hub') }}">
+  <label class="tutorial-toggle">
+    <input type="checkbox" name="auto_tips" {{ 'checked' if tutorial_tips_on() }}>
+    <span><b>{{ _('Show tips automatically') }}</b>
+      <small>{{ _('When you open a feature for the first time, a few short tips explain it.') }}</small></span>
+  </label>
+  <button class="secondary-button" type="submit">{{ _('Save') }}</button>
+</form>

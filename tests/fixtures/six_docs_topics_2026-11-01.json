@@ -1,0 +1,266 @@
+{
+ "_meta": {
+  "source": "Live provider run 2026-11-01, six-document project after 'Continue reading' (R:/ai_tutor_suite_tmp/prod_live_docs/out/p3_six_docs.continue.json): topic titles, keys, term names and page ids only. Synthetic documents made by the testers.",
+  "duplicate_pairs": [
+   [
+    "Utilitarismus",
+    "Utilitarismus – Folgenorientierte Ethik"
+   ],
+   [
+    "Höhlengleichnis",
+    "Platons Höhlengleichnis – Erkenntnistheorie"
+   ],
+   [
+    "Kant Pflichtethik",
+    "Kants Pflichtethik – Wille und Imperativ"
+   ],
+   [
+    "Werte, Moral und Ethik",
+    "Grundbegriffe von Moral und Ethik"
+   ]
+  ],
+  "live_suggested": [
+   [
+    "Grundbegriffe von Moral und Ethik",
+    "Werte, Moral und Ethik"
+   ],
+   [
+    "Kants Pflichtethik – Wille und Imperativ",
+    "Kant Pflichtethik"
+   ]
+  ]
+ },
+ "topics": [
+  {
+   "title": "Grundbegriffe von Moral und Ethik",
+   "main_topic": "Ethik Grundbegriffe",
+   "key": "ethik-grundbegriff-moral",
+   "source_page_ids": [
+    6
+   ],
+   "terms": [
+    {
+     "term": "Moral",
+     "key": "moral"
+    },
+    {
+     "term": "Ethik",
+     "key": "ethik"
+    },
+    {
+     "term": "Werte",
+     "key": "wert"
+    },
+    {
+     "term": "Normen",
+     "key": "norm"
+    },
+    {
+     "term": "Gewissen",
+     "key": "gewiss"
+    }
+   ]
+  },
+  {
+   "title": "Utilitarismus – Folgenorientierte Ethik",
+   "main_topic": "Normative Ethik – Utilitarismus",
+   "key": "ethik-folgenorientiert-utilitarismu",
+   "source_page_ids": [
+    7
+   ],
+   "terms": [
+    {
+     "term": "Utilitarismus",
+     "key": "utilitarismu"
+    },
+    {
+     "term": "Nützlichkeitsprinzip",
+     "key": "nuetzlichkeitsprinzip"
+    },
+    {
+     "term": "hedonistisches Kalkül",
+     "key": "hedonistisch-kalkuel"
+    },
+    {
+     "term": "höhere Freuden",
+     "key": "freud-hoeher"
+    },
+    {
+     "term": "niedere Freuden",
+     "key": "freud-nieder"
+    }
+   ]
+  },
+  {
+   "title": "Kants Pflichtethik – Wille und Imperativ",
+   "main_topic": "Normative Ethik – Kant",
+   "key": "imperativ-kant-pflichtethik-will",
+   "source_page_ids": [
+    8
+   ],
+   "terms": [
+    {
+     "term": "Pflicht",
+     "key": "pflicht"
+    },
+    {
+     "term": "Neigung",
+     "key": "neig"
+    },
+    {
+     "term": "kategorischer Imperativ",
+     "key": "imperativ-kategorisch"
+    },
+    {
+     "term": "Maxime",
+     "key": "maxim"
+    }
+   ]
+  },
+  {
+   "title": "Platons Höhlengleichnis – Erkenntnistheorie",
+   "main_topic": "Normative Ethik – Platons Höhlengleichnis",
+   "key": "erkenntnistheori-hoehlengleichni-platon",
+   "source_page_ids": [
+    9,
+    15
+   ],
+   "terms": [
+    {
+     "term": "Höhle",
+     "key": "hoehl"
+    },
+    {
+     "term": "Schatten",
+     "key": "schatt"
+    },
+    {
+     "term": "Sonne",
+     "key": "sonn"
+    },
+    {
+     "term": "Idee des Guten",
+     "key": "guten-idee"
+    },
+    {
+     "term": "Höhlengleichnis",
+     "key": "hoehlengleichni"
+    }
+   ]
+  },
+  {
+   "title": "Utilitarismus",
+   "main_topic": "Normative Ethik – Teil 4",
+   "key": "utilitarismu",
+   "source_page_ids": [
+    10
+   ],
+   "terms": [
+    {
+     "term": "Utilitarismus",
+     "key": "utilitarismu"
+    },
+    {
+     "term": "Nützlichkeitsprinzip",
+     "key": "nuetzlichkeitsprinzip"
+    }
+   ]
+  },
+  {
+   "title": "Werte, Moral und Ethik",
+   "main_topic": "Normative Ethik – Teil 4",
+   "key": "ethik-moral-wert",
+   "source_page_ids": [
+    11
+   ],
+   "terms": [
+    {
+     "term": "Wert",
+     "key": "wert"
+    },
+    {
+     "term": "Moral",
+     "key": "moral"
+    },
+    {
+     "term": "Ethik",
+     "key": "ethik"
+    },
+    {
+     "term": "Würde des Menschen",
+     "key": "mensch-wuerd"
+    }
+   ]
+  },
+  {
+   "title": "Kant Pflichtethik",
+   "main_topic": "Normative Ethik – Teil 4",
+   "key": "kant-pflichtethik",
+   "source_page_ids": [
+    12
+   ],
+   "terms": [
+    {
+     "term": "guter Wille",
+     "key": "guter-will"
+    },
+    {
+     "term": "Maxime",
+     "key": "maxim"
+    },
+    {
+     "term": "kategorischer Imperativ",
+     "key": "imperativ-kategorisch"
+    }
+   ]
+  },
+  {
+   "title": "Höhlengleichnis",
+   "main_topic": "Normative Ethik – Teil 4",
+   "key": "hoehlengleichni",
+   "source_page_ids": [
+    13
+   ],
+   "terms": [
+    {
+     "term": "Schatten",
+     "key": "schatt"
+    },
+    {
+     "term": "Feuer",
+     "key": "feuer"
+    },
+    {
+     "term": "Mauer",
+     "key": "mauer"
+    },
+    {
+     "term": "Sonne",
+     "key": "sonn"
+    }
+   ]
+  },
+  {
+   "title": "Vergleich von Utilitarismus und Pflichtethik",
+   "main_topic": "Vergleich von Utilitarismus und Pflichtethik",
+   "key": "pflichtethik-utilitarismu-vergleich",
+   "source_page_ids": [
+    16
+   ],
+   "terms": [
+    {
+     "term": "Utilitarismus",
+     "key": "utilitarismu"
+    },
+    {
+     "term": "teleologisch",
+     "key": "teleologisch"
+    },
+    {
+     "term": "deontologisch",
+     "key": "deontologisch"
+    }
+   ]
+  }
+ ]
+}

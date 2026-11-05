@@ -8,7 +8,7 @@
 {% block content %}
 <main class="dashboard-shell progress-page" id="main-content">
   <header class="dashboard-heading"><div><span class="eyebrow">{{ _('LEARNING PROGRESS') }}</span><h1>{{ _('Your progress') }}</h1><p>{{ _('Real activity from completed learning work.') }}</p></div></header>
-  <section class="progress-hero">
+  <section class="progress-hero" data-tour-target="progress-hero">
     <div><span>{{ _('Level') }}</span><strong>{{ gamification.level }}</strong></div>
     <div class="xp-progress"><span>{{ gamification.total_xp }} {{ _('XP') }}</span><progress value="{{ gamification.current_level_xp }}" max="{{ gamification.next_level_xp }}">{{ gamification.current_level_xp }}/{{ gamification.next_level_xp }}</progress><small>{{ gamification.xp_to_next_level }} {{ _('XP to next level') }}</small></div>
     <div><span>{{ _('Current streak') }}</span><strong>{{ gamification.current_streak }} 🔥</strong><small>{{ _('Longest streak') }}: {{ gamification.longest_streak }}</small></div>

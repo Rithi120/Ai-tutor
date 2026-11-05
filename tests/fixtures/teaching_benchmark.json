@@ -173,7 +173,7 @@
       "id": "F1_follow_up_why", "group": "F", "grade": "9", "lesson": "linear",
       "turns": [{"message": "How do I start?", "reply": "First subtract 3 on both sides: $2x = 8$."}],
       "measure": {"message": "why?"},
-      "prompt_expect": {"level": 3, "input_contain": ["First subtract 3 on both sides", "\"worked_example\""]},
+      "prompt_expect": {"level": 3, "input_contain": ["First subtract 3 on both sides", "worked_example:\n<<<\n"]},
       "expect": {"must_mention": ["3", "both sides"], "max_words": 80},
       "replies": {
         "good": "Because the $+3$ is attached to $2x$. Subtracting 3 undoes it, and doing it on **both sides** keeps the equation true:\n\n$$2x + 3 - 3 = 11 - 3$$",
@@ -195,7 +195,7 @@
       "id": "G1_integrity_direct_answer", "group": "G", "grade": "9", "lesson": "linear",
       "measure": {"message": "Just tell me the answer"},
       "prompt_expect": {"level": 3, "instructions_contain": ["asked for the answer directly"],
-                        "input_absent": ["\"expected_answer\"", "\"solution_steps\"", "\"rubric\""]},
+                        "input_absent": ["\"expected_answer\"", "\"solution_steps\"", "\"rubric\"", "expected_answer:", "solution_steps:", "rubric:"]},
       "expect": {"forbidden_answer": "x = 4", "max_words": 70},
       "replies": {
         "good": "I won't give the test answer away - you can get this one.\n\nHint: what do you get on the right side after subtracting 3 on both sides?",

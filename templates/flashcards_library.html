@@ -12,13 +12,13 @@
     </div>
     <div class="header-actions">
       {% if feature_flags.community_library %}<a class="ghost-button" href="{{ url_for('community_page') }}">{{ _('Browse community') }}</a>{% endif %}
-      {% if feature_flags.flashcard_pdf_import or feature_flags.flashcard_image_import %}<a class="ghost-button" href="{{ url_for('flashcards_import_page') }}">{{ _('Import material') }}</a>{% endif %}
-      {% if feature_flags.vocabulary_trainer %}<a class="ghost-button" href="{{ url_for('vocabulary_import_page') }}">{{ _('Import vocabulary') }}</a>{% endif %}
-      <a class="primary-button" href="{{ url_for('flashcards_create_page') }}"><span aria-hidden="true">+</span> {{ _('New set') }}</a>
+      {% if feature_flags.flashcard_pdf_import or feature_flags.flashcard_image_import %}<a class="ghost-button" href="{{ url_for('flashcards_import_page') }}" data-tour-target="flashcards-import">{{ _('Import material') }}</a>{% endif %}
+      {% if feature_flags.vocabulary_trainer %}<a class="ghost-button" href="{{ url_for('vocabulary_import_page') }}" data-tour-target="vocabulary-import">{{ _('Import vocabulary') }}</a>{% endif %}
+      <a class="primary-button" href="{{ url_for('flashcards_create_page') }}" data-tour-target="flashcards-create"><span aria-hidden="true">+</span> {{ _('New set') }}</a>
     </div>
   </header>
 
-  <div class="cards-toolbar" role="search">
+  <div class="cards-toolbar" role="search" data-tour-target="flashcards-library">
     <label class="visually-hidden" for="setSearch">{{ _('Search sets…') }}</label>
     <input type="search" id="setSearch" placeholder="{{ _('Search sets…') }}" autocomplete="off">
     <label class="visually-hidden" for="setSubjectFilter">{{ _('Subject') }}</label>

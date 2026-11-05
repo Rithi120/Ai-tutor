@@ -73,6 +73,80 @@ main pre, .message pre {
   text-align: center;
   white-space: normal;
 }
+/* A formula KaTeX cannot typeset (malformed, or offline and not spellable as text) is
+   shown as its source: readable monospace, wrapping inside its box, never red. */
+.ln-math-source {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: .92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+.ln-math-source-display {
+  display: block;
+  margin: .5em 0;
+}
+/* Chat replies: an inline formula wider than the bubble scrolls inside itself (the same
+   rule as .asst-body in assistant.css). */
+:is(.tutor-message, .history-message) .ln-math:not(.ln-math-display) {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+/* A stored tutor reply on the lesson history page, rendered as markdown
+   (static/js/rich-history.js). Token colours only, so dark mode needs nothing extra. */
+.history-message-body > :first-child { margin-top: 0; }
+.history-message-body > :last-child { margin-bottom: 0; }
+.history-message-body :is(ul, ol) { margin: 7px 0; padding-inline-start: 1.3rem; }
+.history-message-body li { margin: 4px 0; line-height: 1.55; }
+.history-message-body :is(h3, h4, h5, h6) { margin: 11px 0 4px; font-size: 1rem; }
+.history-message-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: .6em 0;
+  border-collapse: collapse;
+}
+.history-message-body :is(th, td) {
+  overflow-wrap: normal;
+  hyphens: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--ln-line-strong);
+  text-align: start;
+  vertical-align: top;
+}
+.history-message-body th { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
+.history-message-body code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: .9em;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ln-violet) 13%, transparent);
+}
+.history-message-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: .6em 0;
+  padding: .7rem .9rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ln-ink) 7%, transparent);
+}
+.history-message-body pre code { padding: 0; background: none; }
+.history-message-body .code-lang {
+  display: block;
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .6;
+}
+.history-message-body blockquote {
+  margin: 8px 0;
+  padding: 4px 11px;
+  border-inline-start: 3px solid color-mix(in srgb, var(--ln-violet) 45%, transparent);
+}
 
 /* Screen-reader-only text is absolutely positioned; without offsets it sits at its
    static position, and inside a horizontal scroller that escaped the scroller and widened

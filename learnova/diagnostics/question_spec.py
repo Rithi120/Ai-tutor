@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re as _re
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import Any
 
 from .planner import MAX_DIFFICULTY, MIN_DIFFICULTY, similarity
@@ -259,6 +260,14 @@ def validate_question(
             if not checks["answer_key_verified"]:
                 failures.append("the stated answer does not match the arithmetic in the prompt")
 
+    # PF_FIX2: a question no student could answer as shaped, or a choice key no option matches.
+    shape = shape_problems(question)
+    checks["shape_answerable"] = not shape
+    failures.extend(shape)
+    if repair_computed_key(dict(question)) == "flawed":
+        checks["answer_key_verified"] = False
+        failures.append("no option has the value the numbers in the prompt give")
+
     duplicate_of = next(
         (item for item in recent_prompts if similarity(prompt, item) >= DUPLICATE_SIMILARITY), ""
     )
@@ -329,6 +338,134 @@ def _calculation_expression(prompt: str) -> str:
         return ""
     expression = max(candidates, key=len).strip()
     return expression if len(expression) >= 3 else ""
+
+
+# --------------------------------------------------------------------------- shape and computed keys (PF_FIX2)
+#
+# Live 2026-11-02: the grader's follow-up questions came back as a written question keyed "b"
+# (Math, three in a row, so no Math answer could ever count), and as an "ordering" task whose
+# items were multiple-choice sequences ("1, 2, 3, 4", "1, 3, 2, 4") keyed with one id (History).
+# And a choice question asked for the slope through (3 | 4) and (7 | 12) keyed 3 (it is 2).
+
+WRITTEN_TYPES = {"text", "short_answer", "explanation", "calculation"}
+_LETTER_KEY = _re.compile(r"^\s*[\(\[]?\s*([a-fA-F])\s*[\)\].:]?\s*$")
+_GAP = _re.compile(r"_{2,}|\.{3,}|…")
+# An item that is itself an order of ids or numbers: "1, 3, 2, 4", "b - a - c", "(1) (3) (2)".
+_SEQUENCE_ITEM = _re.compile(
+    r"^\s*[\(\[]?\s*(?:\d{1,2}|[a-hA-H])\s*[\)\]]?(?:\s*(?:[,;/>→–—-]|\s)\s*[\(\[]?\s*(?:\d{1,2}|[a-hA-H])\s*[\)\]]?)+"
+    r"\s*\.?\s*$")
+
+
+def _expected_order(expected: Any) -> list[str]:
+    if isinstance(expected, list):
+        return [str(value).strip() for value in expected if str(value).strip()]
+    return [value for value in _re.split(r"[\s,;/>→–—-]+", str(expected or "")) if value]
+
+
+def shape_problems(question: Any) -> list[str]:
+    """What makes a question unanswerable as it is shaped, whatever its content:
+
+    * a written question whose expected_answer is a bare option letter ("b") - there are no
+      options to choose from;
+    * an ordering task whose expected_answer is not an order of all its items (one id, a
+      repeated or unknown id), or whose items are themselves orders of ids or numbers.
+    """
+
+    if not isinstance(question, dict):
+        return []
+    question_type = str(question.get("type") or "").strip().casefold()
+    expected = question.get("expected_answer")
+    problems: list[str] = []
+    if question_type in WRITTEN_TYPES and isinstance(expected, str) and _LETTER_KEY.match(expected) \
+            and not _GAP.search(str(question.get("prompt") or "")):
+        problems.append("a written question's expected_answer is an option letter")
+    if question_type == "ordering":
+        raw_options = question.get("options")
+        options = raw_options if isinstance(raw_options, list) else []
+        ids = [str(option.get("id")).strip() if isinstance(option, dict) else str(option).strip() for option in options]
+        labels = [str(option.get("label") or "") if isinstance(option, dict) else str(option) for option in options]
+        order = _expected_order(expected)
+        if len(ids) < 2 or sorted(order) != sorted(ids) or len(set(ids)) != len(ids):
+            problems.append("an ordering question's expected_answer is not an order of all its items")
+        if any(_SEQUENCE_ITEM.match(label) for label in labels):
+            problems.append("an ordering question's items are themselves orders of numbers or ids")
+    return problems
+
+
+_SLOPE_ASKED = _re.compile(r"(?<!\w)(?:steigung|slope|gradient|pente|pendiente)(?!\w)", _re.IGNORECASE)
+# The question asks for more than the slope (an intercept, an equation, a zero).
+_MORE_THAN_SLOPE = _re.compile(r"achsenabschnitt|intercept|gleichung|equation|nullstelle|ordonn|ordenada|"
+                               r"funktionsterm|ecuaci|(?<!\w)[by]\s*=", _re.IGNORECASE)
+_SIGNED = r"[-−–]?\s*\d+(?:[.,]\d+)?"
+_POINT_BAR = _re.compile(rf"\(\s*({_SIGNED})\s*[|;]\s*({_SIGNED})\s*\)")
+_POINT_COMMA = _re.compile(r"\(\s*([-−–]?\s*\d+(?:\.\d+)?)\s*,\s*([-−–]?\s*\d+(?:\.\d+)?)\s*\)")
+
+
+def _fraction(text: str) -> Fraction:
+    return Fraction(_re.sub(r"\s+", "", text).replace("−", "-").replace("–", "-").replace(",", "."))
+
+
+def slope_from_points(prompt: Any) -> Fraction | None:
+    """The slope a question asks for when it gives exactly two points ("Welche Steigung hat
+    die Gerade durch (3 | 4) und (7 | 12)?" -> 2), or None when it asks anything else."""
+
+    text = str(prompt or "")
+    if not _SLOPE_ASKED.search(text) or _MORE_THAN_SLOPE.search(text):
+        return None
+    points = [(_fraction(x), _fraction(y)) for x, y in _POINT_BAR.findall(text)] or \
+             [(_fraction(x), _fraction(y)) for x, y in _POINT_COMMA.findall(text)]
+    points = list(dict.fromkeys(points))
+    if len(points) != 2 or points[0][0] == points[1][0]:
+        return None
+    (x1, y1), (x2, y2) = points
+    return (y2 - y1) / (x2 - x1)
+
+
+def _answer_value(text: Any) -> float | None:
+    """A numeric answer's value: "2", "m = 2", "−0,5", "3/4"."""
+
+    value = _re.sub(r"^\s*[a-zA-Z]\s*=\s*", "", str(text or "")).replace("−", "-").replace("–", "-")
+    return parse_number(value)
+
+
+def _written(value: Fraction) -> str:
+    return str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
+
+
+def repair_computed_key(question: Any) -> str:
+    """Check a key that code can compute (the slope through two given points) and repair it.
+
+    "" when there is nothing to compute or the key is right; "rekeyed" when a choice
+    question's key was wrong and exactly one option has the value (the key now names it);
+    "fixed" when a written question's expected answer was wrong or an option letter (it is
+    now the value); "flawed" when no option of a choice question has the value."""
+
+    if not isinstance(question, dict):
+        return ""
+    value = slope_from_points(question.get("prompt"))
+    if value is None:
+        return ""
+    question_type = str(question.get("type") or "").strip().casefold()
+    if question_type in {"multiple_choice", "dropdown"}:
+        options = [option for option in question.get("options") or [] if isinstance(option, dict)]
+        matching = [str(option.get("id")) for option in options
+                    if (number := _answer_value(option.get("label"))) is not None and numbers_match(number, float(value))]
+        keyed = question.get("expected_answer")
+        if isinstance(keyed, list):
+            keyed = keyed[0] if len(keyed) == 1 else None
+        if matching == [str(keyed)]:
+            return ""
+        if len(matching) == 1:
+            question["expected_answer"] = matching[0]
+            return "rekeyed"
+        return "flawed"
+    if question_type in WRITTEN_TYPES | {"fill_blank"}:
+        stated = _answer_value(question.get("expected_answer"))
+        if stated is not None and numbers_match(stated, float(value)):
+            return ""
+        question["expected_answer"] = _written(value)
+        return "fixed"
+    return ""
 
 
 def annotate_question(question: dict[str, Any], spec: QuestionSpec, validation: QuestionValidation) -> dict[str, Any]:

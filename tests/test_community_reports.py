@@ -27,7 +27,7 @@ from tests.test_moderation_integration import (  # noqa: E402
     ALLOW, INSULT_CARDS, QUALITY_REVIEW, REJECT_HARASSMENT, FakeResponse, moderation_payload,
 )
 
-ALERT_EMAIL = "maheswariskillbridge@gmail.com"
+ALERT_EMAIL = "contact.studylearnova@gmail.com"
 VOCABULARY = [
     {"type": "question_answer", "front": "la marche", "back": "der Marsch",
      "explanation": "Attention à la marche !"},

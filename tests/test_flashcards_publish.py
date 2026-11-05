@@ -12,6 +12,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from tests.typing_helpers import fetch  # noqa: E402
 from learnova import moderation  # noqa: E402
 
@@ -65,6 +66,8 @@ def ai_responder(review_payload, moderation_payload=None):
 
 class PublishTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_COMMUNITY_PUBLISHING", "FEATURE_COMMUNITY_LIBRARY")
         application.app.config.update(TESTING=True)
         application.app.config["FEATURE_COMMUNITY_PUBLISHING"] = True
         application.app.config["FEATURE_COMMUNITY_LIBRARY"] = True
@@ -287,6 +290,62 @@ class PublishTests(unittest.TestCase):
             stranger.post(f"/api/community/sets/{public_id}/unpublish").status_code, 404)
         self.assertEqual(
             stranger.get(f"/api/community/sets/{public_id}/review").status_code, 404)
+
+    def test_a_saved_copy_keeps_the_bare_term_a_key_terms_card_is_asked_back_with(self):
+        # A Projektmodus key-terms card asks "What does the term “X” mean?" and, back to
+        # front, expects the bare term (flashcard.reverse_answer). A published and saved copy
+        # keeps that, or the saver would have to type the question sentence (P3-07).
+        set_id = self._make_set()
+        with application.app.app_context():
+            card = application.db.session.scalar(application.db.select(application.Flashcard).where(
+                application.Flashcard.set_id == set_id, application.Flashcard.front == "Nucleus"))
+            assert card is not None
+            card.front = "What does the term “Nucleus” mean?"
+            card.reverse_answer = "Nucleus"
+            application.db.session.commit()
+        public_id = self._publish(set_id).get_json()["id"]
+        with application.app.app_context():
+            public_set = application.db.session.get(application.PublicFlashcardSet, public_id)
+            assert public_set is not None
+            snapshot = json.loads(public_set.cards_json)
+        # A card without one (every card a student made) is published exactly as before.
+        self.assertEqual([("reverse_answer" in entry) for entry in snapshot], [False, True])
+        bob = self._register("bob")
+        saved = bob.post(f"/api/community/sets/{public_id}/save")
+        self.assertEqual(saved.status_code, 201, saved.get_data(as_text=True)[:300])
+        with application.app.app_context():
+            copy = application.db.session.get(application.FlashcardSet, saved.get_json()["id"])
+            assert copy is not None
+            answers = {entry.front: entry.reverse_answer for entry in copy.cards}
+            self.assertIsNone(copy.project_id)
+            self.assertTrue(all(entry.origin_key == "" for entry in copy.cards))
+        self.assertEqual(answers, {"What is a cell?": "", "What does the term “Nucleus” mean?": "Nucleus"})
+
+    def test_a_saved_copy_keeps_every_card_of_a_large_set_and_every_formula(self):
+        # flashcards_xp-04: a project key-terms set easily has more than 30 cards, and the
+        # three binomial formulas differ only in their signs. The copy used to be cut at 30
+        # cards and to merge two of the formulas.
+        set_id = self._make_set()
+        formulas = ["(a+b)² = a² + 2ab + b²", "(a−b)² = a² − 2ab + b²", "(a+b)(a−b) = a² − b²"]
+        with application.app.app_context():
+            for index in range(43):
+                front = (f"What does the formula {formulas[index]} mean and when do you use it?" if index < 3
+                         else f"What does the term “Begriff {index}” mean?")
+                application.db.session.add(application.Flashcard(
+                    set_id=set_id, position=10 + index, type="question_answer", front=front,
+                    back=f"Erklärung {index}", reverse_answer=formulas[index] if index < 3 else f"Begriff {index}"))
+            application.db.session.commit()
+        public_id = self._publish(set_id).get_json()["id"]
+        bob = self._register("bob")
+        saved = bob.post(f"/api/community/sets/{public_id}/save")
+        self.assertEqual(saved.status_code, 201, saved.get_data(as_text=True)[:300])
+        self.assertEqual(saved.get_json()["card_count"], 45)
+        with application.app.app_context():
+            copy = application.db.session.get(application.FlashcardSet, saved.get_json()["id"])
+            assert copy is not None
+            self.assertEqual(len(copy.cards), 45)
+            answers = {card.reverse_answer for card in copy.cards}
+        self.assertTrue(set(formulas) <= answers, "all three formulas, each with its own term")
 
     # ---- Step 2: content language independent of interface language ----
     def test_content_language_independent_of_interface(self):

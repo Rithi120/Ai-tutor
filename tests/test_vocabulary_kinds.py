@@ -33,6 +33,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.vocabulary import service  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -247,6 +248,8 @@ class PracticeFilterTests(unittest.TestCase):
         "Comment ça va ? | Wie geht es dir?\n")
 
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_VOCABULARY_TRAINER", "FEATURE_GAMIFICATION")
         application.app.config.update(
             TESTING=True, FEATURE_VOCABULARY_TRAINER=True, FEATURE_GAMIFICATION=True)
         with application.app.app_context():

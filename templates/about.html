@@ -10,8 +10,9 @@
 
   <section class="about-hero">
     <div class="eyebrow">{{ _('ABOUT LEARNOVA') }}</div>
-    <h1>{{ _('Learn smarter. Understand deeper. Make every study session count.') }}</h1>
-    <p class="about-lead">{{ _('Learnova turns your own learning material into explanations at your level, practice questions, flashcards and structured exam preparation — in one place, so you always know what to work on next.') }}</p>
+    <h1>{{ _('Helping every student learn with a personal AI tutor.') }}</h1>
+    <p class="about-hero-tagline">{{ _('Learn smarter. Understand deeper. Make every study session count.') }}</p>
+    <p class="about-lead">{{ _('Learnova is designed to help you learn more effectively: explanations that match your level, practice that shows what you really know, and a clear plan before your exams.') }}</p>
     <div class="about-cta-row">
       {% if current_user.is_authenticated %}
       <a class="primary-button" href="{{ url_for('dashboard') }}">{{ _('Open your dashboard') }}</a>
@@ -22,9 +23,14 @@
     </div>
   </section>
 
-  <section class="about-section" aria-labelledby="about-problem">
-    <h2 id="about-problem">{{ _('Studying alone is harder than it should be') }}</h2>
-    <p class="about-section-lead">{{ _('Most study time is lost to the same four problems.') }}</p>
+  <section class="about-section about-story" aria-labelledby="about-story">
+    <h2 id="about-story">{{ _('Our story') }}</h2>
+    <div class="about-story-text">
+      <p>{{ _("Learnova began with a student's simple wish: to make learning easier.") }}</p>
+      <p>{{ _("Learning gets hard when explanations don't fit your level. And students need more than answers: they need explanations, practice, feedback and guidance.") }}</p>
+      <p>{{ _('Learnova was created to help with exactly that. The long-term goal is bigger: to make personalised learning accessible to everyone.') }}</p>
+    </div>
+    <h3 class="about-subheading" id="about-problem">{{ _('Studying alone is harder than it should be') }}</h3>
     <div class="about-grid about-grid-4">
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">📖</span>
@@ -50,13 +56,46 @@
     <p class="about-resolution">{{ _('Learnova is built around this loop: understand, practise, see your mistakes, and focus the next session where it counts. It will not do the learning for you — it makes your effort land in the right place.') }}</p>
   </section>
 
+  <section class="about-section" aria-labelledby="about-mission">
+    <h2 id="about-mission">{{ _('Our mission') }}</h2>
+    <p class="about-section-lead">{{ _('Four goals guide how Learnova is built.') }}</p>
+    <ol class="about-grid about-grid-4 about-mission">
+      <li class="about-card about-mission-card" style="--accent: var(--ln-violet)">
+        <span class="about-mission-number" aria-hidden="true">1</span>
+        <h3>{{ _('High-quality education for everyone') }}</h3>
+        <p>{{ _('Good explanations should not depend on where you live or what you can afford. That is why Learnova has a free plan.') }}</p>
+      </li>
+      <li class="about-card about-mission-card" style="--accent: var(--ln-cyan)">
+        <span class="about-mission-number" aria-hidden="true">2</span>
+        <h3>{{ _('A personal AI tutor for every student') }}</h3>
+        <p>{{ _('Every student should be able to ask for help — and get an explanation that fits their level, not a one-size-fits-all answer.') }}</p>
+      </li>
+      <li class="about-card about-mission-card" style="--accent: var(--ln-coral)">
+        <span class="about-mission-number" aria-hidden="true">3</span>
+        <h3>{{ _('Better grades through understanding') }}</h3>
+        <p>{{ _('We want to help you get better grades by really understanding the material — not by memorising answers. Your own work still makes the difference.') }}</p>
+      </li>
+      <li class="about-card about-mission-card" style="--accent: var(--ln-lime)">
+        <span class="about-mission-number" aria-hidden="true">4</span>
+        <h3>{{ _('Learning you enjoy') }}</h3>
+        <p>{{ _('Learning should be interactive and enjoyable: you ask, you try, you get feedback right away and you see how you are getting on.') }}</p>
+      </li>
+    </ol>
+  </section>
+
   <section class="about-section" aria-labelledby="about-features">
-    <h2 id="about-features">{{ _('What you can do with Learnova') }}</h2>
+    <h2 id="about-features">{{ _('What makes Learnova different') }}</h2>
+    <p class="about-section-lead">{{ _('Everything on this list works in Learnova today.') }}</p>
     <div class="about-grid about-grid-3">
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">📷</span>
         <h3>{{ _('Lessons from your material') }}</h3>
         <p>{{ _('Photograph your notes or describe a study goal — Learnova builds a step-by-step explanation, a worked example and teacher tips, matched to your grade level.') }}</p>
+      </article>
+      <article class="about-card">
+        <span class="about-card-icon" aria-hidden="true">🪜</span>
+        <h3>{{ _('Explanations at your level') }}</h3>
+        <p>{{ _('Explanations adapt to your grade and to how well you already know each topic. One tap asks for a simpler explanation, step by step, another example or something harder.') }}</p>
       </article>
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🎯</span>
@@ -73,31 +112,44 @@
         <h3>{{ _('Mistakes that teach') }}</h3>
         <p>{{ _('Every wrong answer lands in your Mistake Notebook with an AI diagnosis of what went wrong, and you can practise a similar question right away.') }}</p>
       </article>
+      {% if feature_flags.private_flashcards %}
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🃏</span>
+        {% if feature_flags.community_library %}
         <h3>{{ _('Flashcards and community sets') }}</h3>
         <p>{{ _('Create flashcards yourself or generate them from your material, review them with spaced repetition, and browse sets other students published. Every shared set is checked before it goes public, and you can report a problem.') }}</p>
+        {% else %}
+        <h3>{{ _('Flashcards') }}</h3>
+        <p>{{ _('Create flashcards yourself or let AI generate them from your notes or a topic, and review them with spaced repetition.') }}</p>
+        {% endif %}
       </article>
+      {% endif %}
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🎓</span>
         <h3>{{ _('Project Mode') }}</h3>
         <p>{{ _('Upload notes, a Kompetenzraster or just type your topics. Learnova finds the topics, teaches and tests them, and plans every day — toward your exam date, or as a flexible plan without one.') }}</p>
       </article>
+      {% if feature_flags.vocabulary_trainer %}
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🗣️</span>
         <h3>{{ _('Vocabulary Trainer') }}</h3>
         <p>{{ _('Photograph a vocabulary page from your textbook and practise the words in both directions until they stick.') }}</p>
       </article>
+      {% endif %}
+      {% if feature_flags.assistant_chat %}
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">✨</span>
         <h3>{{ _('An assistant for quick questions') }}</h3>
         <p>{{ _('Ask anything in a direct chat — no lesson needed. Add a photo of a task and pick a style for how it answers.') }}</p>
       </article>
+      {% endif %}
+      {% if leagues_live %}
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🏆</span>
         <h3>{{ _('XP, challenges and weekly leagues') }}</h3>
         <p>{{ _('Earn XP for real learning, unlock avatars, complete daily and weekly challenges and climb a weekly league — or switch the league off in Settings.') }}</p>
       </article>
+      {% endif %}
     </div>
     <ul class="about-chip-row" aria-label="{{ _('Also good to know') }}">
       <li>{{ _('Works in English, German, French and Spanish') }}</li>
@@ -112,7 +164,7 @@
       <li class="about-step">
         <span class="about-step-number" aria-hidden="true">1</span>
         <h3>{{ _('Bring your material') }}</h3>
-        <p>{{ _('Photograph notes, upload documents, or simply name a topic and a study goal.') }}</p>
+        <p>{{ _('Photograph notes, upload PDFs, or simply name a topic and a study goal.') }}</p>
       </li>
       <li class="about-step">
         <span class="about-step-number" aria-hidden="true">2</span>
@@ -215,7 +267,7 @@
       <article class="about-card">
         <span class="about-card-icon" aria-hidden="true">🌍</span>
         <h3>{{ _('Learning in your language') }}</h3>
-        <p>{{ _('The interface runs in English, German, French and Spanish, and lessons can be generated in several more languages.') }}</p>
+        <p>{{ _('The interface, lessons and practice are available in English, German, French and Spanish.') }}</p>
       </article>
     </div>
     <p class="about-fine-print">{{ _('Learnova supports understanding, practice, revision and exam preparation. How far that carries you still depends on your own work — we make no grade promises.') }}</p>
@@ -226,7 +278,7 @@
     <div class="about-grid about-grid-2">
       <article class="about-card">
         <h3>{{ _('What the AI helps with') }}</h3>
-        <p>{{ _('Explanations, practice questions, feedback on your answers, flashcards and study planning — always based on your material and your level.') }}</p>
+        <p>{{ _('Explanations, practice questions, feedback on your answers, flashcards and study planning — based on your material when you add it, and always matched to your level.') }}</p>
       </article>
       <article class="about-card">
         <h3>{{ _('AI can make mistakes') }}</h3>
@@ -235,12 +287,25 @@
       <article class="about-card">
         <h3>{{ _('Free, with an optional Premium') }}</h3>
         <p>{{ _('The free plan includes every feature, with limits: new projects ({projects} every {days} days), {lessons} new lessons a day outside projects and an allowance for the AI chat. Lessons and tests inside your projects are unlimited. Premium costs {price} € a month, removes these limits and never shows ads. It does not change which AI model you get.', projects=about_facts.projects, days=about_facts.project_days, lessons=about_facts.lessons, price=about_facts.price) }}</p>
+        <p>{{ _('Fair-use limits, such as a maximum number of chat messages per hour, apply to every account, Premium included, so the AI stays fast for everyone.') }}</p>
       </article>
       <article class="about-card">
         <h3>{{ _('Your material stays yours') }}</h3>
         <p>{{ _('Uploads, lessons, attempts and progress are stored in your account and used to build your study materials. Other students see your username, avatar and Premium badge — your level and achievements only while your profile is public, and your weekly XP if you take part in a league. Flashcard sets become public only when you publish them.') }}</p>
       </article>
     </div>
+  </section>
+
+  <section class="about-section about-founder" aria-labelledby="about-founder">
+    <h2 id="about-founder">{{ _('Meet the founder') }}</h2>
+    <article class="about-founder-card">
+      <span class="about-founder-monogram" aria-hidden="true">{{ founder.initial }}</span>
+      <div class="about-founder-body">
+        <h3>{{ founder.name }}</h3>
+        <p class="about-founder-role">{{ _('Student founder') }}</p>
+        <p class="about-founder-text">{{ founder.intro }}</p>
+      </div>
+    </article>
   </section>
 
   <section class="about-section" aria-labelledby="about-faq">
@@ -252,7 +317,7 @@
       </details>
       <details>
         <summary>{{ _('Is Learnova free?') }}</summary>
-        <p>{{ _('Yes. The free plan includes every feature, with limits on new projects, new lessons outside projects and AI chat. Lessons and tests inside a project are unlimited. Premium ({price} € a month) removes these limits.', price=about_facts.price) }}</p>
+        <p>{{ _('Yes. The free plan includes every feature, with limits on new projects, new lessons outside projects and AI chat. Lessons and tests inside a project are unlimited. Premium ({price} € a month) removes these limits.', price=about_facts.price) }} {{ _('Fair-use limits, such as a maximum number of chat messages per hour, apply to every account, Premium included, so the AI stays fast for everyone.') }}</p>
       </details>
       <details>
         <summary>{{ _('How is Learnova different from ChatGPT?') }}</summary>
@@ -260,7 +325,7 @@
       </details>
       <details>
         <summary>{{ _('Can I use my own notes?') }}</summary>
-        <p>{{ _('Yes. Photograph notes or upload documents; Learnova builds its explanations, tests and flashcards from your material.') }}</p>
+        <p>{{ _('Yes. Photograph notes or upload PDFs; Learnova builds its explanations, tests and flashcards from your material.') }}</p>
       </details>
       <details>
         <summary>{{ _('Can Learnova prepare me for exams?') }}</summary>
@@ -285,6 +350,7 @@
     <a class="primary-button" href="{{ url_for('register') }}">{{ _('Start learning for free') }}</a>
     <p class="about-fine-print"><a href="{{ url_for('login') }}">{{ _('Already have an account? Log in') }}</a></p>
     {% endif %}
+    <p class="about-contact-line">{{ _('Questions or ideas for Learnova?') }} <a href="{{ url_for('contact') }}">{{ _('Contact us') }}</a></p>
   </section>
 
 </main>

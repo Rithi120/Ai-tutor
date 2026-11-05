@@ -19,6 +19,34 @@
 .katex-display { margin: .55em 0; padding-bottom: 2px; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
 .katex-display > .katex { white-space: nowrap; }               /* wide formulas scroll, not overflow */
 
+/* A display formula that really scrolls (marked data-scroller by math.js
+   markFormulaScrollers on the lesson page) fades out at the edge that has more behind it,
+   as the chat's do (assistant.css): a scroll-driven animation slides a mask one fade wider
+   than the box from "fade on the right" to "fade on the left". A browser without scroll
+   timelines shows no cue; the formula still scrolls and is a focusable, named region. */
+@supports (animation-timeline: scroll()) {
+  [data-scroller]:is(.katex-display, .ln-math-display) {
+    mask-size: calc(100% + 1.5rem) 100%;
+    mask-repeat: no-repeat;
+    animation: ln-formula-scroll-edge linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+@keyframes ln-formula-scroll-edge {
+  from {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+    mask-position: -1.5rem 0;
+  }
+  to {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+    mask-position: 0 0;
+  }
+}
+[data-scroller]:is(.katex-display, .ln-math-display):focus-visible {
+  outline: 2px solid var(--ln-violet, #6d5cff);
+  outline-offset: 2px;
+}
+
 /* Inside large-font prompts/cards, cap the formula scale so a single symbol can't
    render on an enormous line. */
 .mode-prompt .katex, .study-card-text .katex, .mode-answer .katex,

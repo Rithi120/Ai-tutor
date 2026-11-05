@@ -1,7 +1,7 @@
 // Unit test for the shared markdown renderer (static/js/markdown.js), used by both the
 // assistant and the lesson tutor chat. Run with: node --test tests/js/*.test.mjs
-// (Node is not installed in the current CI image; this test locks the security property
-// the renderer exists to provide, so it runs the moment Node is available.)
+// Node is not installed in the current CI image, so tests/test_js_browser.py runs this
+// very file in Chrome/Edge (with stand-ins for node:test and node:assert).
 //
 // The property: model output is untrusted text. It is escaped first, and only then
 // given the small set of tags the renderer builds itself. Nothing the model writes may
@@ -9,41 +9,45 @@
 // supports is one it introduces, not one it passes through.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+// markdown.js, dom.js's escapeHtml and math-protect.js are pure (no DOM), so the real
+// modules are imported as they ship.
+import { parseChips, renderMarkdown } from "../../static/js/markdown.js";
+import { escapeHtml } from "../../static/js/dom.js";
 
-const dir = path.dirname(fileURLToPath(import.meta.url));
+test("escapeHtml encodes the five characters that can leave text or an attribute", () => {
+  assert.equal(escapeHtml(`<a href="x" title='y'>&</a>`),
+               "&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;&lt;/a&gt;");
+  assert.equal(escapeHtml(null), "");
+  assert.equal(escapeHtml(0), "0");
+});
 
-// markdown.js imports escapeHtml from the browser-oriented dom.js. Load only the pure
-// functions by evaluating them beside a minimal escapeHtml, exactly as the real module
-// receives it from dom.js.
-const source = readFileSync(path.join(dir, "../../static/js/markdown.js"), "utf8");
-function extract(name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} not found in markdown.js`);
-  // Walk braces from the first "{" after the signature to find the function body end.
-  let depth = 0;
-  let index = source.indexOf("{", start);
-  for (let cursor = index; cursor < source.length; cursor += 1) {
-    if (source[cursor] === "{") depth += 1;
-    else if (source[cursor] === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, cursor + 1);
-    }
+test("a bare URL cannot carry a style or handler attribute into the anchor", () => {
+  const out = renderMarkdown('Link: https://x.test/"style="position:fixed;inset:0"x');
+  assert.match(out, /<a href="https:\/\/x\.test\/" target="_blank" rel="noopener noreferrer nofollow">/);
+  assert.ok(!/<a [^>]*style=/.test(out), out);
+  assert.ok(out.includes("&quot;style=&quot;"), out);
+});
+
+test("markdown links are http(s) or mailto only", () => {
+  assert.match(renderMarkdown("[Wiki](https://de.wikipedia.org/wiki/Satz_(Mathematik))"),
+               /<a href="https:\/\/de\.wikipedia\.org\/wiki\/Satz_\(Mathematik\)"[^>]*>Wiki<\/a>/);
+  assert.match(renderMarkdown("[Mail](mailto:hilfe@example.com)"), /<a href="mailto:hilfe@example\.com"/);
+  for (const text of ["[x](javascript:alert(1))", "[x](data:text/html,hi)", "[x](/relative)"]) {
+    assert.ok(!renderMarkdown(text).includes("<a "), text);
   }
-  throw new Error(`unbalanced braces in ${name}`);
-}
+});
 
-const escapeSource = readFileSync(path.join(dir, "../../static/js/dom.js"), "utf8")
-  .match(/export function escapeHtml[\s\S]*?\n}/)[0]
-  .replace("export ", "");
+test("nothing inside a formula or code is linked", () => {
+  assert.ok(!renderMarkdown("$\\url{https://x.test}$").includes("<a "));
+  assert.ok(!renderMarkdown("`https://x.test`").includes("<a "));
+  assert.ok(!renderMarkdown("```\nhttps://x.test\n```").includes("<a "));
+});
 
-const moduleUrl = "data:text/javascript," + encodeURIComponent(
-  `${escapeSource}\n${extract("renderInline")}\n${extract("isTableSeparator")}\n` +
-  `${extract("splitTableRow")}\n${extract("renderMarkdown")}\n${extract("parseChips")}\n` +
-  "export { renderInline, renderMarkdown, parseChips };");
-const { renderMarkdown, parseChips } = await import(moduleUrl);
+test("formulas become slots carrying their source, escaped", () => {
+  const out = renderMarkdown('Es gilt \\( a < b \\) und $$\\text{"q"}$$.');
+  assert.ok(out.includes('<span class="ln-math-slot" data-display="0" data-tex="a &lt; b">\\( a &lt; b \\)</span>'), out);
+  assert.ok(out.includes('data-display="1" data-tex="\\text{&quot;q&quot;}"'), out);
+});
 
 test("script tags cannot survive rendering", () => {
   const out = renderMarkdown('<script>alert("x")</script>');
@@ -54,7 +58,9 @@ test("script tags cannot survive rendering", () => {
 test("event-handler attributes cannot be produced", () => {
   const out = renderMarkdown('<img src=x onerror="alert(1)">');
   assert.ok(!out.includes("<img"), out);
-  assert.ok(!out.includes("onerror="), out);
+  // The words stay visible as escaped text; what must never exist is the attribute on a tag.
+  assert.ok(!/<[a-z][^>]*\sonerror=/i.test(out), out);
+  assert.ok(out.includes("onerror=&quot;alert(1)&quot;"), out);
 });
 
 test("a javascript: URL is never turned into a link", () => {

@@ -1,0 +1,218 @@
+/* contact.css — public Contact page (/contact) and the operator inbox
+ * (/admin/contact-messages). Loaded in {% block head %}, before the shared learnova
+ * sheets, so every selector uses .contact- classes nothing else defines. Colours come
+ * from the --ln-* tokens only, so dark mode needs no override in learnova-dark.css; the
+ * two text colours below are darker in light mode only, where the plain tokens are
+ * under 4.5:1 at this size.
+ * Inputs keep the global border and colours and get their own size and padding (the
+ * global rule sets none). No font-size here (the ≤820px rule keeps them at 16px so iOS
+ * Safari does not zoom) and no outline reset (the global focus-visible ring). */
+
+.contact-shell {
+  /* Error and link text: 4.5:1 or more on the cards and the error summary (WCAG AA for
+   * text under 18.66px bold). The plain tokens pass in dark mode, so it keeps them. */
+  --contact-danger-text: color-mix(in srgb, var(--ln-danger) 70%, var(--ln-ink));
+  --contact-link-text: var(--ln-violet-deep);
+  width: min(1060px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 72px;
+}
+:root[data-theme="dark"] .contact-shell {
+  --contact-danger-text: var(--ln-danger);
+  --contact-link-text: var(--ln-violet);
+}
+
+/* ------------------------------------------------------------------ hero */
+.contact-hero {
+  text-align: center;
+  padding: 48px 16px 40px;
+  border-radius: 28px;
+  background:
+    radial-gradient(560px 240px at 20% 0%, color-mix(in srgb, var(--ln-violet) 13%, transparent), transparent 70%),
+    radial-gradient(560px 240px at 82% 10%, color-mix(in srgb, var(--ln-cyan) 11%, transparent), transparent 70%);
+}
+.contact-hero h1 {
+  margin: 12px auto 0;
+  font: 800 clamp(28px, 4.6vw, 44px)/1.15 Manrope, sans-serif;
+  letter-spacing: -.015em;
+  color: var(--ln-ink);
+}
+.contact-lead {
+  max-width: 38em;
+  margin: 16px auto 0;
+  font-size: clamp(16px, 2vw, 18px);
+  line-height: var(--ln-leading-read, 1.65);
+  color: var(--ln-muted);
+}
+
+/* ---------------------------------------------------------------- layout */
+.contact-layout {
+  display: grid;
+  gap: 18px;
+  margin-top: 28px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .contact-layout { grid-template-columns: 1fr 2fr; }
+}
+.contact-card {
+  min-width: 0;
+  padding: 26px 24px;
+  border: 1px solid var(--ln-line);
+  border-radius: 20px;
+  background: var(--ln-surface-solid);
+}
+.contact-card h2 {
+  margin: 0 0 12px;
+  font: 800 clamp(20px, 2.6vw, 24px)/1.25 Manrope, sans-serif;
+  color: var(--ln-ink);
+}
+.contact-email-card {
+  border-top: 4px solid color-mix(in srgb, var(--ln-violet) 70%, transparent);
+  background: color-mix(in srgb, var(--ln-violet) 5%, var(--ln-surface-solid));
+}
+.contact-email-card p { margin: 0; }
+.contact-email-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ln-tap, 44px);
+  color: var(--contact-link-text);
+  font: 700 17px/1.3 Manrope, sans-serif;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.contact-hint {
+  margin: 0;
+  color: var(--ln-muted);
+  font-size: var(--ln-text-small, 14px);
+  line-height: 1.5;
+}
+.contact-email-card .contact-hint { margin-top: 8px; }
+
+/* ------------------------------------------------------------------ form */
+.contact-form { display: grid; gap: 18px; }
+.contact-field { display: grid; gap: 6px; min-width: 0; }
+.contact-field label { color: var(--ln-ink); font-weight: 700; }
+.contact-field :is(input, select, textarea) { width: 100%; max-width: 100%; }
+/* As tall as the Settings fields, with room between the text and the rounded border. */
+.contact-field :is(input, select) { min-height: 48px; padding: 10px 14px; }
+.contact-field textarea { resize: vertical; min-height: 9rem; padding: 12px 14px; line-height: 1.5; }
+.contact-field [aria-invalid="true"] { border-color: var(--ln-danger); }
+/* An error-summary link lands below the sticky header with the field's label, hint and
+ * error still in view: contact.js scrolls the whole field there, and the margin on the
+ * control is the fallback without JavaScript. */
+.contact-field, .contact-error-summary { scroll-margin-top: calc(var(--app-nav-height, 72px) + 16px); }
+.contact-field :is(input, select, textarea) { scroll-margin-top: calc(var(--app-nav-height, 72px) + 12rem); }
+.contact-error { margin: 0; color: var(--contact-danger-text); font-weight: 600; }
+.contact-counter {
+  margin: 0;
+  justify-self: end;
+  color: var(--ln-muted);
+  font-size: var(--ln-text-small, 14px);
+  font-variant-numeric: tabular-nums;
+}
+.contact-hp { display: none; }
+.contact-submit { justify-self: start; min-width: 12rem; }
+.contact-privacy {
+  margin: 0;
+  color: var(--ln-muted);
+  font-size: var(--ln-text-small, 14px);
+  line-height: 1.55;
+}
+
+.contact-error-summary {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--ln-danger);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ln-danger) 8%, var(--ln-surface-solid));
+  color: var(--ln-ink);
+}
+.contact-error-summary h3 { margin: 0 0 6px; font: 800 17px/1.3 Manrope, sans-serif; color: var(--ln-ink); }
+.contact-error-summary p { margin: 0 0 6px; color: var(--ln-ink); }
+.contact-error-summary ul { margin: 6px 0 0; padding-inline-start: 1.2em; }
+.contact-error-summary a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--contact-danger-text);
+  font-weight: 700;
+}
+
+/* --------------------------------------------------------------- success */
+.contact-success {
+  padding: 20px 20px 22px;
+  border: 1px solid color-mix(in srgb, var(--ln-success) 45%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ln-success) 9%, var(--ln-surface-solid));
+}
+.contact-success h2 { margin-bottom: 8px; }
+.contact-success p { margin: 0; color: var(--ln-ink); line-height: var(--ln-leading-read, 1.65); }
+.contact-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+
+/* ------------------------------------------------------- operator inbox */
+.contact-admin h1 {
+  margin: 8px 0 10px;
+  font: 800 clamp(24px, 3.4vw, 32px)/1.2 Manrope, sans-serif;
+  color: var(--ln-ink);
+}
+.contact-admin .contact-hint + .contact-hint { margin-top: 6px; }
+.contact-admin-list { display: grid; gap: 14px; margin: 22px 0 0; padding: 0; list-style: none; }
+.contact-admin-item {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--ln-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ln-ink) 2%, var(--ln-surface-solid));
+}
+.contact-admin-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--ln-muted); }
+.contact-admin-meta strong { color: var(--ln-ink); }
+.contact-admin-from { margin: 10px 0 4px; color: var(--ln-ink); overflow-wrap: anywhere; }
+.contact-admin-from a { color: var(--contact-link-text); font-weight: 700; }
+.contact-admin-body {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ln-violet) 5%, var(--ln-surface-solid));
+  color: var(--ln-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.contact-admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.contact-admin-delete { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.contact-admin-delete label { display: inline-flex; align-items: center; gap: 8px; min-height: var(--ln-tap, 44px); color: var(--ln-ink); }
+.contact-admin-empty { margin-top: 22px; padding: 22px; }
+.contact-status {
+  padding: 3px 10px;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 999px;
+  color: var(--ln-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.contact-status-sent {
+  border-color: color-mix(in srgb, var(--ln-success) 55%, transparent);
+  background: color-mix(in srgb, var(--ln-success) 12%, transparent);
+}
+.contact-status-failed {
+  border-color: color-mix(in srgb, var(--ln-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--ln-danger) 10%, transparent);
+}
+.contact-status-retry, .contact-status-not_configured {
+  border-color: color-mix(in srgb, var(--ln-amber) 55%, transparent);
+  background: color-mix(in srgb, var(--ln-amber) 12%, transparent);
+}
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width: 700px) {
+  .contact-hero { padding: 36px 12px 30px; }
+  .contact-card { padding: 22px 18px; }
+}
+@media (max-width: 520px) {
+  .contact-submit { width: 100%; justify-self: stretch; }
+  .contact-actions > a { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .contact-shell *, .contact-shell *::before, .contact-shell *::after { transition: none; animation: none; }
+}

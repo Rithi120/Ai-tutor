@@ -1,8 +1,14 @@
+// Text made safe for HTML, in element content *and* in a quoted attribute value. The old
+// version went through textContent/innerHTML, which leaves " and ' alone: a model reply
+// containing https://x.test/"style="position:fixed;inset:0..." closed the href and drew an
+// overlay across the page. A pure function also runs outside a browser (tests).
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
 export function escapeHtml(value) {
-  const node = document.createElement("div");
-  node.textContent = value ?? "";
-  return node.innerHTML;
+  return String(value ?? "").replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
 }
+
+export const escapeAttr = escapeHtml;
 
 // Shared, browser-safe UUID generator.
 // `crypto.randomUUID` is only defined in secure contexts (HTTPS or localhost);

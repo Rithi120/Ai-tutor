@@ -34,7 +34,7 @@ class AboutPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/about", response.headers["Location"])
         self.assertNotIn("/login", response.headers["Location"])
-        # Logged-in students keep the lesson builder at the root.
+        # Logged-in students get the chat assistant at the root (the lesson builder is /lesson).
         self.client.post("/register", data={
             "username": "erik", "email": "erik@example.com",
             "password": "correct-horse-battery", "grade": "8",

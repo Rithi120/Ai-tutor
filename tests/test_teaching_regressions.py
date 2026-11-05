@@ -76,9 +76,10 @@ class ContextRegressions(_Base):
         session_id = self.start_lesson("Solve linear equations")
         self.chat(session_id, "why?")
         sent = self.captured[-1]["input"]
-        self.assertIn('"worked_example"', sent)
+        # Plain-text lesson state (app.lesson_state_text), not JSON.
+        self.assertIn("worked_example:\n<<<\n", sent)
         self.assertIn("subtract 3", sent)
-        self.assertIn('"learning_objective": "Solve linear equations"', sent)
+        self.assertIn("learning_objective: Solve linear equations", sent)
 
     def test_answer_key_still_never_reaches_the_chat_model(self):
         self.register("9")
@@ -87,6 +88,7 @@ class ContextRegressions(_Base):
         sent = self.captured[-1]["input"]
         for key in ("expected_answer", "solution_steps", "rubric"):
             self.assertNotIn(f'"{key}"', sent)
+            self.assertNotIn(f"{key}:", sent)
 
     def test_direct_answer_request_is_routed_through_integrity(self):
         self.register("9")
@@ -150,6 +152,22 @@ class DeploymentBudgetRegressions(unittest.TestCase):
                     pins[key] = value_line.split(":", 1)[1].strip().strip('"')
         self.assertGreaterEqual(int(pins["LESSON_TOKEN_LIMIT"]), 2200)
         self.assertGreaterEqual(int(pins["ANSWER_TOKEN_LIMIT"]), 2200)
+
+    def test_env_example_pins_are_not_below_the_code_defaults(self):
+        # A lesson with 7-12 typed parts needs the 5000-token lesson budget and answer
+        # evaluation 2600 for its retry fields; .env.example pinned both to 2200, and a copy of
+        # it cuts every subject lesson off. (render.yaml is production configuration and is
+        # changed by the owner; the test above keeps its old floor.)
+        from learnova.ai_services import service as ai_service
+
+        text = (Path(application.app.root_path) / ".env.example").read_text(encoding="utf-8")
+        pins = dict(line.split("=", 1) for line in text.splitlines() if "=" in line and not line.startswith("#"))
+        self.assertGreaterEqual(int(pins["LESSON_TOKEN_LIMIT"]), 5000)
+        self.assertGreaterEqual(int(pins["ANSWER_TOKEN_LIMIT"]), 2600)
+        for task in ("lesson_generation", "answer_evaluation", "project_section_generation", "final_exam_generation"):
+            with self.subTest(task=task):
+                self.assertGreaterEqual(int(pins[f"AI_{task.upper()}_MAX_OUTPUT_TOKENS"]),
+                                        ai_service.DEFAULT_OUTPUT_TOKEN_BUDGETS[task])
 
 
 if __name__ == "__main__":

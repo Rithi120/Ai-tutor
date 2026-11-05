@@ -370,3 +370,7 @@ a.author-chip:hover .author-chip-name, a.author-chip:focus-visible .author-chip-
   .profile-hero-art .avatar-frame, .league-legendary { animation: none; }
   .avatar-tile, .level-bar i, .challenge-progress i { transition: none; }
 }
+
+/* Settings: Help and information (About, Contact, and the contact inbox for operators). */
+.settings-help-links { display: grid; gap: 10px; margin-top: 12px; }
+.settings-help-links a { justify-content: center; text-align: center; }

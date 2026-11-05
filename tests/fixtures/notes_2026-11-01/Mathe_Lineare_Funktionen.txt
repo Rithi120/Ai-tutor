@@ -1,0 +1,22 @@
+Mathe Klasse 8 - Lineare Funktionen (Merkblatt)
+Eine lineare Funktion hat die Funktionsgleichung y = m · x + b. Ihr Graph ist immer eine Gerade.
+m heißt Steigung. Sie gibt an, um wie viel y größer wird, wenn x um 1 größer wird.
+b heißt y-Achsenabschnitt. Die Gerade schneidet die y-Achse im Punkt (0 | b).
+Ist m > 0, steigt die Gerade. Ist m < 0, fällt sie. Ist m = 0, verläuft sie parallel zur x-Achse.
+Steigung aus zwei Punkten P(x1 | y1) und Q(x2 | y2): m = (y2 - y1) : (x2 - x1)
+Steigungsdreieck: 1 nach rechts und m nach oben (bei negativem m nach unten).
+Nullstelle: Dort schneidet der Graph die x-Achse, also ist y = 0. Man löst 0 = m · x + b nach x auf.
+Beispiel
+Gegeben sind P(1 | 3) und Q(4 | 9).
+Steigung: m = (9 - 3) : (4 - 1) = 6 : 3 = 2
+b bestimmen: P einsetzen: 3 = 2 · 1 + b, also b = 1. Funktionsgleichung: y = 2x + 1
+Nullstelle: 0 = 2x + 1, also 2x = -1 und x = -0,5
+Typische Fehler
+x und y beim Einsetzen vertauschen.
+Beim Steigungsdreieck die Differenzen in verschiedener Reihenfolge bilden (y2 - y1, aber x1 - x2).
+Das Vorzeichen von b beim Ablesen vergessen.
+Übungen
+1) Bestimme m und b von y = -3x + 4. Steigt oder fällt die Gerade?
+2) Eine Gerade geht durch A(2 | 1) und B(6 | 9). Bestimme die Funktionsgleichung.
+3) Berechne die Nullstelle von y = 4x - 6.
+4) Handytarif: Grundgebühr 5 Euro im Monat, pro GB Datenvolumen 2 Euro. Stelle die Funktionsgleichung auf.

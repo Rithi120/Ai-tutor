@@ -7,8 +7,8 @@ switched on with a one-time activation code.
 |---|---|---|
 | New projects | 1 in any rolling 7 days | no plan limit |
 | Lessons and tests inside a project | unlimited | unlimited |
-| Other new short lessons | 2 per calendar day (Europe/Berlin) | no plan limit |
-| AI assistant (tutor chat and the assistant) | a daily free allowance | no plan allowance |
+| Other new short lessons, including Continue learning from the chat | 2 per calendar day (Europe/Berlin) | no plan limit |
+| AI assistant (tutor chat and the chat assistant, photo readings included) | a daily free allowance | no plan allowance |
 | Flashcards, vocabulary, practice, progress | yes | yes |
 | Ads | shown once enabled ([ADSENSE.md](ADSENSE.md)) | never |
 
@@ -17,7 +17,27 @@ Premium removes the plan limits only. Abuse protection still applies to every ac
 - request-size limits;
 - site-wide token budgets;
 - provider rate limits;
-- route rate limits.
+- route rate limits. The chat's are counted per signed-in account, not per address
+  (`ASSISTANT_MESSAGES_PER_HOUR` 40, for sends and regenerates together,
+  `ASSISTANT_CONVERSATIONS_PER_HOUR` 30, `ASSISTANT_SEARCH_PER_MINUTE` 60,
+  `CONTINUE_LEARNING_PER_HOUR` 10, `CHAT_ATTACHMENT_UPLOADS_PER_HOUR` 60; see
+  [ASSISTANT.md](ASSISTANT.md#configuration)).
+
+Nothing promises unlimited AI: the About page says Premium removes the plan limits and
+that fair-use limits (such as the hourly message limit) apply to every account, Premium
+included; the Subscription panel says the same under the plans.
+
+**Owner recommendation: per-account token budget.** `AI_BUDGET_USER_TOKENS_PER_DAY` (and
+`_PER_MONTH`) is an existing, unset-by-default ceiling on the tokens one account may use.
+Set it in production (for example `300000`) as the hard stop behind the free credit
+allowance. By design Premium accounts skip account-level token budgets
+(`learnova/ai_services/service.py` `_reserve_for_call`: `has_user=… and not
+premium_entitled`), so for Premium the per-account bounds are the request rates above
+(`ASSISTANT_MESSAGES_PER_HOUR`, `AI_MAX_REQUESTS_PER_USER_HOUR` 60), and the shared
+`AI_BUDGET_GLOBAL_TOKENS_PER_DAY` (2 000 000) protects the site. One very active Premium
+account can use a large share of that site budget in a few hours (estimate in
+[ASSISTANT.md](ASSISTANT.md#quotas)); a token ceiling for Premium too would be a plan-rule
+change and is the owner's decision (not implemented).
 
 Premium never changes which AI model a student gets.
 
@@ -147,9 +167,21 @@ released**:
   - A free account with no projects left is told before the upload.
 - **Short lesson:** counted when a newly generated lesson is saved, from either of the two
   places lessons are generated:
-  - `/api/analyze`, the "New lesson" page;
+  - `/api/analyze`, the Short Lesson builder (`/lesson`);
   - `start_saved_practice`, which covers reviews, today's practice, weak-point,
-    similar-mistake and concept practice.
+    similar-mistake and concept practice, and **Continue learning** in the chat
+    (`project_work=False`).
+
+  A Continue Learning lesson is one free short lesson:
+  - It is checked before the build and reserved, then committed only when the lesson is
+    saved. A failed build releases it, and the conversation keeps working.
+  - A second click on the same reply opens the lesson already built and costs nothing.
+  - A free account with no lessons left gets 429 `free_lessons_used` with the See Premium
+    link.
+  - Its AI calls are labelled `lesson_generation:<version>+chat1` (today
+    `lesson_generation:v7+chat1`) in the usage ledger, so they can be told apart from
+    Short Lesson in `/internal/ai-diagnostics`. See
+    [ASSISTANT.md](ASSISTANT.md#continue-learning).
 
   Lessons and tests inside a project (topic lessons, section tests, mixed practice and
   exam-gap practice; `project_work=True`) are unlimited. The project is the counted unit.
@@ -159,8 +191,11 @@ released**:
   > Until 2026-10-31 project lessons counted too, so a free project plan moved at 2 lessons
   > a day. By user decision a free account now gets one project a week with unlimited
   > lessons and tests in it. Every project counts, including one made only from typed topics.
-- **AI assistant** (tutor chat in a lesson and the assistant chat) — an internal credit
+- **AI assistant** (tutor chat in a lesson and the chat assistant) — an internal credit
   budget per period (`FREE_CHAT_CREDITS_PER_PERIOD`, default 150 000 per day):
+  - **Photo readings:** reading a photo sent to either chat, or photographed as an
+    answer, is charged to this allowance like the text sent with it (`charge_as_chat`).
+    A lesson's or a project's own reading is covered by that lesson or project.
   - **Units:** a credit is one input token on a weight-1 model. Output tokens count
     `FREE_CHAT_OUTPUT_WEIGHT` (4), because providers bill output higher. The total is
     multiplied by the model's weight from `FREE_CHAT_MODEL_WEIGHTS` (e.g. `openai=5`).
@@ -171,7 +206,12 @@ released**:
     `usage_observer`.
   - **Costs nothing:** cache hits, de-duplicated double clicks, and failures before any
     provider call.
-  - **Typical use:** a chat message uses roughly 5 000–12 000 credits.
+  - **Typical use:** a short chat message uses about 2 100 credits, so the default lasts
+    about 70 of them a day. A message with a full context window uses about 8 600, so
+    about 17 a day. A photo adds its reading. The measured basis is in
+    [ASSISTANT.md](ASSISTANT.md#cost).
+  - **When it is spent:** a chat reply comes back as a stored failed turn carrying the
+    allowance message, and a photo reading answers 429 `free_chat_used`.
   - **What students see:** never credits or tokens. They see "available" or "used, back
     at …".
 
@@ -230,10 +270,14 @@ needed. Dropping them by hand is safe once nothing is rolled forward again.
 
 ## Known limits
 
-- **Client address behind a proxy:** the app has no `ProxyFix`, so behind a reverse proxy
-  every request shares the proxy's address. The per-address attempt limit then acts as a
-  site-wide one (20 failures per 15 minutes for everyone) while the per-account limit stays
-  exact. Configure `ProxyFix` for the real proxy depth before relying on the address limit.
+- **Client address behind a proxy:** `ProxyFix` is opt-in. With `PROXY_FIX_X_FOR=0` (the
+  default) every request behind a reverse proxy shares the proxy's address. The
+  per-address attempt limit then acts as a site-wide one (20 failures per 15 minutes for
+  everyone), while the per-account limit stays exact.
+  - Set `PROXY_FIX_X_FOR` to the number of trusted proxies that set `X-Forwarded-For` (1
+    for a single nginx).
+  - Never set it higher than the real depth, or a client can forge its address.
+  - The chat's route limits are per signed-in account and do not depend on it.
 - **Flask-Limiter storage:** Flask-Limiter uses `memory://` unless `RATELIMIT_STORAGE_URI`
   is set. The decorator limits on the redeem route reset on restart; the database attempt
   limit does not.

@@ -35,7 +35,7 @@ class VoiceAccessibilityTests(unittest.TestCase):
 
     def test_microphone_controls_render_for_chat_and_written_quiz_answers(self):
         self.register()
-        html = self.client.get("/").data
+        html = self.client.get("/lesson").data   # the lesson page (/ is the assistant chat)
         self.assertIn(b'id="answerMicrophoneControl"', html)
         self.assertIn(b'data-speech-target="#writtenAnswer"', html)
         self.assertIn(b'id="chatMicrophoneControl"', html)
@@ -48,7 +48,7 @@ class VoiceAccessibilityTests(unittest.TestCase):
 
     def test_listen_controls_cover_lesson_question_hint_and_feedback(self):
         self.register()
-        html = self.client.get("/").data
+        html = self.client.get("/lesson").data
         for control_id, target in (
             (b"explanationListenControl", b"#explanation"),
             (b"questionListenControl", b"#questionPrompt"),

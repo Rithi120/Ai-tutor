@@ -26,6 +26,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.ocr.service import (  # noqa: E402
     REGION_SHEET_MAX,
     _adaptive_threshold,
@@ -246,6 +247,8 @@ class RegionReadingTests(unittest.TestCase):
 # --------------------------------------------------------------- end to end, in app
 class SecondLookFlowTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_HANDWRITING_SECOND_LOOK")
         application.app.config.update(TESTING=True, FEATURE_HANDWRITING_SECOND_LOOK=True)
         with application.app.app_context():
             application.db.drop_all()

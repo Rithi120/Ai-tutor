@@ -183,8 +183,11 @@ def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict
     for item in raw:
         if not isinstance(item, dict):
             continue
+        raw_entry = item.get("entry")
+        if raw_entry is None:              # int(None) is the TypeError below
+            continue
         try:
-            entry = int(item.get("entry"))
+            entry = int(raw_entry)
         except (TypeError, ValueError):
             continue
         if not 1 <= entry <= len(cards):

@@ -6,9 +6,12 @@ response caching, private cache partitioning, and sanitized usage accounting.
 
 from __future__ import annotations
 
+import contextvars
+import functools
 import hashlib
 import hmac
 import json
+import math
 import re
 import threading
 import time
@@ -23,8 +26,9 @@ from openai import OpenAI
 
 from . import adapters, budgets, routing
 from .budgets import BudgetPolicy, LimitSpec, LimitState, UsageTotals
-from .contracts import AIValidationError, repair_latex_json, validate_output
-from .prompts import PROMPT_VERSIONS, corrective_instruction, output_contract
+from .contracts import (AIValidationError, ValidationReport, json_cut_off, repair_json_syntax, repair_latex_json,
+                        validate_output)
+from .prompts import PROMPT_VARIANTS, PROMPT_VERSIONS, corrective_instruction, output_contract  # noqa: F401
 
 
 def Anthropic(**kwargs: Any) -> Any:  # noqa: N802 - keeps the SDK's name so tests can patch it
@@ -111,12 +115,34 @@ class AITokenLimitError(AIGatewayError):
     """Raised before a call when relevant input exceeds its configured task budget."""
 
 
-class AIProviderError(AIGatewayError):
-    """Provider failure with a safe, stable category and no provider payload."""
+def _safe_token(value: Any) -> str:
+    """A provider's error code or type as a short log-safe token: [a-z0-9_.-], at most 40."""
 
-    def __init__(self, category: str, summary: str):
+    return re.sub(r"[^a-z0-9_.-]", "", str(value or "").casefold())[:40]
+
+
+class AIProviderError(AIGatewayError):
+    """Provider failure with a safe, stable category and no provider payload.
+
+    The facts are what an operator needs to tell "413 too large" from "429 busy" without
+    any content: the HTTP status, the provider's own error code and type (sanitised
+    tokens), its Retry-After, and - parsed from "Limit N ... Requested M" - the two
+    integers of a token limit and which limit it was (tpm, otpm, tpd, rpd, rpm).
+    """
+
+    def __init__(self, category: str, summary: str, *, status_code: int | None = None,
+                 provider_code: str = "", provider_type: str = "",
+                 retry_after_seconds: int | None = None, limit_tokens: int | None = None,
+                 requested_tokens: int | None = None, limit_scope: str = ""):
         self.category = category
         self.safe_summary = summary[:160]
+        self.status_code = status_code if isinstance(status_code, int) and 100 <= status_code <= 599 else None
+        self.provider_code = _safe_token(provider_code)
+        self.provider_type = _safe_token(provider_type)
+        self.retry_after_seconds = retry_after_seconds
+        self.limit_tokens = limit_tokens
+        self.requested_tokens = requested_tokens
+        self.limit_scope = _safe_token(limit_scope)
         super().__init__(self.safe_summary)
 
 
@@ -146,15 +172,19 @@ class GatewayResponse:
 
 DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     "tutor_chat": 1200,
-    "answer_evaluation": 250,
+    # Feedback, a hidden correction and, for a first wrong answer, the retry fields
+    # (misunderstanding, reteach, simpler example) plus the next question.
+    "answer_evaluation": 2600,
     "mistake_analysis": 3000,
     "answer_diagnosis": 2600,
     "diagnosis_verification": 300,
     "question_generation": 1200,
     "translation": 400,
-    "lesson_generation": 700,
+    # lesson_generation:v7: up to twelve typed teaching parts plus the first question.
+    "lesson_generation": 5000,
     "quiz_generation": 600,
-    "project_section_generation": 4000,
+    # v4 topic map for at most 4 pages (9000 characters) per call, plus hidden reasoning.
+    "project_section_generation": 6000,
     "final_exam_generation": 6000,
     "ocr_document_recognition": 1400,
     # Short readings for at most 8 cropped fragments, not a whole page.
@@ -176,9 +206,10 @@ DEFAULT_OUTPUT_TOKEN_BUDGETS = {
     # One row per printed entry; a dense textbook page has 20-30 of them, each with an
     # example sentence and its translation.
     "vocabulary_page_extraction": 3000,
-    # A full reading of up to four images: every line, formulas twice (text and LaTeX),
-    # diagram descriptions and the uncertainty list.
-    "image_understanding": 5000,
+    # A full reading of up to three images: every line, formulas twice (text and LaTeX),
+    # diagram descriptions and the uncertainty list (image_understanding:v2: a bbox only
+    # where a close-up needs it). The request ceiling may lower it per request.
+    "image_understanding": 3500,
 }
 
 DEFAULT_INPUT_TOKEN_BUDGETS = {
@@ -189,7 +220,8 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "diagnosis_verification": 4000,
     "question_generation": 6000,
     "translation": 9000,
-    "lesson_generation": 9000,
+    # 16 000 characters of page text, the topic map block (<= 5000) and the teaching method.
+    "lesson_generation": 12000,
     "quiz_generation": 6000,
     "project_section_generation": 16000,
     "final_exam_generation": 20000,
@@ -205,9 +237,20 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "assistant_chat": 12000,
     "competency_extraction": 16000,
     "vocabulary_page_extraction": 8000,
-    # Four images at the fixed 1 500-token image estimate, plus the reading contract.
+    # Three images at 2048 tokens each (Groq's count), plus the reading prompt and contract.
     "image_understanding": 10000,
 }
+
+# Tokens one image counts as in every estimate when no app setting says otherwise. Groq:
+# "Each image counts as 2048 input tokens" (qwen/qwen3.8-27b). AI_IMAGE_TOKEN_ESTIMATE.
+IMAGE_TOKEN_ESTIMATE = 2048
+
+
+def _image_token_estimate() -> int:
+    try:
+        return max(1, int(current_app.config.get("AI_IMAGE_TOKEN_ESTIMATE") or IMAGE_TOKEN_ESTIMATE))
+    except (RuntimeError, TypeError, ValueError):   # RuntimeError: no app context
+        return IMAGE_TOKEN_ESTIMATE
 
 
 @dataclass(frozen=True)
@@ -260,9 +303,20 @@ def _request_timeout(request: dict[str, Any]) -> float:
     key = "AI_VISION_TIMEOUT_SECONDS" if vision else "AI_PROVIDER_TIMEOUT_SECONDS"
     fallback = 75.0 if vision else 40.0
     try:
-        return float(current_app.config.get(key) or fallback)
+        configured = float(current_app.config.get(key) or fallback)
     except (TypeError, ValueError):
-        return fallback
+        configured = fallback
+    deadline = _CALL_DEADLINE.get()
+    if deadline is None:
+        return configured
+    # A caller with a time budget (create_response(timeout_seconds=...)): every call of
+    # this request, a fallback after a timeout included, ends by the same moment.
+    return min(configured, max(5.0, deadline - time.monotonic()))
+
+
+# The moment (time.monotonic) by which the provider calls of the current create_response
+# must end; set only for the duration of a call that passed timeout_seconds.
+_CALL_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("ai_call_deadline", default=None)
 
 
 def _carries_image(value: Any) -> bool:
@@ -467,6 +521,11 @@ def parse_json(payload: str) -> Any:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
+        # A syntax slip the validator already repaired (a stray quote after "]", a missing
+        # final "}"): the same repair here, or the accepted answer would fail at the caller.
+        repaired = repair_json_syntax(cleaned)
+        if repaired is not None:
+            return json.loads(repaired)
         # Fall back to the outermost JSON object/array if the model wrapped it in prose.
         match = re.search(r"[\{\[].*[\}\]]", cleaned, flags=re.DOTALL)
         if match is None:
@@ -649,6 +708,10 @@ def _read_cache(key: str) -> GatewayResponse | None:
 
 
 def _write_cache(key: str, response: GatewayResponse, metadata: dict[str, Any]) -> None:
+    if metadata.get("task_type") == "image_understanding" and json_cut_off(response.output_text):
+        # A photo reading its output limit cut off is used once (marked partial) and never
+        # reused: the student is told to send the photo again, and that must really read it.
+        return
     path = _cache_path(key)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -666,11 +729,57 @@ def _write_cache(key: str, response: GatewayResponse, metadata: dict[str, Any]) 
     temporary.replace(path)
 
 
+PURGE_MAX_FILES = 20_000
+
+
+def purge_cached(*, session_scope: str) -> int:
+    """Delete the cached deterministic results (photo readings, scans) made for one session.
+
+    Called after a conversation is deleted: its readings would otherwise stay on disk until
+    AI_CACHE_TTL_DAYS. Matched by the hashed `session_reference` written with each entry
+    (entries from before that field existed are left to expire). Walks at most
+    PURGE_MAX_FILES files, never raises, and logs only the count.
+    """
+
+    if session_scope is None or not str(session_scope).strip():
+        return 0
+    removed = 0
+    try:
+        reference = _anonymous_reference(str(session_scope), label="session")
+        root = Path(current_app.config["AI_CACHE_DIR"])
+        if not root.is_dir():
+            return 0
+        for scanned, path in enumerate(root.glob("*/*.json"), start=1):
+            if scanned > PURGE_MAX_FILES:
+                break
+            try:
+                raw = path.read_text(encoding="utf-8")
+                if reference not in raw:
+                    continue
+                payload = json.loads(raw)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(payload, dict) or payload.get("session_reference") != reference:
+                continue
+            if payload.get("task_type") not in DETERMINISTIC_TASKS:
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                continue
+        current_app.logger.info("ai.cache_purged files=%s", removed)
+    except Exception:  # noqa: BLE001 - best effort after a deletion that already succeeded
+        current_app.logger.warning("ai.cache_purge_failed files=%s", removed)
+    return removed
+
+
 def _estimate_tokens(value: Any) -> int:
     if isinstance(value, str) and value.startswith("data:") and ";base64," in value:
-        # Images are provider-tokenized differently; a conservative fixed estimate prevents
-        # a multi-megabyte base64 string from being treated as free while avoiding false blocks.
-        return 1500
+        # Images are provider-tokenized differently: Groq counts every image as 2048 input
+        # tokens whatever its size, so a fixed estimate (AI_IMAGE_TOKEN_ESTIMATE) is exact
+        # there and keeps a multi-megabyte base64 string from being counted as text.
+        return _image_token_estimate()
     if isinstance(value, dict):
         return max(1, sum(_estimate_tokens(key) + _estimate_tokens(item) for key, item in value.items()))
     if isinstance(value, (list, tuple)):
@@ -988,6 +1097,38 @@ def _assert_usage_limits(user_ref: str, mode: str, *, premium: bool = False) -> 
                 "Development live-request limit reached.", scope="development_live")
 
 
+def remaining_hourly_requests(private_scope: str | int | None, *, premium: bool = False) -> int | None:
+    """How many more AI requests this account may start before its own cap stops it.
+
+    Read-only: it records, reserves and counts nothing. It reads exactly what the gateway
+    checks for the same `private_scope` (the anonymised user reference, the ledger's request
+    count over the last hour - cache hits included, as `_assert_usage_limits` counts them -
+    the daily cap for a free account, and a running cooldown), so a caller doing many calls
+    in a row (reading every page of an upload) can stop *before* the request that would put
+    the student on the six-hour cooldown. 0 while a cooldown runs; None when no cap applies
+    (no account, or limits are not enforced, as under the test runner).
+    """
+
+    if private_scope is None:
+        return None
+    user_ref = _anonymous_reference(private_scope, label="user")
+    now = datetime.now(timezone.utc)
+    if not premium and _USER_COOLDOWN_STORE is not None:
+        until = _USER_COOLDOWN_STORE[0](user_ref)
+        if until is not None and (until if until.tzinfo else until.replace(tzinfo=timezone.utc)) > now:
+            return 0
+    if not _limits_enforced():
+        return None
+    ledger = usage_ledger()
+    hourly_cap = int(current_app.config.get("AI_MAX_REQUESTS_PER_USER_HOUR", 60))
+    remaining = hourly_cap - ledger.count_requests(user_reference=user_ref, since=now - timedelta(hours=1))
+    if not premium:
+        daily_cap = int(current_app.config.get("AI_MAX_REQUESTS_PER_USER_DAY", 250))
+        remaining = min(remaining, daily_cap - ledger.count_requests(
+            user_reference=user_ref, since=now - timedelta(days=1)))
+    return max(0, remaining)
+
+
 def _reserve_for_call(entry: UsageEntry, *, anticipated_cost: float,
                       premium_entitled: bool = False) -> str:
     """Check every token ceiling for one provider call and reserve its anticipated tokens.
@@ -1148,17 +1289,416 @@ MAX_CORRECTIVE_RETRIES = 1
 
 
 PROVIDER_QUOTA_COOLDOWN_SECONDS = 600.0
+# Why each model cooldown started (the failure category), for the error a page reading gets
+# while it lasts (COOLDOWN_FAIL_FAST_TASKS).
+_MODEL_COOLDOWN_CATEGORIES: dict[tuple[str, str], str] = {}
+# Tasks that do not ask a cooling-down model again when it is the only one left in the plan
+# (review B B-1, spec §2C "do not repeatedly retry requests that have already reached a rate
+# limit"): a Project Mode page reading has the offline OCR behind it, so the next photo of a
+# run goes straight there instead of collecting one more refusal. Every other task keeps
+# asking the last model (WP2: a chat photo, its close-up second look - handwriting_region_review
+# is shared with the chat reader - or a lesson the student is waiting for).
+COOLDOWN_FAIL_FAST_TASKS = frozenset({"ocr_document_recognition"})
 
 
 def _note_provider_failure(provider: str, category: str, model: str = "") -> None:
     if category in {"provider_rate_limit", "provider_overloaded"}:
         if model:
             _MODEL_COOLDOWNS[(provider, model)] = time.monotonic() + PROVIDER_COOLDOWN_SECONDS
+            _MODEL_COOLDOWN_CATEGORIES[(provider, model)] = category
         else:
             _PROVIDER_COOLDOWNS[provider] = time.monotonic() + PROVIDER_COOLDOWN_SECONDS
     elif category == "provider_quota_exhausted":
         # Credit does not come back by waiting a minute; stop asking for ten.
         _PROVIDER_COOLDOWNS[provider] = time.monotonic() + PROVIDER_QUOTA_COOLDOWN_SECONDS
+    elif category == "provider_daily_limit":
+        # A model's tokens or requests per day are spent: that model only, for ten minutes
+        # (the other models at the provider have their own daily limits).
+        if model:
+            _MODEL_COOLDOWNS[(provider, model)] = time.monotonic() + PROVIDER_QUOTA_COOLDOWN_SECONDS
+            _MODEL_COOLDOWN_CATEGORIES[(provider, model)] = category
+        else:
+            _PROVIDER_COOLDOWNS[provider] = time.monotonic() + PROVIDER_QUOTA_COOLDOWN_SECONDS
+
+
+def _cooldown_error(provider: str, model: str) -> AIProviderError:
+    """The error a fail-fast task gets, without a call, while `model` cools down."""
+
+    category = _MODEL_COOLDOWN_CATEGORIES.get((provider, model), "provider_rate_limit")
+    remaining = max(1, math.ceil(_MODEL_COOLDOWNS.get((provider, model), 0.0) - time.monotonic()))
+    summary = ("The AI provider's daily limit was reached." if category == "provider_daily_limit"
+               else "The AI provider rate limit was reached.")
+    return AIProviderError(category, summary, retry_after_seconds=remaining)
+
+
+# ---- request ceilings: what one request may ask of a model -----------------------------
+#
+# Groq refuses a request larger than the model's per-minute token limit outright ("Request
+# too large", HTTP 413) and a request whose expected output exceeds its output-tokens-per-
+# minute limit (HTTP 429 with the same words). Both refusals are certain, so a request
+# that cannot fit is better refused here, before anything is reserved or sent, and one that
+# can fit is sent with an output cap that fits. Only requests that carry images get a
+# lower output cap (orchestrator decision 2026-11-01); a text request keeps its cap, and
+# its input is what is fitted. Groq counts part of a text request's output cap at
+# admission, and how much changed from one day to the next: "Requested 8305" for about
+# 8 000 input tokens at max_output_tokens 5000 on 2026-11-01, input + about 2,350 on
+# 2026-11-02 (Requested ≈ 0.93 × our estimate + 2,346). So a text request is admitted, and
+# notes are fitted, on its input estimate plus AI_TEXT_REQUEST_OUTPUT_ALLOWANCE (a share of
+# the output cap) plus the margin; after a 413 that names Limit and Requested, a rebuilt
+# request must be smaller by that overshoot, or it is not sent at all.
+
+@functools.lru_cache(maxsize=8)
+def _explicit_ceilings(raw: str) -> dict[str, int]:
+    """AI_REQUEST_TOKEN_CEILINGS ("provider:model=tokens,...") as {"provider:model": tokens}."""
+
+    ceilings: dict[str, int] = {}
+    for entry in filter(None, (item.strip() for item in str(raw or "").split(","))):
+        model, separator, tokens = entry.rpartition("=")
+        if not separator or not tokens.strip().isdigit():
+            continue
+        provider, bare = routing.split_model(model.strip())
+        if bare and int(tokens) > 0:
+            ceilings[f"{provider}:{bare}"] = int(tokens)
+    return ceilings
+
+
+def request_ceiling(model: str | None, *, has_images: bool) -> int | None:
+    """The most tokens one request to `model` may total.
+
+    An explicit AI_REQUEST_TOKEN_CEILINGS entry for the model wins; otherwise a request
+    with images gets AI_VISION_REQUEST_TOKEN_CEILING (input estimate + output cap, see
+    image_output_cap) and a text request AI_TEXT_REQUEST_TOKEN_CEILING (the input estimate,
+    a share of the output cap and a margin, see _text_admission and text_input_room).
+    None means no ceiling.
+    """
+
+    provider, bare = routing.split_model(model)
+    explicit = _explicit_ceilings(str(current_app.config.get("AI_REQUEST_TOKEN_CEILINGS") or ""))
+    if f"{provider}:{bare}" in explicit:
+        return explicit[f"{provider}:{bare}"]
+    setting = "AI_VISION_REQUEST_TOKEN_CEILING" if has_images else "AI_TEXT_REQUEST_TOKEN_CEILING"
+    try:
+        value = int(current_app.config.get(setting) or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return value if value > 0 else None
+
+
+def text_output_allowance(max_output_tokens: int | None) -> int:
+    """The tokens of a text request's output cap that count against its ceiling:
+    AI_TEXT_REQUEST_OUTPUT_ALLOWANCE (a share, default 0.4) of `max_output_tokens`."""
+
+    try:
+        share = float(current_app.config.get("AI_TEXT_REQUEST_OUTPUT_ALLOWANCE", 0.4) or 0.0)
+    except (TypeError, ValueError):
+        share = 0.4
+    return math.ceil(max(0.0, min(1.0, share)) * max(0, int(max_output_tokens or 0)))
+
+
+def text_request_margin(ceiling: int) -> int:
+    return max(200, int(ceiling) // 20)
+
+
+def text_input_room(ceiling: int, max_output_tokens: int | None) -> int:
+    """The largest input estimate a text request with this output cap may have under
+    `ceiling`: the ceiling minus the output allowance minus max(200, ceiling/20)."""
+
+    return int(ceiling) - text_request_margin(ceiling) - text_output_allowance(max_output_tokens)
+
+
+def refit_input_room(error: Exception, sent_input_tokens: int, max_output_tokens: int | None) -> int | None:
+    """After a provider refused a text request as too large: the largest input estimate the
+    rebuilt request may have, or None when the refusal named no limit.
+
+    Never more than the limit leaves (text_input_room); and when the refusal also said how
+    much was requested ("Limit L, Requested R"), smaller than the refused request's own
+    estimate by the overshoot R - L plus a tenth of it plus the margin - the provider's own
+    count decides, whatever our estimate thought (live 2026-11-02: a rebuild to "the limit"
+    drew "Requested 9151" for a limit of 8000, and an identical rebuild was sent again)."""
+
+    limit = getattr(error, "limit_tokens", None)
+    if not limit:
+        return None
+    room = text_input_room(int(limit), max_output_tokens)
+    requested = getattr(error, "requested_tokens", None)
+    if requested and int(requested) > int(limit):
+        overshoot = int(requested) - int(limit)
+        room = min(room, int(sent_input_tokens) - overshoot - overshoot // 10 - text_request_margin(int(limit)))
+    return room
+
+
+def _text_admission(model: str, input_tokens: int, max_output_tokens: int | None = None) -> None:
+    """Refuse, before anything is reserved or sent, a text request that cannot fit the
+    model's ceiling: its input estimate plus the output allowance (a share of its output
+    cap, AI_TEXT_REQUEST_OUTPUT_ALLOWANCE) plus a margin of max(200, ceiling/20).
+
+    The output cap itself is never lowered (a lower cap would only cut lessons off); Groq
+    counts part of it at admission (input + about 2,350 at max_output_tokens 5000 on
+    2026-11-02, input + 300-470 the day before), so the input is what has to fit."""
+
+    ceiling = request_ceiling(model, has_images=False)
+    if ceiling and int(input_tokens) > text_input_room(ceiling, max_output_tokens):
+        raise AIProviderError(
+            "request_too_large", "The request is too large for the selected model.",
+            limit_tokens=ceiling,
+            requested_tokens=int(input_tokens) + text_output_allowance(max_output_tokens))
+
+
+def next_candidate_after(plan: routing.RoutePlan, index: int, error: Exception, *, has_images: bool) -> int | None:
+    """Where a request goes after candidate `index` failed with `error`.
+
+    `routing.next_candidate`, except after a text request was too large (a provider 413 or
+    our own admission check): another model at the same provider has the same per-minute
+    limit on Groq (20b refused "Requested 8305", then 120b "Requested 8962"; live
+    2026-11-01), so it is skipped unless its own ceiling is known and larger than the
+    limit that refused. A candidate at another provider is still tried. Image requests
+    keep their own handling (a vision fallback model)."""
+
+    category = getattr(error, "category", "")
+    following = routing.next_candidate(plan, index, category)
+    if has_images or category != "request_too_large" or not 0 <= index < len(plan.candidates):
+        return following
+    failed = plan.candidates[index]
+    limit = getattr(error, "limit_tokens", None) or request_ceiling(failed.model, has_images=False)
+    while following is not None:
+        candidate = plan.candidates[following]
+        if candidate.provider != failed.provider:
+            return following
+        ceiling = request_ceiling(candidate.model, has_images=False)
+        if ceiling and limit and ceiling > int(limit):
+            return following
+        following = routing.next_candidate(plan, following, category)
+    return None
+
+
+def _min_output_tokens(task_type: str) -> int:
+    """The smallest output cap worth sending for this task (AI_<TASK>_MIN_OUTPUT_TOKENS)."""
+
+    try:
+        return max(1, int(current_app.config.get(f"AI_{task_type.upper()}_MIN_OUTPUT_TOKENS", 800) or 800))
+    except (TypeError, ValueError):
+        return 800
+
+
+class _LearnedOutputCaps(dict):
+    """The learned output limits, also kept in AI_CACHE_DIR so every worker knows them.
+
+    A dict of (provider, model) -> (cap, monotonic deadline), exactly as before for the code
+    that reads and writes it; in addition each entry written is saved with a wall-clock
+    deadline in AI_CACHE_DIR/_limits/learned_output_caps.state, and a key this process does
+    not know is looked up there. Per process, a fresh gunicorn worker paid one refused call
+    per hour to learn the limit again (live 2026-11-02, CHAT_FIX2 D7). Best effort: without
+    an app context or a writable directory it is the plain per-process dict it was.
+    Only integers are stored: no provider text, no request.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._files: set[Path] = set()
+
+    @staticmethod
+    def _path() -> Path | None:
+        try:
+            return Path(current_app.config["AI_CACHE_DIR"]) / "_limits" / "learned_output_caps.state"
+        except (RuntimeError, KeyError, TypeError):
+            return None
+
+    @staticmethod
+    def _read(path: Path) -> dict[str, Any]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def __setitem__(self, key: tuple[str, str], value: tuple[int, float]) -> None:
+        super().__setitem__(key, value)
+        path = self._path()
+        if path is None:
+            return
+        cap, until = value
+        try:
+            entries = {name: entry for name, entry in self._read(path).items()
+                       if isinstance(entry, dict) and float(entry.get("until") or 0) > time.time()}
+            entries[f"{key[0]}:{key[1]}"] = {
+                "cap": int(cap), "until": round(time.time() + max(0.0, float(until) - time.monotonic()), 1)}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp")
+            temporary.write_text(json.dumps(entries, separators=(",", ":")), encoding="utf-8")
+            temporary.replace(path)
+            self._files.add(path)
+        except (OSError, TypeError, ValueError):
+            pass
+
+    def get(self, key: tuple[str, str], default: Any = None) -> Any:  # type: ignore[override]
+        found = super().get(key)
+        if found is not None:
+            return found
+        path = self._path()
+        entry = self._read(path).get(f"{key[0]}:{key[1]}") if path is not None else None
+        try:
+            remaining = float(entry["until"]) - time.time() if isinstance(entry, dict) else 0.0
+            if remaining <= 0:
+                return default
+            value = (int(entry["cap"]), time.monotonic() + remaining)  # type: ignore[index]
+        except (KeyError, TypeError, ValueError):
+            return default
+        super().__setitem__(key, value)
+        return value
+
+    def clear(self) -> None:
+        super().clear()
+        current = self._path()
+        for path in {*self._files, *([current] if current is not None else [])}:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        self._files.clear()
+
+
+# Output limits learned from a provider's "expected output tokens exceed the enforced
+# limit" refusal, per (provider, model), for an hour - shared by every worker through
+# AI_CACHE_DIR (_LearnedOutputCaps), unlike the cooldowns.
+_LEARNED_OUTPUT_CAPS: dict[tuple[str, str], tuple[int, float]] = _LearnedOutputCaps()
+LEARNED_OUTPUT_CAP_SECONDS = 3600.0
+# The task whose output cap may be lowered below what it asked for after such a refusal.
+# Other image tasks (Project Mode's page reading) keep their own handling of that refusal.
+_SHRINKABLE_IMAGE_TASKS = frozenset({"image_understanding"})
+
+
+def _learned_output_cap(provider: str, model: str) -> int | None:
+    learned = _LEARNED_OUTPUT_CAPS.get((provider, model))
+    if learned is None:
+        return None
+    cap, until = learned
+    if until <= time.monotonic():
+        _LEARNED_OUTPUT_CAPS.pop((provider, model), None)
+        return None
+    return cap
+
+
+def image_output_cap(task_type: str, model: str, max_output_tokens: int, input_tokens: int) -> int:
+    """The output cap an image request to `model` is sent with; raises when it cannot fit.
+
+    Within the request ceiling with a margin of max(200, ceiling/20): the cap is lowered
+    to the room left after the input estimate, and when that room is below the task's
+    minimum output (or the cap asked for, if smaller) the request is refused as
+    `request_too_large` - no call could succeed. AI_VISION_OUTPUT_TOKEN_CEILING and, for
+    image readings, an output limit learned from the provider lower the cap further.
+    """
+
+    cap = max(1, int(max_output_tokens or 1))
+    ceiling = request_ceiling(model, has_images=True)
+    if ceiling:
+        margin = max(200, ceiling // 20)
+        room = ceiling - int(input_tokens) - margin
+        floor = min(cap, _min_output_tokens(task_type))
+        if room < floor:
+            raise AIProviderError(
+                "request_too_large", "The request is too large for the selected model.",
+                limit_tokens=ceiling, requested_tokens=int(input_tokens) + floor + margin)
+        cap = min(cap, room)
+    try:
+        pinned = int(current_app.config.get("AI_VISION_OUTPUT_TOKEN_CEILING") or 0)
+    except (TypeError, ValueError):
+        pinned = 0
+    if pinned > 0:
+        cap = min(cap, pinned)
+    if task_type in _SHRINKABLE_IMAGE_TASKS:
+        provider, bare = routing.split_model(model)
+        learned = _learned_output_cap(provider, bare)
+        if learned:
+            cap = min(cap, learned)
+    return max(1, cap)
+
+
+def _shrunk_output_cap(error: AIProviderError, sent: int, task_type: str) -> int | None:
+    """A smaller output cap for one more try of a refused image reading, or None.
+
+    Only when the provider said by how much the request was too large:
+    - an output-tokens-per-minute refusal whose expected output alone exceeds the limit
+      (Groq: 429 "Request too large ... (OTPM): Limit 1000, Requested 1057") is retried just
+      below that limit; one that only found the minute's budget used up ("Used 901,
+      Requested 900") is a real rate limit and is not;
+    - a 413 over the tokens per minute is retried with the overshoot (and a margin) taken
+      off the output cap.
+    Never below 300 output tokens (a reading needs room) or, for a 413, the task's minimum,
+    and never a cap that is not smaller than the one refused.
+    """
+
+    if (task_type not in _SHRINKABLE_IMAGE_TASKS or not error.limit_tokens or not error.requested_tokens
+            or sent <= 0 or error.status_code is None):
+        return None
+    limit, requested = int(error.limit_tokens), int(error.requested_tokens)
+    if error.limit_scope == "otpm" and error.category in {"provider_rate_limit", "request_too_large"}:
+        if requested <= limit:
+            return None
+        cap, floor = limit - max(50, limit // 20), 300
+    elif error.category == "request_too_large":
+        cap, floor = sent - (requested - limit) - max(200, limit // 20), min(sent, _min_output_tokens(task_type))
+    else:
+        return None
+    if cap < floor or cap >= sent:
+        return None
+    return cap
+
+
+_LIMIT_FACTS = re.compile(r"\bLimit\s+(\d{3,7})\b.*?\bRequested\s+(\d{3,7})\b", re.I | re.S)
+_LIMIT_SCOPES = (
+    ("otpm", ("(otpm)", "output tokens per minute")),
+    ("tpd", ("(tpd)", "tokens per day")),
+    ("rpd", ("(rpd)", "requests per day")),
+    ("rpm", ("(rpm)", "requests per minute")),
+    ("tpm", ("(tpm)", "tokens per minute")),
+)
+
+
+def _retry_after_seconds(value: Any) -> int | None:
+    try:
+        seconds = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(seconds) or seconds <= 0:
+        return None
+    return max(1, min(86_400, math.ceil(seconds)))
+
+
+def _provider_failure_facts(error: Exception) -> dict[str, Any]:
+    """Content-free facts about a provider SDK error, for the log line and the student message.
+
+    The provider's message text is read only to take integers and a limit name out of it;
+    it is never stored or logged (it can name the organisation and echo request details).
+    """
+
+    status = getattr(error, "status_code", None)
+    body = getattr(error, "body", None)
+    detail: dict[str, Any] = {}
+    if isinstance(body, dict):
+        inner = body.get("error")
+        detail = inner if isinstance(inner, dict) else body
+    code = getattr(error, "code", None) or detail.get("code") or ""
+    kind = getattr(error, "type", None) or detail.get("type") or ""
+    retry_after = None
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    if headers is not None:
+        try:
+            retry_after = _retry_after_seconds(headers.get("retry-after"))
+        except Exception:  # noqa: BLE001 - a header object we do not know; no retry hint
+            retry_after = None
+    text = str(error)
+    match = _LIMIT_FACTS.search(text)
+    lowered = text.casefold()
+    scope = next((name for name, markers in _LIMIT_SCOPES if any(marker in lowered for marker in markers)), "")
+    return {
+        "status_code": status if isinstance(status, int) else None,
+        "provider_code": str(code) if isinstance(code, (str, int)) else "",
+        "provider_type": str(kind) if isinstance(kind, (str, int)) else "",
+        "retry_after_seconds": retry_after,
+        "limit_tokens": int(match.group(1)) if match else None,
+        "requested_tokens": int(match.group(2)) if match else None,
+        "limit_scope": scope,
+    }
 
 
 def _note_degraded(reason: str, served_model: str, requested_model: str) -> None:
@@ -1330,6 +1870,12 @@ def _is_billing_state(text: str) -> bool:
     return "insufficient_quota" in text or "credit" in text or "billing" in text
 
 
+def _is_daily_limit(text: str) -> bool:
+    """Is this 429 about a per-day limit (tokens or requests per day)? `text` is casefolded."""
+
+    return "per day" in text or "per_day" in text or bool(re.search(r"\b(?:tpd|rpd)\b", text))
+
+
 def _failure_details(error: Exception) -> tuple[str, str]:
     """Map provider/internal exceptions to safe diagnostics without leaking payloads."""
 
@@ -1361,6 +1907,17 @@ def _failure_details(error: Exception) -> tuple[str, str]:
     if "timeout" in name:
         return "provider_timeout", "The AI request timed out."
     text = str(error).casefold()
+    # Groq answers 413 "Request too large" when input + expected output exceed the model's
+    # tokens per minute: waiting does not help, the request must get smaller. (Its 429 with
+    # the same words for an output-tokens-per-minute limit stays a rate limit here, as
+    # Project Mode's page reading expects; the gateway retries an image reading below that
+    # limit itself - see _shrunk_output_cap.)
+    if status == 413:
+        return "request_too_large", "The request is too large for the selected model."
+    # A daily limit before the billing check: every Groq 429 body ends with a link to its
+    # billing page, which made a spent "tokens per day" look like an empty account.
+    if status == 429 and _is_daily_limit(text):
+        return "provider_daily_limit", "The AI provider's daily limit was reached."
     if status == 429 and _is_billing_state(text):
         # The provider answers "no credits" with a 429 too, but it is a billing state,
         # not a burst to wait out: treating it as a rate limit would retry it every minute
@@ -1431,6 +1988,28 @@ def diagnostics_summary() -> dict[str, Any]:
     }
 
 
+def _validate_output(task_type: str, output_text: str, prompt_version: str,
+                     context: dict[str, Any] | None, *, max_characters: int) -> None:
+    """`validate_output`, with every way model text can break `json.loads` as a validation error.
+
+    The contract parser only expects JSONDecodeError. Output nested a few thousand levels
+    deep raises RecursionError, and an integer of more than 4300 digits raises a plain
+    ValueError; both escaped the gateway as crashes, so the request's corrective retry -
+    the thing meant for exactly this kind of output - never ran.
+    """
+
+    try:
+        validate_output(task_type, output_text, prompt_version, context, max_characters=max_characters)
+    except AIValidationError:
+        raise
+    except (RecursionError, ValueError) as error:
+        failure = AIValidationError("invalid_json", "response could not be parsed as JSON")
+        failure.prompt_version = prompt_version
+        failure.report = ValidationReport(task_type=task_type, prompt_version=prompt_version, valid=False,
+                                          category=failure.category, summary=failure.safe_summary)
+        raise failure from error
+
+
 def create_response(
     *,
     task_type: str,
@@ -1445,6 +2024,8 @@ def create_response(
     previous_failure: str | None = None,
     premium_entitled: bool = False,
     usage_observer: Callable[[str, str, GatewayUsage], None] | None = None,
+    timeout_seconds: float | None = None,
+    fresh: bool = False,
     **provider_kwargs: Any,
 ) -> GatewayResponse:
     """Execute, measure, validate, and cost-control one centralized AI task.
@@ -1455,10 +2036,28 @@ def create_response(
     `usage_observer(provider, model, usage)` is told about every provider call this
     request makes - corrective retries and fallbacks included, cache hits not - so a
     caller can charge what the request really cost (the free chat allowance does).
+
+    `timeout_seconds` (never forwarded) bounds every provider call of this request to end
+    within that many seconds from now (at least 5 s each), below the configured timeouts:
+    the photo reader passes what is left of its time budget.
+
+    `fresh` (never forwarded; set only by server code, e.g. the chat's Regenerate) skips
+    the cache read and the dedupe/coalescing window, so the provider is really asked again.
     """
 
     if task_type not in SUPPORTED_TASK_TYPES:
         raise ValueError(f"Unsupported AI task type: {task_type}")
+    if timeout_seconds is not None:
+        token = _CALL_DEADLINE.set(time.monotonic() + max(0.0, float(timeout_seconds)))
+        try:
+            return create_response(
+                task_type=task_type, language=language, prompt_version=prompt_version,
+                private_scope=private_scope, validation_context=validation_context,
+                session_scope=session_scope, signals=signals, deep=deep, preset=preset,
+                previous_failure=previous_failure, premium_entitled=premium_entitled,
+                usage_observer=usage_observer, fresh=fresh, **provider_kwargs)
+        finally:
+            _CALL_DEADLINE.reset(token)
     mode = str(current_app.config.get("AI_MODE", "cached")).strip().lower()
     if mode not in AI_MODES:
         raise AIConfigurationError(f"Unsupported AI_MODE {mode!r}")
@@ -1540,6 +2139,13 @@ def create_response(
     answered_by: routing.Candidate | None = None
     routing_trace = routing.routing_reason(plan, None, [])
     coalesced = False
+    # Status and provider codes of the last failed provider call, for the usage record.
+    failure_facts: dict[str, Any] = {}
+    # Why the provider's last answer ended, and whether any answer of this request was cut
+    # off by its output cap (PF6.1), for the usage record and the corrective-retry rule.
+    finish_reason = ""
+    truncated_finish = ""
+    last_call_cut_off = False
 
     def add_usage(item: GatewayUsage) -> None:
         nonlocal accumulated_usage
@@ -1552,7 +2158,7 @@ def create_response(
     def validated(item: GatewayResponse) -> GatewayResponse:
         nonlocal validation_result
         try:
-            validate_output(
+            _validate_output(
                 task_type, item.output_text, prompt_version, validation_context,
                 max_characters=int(current_app.config.get("AI_MAX_OUTPUT_CHARACTERS", 200000)),
             )
@@ -1584,7 +2190,18 @@ def create_response(
         return shaped
 
     def provider_call(kwargs: dict[str, Any], candidate: routing.Candidate, position: int) -> GatewayResponse:
-        nonlocal provider_called, calls_made
+        nonlocal provider_called, calls_made, failure_facts, finish_reason, truncated_finish, last_call_cut_off
+        if has_images:
+            # Before anything is reserved or sent: a request that cannot fit the model's
+            # ceiling is refused here (nothing is paid for a certain refusal), and one that
+            # can is sent with an output cap that fits. Text requests are never clamped.
+            kwargs["max_output_tokens"] = image_output_cap(
+                task_type, candidate.model, int(kwargs.get("max_output_tokens") or 0), input_tokens_estimate)
+        else:
+            # A text request is admitted on its input plus a share of its output cap
+            # (AI_TEXT_REQUEST_TOKEN_CEILING or the model's explicit ceiling); the output cap
+            # itself is never lowered.
+            _text_admission(candidate.model, input_tokens_estimate, int(kwargs.get("max_output_tokens") or 0))
         anticipated = input_tokens_estimate + int(kwargs.get("max_output_tokens") or 0)
         calls_made += 1
         entry = ledger_entry("call")
@@ -1599,14 +2216,41 @@ def create_response(
                 candidate.provider), premium_entitled=premium_entitled)
         provider_called = True
         call_started = time.perf_counter()
+        last_call_cut_off = False
         try:
-            item = _gateway_response(_provider_response(**kwargs), candidate.model, kwargs.get("input"))
+            raw = _provider_response(**kwargs)
+            item = _gateway_response(raw, candidate.model, kwargs.get("input"))
         except Exception as provider_error:
             category, summary = _failure_details(provider_error)
+            facts = _provider_failure_facts(provider_error)
+            if category == "invalid_request" and has_images:
+                # A 400 on a request with a picture is the picture being refused (format,
+                # size, count); the student can do something about that.
+                category, summary = "image_rejected", "The AI provider rejected the image."
             usage_ledger().settle(
                 handle, usage=GatewayUsage(), success=False, error_category=category,
                 duration_ms=round((time.perf_counter() - call_started) * 1000, 2))
-            raise AIProviderError(category, summary) from provider_error
+            failure_facts = {"provider_status": facts["status_code"],
+                             "provider_error_code": _safe_token(facts["provider_code"]),
+                             "provider_error_type": _safe_token(facts["provider_type"])}
+            # Status, codes and limit numbers only - never the provider's message text.
+            current_app.logger.warning(
+                "ai.provider_failure task=%s provider=%s model=%s status=%s code=%s type=%s category=%s "
+                "limit_scope=%s limit=%s requested=%s retry_after=%s",
+                task_type, candidate.provider, candidate.model, facts["status_code"],
+                _safe_token(facts["provider_code"]), _safe_token(facts["provider_type"]), category,
+                _safe_token(facts["limit_scope"]), facts["limit_tokens"], facts["requested_tokens"],
+                facts["retry_after_seconds"])
+            raise AIProviderError(category, summary, **facts) from provider_error
+        finish_reason = _safe_token(adapters.stop_reason_of(raw))
+        if adapters.stopped_at_output_cap(finish_reason):
+            last_call_cut_off, truncated_finish = True, finish_reason
+            # WARNING, because production logs nothing below it; numbers only, never content.
+            current_app.logger.warning(
+                "ai.output_truncated task=%s model=%s max_output_tokens=%s provider=%s output_tokens=%s "
+                "finish_reason=%s attempt=%s",
+                task_type, candidate.model, int(kwargs.get("max_output_tokens") or 0), candidate.provider,
+                item.usage.output_tokens, finish_reason, calls_made)
         add_usage(item.usage)
         if usage_observer is not None:
             usage_observer(candidate.provider, candidate.model, item.usage)
@@ -1620,7 +2264,7 @@ def create_response(
         """One provider call for identical requests that overlap or repeat within seconds."""
 
         nonlocal coalesced
-        if _dedup_window() <= 0:
+        if _dedup_window() <= 0 or fresh:
             return run_candidates()
         with _inflight_lock(key):
             recent = _recent_result(key)
@@ -1648,6 +2292,9 @@ def create_response(
         hops: list[str] = []
         last_error: Exception | None = None
         index: int | None = 0
+        # One smaller-output retry per request, for an image reading the provider refused
+        # as too large and said by how much (see _shrunk_output_cap).
+        output_caps: dict[int, int] = {}
         while index is not None and index < len(plan.candidates) and calls_made < plan.max_calls:
             candidate = plan.candidates[index]
             if _model_cooling_down(candidate.provider, candidate.model) and index + 1 < len(plan.candidates):
@@ -1656,13 +2303,37 @@ def create_response(
                 hops.append(f"{candidate.provider}:model_cooldown")
                 index += 1
                 continue
+            if task_type in COOLDOWN_FAIL_FAST_TASKS and _model_cooling_down(candidate.provider, candidate.model):
+                # The last model left, and it refused moments ago: a page reading fails at
+                # once (the app reads the page offline meanwhile) instead of collecting
+                # another refusal for every page of the run (review B B-1).
+                hops.append(f"{candidate.provider}:model_cooldown")
+                last_error = _cooldown_error(candidate.provider, candidate.model)
+                break
+            options = options_for(kwargs, candidate)
+            if index in output_caps:
+                options["max_output_tokens"] = min(int(options.get("max_output_tokens") or 0), output_caps[index])
             try:
-                item = provider_call(options_for(kwargs, candidate), candidate, index)
+                item = provider_call(options, candidate, index)
             except AIProviderError as error:
                 last_error = error
+                smaller = None if (output_caps or not has_images) else _shrunk_output_cap(
+                    error, int(options.get("max_output_tokens") or 0), task_type)
+                if smaller is not None:
+                    # Not a limit hop: the same model answers, so no "slower model" notice.
+                    hops.append(f"{candidate.provider}:output_capped")
+                    output_caps[index] = smaller
+                    if error.limit_scope == "otpm":
+                        # Remembered, so the next reading starts below the limit instead of
+                        # paying a refusal to learn it again.
+                        _LEARNED_OUTPUT_CAPS[(candidate.provider, routing.split_model(candidate.model)[1])] = (
+                            smaller, time.monotonic() + LEARNED_OUTPUT_CAP_SECONDS)
+                    continue
                 hops.append(f"{candidate.provider}:{error.category}")
                 _note_provider_failure(candidate.provider, error.category, candidate.model)
-                index = routing.next_candidate(plan, index, error.category)
+                # A text request too large for this model is too large for every model with
+                # the same limit at this provider: no same-limit fallback.
+                index = next_candidate_after(plan, index, error, has_images=has_images)
                 continue
             try:
                 result = validated(item)
@@ -1671,10 +2342,21 @@ def create_response(
                 hops.append(f"{candidate.provider}:{error.category}")
                 if retry_count >= MAX_CORRECTIVE_RETRIES:
                     break
+                following = routing.next_candidate(plan, index, error.category)
+                if following is None and task_type == "image_understanding":
+                    # No same-model corrective retry for a photo reading: a truncated or
+                    # malformed reading comes back the same way and doubles time and cost
+                    # (the whole send has one worker timeout). The student is told to retry.
+                    break
+                if last_call_cut_off and (following is None or plan.candidates[following].model == candidate.model):
+                    # PF6.1: the answer stopped at its output cap. The corrective retry would
+                    # go to the same model with the same cap and stop in the same place, so it
+                    # is not paid for. A different candidate (the fallback model) keeps the
+                    # retry: another model can fit the same answer into the same cap.
+                    break
                 retry_count += 1
                 kwargs["instructions"] = corrective_instruction(
                     task_type, language_name, error.safe_summary, validation_context)
-                following = routing.next_candidate(plan, index, error.category)
                 index = following if following is not None else index
                 continue
             answered_by = candidate
@@ -1698,7 +2380,7 @@ def create_response(
             _assert_user_cooldown(user_ref)
         _assert_usage_limits(user_ref, mode, premium=premium_entitled)
         if mode == "cached":
-            response = _read_cache(key)
+            response = None if fresh else _read_cache(key)
             cache_hit = response is not None
             if response is not None:
                 try:
@@ -1718,11 +2400,12 @@ def create_response(
                     "request_hash": key, "task_type": task_type,
                     "language": normalized_language, "prompt_version": prompt_version,
                     "private": private_scope is not None, "validation": "valid",
+                    "session_reference": session_ref,
                 })
         else:
             reusable = task_type in DETERMINISTIC_TASKS
             response = None
-            if reusable:
+            if reusable and not fresh:
                 # A re-scan of an unchanged page used to re-pay in full: live mode never
                 # read the cache. Failures are never written, so a genuine retry after a
                 # failure still reaches the provider, which is what a retry is for.
@@ -1746,6 +2429,9 @@ def create_response(
                         "request_hash": key, "task_type": task_type,
                         "language": normalized_language, "prompt_version": prompt_version,
                         "private": private_scope is not None, "validation": "valid",
+                        # Hashed, like the ledger's: lets a deleted conversation's readings
+                        # be purged (purge_cached) without storing whose they were.
+                        "session_reference": session_ref,
                     })
         success = True
         return response
@@ -1753,7 +2439,9 @@ def create_response(
         error_category, error_summary = _failure_details(error)
         if isinstance(error, AIValidationError):
             validation_result = "invalid"
-        if isinstance(error, (AIRequestLimitError, AITokenLimitError)) and not provider_called:
+        if (isinstance(error, (AIRequestLimitError, AITokenLimitError))
+                or (isinstance(error, AIProviderError) and error.category == "request_too_large")) \
+                and not provider_called:
             refused = ledger_entry("refused")
             refused.error_category = error_category
             usage_ledger().record(refused)
@@ -1797,4 +2485,14 @@ def create_response(
             "success": success,
             "error_category": error_category,
             "error_summary": error_summary,
+            # The last failed provider call's HTTP status and the provider's own error code
+            # and type, as sanitised tokens: "413 rate_limit_exceeded/tokens" tells an
+            # operator what "AI unavailable" never could. No content.
+            "provider_status": failure_facts.get("provider_status"),
+            "provider_error_code": failure_facts.get("provider_error_code", ""),
+            "provider_error_type": failure_facts.get("provider_error_type", ""),
+            # PF6.1: whether any answer of this request was cut off by its output cap, and
+            # the provider's finish reason (that cut-off call's, else the last answer's).
+            "output_truncated": bool(truncated_finish),
+            "finish_reason": truncated_finish or finish_reason,
         })

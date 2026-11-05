@@ -29,10 +29,12 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CSS = ROOT / "static/css/assistant.css"
 TOKENS = ROOT / "static/css/learnova-tokens.css"
+NAVIGATION = ROOT / "static/css/navigation.css"
 
 
 def without_comments(text):
@@ -47,6 +49,10 @@ class TokenTests(unittest.TestCase):
         cls.css = without_comments(CSS.read_text(encoding="utf-8"))
         cls.tokens = TOKENS.read_text(encoding="utf-8")
         cls.defined = set(re.findall(r"^\s*(--[\w-]+)\s*:", cls.tokens, flags=re.M))
+        # Layout variables are defined too: the navigation bar's height (navigation.css) and
+        # the page's own --asst-* properties (the shell height, the sidebar width).
+        cls.defined |= set(re.findall(r"(--app-nav-height)\s*:", NAVIGATION.read_text(encoding="utf-8")))
+        cls.defined |= set(re.findall(r"(--asst-[\w-]+)\s*:", cls.css))
 
     def test_no_property_is_read_that_nothing_defines(self):
         read = set(re.findall(r"var\((--[\w-]+)", self.css))
@@ -99,6 +105,12 @@ class RoundedShapeTests(unittest.TestCase):
     def test_the_panel_uses_the_shared_radius_scale(self):
         self.assertIn("border-radius: var(--ln-radius-lg)", self.rule(".asst-main"))
 
+    def test_the_code_language_label_is_at_least_12px(self):
+        size = re.search(r"font-size:\s*([\d.]+)rem", self.rule(".code-lang"))
+        self.assertIsNotNone(size)
+        assert size
+        self.assertGreaterEqual(float(size.group(1)), .75, "under 12 px (was .68rem, 10.9 px)")
+
     def test_the_search_box_and_style_picker_are_pills(self):
         self.assertIn("border-radius: 999px", self.rule('.asst-sidebar input[type="search"]'))
         self.assertIn("border-radius: 999px", self.rule(".asst-thread-actions select"))
@@ -117,10 +129,11 @@ class RoundedShapeTests(unittest.TestCase):
             self.assertGreaterEqual(int(value), 6, f"{value}px is a sharp corner")
 
     def test_the_send_button_is_a_circle(self):
+        # 2.75rem = 44px: the smallest comfortable tap target (it was 2.3rem).
         send = self.rule(".asst-send")
         self.assertIn("border-radius: 50%", send)
-        self.assertIn("width: 2.3rem", send)
-        self.assertIn("height: 2.3rem", send)
+        self.assertIn("width: 2.75rem", send)
+        self.assertIn("height: 2.75rem", send)
 
     def test_the_avatar_is_a_circle_in_the_brand_colour(self):
         avatar = self.rule(".asst-avatar")
@@ -197,6 +210,8 @@ class ComposerTests(unittest.TestCase):
 
 class RenderedPageTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_ASSISTANT_CHAT")
         application.app.config.update(TESTING=True, FEATURE_ASSISTANT_CHAT=True)
         with application.app.app_context():
             application.db.drop_all()

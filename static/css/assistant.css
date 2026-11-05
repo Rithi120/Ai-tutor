@@ -1,36 +1,177 @@
-/* Direct assistant chat.
+/* The chat assistant - Learnova's home page for a signed-in student.
  *
- * Shaped like a modern chat client: one centred reading column, the learner's own words
- * in a rounded bubble on the right, and the reply as plain text rather than a second
- * bubble - a wall of alternating boxes is harder to read than prose. The brand colour
- * sits on the send button and the avatar instead of on every message.
+ * An app shell under the navigation bar: the conversation list on the left (an
+ * off-canvas drawer on phones and small tablets), the conversation itself in one centred
+ * reading column, and the composer pinned to the bottom of it. Only the thread scrolls,
+ * never the page, so the message box is always on screen - above the phone keyboard too:
+ * the shell is as tall as the visual viewport (--asst-vvh, kept by static/js/assistant.js
+ * from window.visualViewport; Chrome on Android resizes the page itself because of the
+ * interactive-widget viewport setting in templates/assistant.html).
  *
- * Colours come from the learnova tokens. They did not before: this file asked for
- * --border, --surface, --accent and --surface-muted, none of which are defined anywhere,
- * so every rule fell through to a hardcoded light-mode hex and the page ignored dark
- * mode entirely.
+ * The learner's own words sit in a rounded bubble on the right, the reply is plain prose
+ * beside a brand dot - a wall of alternating boxes is harder to read than prose. The brand
+ * colour lives on the send button and the avatar instead of on every message.
  *
- * Corner radii are the shared --ln-radius-* scale, used one step rounder than the rest of
- * the app, because a chat surface reads as softer than a data panel.
+ * Colours come from the learnova tokens only (dark mode follows them), corner radii from
+ * the shared --ln-radius-* scale, one step rounder than the rest of the app because a chat
+ * surface reads as softer than a data panel. Every control is at least 44 px, the message
+ * box text is 16 px (iOS zooms into smaller fields), and motion stops under
+ * prefers-reduced-motion.
+ *
+ * This file loads before learnova-components.css (base.html's head block), so where a
+ * shared component class would win a tie, the rules here are scoped one class deeper.
  */
 
-/* Defined here because this is the only page using the class that does not load
-   flashcards.css, where the other copy lives - so these three labels were being drawn
-   as loose text above the search box, the style picker and the composer. */
+/* Defined here because this page does not load flashcards.css, where the other copy
+   lives - without it these labels were drawn as loose text above the search box, the
+   style picker and the composer. */
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
+/* The shell height. JavaScript replaces it with the visual viewport's height on phones
+   (the keyboard shrinks that one, not 100dvh on iOS). 100vh where dvh is unknown. */
+:root { --asst-vvh: 100vh; }
+@supports (height: 100dvh) {
+  :root { --asst-vvh: 100dvh; }
+}
+
+/* The chat is the page: no page scroll, the thread scrolls inside. */
+body.assistant-body { overflow: hidden; }
+
+/* `hidden` must win over every display rule below (.ghost-button { display: inline-flex }
+   once kept the Rename/Archive/Delete buttons visible with no conversation open). */
+.assistant-page [hidden] { display: none !important; }
+
 .assistant-page {
+  --asst-sidebar-width: 17.5rem;
+  /* Filled controls (New chat, Send, Open lesson, Save) with white text. The dark theme
+     keeps the light theme's stops (learnova-dark.css): white on its lighter violets
+     measured 2.9:1 and 3.9:1, under the 4.5:1 their 16px text needs. */
+  --asst-fill: linear-gradient(135deg, var(--ln-violet), var(--ln-violet-deep));
+  --asst-fill-solid: var(--ln-violet-deep);
+  /* Violet and red text on the light surfaces: the deep violet (about 7:1) and the brand
+     red darkened by a fifth (about 5.6:1); the brand violet (3.9:1) and red (4.1:1) are too
+     light for text. The dark theme uses its own lighter shades (below). */
+  --asst-accent-text: var(--ln-violet-deep);
+  --asst-danger-text: color-mix(in srgb, var(--ln-danger) 80%, var(--ln-ink));
+  --asst-danger-fill: color-mix(in srgb, var(--ln-danger) 80%, var(--ln-ink));
+  /* A dark disc under the white × on a photo, in both themes (--ln-ink is dark in the
+     light theme, --ln-canvas in the dark one). */
+  --asst-photo-scrim: color-mix(in srgb, var(--ln-ink) 82%, transparent);
   display: grid;
-  grid-template-columns: 17rem 1fr;
-  gap: 1.25rem;
-  align-items: start;
-  max-width: 78rem;
-  margin: 0 auto;
-  padding: 1.25rem 1rem 2rem;
-  min-height: calc(100vh - 8rem);
+  grid-template-columns: var(--asst-sidebar-width) minmax(0, 1fr);
+  gap: .75rem;
+  height: calc(100vh - var(--app-nav-height));
+  height: calc(var(--asst-vvh) - var(--app-nav-height));
+  padding: .75rem .75rem .75rem 0;
+  overflow: hidden;
+  transition: grid-template-columns 200ms var(--ln-ease);
+}
+.assistant-page[data-sidebar="collapsed"] {
+  grid-template-columns: 0 minmax(0, 1fr);
+  gap: 0;
+  padding-inline-start: .75rem;
+}
+
+/* The development-only AI mode badge must not catch taps meant for the send button. */
+.assistant-body .ai-mode-badge { opacity: .6; pointer-events: none; }
+
+/* Messages flashed by a redirect float over the chat instead of pushing it down. */
+.assistant-body .global-alerts {
+  position: fixed;
+  top: calc(var(--app-nav-height) + .5rem);
+  left: 50%;
+  z-index: 125;
+  width: min(36rem, calc(100% - 1.5rem));
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+/* The page's notices: top centre, under the conversation header, never over the composer. */
+.assistant-page .toast {
+  position: fixed;
+  top: calc(var(--app-nav-height) + 4.5rem);
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  width: max-content;
+  max-width: min(34rem, calc(100vw - 1.5rem));
+  padding: .7rem .9rem .7rem 1.1rem;
+  font-size: .9375rem;
+  line-height: 1.45;
+  transform: translateX(-50%);
+}
+.assistant-page .toast.error { border-color: color-mix(in srgb, var(--ln-danger) 45%, var(--ln-line)); }
+.assistant-page .toast.success { border-color: color-mix(in srgb, var(--ln-success) 45%, var(--ln-line)); }
+.asst-toast-text { min-width: 0; }
+.asst-toast-action,
+.asst-toast-action:visited {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 .9rem;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  color: var(--asst-accent-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------- shared controls */
+
+/* Keyboard focus: the app's strong ring (motion.css) on everything in the chat, the row
+   menu included. Inside the sidebar's scrolling lists the ring is drawn inside the control,
+   because the scroller clips whatever is drawn outside its padding box. */
+.assistant-page :is(button, a, [role="menuitem"], select, input):focus-visible,
+.asst-dialog :is(button, a, input):focus-visible {
+  outline: 3px solid var(--ln-focus);
+  outline-offset: 2px;
+}
+.asst-sidebar :is(.asst-lists, .asst-tools, .asst-search, .asst-sidebar-head) :is(a, button, input):focus-visible,
+.asst-sidebar .asst-new:focus-visible {
+  outline-offset: -3px;
+}
+.asst-new:focus-visible { box-shadow: inset 0 0 0 5px #fff; }
+
+.asst-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.asst-icon .asst-icon-fill { fill: currentColor; stroke: none; }
+
+.asst-icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: var(--ln-muted);
+  cursor: pointer;
+  transition: background 140ms var(--ln-ease), color 140ms var(--ln-ease);
+}
+.asst-icon-button:hover {
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  color: var(--ln-ink);
 }
 
 /* ------------------------------------------------------------------- sidebar */
@@ -39,69 +180,227 @@
   display: flex;
   flex-direction: column;
   gap: .6rem;
-  position: sticky;
-  top: 5rem;
-  max-height: calc(100vh - 7rem);
+  min-width: 0;
+  min-height: 0;
+  padding: .15rem .15rem 0 .75rem;
+  overflow: hidden;
 }
-.asst-sidebar-head { display: flex; flex-direction: column; gap: .7rem; }
-.asst-title { margin: 0; font-size: 1.35rem; }
-.asst-new { width: 100%; border-radius: 999px; }
+.assistant-page[data-sidebar="collapsed"] .asst-sidebar { visibility: hidden; }
+.asst-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  min-height: 2.75rem;
+}
+.asst-title {
+  margin: 0;
+  padding-inline-start: .35rem;
+  font-family: var(--ln-font-display);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+.asst-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--asst-fill);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--ln-violet) 24%, transparent);
+  transition: transform 140ms var(--ln-ease), box-shadow 140ms var(--ln-ease);
+}
+.asst-new:hover { transform: translateY(-1px); box-shadow: 0 10px 24px color-mix(in srgb, var(--ln-violet) 32%, transparent); }
+.asst-search { position: relative; }
+.asst-search .asst-icon {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: .85rem;
+  color: var(--ln-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .asst-sidebar input[type="search"] {
   width: 100%;
-  padding: .55rem .9rem;
+  min-height: 2.75rem;
+  padding: .55rem .9rem .55rem 2.6rem;
   border: 1px solid var(--ln-line);
   border-radius: 999px;
   font: inherit;
-  font-size: .88rem;
+  font-size: .9375rem;
   background: var(--ln-surface-solid);
   color: inherit;
 }
-.asst-list { display: flex; flex-direction: column; gap: .2rem; overflow-y: auto; flex: 1; }
-.asst-list-item {
+.asst-lists {
+  flex: 1;
+  min-height: 0;
+  margin-inline: -.15rem;
+  padding: 0 .15rem .5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.asst-list { display: flex; flex-direction: column; }
+.asst-group-label {
+  margin: .9rem .6rem .3rem;
+  font-family: var(--ln-font-body);
+  font-size: .875rem;
+  font-weight: 700;
+  color: var(--ln-muted);
+}
+.asst-list > .asst-group-label:first-child { margin-top: .35rem; }
+/* minmax(0, 1fr): a grid item is never narrower than its content by default, and a title
+   that does not wrap would push the row (and its ⋯ button) out of the sidebar. */
+.asst-group { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.asst-row {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  /* Never squeezed by the height-limited list: shrunk items clipped their own titles
-     (overflow: hidden) to a row of dots once a few conversations existed. */
-  flex-shrink: 0;
-  gap: .1rem;
-  width: 100%;
-  text-align: start;
-  padding: .55rem .75rem;
-  border: 1px solid transparent;
+  min-width: 0;
+  align-items: center;
   border-radius: 14px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
   transition: background 140ms var(--ln-ease);
 }
-.asst-list-item:hover { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
-.asst-list-item.is-active {
-  background: color-mix(in srgb, var(--ln-violet) 13%, transparent);
-  border-color: color-mix(in srgb, var(--ln-violet) 32%, transparent);
+.asst-row:hover,
+.asst-row:focus-within { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
+.asst-row.is-active { background: color-mix(in srgb, var(--ln-violet) 15%, transparent); }
+.asst-list-item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: .1rem;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: .45rem .25rem .45rem .7rem;
+  border-radius: 14px;
+  color: inherit;
+  text-decoration: none;
 }
-.asst-list-item.is-archived { opacity: .6; }
 .asst-list-title {
-  font-size: .9rem;
+  overflow: hidden;
+  font-size: .9375rem;
   font-weight: 600;
   line-height: 1.35;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.asst-list-meta { font-size: .72rem; color: var(--ln-muted); }
-.asst-empty-note { font-size: .85rem; color: var(--ln-muted); margin: .25rem 0; }
-.asst-archived-toggle {
-  display: flex; gap: .4rem; align-items: center;
-  font-size: .8rem; color: var(--ln-muted);
+.asst-row.is-active .asst-list-title { color: var(--ln-ink); }
+.asst-list-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: .875rem;
+  line-height: 1.4;
+  color: var(--ln-muted);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
+/* A reply is being written for this conversation (here or in another tab). */
+.asst-row.is-busy .asst-list-title::after {
+  content: "";
+  display: inline-block;
+  width: .45rem;
+  height: .45rem;
+  margin-inline-start: .4rem;
+  border-radius: 50%;
+  background: var(--ln-violet);
+  vertical-align: middle;
+  animation: asstPulse 1.2s infinite ease-in-out;
+}
+.asst-row-menu {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ln-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+/* Shown on hover and keyboard focus with a mouse, always on touch screens. */
+.asst-row:hover .asst-row-menu,
+.asst-row:focus-within .asst-row-menu,
+.asst-row.is-active .asst-row-menu,
+.asst-row-menu[aria-expanded="true"] { opacity: 1; }
+.asst-row-menu:hover { background: color-mix(in srgb, var(--ln-violet) 12%, transparent); color: var(--ln-ink); }
+@media (hover: none) {
+  .asst-row-menu { opacity: 1; }
+}
+.asst-empty-note { margin: .6rem .6rem; font-size: .875rem; color: var(--ln-muted); }
+.asst-load-more,
+.asst-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: .35rem;
+  padding: 0 .7rem;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: var(--ln-muted);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.asst-load-more { justify-content: center; color: var(--asst-accent-text); }
+.asst-load-more:hover,
+.asst-archived-toggle:hover { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); color: var(--ln-ink); }
+.asst-archived-toggle span { flex: 1; }
+.asst-archived-toggle .asst-icon:last-child { transition: transform 160ms var(--ln-ease); }
+.asst-archived-toggle[aria-expanded="true"] .asst-icon:last-child { transform: rotate(180deg); }
+.asst-list-archived .asst-list-title { font-weight: 500; color: var(--ln-muted); }
+
+/* The other learning tools, one tap from the chat. */
+.asst-tools {
+  display: grid;
+  gap: 2px;
+  margin-inline: -.15rem;
+  padding: .5rem .15rem .25rem;
+  border-top: 1px solid var(--ln-line);
+}
+.asst-tools a {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-height: 2.75rem;
+  padding: 0 .7rem;
+  border-radius: 14px;
+  color: var(--ln-ink);
+  font-size: .9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.asst-tools a .asst-icon { color: var(--ln-violet); }
+.asst-tools a:hover { background: color-mix(in srgb, var(--ln-violet) 8%, transparent); }
+
+.asst-scrim { display: none; }
 
 /* --------------------------------------------------------------------- thread */
 
 .asst-main {
+  position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 60vh;
+  min-width: 0;
+  min-height: 0;
   border: 1px solid var(--ln-line);
   border-radius: var(--ln-radius-lg);
   background: var(--ln-surface);
@@ -110,57 +409,96 @@
 }
 .asst-thread-head {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: .9rem 1.2rem;
+  align-items: center;
+  gap: .5rem;
+  min-height: 3.6rem;
+  padding: .45rem .75rem .45rem 1.1rem;
   border-bottom: 1px solid var(--ln-line);
 }
-.asst-thread-title h2 { margin: 0; font-size: 1.05rem; }
-.asst-meta { margin: .15rem 0 0; font-size: .78rem; color: var(--ln-muted); }
-.asst-thread-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.asst-drawer-toggle,
+.asst-head-new { display: none; }
+.assistant-page[data-sidebar="collapsed"] .asst-drawer-toggle { display: inline-grid; margin-inline-start: -.5rem; }
+.asst-thread-title { flex: 1; min-width: 0; }
+.asst-thread-title h1 {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--ln-font-body);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asst-meta {
+  margin: .1rem 0 0;
+  overflow: hidden;
+  font-size: .875rem;
+  color: var(--ln-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asst-meta:empty { display: none; }
+.asst-thread-actions { display: flex; flex: none; gap: .25rem; align-items: center; }
 .asst-thread-actions select {
-  padding: .4rem .85rem;
+  max-width: 11rem;
+  min-height: 2.75rem;
+  padding: .4rem 2rem .4rem .95rem;
   border: 1px solid var(--ln-line);
   border-radius: 999px;
   font: inherit;
-  font-size: .85rem;
-  background: var(--ln-surface-solid);
+  font-size: .9375rem;
+  background-color: var(--ln-surface-solid);
   color: inherit;
+  text-overflow: ellipsis;
 }
-.asst-thread-actions .ghost-button { border-radius: 999px; }
 
+.asst-thread-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .asst-thread {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
-  padding: 1.4rem 1.1rem;
+  overscroll-behavior: contain;
+  padding: 1.5rem 1.1rem 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
-  scroll-behavior: smooth;
 }
 
-.asst-welcome { margin: auto; text-align: center; max-width: 34rem; padding: 1.5rem 0; }
-.asst-welcome h3 { margin: 0 0 .4rem; font-size: 1.25rem; }
-.asst-welcome p { margin: 0 0 1.1rem; color: var(--ln-muted); }
-.asst-suggestions { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.asst-welcome { margin: auto; text-align: center; max-width: 40rem; padding: 1rem 0 .5rem; }
+.asst-welcome-logo { display: block; width: 3rem; height: 3rem; margin: 0 auto .9rem; }
+.asst-welcome h2 {
+  margin: 0 0 .5rem;
+  font-family: var(--ln-font-display);
+  font-size: clamp(1.375rem, 1.1rem + 1.2vw, 1.75rem);
+  line-height: 1.2;
+}
+.asst-welcome p { max-width: 32rem; margin: 0 auto 1.25rem; color: var(--ln-muted); font-size: 1rem; line-height: 1.55; }
+.asst-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .asst-suggestion {
-  width: 100%;
-  padding: .7rem 1rem;
-  border: 1px solid var(--ln-line);
-  border-radius: 16px;
+  min-height: 2.75rem;
+  padding: .5rem 1rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 999px;
   background: var(--ln-surface-solid);
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: .88rem;
-  text-align: start;
-  transition: border-color 140ms var(--ln-ease), transform 140ms var(--ln-ease);
+  font-size: .9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  transition: border-color 140ms var(--ln-ease), background 140ms var(--ln-ease);
 }
 .asst-suggestion:hover {
   border-color: color-mix(in srgb, var(--ln-violet) 45%, var(--ln-line));
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--ln-violet) 7%, var(--ln-surface-solid));
 }
 
 /* One centred column, the width of comfortable prose. The user's bubble floats to the
@@ -181,13 +519,11 @@
   display: grid;
   grid-template-columns: 1.65rem minmax(0, 1fr);
   column-gap: .8rem;
-  row-gap: .35rem;
+  row-gap: .45rem;
   align-items: start;
 }
 .asst-msg-assistant > .asst-avatar { grid-column: 1; grid-row: 1; margin-top: .2rem; }
-.asst-msg-assistant > .asst-body,
-.asst-msg-assistant > .asst-msg-meta,
-.asst-msg-assistant > .asst-copy { grid-column: 2; }
+.asst-msg-assistant > :not(.asst-avatar):not(.visually-hidden) { grid-column: 2; }
 
 /* The assistant is marked by a small brand dot, not a label above every reply. */
 .asst-avatar {
@@ -197,8 +533,15 @@
   box-shadow: 0 2px 8px color-mix(in srgb, var(--ln-violet) 35%, transparent);
 }
 
-/* A reply is prose, so it gets no box - only the learner's own words are bubbled. */
-.asst-body { overflow-wrap: anywhere; line-height: 1.65; }
+/* A reply is prose, so it gets no box - only the learner's own words are bubbled.
+   break-word, not anywhere: "anywhere" also lets the browser break inside a word to fit a
+   table column, which split headers into "Sch|ritt" at 360px. Long URLs still wrap. */
+.asst-body { overflow-wrap: break-word; line-height: 1.65; }
+/* A reply reads in the text colour: the global `p { color: muted }` (learnova-components.css)
+   made reply paragraphs grey beside dark list items, and the failed-turn text grey on pink.
+   Everything inside a message body takes the body's own colour. */
+.asst-msg-assistant .asst-body { color: var(--ln-ink); }
+.asst-body :is(p, li, td, th, h3, h4, h5, h6, strong, em) { color: inherit; }
 .asst-msg-user .asst-body {
   max-width: min(82%, 34rem);
   padding: .7rem 1.05rem;
@@ -214,7 +557,7 @@
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--ln-danger) 35%, transparent);
   background: color-mix(in srgb, var(--ln-danger) 10%, var(--ln-surface-solid));
-  color: var(--ln-danger);
+  color: var(--asst-danger-text);
 }
 .asst-body > *:first-child { margin-top: 0; }
 .asst-body > *:last-child { margin-bottom: 0; }
@@ -234,11 +577,65 @@
   margin: .7rem 0;
   padding: .85rem 1rem;
   border-radius: 16px;
-  background: #1a1830;
+  /* A soft glow at an edge that has more code behind it: the two "local" layers scroll
+     with the content and cover the glow once that edge is reached. */
+  background:
+    linear-gradient(to right, #1a1830 50%, transparent) left center / 2rem 100% no-repeat local,
+    linear-gradient(to left, #1a1830 50%, transparent) right center / 2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(236, 233, 255, .3), transparent) left center / .75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(236, 233, 255, .3), transparent) right center / .75rem 100% no-repeat scroll,
+    #1a1830;
   color: #ece9ff;
   overflow-x: auto;      /* long lines scroll instead of widening the page */
 }
 .asst-code code { background: none; padding: 0; color: inherit; }
+/* highlight.js token colours (static/js/code-highlight.js), lifted towards white so they
+   read on the dark block in both themes. */
+.asst-code .hljs-keyword, .asst-code .hljs-selector-tag, .asst-code .hljs-built_in,
+.asst-code .hljs-type { color: color-mix(in srgb, var(--ln-violet) 45%, #fff); }
+.asst-code .hljs-string, .asst-code .hljs-regexp, .asst-code .hljs-addition,
+.asst-code .hljs-attr { color: color-mix(in srgb, var(--ln-lime) 55%, #fff); }
+.asst-code .hljs-number, .asst-code .hljs-literal, .asst-code .hljs-symbol,
+.asst-code .hljs-variable { color: color-mix(in srgb, var(--ln-amber) 60%, #fff); }
+.asst-code .hljs-title, .asst-code .hljs-section, .asst-code .hljs-name,
+.asst-code .hljs-function { color: color-mix(in srgb, var(--ln-cyan) 55%, #fff); }
+.asst-code .hljs-comment, .asst-code .hljs-quote, .asst-code .hljs-meta { color: inherit; opacity: .62; font-style: italic; }
+.asst-code .hljs-deletion { color: color-mix(in srgb, var(--ln-coral) 60%, #fff); }
+
+/* Formulas (static/js/math.js). An inline formula wider than the column scrolls inside
+   itself instead of pushing the message past the edge of a phone screen. */
+.asst-body .ln-math:not(.ln-math-display) {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+/* Wide display formulas and tables scroll inside the message. While one actually scrolls,
+   the edge that has more behind it fades out: a scroll-driven animation slides a mask
+   that is one fade wider than the box from "fade on the right" (start) to "fade on the
+   left" (end). A box that fits has an inactive scroll timeline, so no mask at all; a
+   browser without scroll timelines simply shows no cue. (A painted shadow needs a cover
+   in the exact background colour, which the translucent panel does not have.) */
+@supports (animation-timeline: scroll()) {
+  .asst-body .katex-display,
+  .asst-body table {
+    mask-size: calc(100% + 1.5rem) 100%;
+    mask-repeat: no-repeat;
+    animation: asst-scroll-edge linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+@keyframes asst-scroll-edge {
+  from {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+    mask-position: -1.5rem 0;
+  }
+  to {
+    mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+    mask-position: 0 0;
+  }
+}
 
 /* Comparison tables the renderer builds from pipe rows. display:block keeps a wide
    table scrolling inside the message instead of widening the page on a phone. */
@@ -262,6 +659,11 @@
   background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
   font-weight: 600;
 }
+/* A formula in a table cell is one unbroken unit: KaTeX may break an inline formula after
+   a relation or operator, which split "x² − 2x − 3 = 0" over three lines of a narrow cell.
+   The table scrolls sideways instead (display: block above, with the edge fade). */
+.asst-body :is(td, th) .katex { white-space: nowrap; }
+.asst-body :is(td, th) .ln-math:not(.ln-math-display) { max-width: none; overflow: visible; }
 .asst-body tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--ln-ink) 3%, transparent);
 }
@@ -279,77 +681,206 @@
   border-top: 1px solid color-mix(in srgb, var(--ln-ink) 12%, transparent);
 }
 
-/* Offered under the newest reply: one tap turns the question into a short lesson. */
-.asst-lesson-offer {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  flex-wrap: wrap;
-  margin-top: .15rem;
-  font-size: .82rem;
-  color: var(--ln-muted);
+.code-lang {
+  position: absolute;
+  top: .4rem;
+  inset-inline-end: .75rem;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .85;
 }
-.asst-lesson-offer button {
-  padding: .4rem .9rem;
-  border: 1px solid color-mix(in srgb, var(--ln-violet) 35%, transparent);
+
+/* ------------------------------------------------------- under a message */
+
+/* "{count} earlier message(s) were not sent" and similar notes. No model name, no
+   timing: those are for the operator (/internal/ai-diagnostics), not for a student. */
+.asst-msg-meta { margin: 0; font-size: .875rem; color: var(--ln-muted); }
+.asst-msg .photo-notes { font-size: .875rem; }
+.asst-msg-user .photo-notes { max-width: min(82%, 34rem); text-align: end; }
+.asst-msg-user .sent-photos { justify-content: flex-end; }
+
+/* A failed turn that a new photo fixes, not a retry: an instruction, not an alarm. */
+.asst-msg-error.asst-msg-notice .asst-body {
+  border-color: color-mix(in srgb, var(--ln-amber) 45%, transparent);
+  background: color-mix(in srgb, var(--ln-amber) 10%, var(--ln-surface-solid));
+  color: var(--ln-ink);
+}
+
+.asst-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem; margin-block-start: -.2rem; margin-inline-start: -.6rem; }
+/* The pulled-in edge lines up icon buttons with the text; a bordered pill (Retry, Send a
+   new photo) must line up with the bubble above it instead. */
+.asst-actions.asst-actions-pills { margin-inline-start: 0; margin-block-start: .15rem; }
+.asst-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 .6rem;
+  border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
-  color: var(--ln-violet);
+  background: none;
+  color: var(--ln-muted);
   font: inherit;
-  font-size: .82rem;
+  font-size: .875rem;
   font-weight: 600;
   cursor: pointer;
 }
-.asst-lesson-offer button:hover {
-  background: color-mix(in srgb, var(--ln-violet) 18%, transparent);
+.asst-action:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-ink); }
+.asst-action-strong {
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 35%, transparent);
+  color: var(--asst-accent-text);
+  padding: 0 1rem;
 }
+.asst-action:disabled { opacity: .5; cursor: default; }
 
-.code-lang {
-  position: absolute;
-  top: .45rem;
-  inset-inline-end: .75rem;
-  font-size: .68rem;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  opacity: .55;
-}
-.asst-msg-meta { margin: 0; font-size: .7rem; color: var(--ln-muted); }
-.asst-copy {
-  align-self: flex-start;
-  padding: .2rem .65rem;
-  border: 1px solid transparent;
+/* Tap answers to the assistant's question (CHIPS): a tap sends the answer. */
+.asst-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.asst-chip {
+  min-height: 2.75rem;
+  padding: .45rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 35%, transparent);
   border-radius: 999px;
-  background: none;
+  background: color-mix(in srgb, var(--ln-violet) 8%, transparent);
+  color: var(--ln-ink);
   font: inherit;
-  font-size: .72rem;
-  color: var(--ln-muted);
+  font-size: .9375rem;
+  font-weight: 600;
   cursor: pointer;
 }
-.asst-copy:hover { border-color: var(--ln-line); color: var(--ln-ink); }
+.asst-chip:hover { background: color-mix(in srgb, var(--ln-violet) 16%, transparent); }
 
-.asst-dots { display: inline-flex; gap: .25rem; padding: .2rem 0; }
+/* Continue Learning: one tap turns the conversation into a lesson. */
+.asst-continue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .15rem;
+}
+.asst-continue-button,
+.asst-continue-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  max-width: 100%;
+  min-height: 2.75rem;
+  padding: .45rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  color: var(--asst-accent-text);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.asst-continue-button:hover { background: color-mix(in srgb, var(--ln-violet) 18%, transparent); }
+.asst-continue-button:disabled { cursor: progress; opacity: .85; }
+.asst-continue-link {
+  border-color: transparent;
+  background: var(--asst-fill);
+  color: #fff;
+}
+.asst-continue-note { flex-basis: 100%; margin: 0; font-size: .9375rem; color: var(--ln-muted); }
+.asst-continue-note.is-error { color: var(--asst-danger-text); }
+/* Not enough to build a lesson from yet: what to add, quietly, where the button would be. */
+.asst-continue-guidance { display: flex; align-items: flex-start; gap: .55rem; line-height: 1.5; }
+.asst-continue-guidance .asst-icon { margin-top: .1rem; color: var(--asst-accent-text); }
+/* A used-up allowance: a note and a clear way forward, not an error. */
+.asst-continue-premium,
+.asst-continue-premium:visited {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--ln-violet) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ln-violet) 10%, transparent);
+  color: var(--asst-accent-text);
+  font-weight: 700;
+  text-decoration: none;
+}
+.asst-continue-premium:hover { background: color-mix(in srgb, var(--ln-violet) 18%, transparent); }
+.asst-continue-note a { color: var(--asst-accent-text); font-weight: 700; }
+.asst-spinner {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: asstSpin .8s linear infinite;
+}
+@keyframes asstSpin { to { transform: rotate(360deg); } }
+
+/* Waiting for the reply. */
+.asst-pending-label { margin-inline-end: .5rem; font-size: .9375rem; color: var(--ln-muted); }
+.asst-dots { display: inline-flex; gap: .25rem; padding: .45rem 0; }
 .asst-dots i {
-  width: .4rem; height: .4rem; border-radius: 50%;
+  width: .45rem; height: .45rem; border-radius: 50%;
   background: currentColor; opacity: .35;
   animation: asstBlink 1.2s infinite ease-in-out;
 }
 .asst-dots i:nth-child(2) { animation-delay: .18s; }
 .asst-dots i:nth-child(3) { animation-delay: .36s; }
 @keyframes asstBlink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
-@media (prefers-reduced-motion: reduce) {
-  .asst-dots i { animation: none; opacity: .5; }
-  .asst-thread { scroll-behavior: auto; }
-  .asst-suggestion, .asst-list-item, .asst-send { transition: none; }
+@keyframes asstPulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.asst-stopped { margin: 0; font-size: .9375rem; color: var(--ln-muted); }
+
+/* Back to the newest message, shown only when the student scrolled up. */
+.asst-scroll-down {
+  position: absolute;
+  bottom: .75rem;
+  left: 50%;
+  z-index: 5;
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 50%;
+  background: var(--ln-surface-solid);
+  color: var(--ln-ink);
+  box-shadow: var(--ln-shadow-sm);
+  cursor: pointer;
+  transform: translateX(-50%);
 }
+
+/* Photos dragged over the chat. */
+.asst-dropzone {
+  position: absolute;
+  inset: .5rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  border: 2px dashed var(--ln-violet);
+  border-radius: var(--ln-radius-md);
+  background: color-mix(in srgb, var(--ln-surface-solid) 90%, transparent);
+  color: var(--asst-accent-text);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+.asst-dropzone .asst-icon { width: 2rem; height: 2rem; }
 
 /* ------------------------------------------------------------------ composer */
 
 .asst-composer {
-  padding: .8rem 1.1rem 1rem;
+  position: sticky;
+  bottom: 0;
   display: grid;
-  gap: .5rem;
+  gap: .4rem;
   justify-items: center;
+  padding: .5rem 1rem max(.6rem, env(safe-area-inset-bottom));
 }
 /* Textarea and controls share one rounded shell, so the composer reads as a single
    object the way the thread above it reads as a single column. */
@@ -357,8 +888,8 @@
   width: 100%;
   max-width: 48rem;
   display: grid;
-  gap: .35rem;
-  padding: .55rem .6rem .5rem .9rem;
+  gap: .25rem;
+  padding: .3rem;
   border: 1px solid var(--ln-line-strong);
   border-radius: 28px;
   background: var(--ln-surface-solid);
@@ -369,49 +900,382 @@
   border-color: color-mix(in srgb, var(--ln-violet) 55%, var(--ln-line-strong));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ln-violet) 16%, transparent);
 }
-.asst-composer textarea {
-  width: 100%;
-  min-height: 2.4rem;
-  max-height: 14rem;
-  resize: none;
-  padding: .45rem .2rem .1rem;
+/* Typing in the box: the app's focus ring around the shell (the textarea draws none). */
+.asst-composer-shell:has(textarea:focus-visible) {
+  border-color: var(--ln-focus);
+  box-shadow: 0 0 0 2px var(--ln-focus);
+}
+.asst-composer .attach-tray { padding: .35rem .45rem .2rem; }
+/* One row that never wraps: photo buttons, the message box, then the actions. */
+.asst-composer-row { display: flex; align-items: flex-end; gap: .2rem; min-width: 0; }
+.asst-composer .attach-buttons { flex: none; gap: 0; }
+.asst-composer .attach-button {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
   border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ln-muted);
+}
+.asst-composer .attach-button:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-ink); }
+/* The photo buttons are labels over an invisible file input: the label shows the ring. */
+.asst-composer .attach-button:has(.attach-input:focus-visible) { outline: 3px solid var(--ln-focus); outline-offset: 2px; }
+.asst-composer .attach-input:focus-visible { outline: none; }
+.asst-composer textarea {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  max-height: 12rem;
+  resize: none;
+  padding: .6rem .4rem;
+  border: 0;
+  border-radius: 0;
   background: none;
   font: inherit;
-  line-height: 1.55;
+  font-size: 1rem;
+  line-height: 1.5;
   color: inherit;
 }
+/* One line of hint text, never two: a wrapped placeholder made the box twice as tall. */
+.asst-composer textarea::placeholder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 /* The shell carries the focus ring, so the textarea must not draw a second one. */
 .asst-composer textarea:focus,
-.asst-composer textarea:focus-visible { outline: none; }
-.asst-composer-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-.asst-deep { display: flex; align-items: center; gap: .35rem; font-size: .82rem; color: var(--ln-muted); }
-.asst-count { font-size: .75rem; color: var(--ln-muted); margin-inline-start: auto; }
+.asst-composer textarea:focus-visible { outline: none; box-shadow: none; }
+.asst-composer-actions { display: flex; flex: none; align-items: center; gap: .2rem; }
+.asst-deep {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: 0 .75rem;
+  border-radius: 999px;
+  color: var(--ln-muted);
+  font-size: .875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.asst-deep:hover { background: color-mix(in srgb, var(--ln-violet) 9%, transparent); color: var(--ln-ink); }
+/* The real checkbox stays hidden: learnova-responsive.css sizes every phone checkbox to 20px. */
+.asst-deep input[type="checkbox"] { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; }
+.asst-deep.is-on {
+  background: color-mix(in srgb, var(--ln-violet) 15%, transparent);
+  color: var(--asst-accent-text);
+}
+.asst-deep:focus-within { outline: 3px solid var(--ln-focus); outline-offset: 1px; }
+.asst-count { font-size: .8125rem; color: var(--ln-muted); white-space: nowrap; }
+.asst-count:empty { display: none; }
 /* A round send button is where the brand colour lives now that messages are quiet. */
 .asst-send {
   display: grid; place-items: center;
-  width: 2.3rem; height: 2.3rem;
-  margin-inline-start: auto;
+  width: 2.75rem; height: 2.75rem;
+  flex: none;
   border: 0;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--ln-violet), var(--ln-violet-deep));
+  background: var(--asst-fill);
   color: #fff;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1;
   cursor: pointer;
   transition: transform 140ms var(--ln-ease), opacity 140ms var(--ln-ease);
 }
-.asst-count + .asst-send { margin-inline-start: 0; }
 .asst-send:hover:not(:disabled) { transform: translateY(-1px); }
 .asst-send:disabled { opacity: .45; cursor: default; }
-.asst-disclaimer { margin: 0; font-size: .72rem; color: var(--ln-muted); text-align: center; }
+.asst-stop {
+  display: grid; place-items: center;
+  width: 2.75rem; height: 2.75rem;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ln-ink);
+  color: var(--ln-surface-solid);
+  cursor: pointer;
+}
+.asst-composer .asst-disclaimer { margin: 0; font-size: .875rem; line-height: 1.4; color: var(--ln-muted); text-align: center; }
+
+/* --------------------------------------------------- row menu and dialogs */
+
+.asst-item-menu {
+  position: fixed;
+  z-index: 140;
+  display: grid;
+  min-width: 11.5rem;
+  padding: .35rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 16px;
+  background: var(--ln-surface-solid);
+  color: var(--ln-ink);
+  box-shadow: var(--ln-shadow-md);
+}
+.asst-item-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: .5rem .85rem;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.asst-item-menu button:hover,
+.asst-item-menu button:focus { outline: none; background: color-mix(in srgb, var(--ln-violet) 11%, transparent); }
+.asst-item-menu [role="menuitem"]:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: -3px; }
+.asst-item-menu .danger { color: var(--asst-danger-text); }
+
+.asst-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.35rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: var(--ln-radius-md);
+  background: var(--ln-surface-solid);
+  color: var(--ln-ink);
+  box-shadow: var(--ln-shadow-md);
+}
+/* A literal colour on purpose: ::backdrop does not inherit custom properties in every
+   browser still in use, and a dark veil reads right in both themes. */
+.asst-dialog::backdrop { background: rgba(8, 12, 24, .5); }
+.asst-dialog h2 {
+  margin: 0 0 .6rem;
+  font-family: var(--ln-font-display);
+  font-size: 1.1875rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.asst-dialog p { margin: 0 0 1.1rem; color: var(--ln-muted); line-height: 1.55; }
+.asst-dialog input[type="text"] {
+  width: 100%;
+  min-height: 2.9rem;
+  margin: .35rem 0 1.1rem;
+  padding: .6rem .9rem;
+  border: 1px solid var(--ln-line-strong);
+  border-radius: 12px;
+  background: var(--ln-surface-solid);
+  color: var(--ln-ink);
+  font: inherit;
+  font-size: 1rem;
+}
+.asst-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+.asst-dialog-actions button { min-height: 2.75rem; padding: 0 1.1rem; border-radius: 999px; }
+.asst-dialog .primary-button:not(.asst-danger-button) { background: var(--asst-fill); color: #fff; }
+.asst-dialog .primary-button:not(.asst-danger-button):hover { background: var(--asst-fill-solid); }
+.asst-dialog .asst-danger-button { border-color: transparent; background: var(--asst-danger-fill); color: #fff; box-shadow: none; }
+.asst-dialog .asst-danger-button:hover { background: color-mix(in srgb, var(--asst-danger-fill) 85%, var(--ln-ink)); }
+/* The delete dialog's three buttons fit one row on a desktop; on a phone they stack,
+   Delete permanently last and full width, never orphaned on a row of its own. */
+#asstDeleteDialog { width: min(34rem, calc(100vw - 2rem)); }
+@media (max-width: 480px) {
+  #asstDeleteDialog .asst-dialog-actions { flex-direction: column; align-items: stretch; }
+  .asst-dialog { margin-top: max(1rem, 8vh); }
+}
+
+/* Dark theme: the drawer veil must darken (--ln-ink is light there), and white on the
+   light dark-theme red is unreadable, so the danger button takes the canvas colour. The
+   accent and danger text use the dark theme's own (lighter) violet and red. */
+:root[data-theme="dark"] .asst-scrim { background: color-mix(in srgb, var(--ln-canvas-deep) 72%, transparent); }
+:root[data-theme="dark"] .asst-dialog .asst-danger-button { color: var(--ln-canvas); }
+:root[data-theme="dark"] .assistant-page {
+  --asst-accent-text: var(--ln-violet);
+  --asst-danger-text: var(--ln-danger);
+  --asst-danger-fill: var(--ln-danger);
+  --asst-photo-scrim: color-mix(in srgb, var(--ln-canvas) 86%, transparent);
+}
+:root[data-theme="dark"] .asst-new:focus-visible { box-shadow: inset 0 0 0 5px var(--ln-surface-solid); }
+
+/* Short screens and the drawer: the conversation list, the archive and the tools scroll
+   as one column, so no part of the list is squeezed to a few rows. */
+@media (max-width: 900px), (max-height: 720px) {
+  .asst-sidebar { overflow-y: auto; overscroll-behavior: contain; }
+  .asst-lists { flex: none; overflow: visible; }
+}
+
+/* ------------------------------------------------- phones and small tablets */
 
 @media (max-width: 900px) {
-  .assistant-page { grid-template-columns: 1fr; padding-inline: .75rem; }
-  .asst-sidebar { position: static; max-height: none; }
-  .asst-list { max-height: 14rem; }
-  .asst-main { border-radius: var(--ln-radius-md); }
-  .asst-thread { padding: 1rem .8rem; }
+  .assistant-page,
+  .assistant-page[data-sidebar="collapsed"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+  }
+  /* The conversation list becomes an off-canvas drawer. Closed it is hidden as well as
+     moved away, so it can be neither tabbed into nor seen at the screen edge. */
+  .asst-sidebar,
+  .assistant-page[data-sidebar="collapsed"] .asst-sidebar {
+    position: fixed;
+    inset-block: var(--app-nav-height) 0;
+    inset-inline-start: 0;
+    z-index: 96;
+    width: min(20rem, 86vw);
+    padding: .65rem .65rem max(.4rem, env(safe-area-inset-bottom));
+    border-inline-end: 1px solid var(--ln-line);
+    background: var(--ln-surface-solid);
+    box-shadow: var(--ln-shadow-md);
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 220ms var(--ln-ease), visibility 0s linear 220ms;
+  }
+  [dir="rtl"] .asst-sidebar { transform: translateX(100%); }
+  .asst-sidebar.is-open,
+  .assistant-page[data-sidebar="collapsed"] .asst-sidebar.is-open {
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+  }
+  .asst-scrim {
+    position: fixed;
+    inset: var(--app-nav-height) 0 0;
+    z-index: 95;
+    display: block;
+    background: color-mix(in srgb, var(--ln-ink) 38%, transparent);
+  }
+  .asst-main {
+    border-width: 0;
+    border-radius: var(--ln-radius-md) var(--ln-radius-md) 0 0;
+    box-shadow: none;
+  }
+  .asst-drawer-toggle,
+  .assistant-page[data-sidebar="collapsed"] .asst-drawer-toggle,
+  .asst-head-new { display: inline-grid; margin: 0; }
+  .asst-thread-head { gap: .25rem; padding: .35rem .4rem; min-height: 3.4rem; }
+  .asst-thread { padding: 1.1rem .85rem 1rem; }
   .asst-msg-user .asst-body { max-width: 88%; }
-  .asst-composer { padding: .6rem .7rem .8rem; }
+  .asst-composer { padding: .4rem .5rem max(.5rem, env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 640px) {
+  .asst-thread-actions select { max-width: 8rem; padding-inline: .75rem .4rem; }
+  /* Icon only; the label stays for screen readers and as the tooltip. */
+  .asst-deep { padding: 0; }
+  .asst-deep-text {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  /* The suggestions are one row that scrolls sideways instead of a tall stack, so the
+     whole welcome fits between the header and the message box. */
+  .asst-welcome { width: 100%; padding-top: .5rem; }
+  .asst-welcome-logo { width: 2.5rem; height: 2.5rem; margin-bottom: .6rem; }
+  .asst-welcome h2 { font-size: 1.375rem; }
+  .asst-welcome p { margin-bottom: 1rem; font-size: .9375rem; }
+  .asst-suggestions {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    margin-inline: -.85rem;
+    padding: 0 .85rem .25rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .asst-suggestions::-webkit-scrollbar { display: none; }
+  .asst-suggestions li { flex: none; scroll-snap-align: start; }
+  .asst-suggestion { white-space: nowrap; }
+  /* The disclaimer is said once, under the welcome; in a thread every pixel goes to it. */
+  .asst-disclaimer { display: none; }
+  .asst-composer.is-empty .asst-disclaimer { display: block; }
+  .asst-disclaimer-photos { display: none; }
+}
+
+@media (max-width: 480px) {
+  /* On a phone the photo picker itself offers the camera, so one button is enough. */
+  .asst-composer .asst-camera { display: none; }
+  .asst-msg-assistant { column-gap: .6rem; }
+  /* The conversation's title keeps the room: the style picker shrinks to a short label. */
+  .asst-thread-actions select { max-width: 6.25rem; padding-inline: .7rem 1.6rem; }
+}
+
+/* 16 px in every field a phone can tap, or iOS Safari zooms the page in: these two were
+   15 px, which beat the 16 px floor in learnova-responsive.css on specificity. */
+@media (max-width: 900px) {
+  .asst-thread-actions select,
+  .asst-sidebar input[type="search"] { font-size: 1rem; }
+}
+
+/* The first suggestion starts at the gutter, not at the screen edge: snapping ignores the
+   scroller's padding unless scroll-padding says the same. */
+@media (max-width: 640px) {
+  .asst-suggestions { scroll-padding-inline: .85rem; }
+}
+
+/* Typing on a short phone (static/js/assistant.js trackViewport): the keyboard leaves a
+   few hundred pixels, so the navigation bar, the thread's meta line and the disclaimer step
+   aside until it closes - the conversation keeps the room. */
+html.asst-keyboard { --app-nav-height: 0px; }
+html.asst-keyboard .assistant-body .app-nav,
+html.asst-keyboard .assistant-body .mobile-nav-backdrop { display: none; }
+html.asst-keyboard .asst-meta,
+html.asst-keyboard .asst-composer .asst-disclaimer { display: none; }
+html.asst-keyboard .asst-thread-head { min-height: 2.9rem; padding-block: .1rem; }
+html.asst-keyboard .asst-thread { padding-top: .6rem; }
+html.asst-keyboard .asst-welcome-logo { display: none; }
+
+/* --------------------------------------------- photos waiting in the composer */
+/* Small thumbnails with phone-sized controls: the remove button (×) sits on the corner,
+   a dark disc with a white mark in both themes so it shows on any photo; retry and the
+   reorder arrows sit under the thumbnail, so a failed photo's buttons never spill over
+   its neighbour. The tray is bounded, so the message box keeps its place on a phone. */
+.asst-composer .attach-tray {
+  align-items: flex-start;
+  gap: .75rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  padding: .55rem .5rem .25rem;
+}
+/* As wide as the thumbnail, or as a short line of its caption when it has one (a failed
+   upload's reason, a photo hint), so the text does not stack one word per line. */
+.asst-composer .attach-item {
+  width: auto;
+  min-width: 4.5rem;
+  max-width: 9rem;
+  align-content: start;
+  font-size: .875rem;
+  gap: .15rem;
+}
+.asst-composer .attach-item img { width: 4.5rem; height: 4.5rem; }
+.asst-composer .attach-progress { top: 3.75rem; left: .4rem; right: auto; width: 3.7rem; }
+.asst-composer .attach-actions { position: static; display: flex; flex-wrap: nowrap; justify-content: flex-start; gap: 0; }
+.asst-composer .attach-actions button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  /* A faint disc, so a lone arrow under a photo still reads as a button. */
+  background: radial-gradient(circle, color-mix(in srgb, var(--ln-ink) 8%, transparent) 0 1rem, transparent 1.05rem);
+  color: var(--ln-ink);
+  font-size: 1.15rem;
+}
+.asst-composer .attach-actions button:hover { background: radial-gradient(circle, color-mix(in srgb, var(--ln-violet) 18%, transparent) 0 1.1rem, transparent 1.15rem); }
+.asst-composer .attach-actions .attach-remove {
+  position: absolute;
+  top: -.55rem;
+  inset-inline-start: 2.3rem;
+  background: radial-gradient(circle, var(--asst-photo-scrim) 0 .85rem, transparent .9rem);
+  color: #fff;
+}
+.asst-composer .attach-actions .attach-remove:hover { background: radial-gradient(circle, var(--asst-photo-scrim) 0 .95rem, transparent 1rem); }
+/* "Ready" is what a thumbnail without a bar already says; it stays for screen readers. */
+.asst-composer .attach-item.is-ready .attach-status {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.asst-composer .attach-status { line-height: 1.35; }
+.asst-composer .attach-hint { font-size: .875rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-page, .asst-sidebar, .asst-row, .asst-new, .asst-send, .asst-suggestion,
+  .asst-composer-shell, .asst-archived-toggle .asst-icon:last-child { transition: none; }
+  .asst-dots i, .asst-row.is-busy .asst-list-title::after { animation: none; opacity: .6; }
+  .asst-spinner { animation-duration: 2.4s; }
 }

@@ -43,6 +43,7 @@
     <div class="auth-card-footer auth-reveal">
       <p>{% if mode == 'register' %}{{ _('Already registered?') }} <a href="{{ url_for('login') }}">{{ _('Log in') }}</a>{% else %}{{ _('New here?') }} <a href="{{ url_for('register') }}">{{ _('Create account') }}</a>{% endif %}</p>
       <a class="auth-language-access" href="{{ url_for('settings', next=request.path) }}">{{ _('Settings') }} · {{ _('German') if current_language == 'de' else _('English') }}</a>
+      <a class="auth-language-access" href="{{ url_for('contact') }}">{{ _('Contact us') }}</a>
     </div>
   </section>
 </main>

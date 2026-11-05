@@ -5,11 +5,11 @@
 {% block body_class %}account-page settings-page{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">{% endblock %}
 {% block content %}
-<main class="account-shell settings-shell">
+<main id="main-content" class="account-shell settings-shell">
   <section class="account-card">
     <div class="eyebrow">LEARNOVA</div>
     <h1>{{ _('Settings') }}</h1>
-    <form method="post" action="{{ url_for('update_language') }}">
+    <form method="post" action="{{ url_for('update_language') }}" data-tour-target="settings-language">
       <label for="language">{{ _('Interface language') }}</label>
       <p>{{ _('Choose the language used for the interface and AI learning content.') }}</p>
       {{ language_selector() }}
@@ -17,7 +17,7 @@
       <button class="primary-button" type="submit">{{ _('Save') }}</button>
     </form>
     {% if current_user.is_authenticated %}
-    <form method="post" action="{{ url_for('update_grade') }}" class="settings-grade">
+    <form method="post" action="{{ url_for('update_grade') }}" class="settings-grade" data-tour-target="settings-grade">
       <label for="grade">{{ _('Grade / level') }}</label>
       <p>{{ _('This helps Learnova match explanations and difficulty to your level.') }}</p>
       {{ grade_selector(selected=current_grade, required=True) }}
@@ -40,6 +40,17 @@
     {% include "components/_profile_settings.html" %}
     {% endif %}
     {% if current_user.is_authenticated %}{% include "components/_subscription.html" %}{% endif %}
+    <section class="settings-profile settings-help" id="help" aria-labelledby="settings-help-title">
+      <h2 id="settings-help-title">{{ _('Help and support') }}</h2>
+      <p>{{ _('Learn every feature step by step, or ask us.') }}</p>
+      <div class="settings-help-links">
+        {% if current_user.is_authenticated %}<a class="primary-button" href="{{ url_for('tutorial_hub') }}" data-tutorial-link>{{ _('Open the tutorial') }}</a>{% endif %}
+        <a class="secondary-button" href="{{ url_for('about') }}">{{ _('About Learnova') }}</a>
+        <a class="secondary-button" href="{{ url_for('contact') }}">{{ _('Contact us') }}</a>
+        {% if premium_admin %}<a class="ghost-button" href="{{ url_for('admin_contact_messages') }}">{{ _('Contact messages') }}</a>{% endif %}
+      </div>
+      {% if current_user.is_authenticated %}{% set tips_back = 'settings' %}{% include "components/_tutorial_tips.html" %}{% endif %}
+    </section>
   </section>
 </main>
 {% endblock %}

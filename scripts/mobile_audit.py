@@ -13,6 +13,8 @@ download). For every page and viewport it reports:
 * visible elements that stick out of the viewport (clipped controls);
 * header controls that overlap each other or leave the screen;
 * whether the mobile menu button is visible and the menu opens, fits and closes;
+* on the chat pages up to 900px, whether the conversation drawer opens inside the screen
+  and closes on Escape;
 * tap targets smaller than 44 px (buttons, links styled as buttons, inputs);
 * body text below 14 px.
 
@@ -34,8 +36,11 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWPORTS = [(320, 568), (375, 667), (390, 844), (430, 932), (768, 1024), (1024, 768), (1440, 900)]
-GUEST_PAGES = ["/about", "/login", "/register"]
+GUEST_PAGES = ["/about", "/contact", "/login", "/register"]
 STUDENT_PAGES = [
+    # "/" is the chat home for a student; /lesson the Short Lesson builder; ASSISTANT_THREAD
+    # a conversation with a reply (/assistant/c/<id>).
+    "/", "/lesson", "ASSISTANT_THREAD",
     "/dashboard", "LESSON", "/assistant", "/settings", "/flashcards", "/flashcards/create",
     "/flashcards/import", "/progress", "/projects", "/practice/today", "/study-plans", "/study-plans/new",
     "/vocabulary", "/vocabulary/import", "/community", "/insights/mistakes", "/onboarding/grade",
@@ -48,6 +53,10 @@ STUDENT_PAGES = [
     "FLASHCARD_BLAST", "FLASHCARD_BLOCKS", "FLASHCARD_EDIT", "FLASHCARD_PUBLISH",
     "ADMIN_CODES", "INTERNAL_DIAGNOSTICS", "INTERNAL_MODERATION",
     "/profile", "/leaderboard", "PUBLIC_PROFILE",
+    # The tutorial hub (docs/TUTORIAL.md): section cards and their buttons.
+    "/tutorial",
+    # Public pages in the signed-in shell, and the contact inbox (mobileaudit is a premium admin).
+    "/about", "/contact", "/admin/contact-messages",
 ]
 # A photo is attached on these pages, so the photo tray and sent-photo thumbnails are
 # measured too: (file input, send button or None, what to wait for after sending).
@@ -55,6 +64,11 @@ PHOTO_STEPS = {
     "LESSON": ("#chatGallery", None, None),
     "/assistant": ("#asstGallery", "#asstSend", ".asst-msg-assistant:not(.asst-pending)"),
 }
+PHOTO_STEPS["/"] = PHOTO_STEPS["/assistant"]   # the chat is the home page
+# The chat pages, whose conversation list is an off-canvas drawer up to 900px: it must open
+# inside the screen and close on Escape (audit_page(drawer=True)).
+CHAT_PAGES = {"/", "/assistant", "ASSISTANT_THREAD"}
+DRAWER_MAX_WIDTH = 900
 PHOTO_PATH: Path | None = None
 # --ignore-console REGEX: console errors matching it are reported but do not fail a page.
 IGNORED_CONSOLE: "re.Pattern[str] | None" = None
@@ -464,7 +478,20 @@ def login_and_create_lesson(context, base: str) -> dict:
     response = page.request.post(f"{base}/api/analyze", multipart={"study_goal": "Potenzgesetze", "subject": "Mathematics"})
     session_id = response.json()["session_id"]
     page.request.post(f"{base}/api/tour/complete")
+    # Feature tips would start by themselves on the measured pages (docs/TUTORIAL.md): the
+    # audit measures the pages, so the student switches them off.
+    page.request.post(f"{base}/tutorial/tips", form={"back": "hub"})
     urls = {"LESSON": f"/?session_id={session_id}"}
+    # A conversation with one exchange (the patched AI's CHAT_REPLY: table, formulas, tap
+    # answers), so the chat page is measured with a thread and not only empty.
+    json_headers = {"Content-Type": "application/json"}
+    created = page.request.post(f"{base}/api/assistant/conversations", data=json.dumps({}), headers=json_headers)
+    if created.ok:
+        conversation_id = created.json()["conversation"]["id"]
+        sent = page.request.post(f"{base}/api/assistant/conversations/{conversation_id}/messages", headers=json_headers,
+                                 data=json.dumps({"message": "Wie rechne ich 2^3 · 2^2 aus? Erklär mir das Potenzgesetz."}))
+        if sent.ok:
+            urls["ASSISTANT_THREAD"] = f"/assistant/c/{conversation_id}"
     written = page.request.post(f"{base}/api/analyze", multipart={"study_goal": "Potenzgesetze Schriftlich",
                                                                   "subject": "Mathematics"})
     urls["LESSON_WRITTEN"] = f"/?session_id={written.json()['session_id']}"
@@ -515,8 +542,34 @@ def attach_photo(page, step) -> None:
     page.wait_for_timeout(300)
 
 
+def check_drawer(page, result: dict, screenshot: Path | None) -> dict:
+    """The chat's conversation drawer (phones and small tablets): opens inside the screen,
+    says so (aria-expanded), and closes again on Escape."""
+
+    toggle = page.locator("#asstDrawerToggle")
+    state = {"present": toggle.count() > 0, "visible": False}
+    if not state["present"] or not toggle.is_visible():
+        return state
+    state["visible"] = True
+    try:
+        toggle.click(timeout=4000)
+        page.wait_for_timeout(350)
+        sidebar = page.locator("#asstSidebar")
+        box = sidebar.bounding_box()
+        state["opens"] = sidebar.is_visible() and toggle.get_attribute("aria-expanded") == "true"
+        state["fits"] = bool(box) and box["x"] >= -1 and box["x"] + box["width"] <= result["vw"] + 1
+        if screenshot and state["opens"]:
+            page.screenshot(path=str(screenshot.with_name(screenshot.stem + "-drawer.png")))
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(350)
+        state["closes_on_escape"] = toggle.get_attribute("aria-expanded") == "false" and not sidebar.is_visible()
+    except Exception as error:  # reported as a fault, never a crash of the audit
+        state["error"] = str(error).splitlines()[0][:160]
+    return state
+
+
 def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screenshot: Path | None,
-               full_page: bool = True, photo_step=None, start_test: bool = False) -> dict:
+               full_page: bool = True, photo_step=None, start_test: bool = False, drawer: bool = False) -> dict:
     page = context.new_page()
     # JavaScript errors are layout faults too: a script that throws leaves a control dead.
     # Load failures of what block_external aborts on purpose (ads, web fonts) are not.
@@ -571,6 +624,7 @@ def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screens
     result["script_errors"] = script_errors
     result["landed"] = landed
     result["requested"] = url
+    result["drawer"] = check_drawer(page, result, screenshot) if drawer else None
     result["menu"] = None
     if mobile_menu:
         toggle = page.locator(".mobile-nav-toggle, .guest-nav-toggle").first
@@ -632,6 +686,12 @@ def blocking(result: dict, width: int, *, logged_in: bool) -> list[str]:
         problems.append(f"header overlap: {header['overlaps'][:2]}")
     if header.get("outside"):
         problems.append(f"header control off-screen: {header['outside']}")
+    drawer = result.get("drawer")
+    if drawer is not None and width <= DRAWER_MAX_WIDTH:
+        if not drawer.get("visible"):
+            problems.append("conversation drawer button missing or hidden")
+        elif not (drawer.get("opens") and drawer.get("fits") and drawer.get("closes_on_escape")):
+            problems.append(f"conversation drawer broken: {drawer}")
     menu = result.get("menu")
     # The menu is required where the bar hides links: logged-in up to 820px, guests up to
     # 700px. Pages without the app bar (login, register) have nothing to put in a menu.
@@ -706,7 +766,8 @@ def main() -> int:
                             try:
                                 result = audit_page(context, url, mobile_menu=width < 1024, open_chat=path == "LESSON", screenshot=shot,
                                                     full_page=not args.fold, photo_step=PHOTO_STEPS.get(path),
-                                                    start_test=path in START_TEST_PAGES)
+                                                    start_test=path in START_TEST_PAGES,
+                                                    drawer=path in CHAT_PAGES and width <= DRAWER_MAX_WIDTH)
                             except Exception as error:  # keep auditing the other pages
                                 result = {"error": str(error)[:200], "vw": width, "scrollWidth": 0, "offscreen": [], "smallTargets": [], "smallText": 0}
                             problems = blocking(result, width, logged_in=logged_in) if "error" not in result else [f"error: {result['error']}"]

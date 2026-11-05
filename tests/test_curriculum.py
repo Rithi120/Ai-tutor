@@ -17,6 +17,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova import curriculum  # noqa: E402
 from learnova.curriculum import sources  # noqa: E402
 from learnova.curriculum.extract import extract_html, extract_pdf, extract_text  # noqa: E402
@@ -298,6 +299,8 @@ LESSON = """{"lesson_title":"Potenzen","detected_level":"Klasse 8","concepts":[{
 
 class CurriculumIntegrationTests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "CURRICULUM_CLEARED_SOURCES", "FEATURE_CURRICULUM")
         application.app.config.update(TESTING=True, CURRICULUM_CLEARED_SOURCES="", FEATURE_CURRICULUM=True)
         application.SESSIONS.clear()
         application._curriculum_index_cache.update(key=None, index=None)

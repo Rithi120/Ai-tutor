@@ -1,0 +1,71 @@
+/* The tutorial hub (/tutorial, templates/tutorial.html). Tokens only, so light and dark
+   follow learnova-tokens.css; one column on phones, 16 px gutters, 44 px buttons. */
+.tutorial-shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: clamp(20px, 4vw, 40px) 0 64px; display: grid; gap: clamp(18px, 3vw, 28px); }
+.tutorial-shell h2 { margin: 0 0 12px; font: 800 clamp(1.25rem, 1.1rem + .6vw, 1.5rem)/1.25 var(--ln-font-display); color: var(--ln-ink); }
+
+.tutorial-hero, .tutorial-can-do, .tutorial-help, .tutorial-tips {
+  border: 1px solid var(--ln-line); border-radius: var(--ln-radius-lg); background: var(--ln-surface-solid);
+  box-shadow: var(--ln-shadow-sm); padding: clamp(18px, 4vw, 34px); color: var(--ln-ink);
+}
+.tutorial-hero { position: relative; overflow: hidden; }
+.tutorial-hero::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--ln-gradient-brand); }
+.tutorial-hero h1 { margin: 6px 0 10px; font: 800 var(--ln-heading-page)/1.12 var(--ln-font-display); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.tutorial-lead { max-width: 62ch; margin: 0; color: var(--ln-muted); font-size: var(--ln-text-body); line-height: var(--ln-leading-read); }
+.tutorial-progress { display: grid; gap: 8px; margin-top: 22px; max-width: 520px; }
+.tutorial-bar { height: 12px; border-radius: 999px; background: var(--ln-canvas-deep); overflow: hidden; }
+.tutorial-bar i { display: block; height: 100%; min-width: 0; border-radius: inherit; background: var(--ln-gradient-brand); transition: width .4s var(--ln-ease); }
+.tutorial-percent { margin: 0; font-weight: 700; color: var(--ln-ink); }
+.tutorial-actions, .tutorial-card-actions, .tutorial-help-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.tutorial-actions { margin-top: 20px; }
+.tutorial-actions > *, .tutorial-help-links > * { min-height: 44px; padding-inline: 20px; }
+.tutorial-note { margin: 14px 0 0; color: var(--ln-muted); }
+
+.tutorial-can-do ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.tutorial-can-do li { display: flex; align-items: center; gap: 12px; line-height: 1.45; }
+.tutorial-can-do-icon, .tutorial-card-icon {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
+  background: var(--ln-canvas-deep); font-size: 22px;
+}
+
+.tutorial-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.tutorial-card {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 18px; border: 1px solid var(--ln-line);
+  border-radius: var(--ln-radius-md); background: var(--ln-surface-solid); box-shadow: var(--ln-shadow-sm); color: var(--ln-ink);
+}
+.tutorial-card.is-completed { border-color: color-mix(in srgb, var(--ln-success) 45%, var(--ln-line)); }
+.tutorial-card.is-in-progress { border-color: color-mix(in srgb, var(--ln-violet) 45%, var(--ln-line)); }
+.tutorial-card-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.tutorial-card-head > div { min-width: 0; }
+.tutorial-card h3 { margin: 0 0 4px; font: 800 1.125rem/1.3 var(--ln-font-display); color: var(--ln-ink); overflow-wrap: anywhere; }
+.tutorial-status { margin: 0; color: var(--ln-muted); font-size: var(--ln-text-small); font-weight: 600; }
+.tutorial-card.is-completed .tutorial-status { color: var(--ln-success); }
+.tutorial-card.is-in-progress .tutorial-status { color: var(--ln-violet-deep); }
+.tutorial-summary { flex: 1; margin: 0; color: var(--ln-muted); line-height: 1.5; }
+.tutorial-card-actions > button { flex: 1 1 auto; min-height: 44px; padding-inline: 14px; }
+
+.tutorial-help p { margin: 0 0 14px; color: var(--ln-muted); }
+
+/* The quick tour's card, and one block per feature group with its chapters. */
+.tutorial-overview { padding: clamp(18px, 4vw, 28px); }
+.tutorial-overview h2 { margin: 0 0 4px; }
+.tutorial-overview .tutorial-card-actions { max-width: 560px; }
+.tutorial-tips h2 { margin-bottom: 4px; }
+.tutorial-group { display: grid; gap: 12px; min-width: 0; }
+.tutorial-group > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; min-height: 44px; margin-bottom: 12px; padding: 4px 0; list-style: none; cursor: pointer; border-radius: var(--ln-radius-md); }
+.tutorial-group > summary::-webkit-details-marker { display: none; }
+.tutorial-group > summary::after { content: "⌄"; order: 3; font-size: 1.25rem; color: var(--ln-muted); transition: transform .2s var(--ln-ease); }
+.tutorial-group[open] > summary::after { transform: rotate(180deg); }
+.tutorial-group > summary:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 3px; }
+.tutorial-group h2 { display: flex; align-items: center; gap: 10px; margin: 0; flex: 1 1 auto; }
+.tutorial-group-count { order: 2; color: var(--ln-muted); font-size: var(--ln-text-small); font-weight: 600; }
+.tutorial-group-icon { font-size: 1.25em; }
+.tutorial-card.is-skipped { border-style: dashed; }
+.tutorial-when { flex: 1; margin: 0; color: var(--ln-muted); line-height: 1.5; }
+.tutorial-card-actions > a { flex: 1 1 auto; min-height: 44px; padding-inline: 14px; justify-content: center; text-align: center; text-decoration: none; }
+
+@media (min-width: 640px) {
+  .tutorial-can-do ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-bar i, .tutorial-group > summary::after { transition: none; }
+}

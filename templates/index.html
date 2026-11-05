@@ -9,12 +9,13 @@
   <main>
     <section id="uploadView" class="hero study-home">
       <div class="eyebrow" data-i18n="heroEyebrow">{{ _('YOUR PERSONAL STUDY SPACE') }}</div>
-      <h1><span data-i18n="heroTitle">{{ _('What do you want to') }}</span> <em data-i18n="heroAccent">{{ _('learn today?') }}</em></h1>
+      {# Its own headline: the chat home already asks "What do you want to learn today?". #}
+      <h1><span data-i18n="heroLessonTitle">{{ _('Build a short lesson') }}</span> <em data-i18n="heroLessonAccent">{{ _('on your topic') }}</em></h1>
       <p class="hero-copy" data-i18n="heroCopy">{{ _('Choose a subject and tell Learnova what you need help with. Add school material only when it is useful.') }}</p>
 
       {% if resume_card %}<section class="resume-banner reveal-card"><div><span class="eyebrow">{{ _('CONTINUE WHERE YOU LEFT OFF') }}</span><h2>{{ resume_card.title }}</h2><p>{{ resume_card.subject }} · {% if resume_card.answered %}{{ _('{answered} questions answered', answered=resume_card.answered) }}{% else %}{{ _('Not started yet') }}{% endif %}</p></div><a class="primary-button" href="{{ url_for('resume_lesson', lesson_id=resume_card.lesson.id) }}">{{ _('Continue') }} <span aria-hidden="true">→</span></a></section>{% endif %}
       <form id="uploadForm" class="study-card">
-        <fieldset class="subject-picker"><legend data-i18n="chooseSubject">{{ _('Choose a subject') }}</legend>
+        <fieldset class="subject-picker" data-tour-target="lesson-subject"><legend data-i18n="chooseSubject">{{ _('Choose a subject') }}</legend>
           <label><input type="radio" name="subject" value="Mathematics" checked><span>∑ <b data-i18n="subjectMath">{{ _('Mathematics') }}</b></span></label>
           <label><input type="radio" name="subject" value="English"><span>Aa <b>English</b></span></label>
           <label><input type="radio" name="subject" value="German"><span>Ä <b>Deutsch</b></span></label>
@@ -25,20 +26,20 @@
           <label><input type="radio" name="subject" value="Other"><span>＋ <b data-i18n="subjectOther">{{ _('Other') }}</b></span></label>
         </fieldset>
 
-        <label class="goal-field" for="studyGoal"><span data-i18n="studyQuestion">{{ _('What should we work on?') }}</span>
+        <label class="goal-field" for="studyGoal" data-tour-target="lesson-goal"><span data-i18n="studyQuestion">{{ _('What should we work on?') }}</span>
           <textarea id="studyGoal" name="study_goal" rows="4" data-i18n-placeholder="studyPlaceholder" placeholder="{{ _('For example: Explain the causes of World War I and then test me…') }}"></textarea>
         </label>
 
         <div class="study-actions">
-          <label id="attachmentButton" class="attachment-button" for="images"><input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple><span>＋</span><span data-i18n="addMaterial">{{ _('Add photos or notes') }}</span></label>
-          <small data-i18n="optionalMaterial">{{ _('Optional · up to 4 images') }}</small>
+          <label id="attachmentButton" class="attachment-button" for="images"><input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple data-max-photos="{{ photo_limit or 2 }}"><span>＋</span><span data-i18n="addMaterial">{{ _('Add photos or notes') }}</span></label>
+          <small>{{ _('Optional · up to {count} images', count=photo_limit or 2) }}</small>
         </div>
         <div id="previews" class="previews"></div>
-        <button class="primary-button begin-button" type="submit"><span data-i18n="startLesson">{{ _('Build my lesson') }}</span><b>→</b></button>
+        <button class="primary-button begin-button" type="submit" data-tour-target="lesson-build"><span data-i18n="startLesson">{{ _('Build my lesson') }}</span><b>→</b></button>
         <p class="privacy">🔒 <span data-i18n="privacy">{{ _('Your material is used only to create this lesson.') }}</span></p>
       </form>
 
-      <div class="prompt-ideas"><span data-i18n="tryPrompt">Try asking:</span><button type="button" data-subject="Biology" data-i18n="promptPhotosynthesis" data-prompt-en="Explain photosynthesis step by step" data-prompt-de="Erkläre mir die Photosynthese Schritt für Schritt">“Explain photosynthesis”</button><button type="button" data-subject="English" data-i18n="promptPoem" data-prompt-en="Help me analyze a poem and identify its literary devices" data-prompt-de="Hilf mir, ein Gedicht zu analysieren und seine Stilmittel zu erkennen">“Analyze a poem”</button><button type="button" data-subject="History" data-i18n="promptRevolution" data-prompt-en="Explain the causes and consequences of the French Revolution" data-prompt-de="Erkläre die Ursachen und Folgen der Französischen Revolution">“French Revolution”</button></div>
+      <div class="prompt-ideas" data-tour-target="lesson-ideas"><span data-i18n="tryPrompt">Try asking:</span><button type="button" data-subject="Biology" data-i18n="promptPhotosynthesis" data-prompt-en="Explain photosynthesis step by step" data-prompt-de="Erkläre mir die Photosynthese Schritt für Schritt">“Explain photosynthesis”</button><button type="button" data-subject="English" data-i18n="promptPoem" data-prompt-en="Help me analyze a poem and identify its literary devices" data-prompt-de="Hilf mir, ein Gedicht zu analysieren und seine Stilmittel zu erkennen">“Analyze a poem”</button><button type="button" data-subject="History" data-i18n="promptRevolution" data-prompt-en="Explain the causes and consequences of the French Revolution" data-prompt-de="Erkläre die Ursachen und Folgen der Französischen Revolution">“French Revolution”</button></div>
     </section>
 
     <section id="lessonView" class="lesson hidden">
@@ -74,7 +75,15 @@
               <h1 id="lessonTitle"></h1>
             </div><span id="levelBadge" class="level-badge"></span>
           </div>
-          <article class="content-card explanation-card">
+          {# A note from the server about the lesson (e.g. its pages could not be read). #}
+          <p id="lessonNotice" class="lesson-notice hidden" role="note"></p>
+          {# Teaching-engine lessons: one numbered card per lesson part, drawn by app.js
+             (renderParts). Hidden for lessons without parts, which keep cards 01-04. #}
+          <div id="lessonParts" class="lesson-parts hidden">
+            {{ listen_control('#lessonPartsList', 'partsListenControl') }}
+            <div id="lessonPartsList" class="lesson-parts-list"></div>
+          </div>
+          <article class="content-card explanation-card" data-tour-target="lesson-explanation">
             <div class="card-number">01</div>
             <div><span class="card-kicker" data-i18n="understand">UNDERSTAND</span>
               <h2 data-i18n="makeClear">Let's make this clear</h2>
@@ -123,12 +132,12 @@
               <div id="questionMedia" class="question-media hidden"></div>
               <p id="hint" class="hint hidden"></p>
               {{ listen_control('#hint', 'hintListenControl', true) }}
-              <form id="answerForm"{% if chat_images %} data-photo-answers="1"{% endif %}><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
+              <form id="answerForm"{% if chat_images %} data-photo-answers="1"{% endif %}><div id="answerControl" class="answer-control"></div>{{ microphone_control('#writtenAnswer', 'answerMicrophoneControl', true) }}<fieldset class="response-confidence" data-tour-target="lesson-confidence"><legend>{{ _('How confident are you?') }}</legend><label><input type="radio" name="responseConfidence" value="25"><span>{{ _('Low') }}</span></label><label><input type="radio" name="responseConfidence" value="50" checked><span>{{ _('Medium') }}</span></label><label><input type="radio" name="responseConfidence" value="85"><span>{{ _('High') }}</span></label></fieldset><button class="primary-button" type="submit" data-tour-target="lesson-check"><span data-i18n="checkAnswer">{{ _('Check my answer') }}</span><b>→</b></button></form>
               <div id="feedback" class="feedback hidden"></div>
               {{ listen_control('#feedbackSpeechText', 'feedbackListenControl', true) }}
             </div>
           </article>
-          <section id="testSummary" class="test-summary hidden">
+          <section id="testSummary" class="test-summary hidden" data-tour-target="lesson-summary">
             <div class="summary-hero"><span>✓</span><div><div class="card-kicker" data-i18n="testComplete">TEST COMPLETE</div><h2 data-i18n="yourResults">Your learning summary</h2><p id="summaryOverall"></p></div><strong id="summaryScore">0<small>/100</small></strong></div>
             <div class="summary-grid">
               <article class="summary-card"><h3 data-i18n="weaknessChart">Concept mastery</h3><div id="summaryChart" class="summary-chart"></div></article>
@@ -151,15 +160,15 @@
           <div class="message tutor-message" data-speech-listen-auto data-i18n="chatWelcome">I’m here while you practice. Ask me to explain a
             step, give a hint, or help you understand a mistake.</div>
         </div>
-        <div class="chat-controls" role="group" aria-label="Explanation">
+        <div class="chat-controls" role="group" aria-label="{{ _('Explanation') }}" data-tour-target="lesson-adapt">
           <button type="button" data-control="simpler" data-i18n="simplerExplanation">Simpler explanation</button>
           <button type="button" data-control="step_by_step" data-i18n="explainStepByStep">Explain step by step</button>
           <button type="button" data-control="another_example" data-i18n="anotherExample">Give me another example</button>
           <button type="button" data-control="harder" data-i18n="makeItHarder">Make it harder</button>
         </div>
-        <div class="chat-suggestions"><button data-i18n="giveHint">Give me a hint</button><button
+        <div class="chat-suggestions" data-tour-target="lesson-hints"><button data-i18n="giveHint">Give me a hint</button><button
             data-i18n="whatPractice">What should I practice?</button></div>
-        {% if chat_images %}<div class="chat-attach"><div id="chatAttachTray" class="attach-tray hidden" aria-live="polite" aria-label="{{ _('Attached photos') }}"></div></div>{% endif %}
+        {% if chat_images %}<div class="chat-attach"><div id="chatAttachTray" class="attach-tray hidden" data-max-photos="{{ photo_limit or 2 }}" aria-live="polite" aria-label="{{ _('Attached photos') }}"></div></div>{% endif %}
         <form id="chatForm" class="chat-form{% if chat_images %} has-photos{% endif %}">{% if chat_images %}<label class="attach-button chat-camera" title="{{ _('Take a photo') }}"><input id="chatCamera" class="attach-input" type="file" accept="image/*" capture="environment"><span aria-hidden="true">📷</span><span class="visually-hidden">{{ _('Take a photo') }}</span></label><label class="attach-button chat-gallery" title="{{ _('Add photos') }}"><input id="chatGallery" class="attach-input" type="file" accept="image/*" multiple><span aria-hidden="true">🖼</span><span class="visually-hidden">{{ _('Add photos') }}</span></label>{% endif %}<textarea id="chatInput" rows="1" placeholder="Ask about this lesson…"
             data-i18n-placeholder="chatPlaceholder"></textarea>{{ microphone_control('#chatInput', 'chatMicrophoneControl') }}<button type="submit"
             aria-label="Send">➤</button></form>

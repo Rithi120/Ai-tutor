@@ -30,6 +30,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.ai_services import service as ai_service  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -51,14 +52,20 @@ class WrapperScopeTests(unittest.TestCase):
     """Patched at the provider, so the real wrapper and gateway both run."""
 
     def setUp(self):
+        # AI_MODE is set, not inherited: another module that left "cached" behind made the
+        # identical stub requests of these tests answer from the cache, never the provider.
+        self._saved_mode = application.app.config.get("AI_MODE")
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "RUN_LIVE_AI_TEST", "AI_USAGE_PATH", "AI_MODE")
         application.app.config.update(
             TESTING=True,
             RUN_LIVE_AI_TEST=True,     # past the billing guard; no network, see below
             AI_USAGE_PATH="",          # do not append to the real usage log
+            AI_MODE="live",
         )
 
     def tearDown(self):
-        application.app.config.update(RUN_LIVE_AI_TEST=False)
+        application.app.config.update(RUN_LIVE_AI_TEST=False, AI_MODE=self._saved_mode)
 
     def call(self, **extra):
         """Run one wrapper call and return what reached the gateway."""
@@ -132,8 +139,12 @@ class AssistantEndToEndTests(unittest.TestCase):
     """The student-visible symptom: 'AI is temporarily unavailable' on every message."""
 
     def setUp(self):
+        self._saved_mode = application.app.config.get("AI_MODE")
+        self.addCleanup(application.app.config.update, AI_MODE=self._saved_mode)
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "RUN_LIVE_AI_TEST", "AI_USAGE_PATH", "AI_MODE")
         application.app.config.update(
-            TESTING=True, RUN_LIVE_AI_TEST=True, AI_USAGE_PATH="")
+            TESTING=True, RUN_LIVE_AI_TEST=True, AI_USAGE_PATH="", AI_MODE="live")
         with application.app.app_context():
             application.db.drop_all()
             application.db.create_all()

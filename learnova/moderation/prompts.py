@@ -218,6 +218,8 @@ def flashcard_items(
             str(card.get("back") or ""),
             str(card.get("explanation") or ""),
             str(card.get("hint") or ""),
+            # A key-terms card's bare term: shown as a Match tile and expected back to front.
+            str(card.get("reverse_answer") or ""),
         ]
         options = card.get("options")
         if isinstance(options, list):

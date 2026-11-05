@@ -26,6 +26,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 from learnova.ai_services import service as ai_service  # noqa: E402
 from learnova.ai_services.contracts import validate_output  # noqa: E402
 from learnova.ai_services.prompts import PROMPT_VERSIONS  # noqa: E402
@@ -285,6 +286,9 @@ class TextbookImportTests(unittest.TestCase):
     """The whole import on the local path: the AI gateway is patched to fail if touched."""
 
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "FEATURE_VOCABULARY_TRAINER", "FEATURE_PRIVATE_FLASHCARDS",
+                    "FEATURE_FLASHCARD_IMAGE_IMPORT", "FEATURE_FLASHCARD_PDF_IMPORT", "FEATURE_GAMIFICATION")
         application.app.config.update(
             TESTING=True, FEATURE_VOCABULARY_TRAINER=True,
             FEATURE_PRIVATE_FLASHCARDS=True, FEATURE_FLASHCARD_IMAGE_IMPORT=True,

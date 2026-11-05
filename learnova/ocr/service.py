@@ -3,6 +3,8 @@
 import io
 import json
 import re
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,8 +13,9 @@ from PIL import (
     ImageStat, UnidentifiedImageError,
 )
 import pymupdf  # pyright: ignore[reportMissingImports]
+from pypdf import PdfReader
 
-from learnova.ai_services.contracts import BLOCK_TYPES
+from learnova.ai_services.contracts import BLOCK_TYPES, repair_recognition
 
 try:  # OpenCV/NumPy power true perspective + deskew correction; degrade gracefully if absent.
     import cv2  # pyright: ignore[reportMissingImports]
@@ -68,17 +71,66 @@ def detected_mime_type(data: bytes) -> str | None:
     return None
 
 
+class DocumentUploadError(ValueError):
+    """A file the upload cannot use, said in a translatable way.
+
+    `msgid` and `params` are for the web layer (tr(error.msgid, **error.params)); an
+    f-string message could never match a catalogue entry, so these stayed English for
+    every student. str(error) is the English sentence for logs and older callers. `code`
+    says which problem it is (empty, too_large, not_supported, type_mismatch,
+    unreadable_pdf, password, image_damaged), so an upload can keep the file as a failed
+    document row and offer what fits (no retry for an empty or oversized file)."""
+
+    def __init__(self, msgid: str, *, code: str = "", **params: Any):
+        self.msgid = msgid
+        self.params = params
+        self.code = code
+        super().__init__(msgid.format(**params))
+
+
+# What a student reads about a file the upload could not use. Every message names the file:
+# with six files chosen, "Empty files cannot be uploaded." could not say which one.
+EMPTY_FILE_MSGID = "“{filename}” is empty. Choose the file again."
+UNREADABLE_PDF_MSGID = "“{filename}” could not be read as a PDF. Export it again, or upload photos of its pages."
+PASSWORD_PDF_MSGID = ("“{filename}” is protected with a password. Save or print it as a PDF without a password "
+                      "and upload it again.")
+IMAGE_DAMAGED_MSGID = "“{filename}” is damaged or not a complete picture. Take or save the photo again."
+
+
 def validate_document_upload(data: bytes, filename: str, declared_mime: str | None = None) -> str:
     if not data:
-        raise ValueError("Empty files cannot be uploaded.")
+        raise DocumentUploadError(EMPTY_FILE_MSGID, code="empty", filename=filename)
     if len(data) > MAX_FILE_BYTES:
-        raise ValueError(f"{filename} exceeds the 15 MB per-file limit.")
+        raise DocumentUploadError("{filename} exceeds the 15 MB per-file limit.", code="too_large",
+                                  filename=filename)
     detected = detected_mime_type(data)
     if not detected:
-        raise ValueError(f"{filename} is not a valid PDF, JPG, PNG, or WebP file.")
+        raise DocumentUploadError("{filename} is not a valid PDF, JPG, PNG, or WebP file.", code="not_supported",
+                                  filename=filename)
     if declared_mime and declared_mime not in {detected, "application/octet-stream"}:
-        raise ValueError(f"{filename} has a file type that does not match its content.")
+        raise DocumentUploadError("{filename} has a file type that does not match its content.",
+                                  code="type_mismatch", filename=filename)
     return detected
+
+
+def probe_image(data: bytes, filename: str) -> None:
+    """Decode an uploaded picture once, so a half-transferred photo is named at upload.
+
+    The upload no longer preprocesses pictures (that happens when a page is first read),
+    so this is where a broken file is found: Image.open + load + the pixel cap, the same
+    checks _prepare_base_image makes. Raises DocumentUploadError ("image_damaged")."""
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            if image.width * image.height > MAX_IMAGE_PIXELS:
+                raise ValueError("too many pixels")
+            # A JPEG is decoded at 1/8 scale: every byte is still read (a cut-off file
+            # fails here), in a third of the time of a full decode.
+            image.draft("RGB", (max(1, image.width // 8), max(1, image.height // 8)))
+            image.load()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError,
+            SyntaxError, EOFError) as error:
+        raise DocumentUploadError(IMAGE_DAMAGED_MSGID, code="image_damaged", filename=filename) from error
 
 
 def _otsu_threshold(gray: Image.Image) -> int:
@@ -248,8 +300,13 @@ def _auto_paper_crop(image: Image.Image) -> Image.Image:
     return image.crop((x1, y1, x2, y2))
 
 
-def _prepare_base_image(data: bytes, transform: dict[str, Any] | None = None):
-    """Shared geometry + enhancement stage. Returns (RGB image, warnings, metrics, source_size, upscale)."""
+def _prepare_base_image(data: bytes, transform: dict[str, Any] | None = None, *,
+                        quality_warnings: bool = True):
+    """Shared geometry + enhancement stage. Returns (RGB image, warnings, metrics, source_size, upscale).
+
+    `quality_warnings=False` keeps the blur and glare advisories off the page. They describe
+    a photo; a born-digital PDF page is rendered white paper, which is above the glare
+    cut-off on every clean page, and its words come from the text layer, not the picture."""
     try:
         image = Image.open(io.BytesIO(data))
         if image.width * image.height > MAX_IMAGE_PIXELS:
@@ -299,9 +356,10 @@ def _prepare_base_image(data: bytes, transform: dict[str, Any] | None = None):
     histogram = sample.histogram()
     glare_ratio = round(sum(histogram[246:]) / max(1, sample.width * sample.height), 4)
     # These are advisory only — they never reject the page (small text != low quality).
-    if blur_score < 120:
+    # The metrics are still measured and returned either way; only the wording is skipped.
+    if quality_warnings and blur_score < 120:
         warnings.append("The page may be blurred; verify small text and symbols.")
-    if glare_ratio > 0.18:
+    if quality_warnings and glare_ratio > 0.18:
         warnings.append("Possible glare detected; verify washed-out regions.")
 
     if mean_brightness < 85:
@@ -337,13 +395,19 @@ def _package(image: Image.Image, mode, warnings, blur_score, glare_ratio, source
     )
 
 
-def preprocess_document_image(data: bytes, transform: dict[str, Any] | None = None) -> ProcessedImage:
+def preprocess_document_image(data: bytes, transform: dict[str, Any] | None = None, *,
+                              quality_warnings: bool = True) -> ProcessedImage:
     """Improve legibility conservatively while retaining handwriting and mathematical marks.
 
     Returns a single processed image; the variant is chosen by ``transform`` flags
-    (``mode``/``grayscale``/``binarize``) so existing callers keep their behaviour."""
+    (``mode``/``grayscale``/``binarize``) so existing callers keep their behaviour.
+    Pass ``quality_warnings=False`` for a PDF page with a usable text layer
+    (``has_usable_text_layer``): photo advisories such as glare are false there. It is a
+    keyword argument rather than a ``transform`` flag because a transform can come from
+    the browser (camera scan metadata), and the browser must not switch warnings off."""
     transform = transform or {}
-    base, warnings, blur_score, glare_ratio, source_size, upscale = _prepare_base_image(data, transform)
+    base, warnings, blur_score, glare_ratio, source_size, upscale = _prepare_base_image(
+        data, transform, quality_warnings=quality_warnings)
     mode = str(transform.get("mode") or "").strip().lower()
     if mode not in RECOGNITION_VARIANTS:
         if transform.get("binarize"):
@@ -379,6 +443,7 @@ def apply_recognition_variant(data: bytes, mode: str) -> ProcessedImage:
 
 def preprocess_variants(
     data: bytes, transform: dict[str, Any] | None = None, modes: tuple[str, ...] = RECOGNITION_VARIANTS,
+    *, quality_warnings: bool = True,
 ) -> list[ProcessedImage]:
     """Produce several preprocessing variants (enhanced colour, grayscale, adaptive
     threshold) from one shared enhancement pass, for multi-attempt vision OCR."""
@@ -386,7 +451,8 @@ def preprocess_variants(
     forced = str(transform.get("mode") or "").strip().lower()
     if forced in RECOGNITION_VARIANTS:
         modes = (forced,)
-    base, warnings, blur_score, glare_ratio, source_size, upscale = _prepare_base_image(data, transform)
+    base, warnings, blur_score, glare_ratio, source_size, upscale = _prepare_base_image(
+        data, transform, quality_warnings=quality_warnings)
     return [
         _package(_finalize_variant(base, mode), mode, warnings, blur_score, glare_ratio, source_size, upscale)
         for mode in modes
@@ -621,24 +687,246 @@ def crop_image_region(data: bytes, bbox: list[float]) -> bytes:
     return output.getvalue()
 
 
-def render_pdf_page(data: bytes, page_index: int, scale: float = 2.0) -> bytes:
+def render_pdf_page(data: bytes, page_index: int, scale: float = 2.0, *,
+                    report: dict[str, Any] | None = None) -> bytes:
+    """One PDF page as a PNG. With `report`, report["damaged"] is set to True when MuPDF
+    warned while rendering it (a broken content stream renders as white paper, which must
+    never pass for a blank page). Callers that pass nothing are unaffected."""
+
     document = None
+    with _MUPDF_LOCK, _mupdf_quiet():
+        try:
+            document = pymupdf.open(stream=data, filetype="pdf")
+            if page_index < 0 or page_index >= len(document):
+                raise ValueError("The requested PDF page does not exist.")
+            pymupdf.TOOLS.mupdf_warnings(reset=True)
+            pixmap = document[page_index].get_pixmap(  # pyright: ignore[reportAttributeAccessIssue]
+                matrix=pymupdf.Matrix(scale, scale), alpha=False
+            )
+            if report is not None and pymupdf.TOOLS.mupdf_warnings(reset=True):
+                report["damaged"] = True
+            rendered = pixmap.tobytes("png")
+            return rendered
+        except ValueError:
+            raise
+        except Exception as error:
+            raise ValueError("The PDF page could not be rendered safely.") from error
+        finally:
+            if document is not None:
+                document.close()
+
+
+# ---- Inspecting a PDF: PyMuPDF decides the page list ---------------------------------------
+#
+# pypdf and PyMuPDF disagree on damaged files. A truncated download or an AES "restrict
+# editing" export made pypdf raise while PyMuPDF (which renders every page anyway) read all
+# of it; a corrupted page object made pypdf skip the page, so page 2 got page 3's words.
+# PyMuPDF's page list is therefore the truth. The text stays pypdf's whenever both agree,
+# so every healthy file is extracted exactly as before (page text feeds the analysis cache).
+#
+# MuPDF reports damage only through a process-wide warning buffer, and gunicorn runs four
+# threads: every MuPDF call here holds one lock, so one thread never reads another's warnings.
+_MUPDF_LOCK = threading.RLock()
+
+
+@contextmanager
+def _mupdf_quiet():
+    """Keep MuPDF's "MuPDF error: ..." lines off stderr while it reads a damaged file."""
+
+    previous = pymupdf.TOOLS.mupdf_display_errors()
+    pymupdf.TOOLS.mupdf_display_errors(False)
     try:
-        document = pymupdf.open(stream=data, filetype="pdf")
-        if page_index < 0 or page_index >= len(document):
-            raise ValueError("The requested PDF page does not exist.")
-        pixmap = document[page_index].get_pixmap(  # pyright: ignore[reportAttributeAccessIssue]
-            matrix=pymupdf.Matrix(scale, scale), alpha=False
-        )
-        rendered = pixmap.tobytes("png")
-        return rendered
-    except ValueError:
-        raise
-    except Exception as error:
-        raise ValueError("The PDF page could not be rendered safely.") from error
+        yield
     finally:
-        if document is not None:
-            document.close()
+        pymupdf.TOOLS.mupdf_display_errors(previous)
+
+
+@dataclass(frozen=True)
+class PdfPageInfo:
+    text: str            # the page's text layer (pypdf when it agrees with PyMuPDF, else PyMuPDF)
+    damaged: bool        # MuPDF warned while parsing this page AND the page yielded no text
+
+
+@dataclass(frozen=True)
+class PdfInspection:
+    pages: tuple[PdfPageInfo, ...]
+    repaired: bool       # PyMuPDF repaired the file, or pypdf failed, or the page counts differ
+    needs_password: bool  # a user password is needed to open it at all
+
+
+def inspect_pdf(data: bytes, *, filename: str = "") -> PdfInspection:
+    """The pages of a PDF as PyMuPDF sees them, with each page's text and damage.
+
+    Raises DocumentUploadError ("unreadable_pdf", naming `filename`) when PyMuPDF cannot
+    open the file or finds no page in it. A file that needs a user password comes back
+    with needs_password=True and no pages."""
+
+    # pypdf is pure Python and needs no MuPDF lock: its text is read first, outside it.
+    pypdf_texts = _pypdf_page_texts(data)
+    document = None
+    with _MUPDF_LOCK, _mupdf_quiet():
+        try:
+            pymupdf.TOOLS.mupdf_warnings(reset=True)
+            try:
+                document = pymupdf.open(stream=data, filetype="pdf")
+            except Exception as error:
+                raise DocumentUploadError(UNREADABLE_PDF_MSGID, code="unreadable_pdf", filename=filename) from error
+            if document.needs_pass:
+                return PdfInspection(pages=(), repaired=False, needs_password=True)
+            count = len(document)
+            if count <= 0:
+                raise DocumentUploadError(UNREADABLE_PDF_MSGID, code="unreadable_pdf", filename=filename)
+            repaired = bool(getattr(document, "is_repaired", False))
+            if pypdf_texts is None or len(pypdf_texts) != count:
+                pypdf_texts = None
+                repaired = True
+            pages = []
+            for index in range(count):
+                pymupdf.TOOLS.mupdf_warnings(reset=True)
+                try:
+                    mupdf_text = (document[index].get_text() or "").strip()  # pyright: ignore[reportAttributeAccessIssue]
+                except Exception:  # noqa: BLE001 - a page MuPDF cannot parse is a damaged page
+                    mupdf_text = ""
+                    warned = True
+                else:
+                    warned = bool(pymupdf.TOOLS.mupdf_warnings(reset=True))
+                text = mupdf_text
+                if pypdf_texts is not None and pypdf_texts[index] is not None:
+                    text = pypdf_texts[index] or ""
+                pages.append(PdfPageInfo(text=text, damaged=warned and not (text or mupdf_text)))
+            return PdfInspection(pages=tuple(pages), repaired=repaired, needs_password=False)
+        finally:
+            if document is not None:
+                document.close()
+
+
+def _pypdf_page_texts(data: bytes) -> list[str | None] | None:
+    """Each page's text layer as pypdf reads it (None for a page it could not read), or None
+    when pypdf cannot read the file at all (a truncated download, an AES export without the
+    `cryptography` package)."""
+
+    try:
+        reader = PdfReader(io.BytesIO(data), strict=False)
+        pages = list(reader.pages)
+    except Exception:  # noqa: BLE001 - pypdf failing is what PyMuPDF is here for
+        return None
+    texts: list[str | None] = []
+    for page in pages:
+        try:
+            texts.append((page.extract_text() or "").strip())
+        except Exception:  # noqa: BLE001 - this page's layer comes from PyMuPDF
+            texts.append(None)
+    return texts
+
+
+# A blank page (the empty back of a sheet) has no mark that stands out from the paper
+# around it. Measured as pixels that differ from a local median background by at least
+# BLANK_INK_DIFF grey levels, on a copy at most BLANK_SAMPLE_SIZE pixels wide: shading
+# and a paper gradient vanish in the median, a pen stroke or a printed letter does not.
+# Deliberately strict: a page is only blank when (almost) no such pixel exists, so one
+# short word or a faint pencil note still goes to the vision model. A dust speck or a
+# few JPEG artefacts stay below BLANK_MAX_INK_PIXELS.
+# Light pencil on a scan is only 30-60 grey levels darker than the paper, and shrinking
+# the page to the sample size averages a thin stroke with the white around it: one line
+# at grey 190 on paper 250 measured as 11 "ink" pixels at a 48-level cut-off, so the
+# page was stored as blank and its handwriting never read. The strokes are therefore
+# widened (a 3x3 minimum) before the page is shrunk, and the cut-off is 24 levels - still
+# above sensor noise and JPEG artefacts on empty paper (measured: 0 pixels at sigma 8).
+BLANK_SAMPLE_SIZE = 1000
+BLANK_INK_DIFF = 24
+BLANK_MAX_INK_PIXELS = 12
+BLANK_STROKE_WIDEN = 3
+
+
+def image_is_blank(data: bytes) -> bool:
+    """Whether a page image holds nothing to read (no ink at all). False when unsure."""
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            gray = ImageOps.exif_transpose(image).convert("L")
+    except Exception:
+        return False
+    # Dark strokes survive the shrinking: each keeps its darkest neighbour first.
+    sample = ImageOps.contain(gray.filter(ImageFilter.MinFilter(BLANK_STROKE_WIDEN)),
+                              (BLANK_SAMPLE_SIZE, BLANK_SAMPLE_SIZE))
+    if sample.width < 8 or sample.height < 8:
+        return False
+    background = sample.filter(ImageFilter.MedianFilter(9))
+    histogram = ImageChops.difference(sample, background).histogram()
+    return sum(histogram[BLANK_INK_DIFF:]) <= BLANK_MAX_INK_PIXELS
+
+
+# A page counts as a picture (a scan, or a phone photo saved as PDF) when raster images
+# cover at least half of it. Scanner apps write one full-page image per page; a
+# born-digital worksheet is vector text and drawings, perhaps with a smaller figure.
+PDF_PICTURE_MIN_SHARE = 0.5
+
+
+def pdf_page_pictures(data: bytes) -> list[bool]:
+    """For each page of a PDF, whether it is a picture, so photo advisories apply to it.
+
+    Blur and glare describe a photograph. A born-digital page with no text layer (a
+    diagram, a blank back page) renders as crisp white paper, which is over the glare
+    cut-off every time, so those warnings were false there too. When the PDF cannot be
+    inspected every page counts as a picture: a needless warning beats a missing one.
+    """
+
+    return [share >= PDF_PICTURE_MIN_SHARE for share in pdf_page_image_shares(data)]
+
+
+def pdf_page_image_shares(data: bytes) -> list[float]:
+    """For each page of a PDF, the share of the page (0..1) that raster images cover.
+
+    1.0 for a scan or a photo saved as PDF; a born-digital page with a pasted photo of a
+    handwritten note lies in between (its text layer misses the note). [] when the PDF
+    cannot be inspected (callers treat a page with no entry as a picture)."""
+
+    document = None
+    with _MUPDF_LOCK, _mupdf_quiet():
+        try:
+            document = pymupdf.open(stream=data, filetype="pdf")
+            shares = []
+            for page in document:
+                area = abs(page.rect)  # pyright: ignore[reportAttributeAccessIssue]
+                covered = sum(
+                    abs(pymupdf.Rect(info["bbox"]) & page.rect)  # pyright: ignore[reportAttributeAccessIssue]
+                    for info in page.get_image_info())  # pyright: ignore[reportAttributeAccessIssue]
+                shares.append(1.0 if area <= 0 else min(1.0, covered / area))
+            return shares
+        except Exception:
+            return []
+        finally:
+            if document is not None:
+                document.close()
+
+
+# Curved vector strokes on a page from which a page counts as drawn by hand: a GoodNotes or
+# Notability export stores handwriting as hundreds of curves, a printed page's diagram has
+# a few (a circle is four).
+PDF_INK_MIN_CURVES = 60
+
+
+def pdf_page_ink(data: bytes) -> list[bool]:
+    """For each page of a PDF, whether it carries handwriting (or a drawing) as vector ink.
+
+    Such a page is no picture, yet its text layer holds only the printed words (a heading),
+    not what was written on it: only vision reads that. [] when the PDF cannot be read."""
+
+    document = None
+    with _MUPDF_LOCK, _mupdf_quiet():
+        try:
+            document = pymupdf.open(stream=data, filetype="pdf")
+            found = []
+            for page in document:
+                curves = sum(1 for path in page.get_drawings()  # pyright: ignore[reportAttributeAccessIssue]
+                             for item in path.get("items") or () if item and item[0] == "c")
+                found.append(curves >= PDF_INK_MIN_CURVES)
+            return found
+        except Exception:
+            return []
+        finally:
+            if document is not None:
+                document.close()
 
 
 # ---- Free text: a PDF that already contains its own words -------------------------
@@ -678,7 +966,142 @@ def native_text_quality(text: Any) -> tuple[bool, str]:
     return True, "native_text"
 
 
-def recognition_from_text(text: Any, limit: int = 400) -> dict[str, Any]:
+# Below the strict gate above, a text layer can still prove the page is born-digital and
+# serve as a fallback reading when vision gives nothing: a title page or a worksheet with
+# blanks has a few real words. Thirty letters is a line or two of real text; a scan
+# without OCR has no layer at all, and a broken font fails the letter ratio.
+TEXT_LAYER_MIN_LETTERS = 30
+# One block per line. The cap bounds the number of DocumentBlock rows for a pathological
+# layer; it never drops text (see recognition_from_text). 400 used to cut real pages
+# short, and store_page_recognition then replaced the full text with the cut one.
+TEXT_LAYER_MAX_LINES = 3000
+
+
+def has_usable_text_layer(text: Any) -> bool:
+    """Whether a PDF page's own text layer holds real words (not whether it can replace
+    recognition - that is native_text_quality). Used to keep photo advisories such as
+    glare off born-digital pages, and as the threshold for a text-layer fallback."""
+
+    content = str(text or "").strip()
+    letters = sum(1 for character in content if character.isalpha())
+    return letters >= TEXT_LAYER_MIN_LETTERS and letters / max(1, len(content)) >= NATIVE_TEXT_MIN_LETTER_RATIO
+
+
+# A typeset maths sheet keeps its words in the text layer, but exponents and stacked
+# fractions come out as lines of their own ("2\n3\n· 2\n4\n= 2\n7" for 2³ · 2⁴ = 2⁷), and a
+# symbol the embedded font cannot map becomes U+FFFD. Such a layer passes the prose gate
+# yet its formulas are garbled, so it is never stored as a full, verified reading.
+# Measured (live run 2026-11-01): the Potenzen sheet had 29 of 66 such lines and a U+FFFD
+# "·"; every other notes PDF of the run had none.
+FORMULA_FRAGMENT_MIN_LINES = 6
+FORMULA_FRAGMENT_MIN_SHARE = 0.15
+FORMULA_FRAGMENT_MAX_CHARS = 4
+REPLACEMENT_CHARACTER_MIN = 3
+_FORMULA_OPERATORS = frozenset("+-−–·×÷=/^*()<>≤≥±√∑∫²³")
+
+
+def _formula_fragment(line: str) -> bool:
+    compact = "".join(line.split())
+    if not compact or len(compact) > FORMULA_FRAGMENT_MAX_CHARS:
+        return False
+    if len(compact) == 1 and compact.isalpha():
+        return True
+    return any(character.isdigit() or character in _FORMULA_OPERATORS for character in compact)
+
+
+def text_layer_layout_lost(text: Any) -> bool:
+    """Whether a PDF page's text layer split its formulas apart (D5): at least six short
+    formula fragments (<= 4 characters with a digit or an operator, or a single letter)
+    making up at least 15 % of the lines, or at least three U+FFFD characters."""
+
+    content = str(text or "")
+    if content.count("�") >= REPLACEMENT_CHARACTER_MIN:
+        return True
+    lines = [line for line in content.splitlines() if line.strip()]
+    fragments = sum(1 for line in lines if _formula_fragment(line))
+    return fragments >= FORMULA_FRAGMENT_MIN_LINES and fragments >= FORMULA_FRAGMENT_MIN_SHARE * len(lines)
+
+
+# D2: a vision reading can be wrong while the page looks confident. The page confidence is
+# the mean of the model's own block confidences, so two doubtful lines among confident
+# ones vanish in the mean: in the live run of 2026-11-01 a very messy, faint page scored
+# 0.806 ("high") with a word error rate of 0.55 and invented words, and was shown as
+# "Fully analysed". These checks look at the reading itself. Calibrated on the 22 pages of
+# that run (tests/fixtures/ocr/live_sample_2026-11-01.json, synthetic documents): only the
+# misread page is flagged. Real student handwriting may behave differently, so the
+# thresholds are constants here. Words the model invents with high confidence cannot be
+# seen this way at all (that needs a dictionary); this is documented, not hidden.
+DOUBT_MIN_UNCERTAIN_BLOCKS = 2       # usable text blocks below CONFIDENCE_HIGH
+DOUBT_MIN_FRAGMENTS = 2
+DOUBT_FRAGMENT_MAX_LETTERS = 3
+# Only running text can hold a broken-off word: a table cell, a formula line, a margin
+# remark ("gut", "ok") and a diagram label are short on purpose.
+DOUBT_FRAGMENT_BLOCK_TYPES = frozenset({"printed_text", "handwriting", "heading", "uncertain"})
+_DOUBT_LIST_MARKER = re.compile(r"^(?:[-•*–]\s*|\(?\d{1,2}[a-z]?[.)]\s*|[a-z][.)](?:\s+|$))")
+_DOUBT_LETTER = re.compile(r"[^\W\d_]")
+# "verge:sen": a colon or semicolon inside one word, two or more letters on either side
+# (so a ratio "a:b" is not one). The German gender colon ("Schüler:innen") is excepted.
+_DOUBT_INNER_BREAK = re.compile(r"(?<![^\W\d_])([^\W\d_]{2,})[:;]([^\W\d_]{2,})(?![^\W\d_])")
+_DOUBT_GENDER_SUFFIX = re.compile(r"in(?:nen)?", re.IGNORECASE)
+_DOUBT_URL_PREFIXES = ("http", "www.", "mailto:", "ftp")
+
+
+def _fragment_hits(text: str) -> int:
+    """Lines that are a broken-off piece of a word, and words broken by a colon."""
+
+    hits = 0
+    for line in text.splitlines():
+        rest = _DOUBT_LIST_MARKER.sub("", line.strip(), count=1).strip()
+        letters = len(_DOUBT_LETTER.findall(rest))
+        if 0 < letters <= DOUBT_FRAGMENT_MAX_LETTERS and not any(
+                character.isdigit() or character in _FORMULA_OPERATORS for character in rest):
+            hits += 1
+    for token in text.split():
+        if "://" in token or token.casefold().startswith(_DOUBT_URL_PREFIXES):
+            continue
+        hits += sum(1 for match in _DOUBT_INNER_BREAK.finditer(token)
+                    if not _DOUBT_GENDER_SUFFIX.fullmatch(match.group(2)))
+    return hits
+
+
+def reading_doubts(recognized: dict[str, Any]) -> list[str]:
+    """Why a vision reading may be misread, as codes ([] when nothing speaks against it).
+
+    - "uncertain_words": at least DOUBT_MIN_UNCERTAIN_BLOCKS usable non-diagram blocks
+      below CONFIDENCE_HIGH, or any usable block below CONFIDENCE_REVIEW;
+    - "fragmented_text": at least DOUBT_MIN_FRAGMENTS hits in the running text, where a
+      hit is a line of one to three letters without a digit or an operator once its list
+      marker is gone ("mut", "en!"), or a word broken by a colon ("verge:sen"; URLs and
+      the gender colon excepted) - and at least one block below CONFIDENCE_HIGH: a reading
+      confident throughout is a list of short words, not a broken one.
+
+    Pure: it only reads `recognized` (normalize_recognition's shape)."""
+
+    blocks = [block for block in recognized.get("blocks") or []
+              if isinstance(block, dict) and str(block.get("content") or "").strip()
+              and not block.get("crossed_out") and block.get("type") != "diagram"]
+    doubts = []
+    confidences = []
+    for block in blocks:
+        try:
+            confidences.append(float(block.get("confidence", 0)))
+        except (TypeError, ValueError):
+            confidences.append(0.0)
+    if (sum(1 for value in confidences if value < CONFIDENCE_HIGH) >= DOUBT_MIN_UNCERTAIN_BLOCKS
+            or any(value < CONFIDENCE_REVIEW for value in confidences)):
+        doubts.append("uncertain_words")
+    running = "\n".join(str(block["content"]) for block in blocks
+                        if block.get("type") in DOUBT_FRAGMENT_BLOCK_TYPES)
+    # Short lines are what a vocabulary list, element symbols, note names or "gut"/"ok" in the
+    # margin look like: they count as broken-off words only on a reading the model was not
+    # sure of throughout - at least one block below CONFIDENCE_HIGH, as on hw8 (review B B-5).
+    if (any(value < CONFIDENCE_HIGH for value in confidences)
+            and _fragment_hits(running) >= DOUBT_MIN_FRAGMENTS):
+        doubts.append("fragmented_text")
+    return doubts
+
+
+def recognition_from_text(text: Any, limit: int = TEXT_LAYER_MAX_LINES) -> dict[str, Any]:
     """Build a recognition result from text already in hand, with no AI call.
 
     Shaped by normalize_recognition so it is indistinguishable downstream from a page the
@@ -687,8 +1110,13 @@ def recognition_from_text(text: Any, limit: int = 400) -> dict[str, Any]:
     """
 
     lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    limit = max(1, limit)
+    if len(lines) > limit:
+        # Past the cap the remaining lines share the last block instead of vanishing: the
+        # page text (and so extracted_text, which this result replaces) stays complete.
+        lines = lines[:limit - 1] + ["\n".join(lines[limit - 1:])]
     blocks = [{"type": "printed_text", "content": line, "confidence": 1.0, "bbox": []}
-              for line in lines[:limit]]
+              for line in lines]
     return normalize_recognition({"blocks": blocks, "detected_page_number": "", "warning": ""})
 
 
@@ -710,8 +1138,15 @@ def normalize_bbox(value: Any) -> list[float]:
     return result if result[2] > result[0] and result[3] > result[1] else []
 
 
-def normalize_recognition(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate model output and calculate review state without guessing missing content."""
+def normalize_recognition(payload: Any) -> dict[str, Any]:
+    """Validate model output and calculate review state without guessing missing content.
+
+    The gateway's OCR contract now accepts the harmless variants it used to reject
+    ("2/6", 0-1000 boxes, a bare block list, "blocks": null, ...), so this function must
+    accept them too: it repairs first with the contract's own function. Otherwise a page
+    the gateway passed would crash here (a list has no .get) or silently come out empty
+    (a wrapped object has no top-level "blocks"). The repair is idempotent."""
+    payload = repair_recognition(payload)
     normalized_blocks = []
     for order, raw in enumerate(payload.get("blocks", []), start=1):
         if not isinstance(raw, dict):
@@ -745,6 +1180,12 @@ def normalize_recognition(payload: dict[str, Any]) -> dict[str, Any]:
     text = "\n".join(
         item["content"] for item in usable if item["type"] not in {"diagram"}
     )
+    if not text:
+        # A page that is only a labelled diagram: its caption and labels are what the page
+        # says (else it would count as "could not be read" and never reach the topics).
+        text = "\n".join(
+            line for item in usable if item["type"] == "diagram"
+            for line in (item["nearby_text"], item["content"]) if line)
     formulas = [item for item in usable if item["type"] == "formula"]
     diagrams = [item for item in normalized_blocks if item["type"] == "diagram"]
     # Surface uncertain regions and any model-proposed corrections so the student can

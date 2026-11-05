@@ -141,8 +141,9 @@ button.danger, .danger-button { color: #b3261e; }
 .header-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 .set-card-link { text-decoration: none; color: inherit; display: block; }
 .set-card-link:hover h3 { color: #6a4cff; }
-.primary-button, a.primary-button { background: #7c5cff; color: #fff; border: none; border-radius: 10px; padding: .55rem 1rem; cursor: pointer; font: inherit; text-decoration: none; display: inline-block; }
-.primary-button:hover { background: #6a4cff; }
+/* The shared violet (white text 4.5:1; #7c5cff measured 4.3:1 - the tutorial's Take me there link on these pages). */
+.primary-button, a.primary-button { background: var(--ln-violet, #6e5cff); color: #fff; border: none; border-radius: 10px; padding: .55rem 1rem; cursor: pointer; font: inherit; text-decoration: none; display: inline-block; }
+.primary-button:hover { background: var(--ln-violet-deep, #4d3de0); }
 a.ghost-button { text-decoration: none; display: inline-block; }
 
 /* creator -------------------------------------------------------------------------

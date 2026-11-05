@@ -9,16 +9,17 @@
       <form id="projectCreateForm" class="project-create-card" method="post" enctype="multipart/form-data">
         <h2>{{ _('Create a new learning project') }}</h2>
         <label>{{ _('Project name') }} <small>({{ _('optional') }})</small><input name="title" maxlength="255" placeholder="{{ _('e.g. Physics exam — mechanics') }}"></label>
-        <div class="form-pair">
-          <label>{{ _('Subject') }}<select name="subject">{% for value in ['Mathematics', 'German', 'English', 'Physics', 'Chemistry', 'Biology', 'History', 'Geography', 'Other'] %}<option value="{{ value }}">{{ _(value) }}</option>{% endfor %}</select><input class="subject-other" name="subject_other" maxlength="80" placeholder="{{ _('Which subject?') }}" aria-label="{{ _('Which subject?') }}"></label>
+        <div class="form-pair" data-tour-target="project-create-fields">
+          <label>{{ _('Subject') }}<select name="subject">{% for value in subject_choices %}<option value="{{ value }}">{{ _(value) }}</option>{% endfor %}</select><input class="subject-other" name="subject_other" maxlength="80" placeholder="{{ _('Which subject?') }}" aria-label="{{ _('Which subject?') }}"></label>
           <label for="grade">{{ _('Class') }}{{ grade_selector(selected=current_user.grade, required=False) }}</label>
         </div>
-        <label>{{ _('Exam date') }} <small>({{ _('optional') }})</small><input name="exam_date" type="date" min="{{ today.isoformat() }}"><small class="field-hint">{{ _('Without a date you get a flexible learning plan.') }}</small></label>
+        <label data-tour-target="project-exam-date">{{ _('Exam date') }} <small>({{ _('optional') }})</small><input name="exam_date" type="date" min="{{ today.isoformat() }}"><small class="field-hint">{{ _('Without a date you get a flexible learning plan.') }}</small></label>
         <fieldset class="document-input-options"><legend>{{ _('Your notes') }}</legend>
-          <label class="document-input-option"><input id="imageUploadInput" name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">＋</span><b>{{ _('Photos or PDFs') }}</b><small>{{ _('Notes, worksheets, handwriting') }}</small></label>
+          <label class="document-input-option" data-tour-target="project-upload"><input id="imageUploadInput" name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">＋</span><b>{{ _('Photos or PDFs') }}</b><small>{{ _('Notes, worksheets, handwriting') }}</small></label>
           <button id="openScanner" class="document-input-option" type="button"><span class="input-icon">▣</span><b>{{ _('Scan with Camera') }}</b><small>{{ _('Phone or laptop camera') }}</small></button>
+          <small class="field-hint upload-limits">{{ _('Up to {pages} pages per project, {size} MB per file.', pages=upload_limits.pages, size=upload_limits.size) }}</small>
         </fieldset>
-        <details class="project-more-options">
+        <details class="project-more-options" data-tour-target="project-topics-only">
           <summary>{{ _('Kompetenzraster and own topics') }} <small>({{ _('optional') }})</small></summary>
           <label class="document-input-option compact"><input id="competencyGridInput" name="competency_grid" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">✓</span><b>{{ _('Kompetenzraster') }}</b><small>{{ _('What your teacher will test. Not required.') }}</small></label>
           <label for="projectTopics">{{ _('Topics, one per line') }}</label>
@@ -31,7 +32,7 @@
         <p class="privacy">🔒 {{ _('Your files stay private to your account. Camera video is never recorded; only pages you capture are uploaded.') }}</p>
       </form>
     </section>
-    <section class="project-list-section" aria-labelledby="myProjectsTitle"><div class="section-heading"><div><span class="eyebrow">{{ _('PROJECT MODE') }}</span><h2 id="myProjectsTitle">{{ _('My learning projects') }}</h2></div></div>
+    <section class="project-list-section" aria-labelledby="myProjectsTitle" data-tour-target="project-list"><div class="section-heading"><div><span class="eyebrow">{{ _('PROJECT MODE') }}</span><h2 id="myProjectsTitle">{{ _('My learning projects') }}</h2></div></div>
       {% if projects %}<div class="project-grid">{% for project in projects %}{% set active = project.sections|rejectattr('excluded')|list %}{% set mastery = (active|sum(attribute='mastery_score') / active|length) if active else 0 %}{% set task = next_tasks.get(project.id) %}<a class="project-tile" href="{{ url_for('project_dashboard', project_id=project.id) }}"><div class="project-tile-head"><span class="project-subject">{{ _(project.subject) }}{% if project.grade %} · {{ _(grade_label(project.grade)) }}{% endif %}</span><span class="status-badge">{% if project.exam_date and project.exam_date >= today %}{{ _('{days} days left', days=(project.exam_date - today).days) }}{% elif project.exam_date %}{{ _('Exam over') }}{% else %}{{ _('Flexible plan') }}{% endif %}</span></div><h3>{{ project.title }}</h3><p>{{ project.pages|length }} {{ _('pages') }} · {{ active|length }} {{ _('topics') }}{% if project.exam_date %} · {{ _('Exam') }} {{ project.exam_date.strftime('%d.%m.%Y') }}{% endif %}</p>{% if task %}<p class="project-tile-next">{{ _('Next') }}: {{ task.title or _('Practice exam') }}</p>{% elif not project.topics_confirmed %}<p class="project-tile-next">{{ _('Check the topics') }}</p>{% endif %}<div class="project-progress" aria-label="{{ _('Mastery') }} {{ mastery|round|int }}%"><i style="width:{{ mastery|round|int }}%"></i></div><div><small>{{ mastery|round|int }}% {{ _('mastery') }}</small><b>{{ _('Open') }} →</b></div></a>{% endfor %}</div>{% else %}<div class="empty-project"><h3>{{ _('No projects yet') }}</h3><p>{{ _('Create your first learning project: upload notes, a Kompetenzraster, or just type the topics.') }}</p><a class="primary-button" href="#projectCreateForm">{{ _('Create a new learning project') }} →</a></div>{% endif %}
     </section>
   </main>

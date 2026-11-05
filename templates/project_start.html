@@ -3,25 +3,75 @@
 {% block body_class %}project-page start-page{% endblock %}
 {% block content %}
   {# The page after an upload. It runs the whole chain itself - read the pages, build the
-     sections, open the lesson - and shows three plain steps while it does. Without
-     JavaScript the button posts to the same endpoint and the server does the chain. #}
+     sections, open the lesson - and shows three plain steps while it does. Every uploaded
+     document has its own row (name, pages, one dot per page, its state), so a document that
+     could not be read is said by name, never hidden behind one that was. Without
+     JavaScript the button posts to the same endpoint and the server does the chain.
+     The topics are worked out in short steps (analysis step URL, one request per part), so
+     no request runs into a proxy timeout; then=topics ("Update topics") ends on the topic
+     list instead of a lesson. #}
   <main class="start-shell" id="main-content">
     <section class="start-card" id="projectStart"
              data-auto="{{ 'true' if auto else 'false' }}"
+             data-then="{{ then }}"
              data-page-ids="{{ page_ids|tojson|forceescape }}"
              data-recognize-url="{{ url_for('recognize_one_project_page', project_id=project.id, page_id=0) }}"
+             data-analysis-url="{{ url_for('project_material_analysis', project_id=project.id) }}"
+             data-analysis-step-url="{{ url_for('analysis_step', project_id=project.id) }}"
              data-quick-start-url="{{ url_for('quick_start_project', project_id=project.id) }}">
-      <span class="eyebrow">{{ project.subject }}</span>
+      <span class="eyebrow">{{ _(project.subject) }}</span>
       <h1>{{ project.title }}</h1>
       <p class="start-copy">{{ _('{count} pages saved. Learnova reads them, explains the material, then tests you - 3 to 15 questions, until you know it.', count=pages|length) }}</p>
       <ol class="start-steps" aria-live="polite">
         <li data-step="read"><i aria-hidden="true"></i><div><span>{{ _('Reading your pages') }}</span><small id="startReadDetail"></small></div></li>
-        <li data-step="build"><i aria-hidden="true"></i><div><span>{{ _('Building your lesson') }}</span></div></li>
-        <li data-step="open"><i aria-hidden="true"></i><div><span>{{ _('Opening your lesson') }}</span></div></li>
+        <li data-step="build"><i aria-hidden="true"></i><div><span>{{ _('Working out your topics') if then else _('Building your lesson') }}</span><small id="startBuildDetail" aria-live="polite"></small></div></li>
+        <li data-step="open"><i aria-hidden="true"></i><div><span>{{ _('Opening your topics') if then else _('Opening your lesson') }}</span></div></li>
       </ol>
+      {% if report.files %}
+      <section class="start-documents" aria-labelledby="startDocumentsTitle">
+        <h2 id="startDocumentsTitle">{{ _('Your documents') }}</h2>
+        <p class="start-summary" id="startSummary" aria-live="polite">{{ report.summary }}</p>
+        <ul class="start-files">
+          {% for file in report.files %}
+          <li class="start-file" data-file-id="{{ file.file_id }}" data-state="{{ file.reading_state }}">
+            <div class="start-file-head">
+              <b class="start-file-name"><span>{{ file.label }}</span> · {{ file.filename }}</b>
+              <small>{{ _('{count} page(s)', count=file.pages_total) }}</small>
+            </div>
+            <ol class="start-dots" aria-hidden="true">
+              {% for page in file.pages %}<li data-page-id="{{ page.page_id }}" data-state="{{ page.reading }}" title="{{ page.message }}"></li>{% endfor %}
+            </ol>
+            <p class="start-file-state" data-role="state">{{ file.status_text }}</p>
+            {% if file.upload_error %}
+            {# A file the upload could not use (it has no pages): try it again, replace it with
+               one tap and the file chooser, or remove it. The other documents are kept. #}
+            <div class="pm-failed-actions">
+              {% if file.retryable %}<form method="post" action="{{ url_for('retry_project_file', project_id=project.id, file_id=file.file_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">{{ _('Try this file again') }}</button></form>{% endif %}
+              <form method="post" enctype="multipart/form-data" action="{{ url_for('replace_project_file', project_id=project.id, file_id=file.file_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="pm-file">{{ _('Choose a new file') }}<input name="replacement_file" type="file" accept=".pdf,application/pdf,image/*" required></label>
+                <button class="secondary-button" type="submit">{{ _('Replace file') }}</button>
+              </form>
+              <form method="post" action="{{ url_for('remove_project_file', project_id=project.id, file_id=file.file_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">{{ _('Remove file') }}</button></form>
+            </div>
+            {% endif %}
+          </li>
+          {% endfor %}
+          {# A byte-identical copy adds no pages, but it was uploaded: said here by name, so
+             the count above never silently drops a file the student chose. #}
+          {% for issue in report.issues if issue.code == 'duplicate_file_skipped' %}
+          <li class="start-file" data-state="duplicate">
+            <div class="start-file-head"><b class="start-file-name">{{ issue.filename }}</b></div>
+            <p class="start-file-state">{{ issue.message }}</p>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="start-notice" id="startNotice" role="status"{% if not report.waiting %} hidden{% endif %}>{{ report.waiting_message }}</p>
+      </section>
+      {% endif %}
       <form method="post" action="{{ url_for('quick_start_project', project_id=project.id) }}" id="startForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="primary-button start-button" type="submit" id="startButton">{{ _('Start lesson') }} <span aria-hidden="true">→</span></button>
+        {% if then %}<input type="hidden" name="then" value="{{ then }}">{% endif %}
+        <button class="primary-button start-button" type="submit" id="startButton">{{ _('Update topics') if then else _('Start lesson') }} <span aria-hidden="true">→</span></button>
       </form>
       <p class="start-error" id="startError" role="alert" hidden></p>
       <a class="start-review-link" href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check the scan first (optional)') }}</a>

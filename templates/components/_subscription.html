@@ -1,7 +1,7 @@
 {# Settings -> Subscription. Every value comes from subscription_context() on the server. #}
 {% set price = premium_price %}
 <section class="sub-section" id="subscription" aria-labelledby="subscription-title">
-  <div class="sub-head">
+  <div class="sub-head" data-tour-target="plan-status">
     <h2 id="subscription-title">{{ _('Subscription') }}</h2>
     <span class="sub-badge{{ ' is-premium' if plan_premium }}">{{ _('Premium') if plan_premium else _('Free') }}</span>
   </div>
@@ -15,7 +15,7 @@
   <div class="sub-status">
     {% if premium_lapsed %}<p><strong>{{ _('Your Premium ended on {date}.', date=premium_expires.strftime('%d.%m.%Y')) }}</strong></p>{% endif %}
     <p>{{ _('You are on the Free plan.') }}</p>
-    <ul class="sub-usage">
+    <ul class="sub-usage" data-tour-target="plan-usage">
       <li><span>{{ _('New projects (last {days} days)', days=free_limits.project_days) }}</span>
         <b>{{ _('{used} of {limit}', used=subscription.projects.used|int, limit=free_limits.projects) }}</b>
         {% if subscription.projects.exhausted and allowance_resets.projects %}<small>{{ _('Next one from {date}', date=allowance_resets.projects.strftime('%d.%m.%Y %H:%M')) }}</small>{% endif %}</li>
@@ -29,7 +29,7 @@
   </div>
   {% endif %}
 
-  <div class="sub-plans" role="list">
+  <div class="sub-plans" role="list" data-tour-target="plan-compare">
     <article class="sub-plan{{ ' is-current' if not plan_premium }}" role="listitem" aria-label="{{ _('Free plan') }}">
       <h3>{{ _('Free') }} <span class="sub-price">0 €</span></h3>
       <ul>
@@ -37,7 +37,7 @@
         <li>{{ _('Unlimited lessons and tests in your projects') }}</li>
         <li>{{ _('{count} new short lessons per day outside projects', count=free_limits.lessons) }}</li>
         <li>{% if free_limits.chat_period == 'week' %}{{ _('AI assistant with a weekly free allowance') }}{% elif free_limits.chat_period == 'month' %}{{ _('AI assistant with a monthly free allowance') }}{% else %}{{ _('AI assistant with a daily free allowance') }}{% endif %}</li>
-        <li>{{ _('Flashcards, vocabulary, practice and progress tracking') }}</li>
+        <li>{% if feature_flags.vocabulary_trainer %}{{ _('Flashcards, vocabulary, practice and progress tracking') }}{% else %}{{ _('Flashcards, practice and progress tracking') }}{% endif %}</li>
         <li>{{ _('Shows ads') }}</li>
       </ul>
       {% if not plan_premium %}<p class="sub-current">{{ _('Your plan') }}</p>{% endif %}
@@ -56,7 +56,7 @@
   </div>
   <p class="sub-note">{{ _('Premium removes the plan limits. Protection against automated or abusive use still applies to every account.') }}</p>
 
-  <div class="sub-activate">
+  <div class="sub-activate" data-tour-target="plan-code">
     <h3>{{ _('Renew Premium') if plan_premium else _('Get Premium') }}</h3>
     {% if plan_premium %}
     <p>{{ _('Premium does not renew automatically. To continue, pay {price} € in cash to the Learnova administrator at school and enter the new code here. It adds to your current end date, so no days are lost.', price=price) }}</p>

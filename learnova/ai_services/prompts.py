@@ -20,18 +20,40 @@ PROMPT_VERSIONS = {
     # reordered by priority, depth follows the per-topic explanation level (2026-10-25).
     # v6: the question's fields are spelled out; "question":object let models invent
     # "answer" and {"option","text"} and fail Projektmodus lessons (2026-10-31).
-    "lesson_generation": "lesson_generation:v6",
+    # v7: typed "parts" planned from the subject's teaching strategy (teach first), the
+    # topic map and a fair share of every page; "explanation" is the short version.
+    # v8: check keys and distractors against the source, a first question that does not
+    # reuse the guided exercise, the student addressed as "du", no worked_example with a
+    # TEACHING METHOD (the server rebuilds "explanation" from the guarded parts) (2026-11-02).
+    # v9: a guided exercise's body is its task; Geography's map step retells a map the notes only
+    # describe in words and never describes a chart they do not contain (PF_FIX2, 2026-11-03).
+    "lesson_generation": "lesson_generation:v9",
     "quiz_generation": "quiz_generation:v2",
-    "answer_evaluation": "answer_evaluation:v5",
+    # v6: an optional "retry" (misunderstanding, reteach, simpler example) for the first
+    # wrong answer of a teach-first lesson, when the correction stays hidden.
+    # v7: an answer a sentence of uploaded_source supports is not wrong; retry texts and
+    # tips speak to the student as "du" (2026-11-02).
+    # v8: the misunderstanding names what the student thought, never the right alternative; the
+    # next question's key is a written answer for text and every item id for ordering (PF_FIX2).
+    "answer_evaluation": "answer_evaluation:v8",
     "mistake_analysis": "mistake_analysis:v1",
-    "answer_diagnosis": "answer_diagnosis:v2",
+    # v3: an answer the source material supports is never an error; the explanation
+    # speaks to the student as "du" (2026-11-02).
+    # v4: every diagnosis statement (shown in the "Why?" panel) is in the du-form too (PF_FIX2 F8).
+    "answer_diagnosis": "answer_diagnosis:v4",
     "diagnosis_verification": "diagnosis_verification:v1",
-    "question_generation": "question_generation:v1",
-    "tutor_chat": "tutor_chat:v4",
+    # v2: the informal "du" (Ethics Q2 asked "Stellen Sie sich vor", live 2026-11-01).
+    "question_generation": "question_generation:v2",
+    # tutor_chat v5 / assistant_chat v3: chat notation \( … \) / \[ … \] with single
+    # backslashes; the tutor chat's lesson state is plain text, not json.dumps (2026-11-01).
+    # tutor_chat v6 / assistant_chat v5: a table row stays on one line (long formulas go
+    # below the table) and a decimal comma inside a formula is written {,}; photo readings
+    # cut off by their output limit are said to be partial (live check 2026-11-02).
+    "tutor_chat": "tutor_chat:v6",
     "translation": "translation:v2",
     "ocr_document_recognition": "ocr_document_recognition:v2",
     "handwriting_region_review": "handwriting_region_review:v1",
-    "project_section_generation": "project_section_generation:v3",
+    "project_section_generation": "project_section_generation:v4",
     "adaptive_practice": "adaptive_practice:v4",
     "final_exam_generation": "final_exam_generation:v3",
     "final_exam_evaluation": "final_exam_evaluation:v2",
@@ -40,11 +62,39 @@ PROMPT_VERSIONS = {
     "flashcard_review": "flashcard_review:v2",
     "content_moderation": "content_moderation:v2",
     "report_review": "report_review:v1",
-    "assistant_chat": "assistant_chat:v2",
+    # v4: the tutoring layer on every preset (answer first, one check only when useful,
+    # hints before solutions), STUDENT CONTEXT after the transcript, hidden CHIPS/TOPIC
+    # trailer lines cut off on the server (2026-11-01).
+    "assistant_chat": "assistant_chat:v5",
     "competency_extraction": "competency_extraction:v1",
     "vocabulary_page_extraction": "vocabulary_page_extraction:v1",
-    "image_understanding": "image_understanding:v1",
+    # v2: the reading prompt trimmed to fit the vision model's per-minute token limit
+    # (bbox only where a close-up needs it, latex only on formula blocks) (2026-11-01).
+    "image_understanding": "image_understanding:v2",
 }
+
+# Variants a feature sends instead of a task's default prompt, by "<task>+<feature>", each
+# with its own label so caches, usage records and the PROMPT_VERSION line keep it apart
+# from the default (tests/fixtures/ai/*/valid.json _meta.prompt_variants). The caller names
+# the variant in validation_context["prompt_variant"].
+PROMPT_VARIANTS = {
+    # chat1 (2026-11-02): the compact chat reading (learnova/vision/prompts.py COMPACT_*):
+    # lines of text and LaTeX, tasks, the student's working, unclear parts, diagrams and a
+    # summary - no bbox, author or per-line confidence, minified - so a worksheet fits a
+    # vision tier that allows 1000 output tokens per minute. Lesson material and answer
+    # photos keep image_understanding:v2 (and their caches).
+    "image_understanding+chat": "image_understanding:chat1",
+}
+
+# How every lesson, grading and question prompt addresses the student (lesson_generation:v8,
+# answer_evaluation:v7, question_generation:v2). The live run of 2026-11-01 showed "Der
+# Student hat ...", "Der Schüler ...", "Stellen Sie sich vor", teacher tips written to the
+# teacher, and "Step 1" or "(additional interpretation)" inside German lessons.
+STUDENT_ADDRESS_RULE = (
+    "Address the student directly in the informal second person of the content language (German du, French "
+    "tu, Spanish tú); never 'der Student', 'der Schüler', 'die Schüler' or 'Sie'. teacher_tips speak to the "
+    "student. Every value is in the content language: no English labels such as 'Step 1' or 'additional "
+    "interpretation'.")
 
 # Conversational tasks return prose, so there is no JSON structure to demand or
 # validate. Everything else is a structured contract.
@@ -55,11 +105,23 @@ _VISUAL_READING_SUMMARY = (
     '{"images":list[{"index":int,"kind":str,"rotation":0|90|180|270,"cut_off":bool,"legibility":str}],'
     '"blocks":list[{"image":int,"type":enum,"text":str,"latex":str,"bbox":list[4],"author":str,"confidence":0..1}],'
     '"diagrams":list,"uncertain":list,"clarification_question":str,"summary":str,"language":str}')
+_COMPACT_READING_SUMMARY = (
+    '{"images":list[{"index":int,"kind":str,"rotation":0|90|180|270,"cut_off":bool,"legibility":str}],'
+    '"lines":list[{"type":enum,"text":str (left out when empty),"latex":str (left out when empty)}],'
+    '"diagrams":list,"uncertain":list,"clarification_question":str,"summary":str,"language":str}')
+VARIANT_SCHEMA_SUMMARIES = {"image_understanding+chat": _COMPACT_READING_SUMMARY}
+
+
+def prompt_variant(task_type: str, context: dict[str, Any] | None) -> str:
+    """The variant named in `context` when it belongs to `task_type`, else ""."""
+
+    name = str((context or {}).get("prompt_variant") or "")
+    return name if name in PROMPT_VARIANTS and name.split("+", 1)[0] == task_type else ""
 
 SCHEMA_SUMMARIES = {
-    "lesson_generation": '{"lesson_title":str,"detected_level":str,"concepts":list[{"name":str,"evidence":str}],"explanation":str,"worked_example":{"problem":str,"steps":list[str],"answer":str},"teacher_tips":list[str],"exceptions":list[str],"question":{"id":"q1","concept":str,"difficulty":1|2|3,"type":enum,"prompt":str,"hint":str,"options":list[{"id":str,"label":str}],"expected_answer":"correct option id, list of ids, or written answer"}}',
+    "lesson_generation": '{"lesson_title":str,"detected_level":str,"concepts":list[{"name":str,"evidence":str}],"parts":list[{"kind":str,"title":str,"body":str,"items":list[{"label":str,"text":str}],"answer":str,"from_notes":bool,"source_pages":list[int]}] (empty list unless the prompt gives a TEACHING METHOD),"explanation":str,"worked_example":{"problem":str,"steps":list[str],"answer":str}|absent (left out when the prompt gives a TEACHING METHOD),"teacher_tips":list[str],"exceptions":list[str],"question":{"id":"q1","concept":str,"difficulty":1|2|3,"type":enum,"prompt":str,"hint":str,"options":list[{"id":str,"label":str}],"expected_answer":"correct option id, list of ids, or written answer"}}',
     "quiz_generation": '{"questions":list[question]}',
-    "answer_evaluation": '{"evaluation":{"is_correct":bool,"score":0..100,"feedback":str},"next_question":object}',
+    "answer_evaluation": '{"evaluation":{"is_correct":bool,"score":0..100,"feedback":str},"next_question":object,"retry":{"misunderstanding":str,"reteach":str,"simpler_example":str}|absent}',
     "mistake_analysis": '{"verdict":"correct|partially_correct|incorrect|ambiguous","score_fraction":0.0..1.0,"confidence":0.0..1.0,"question_intent":str,"student_approach":str,"correct_parts":[str],"mistake_categories":[enum],"root_cause":str,"likely_student_thought":str,"exact_error_step":str,"correct_reasoning":[str],"final_answer":str,"improvement_advice":str,"prerequisites_to_review":[str],"next_question":{"question":str,"purpose":str,"difficulty_change":"easier|same|harder"},"should_create_mistake_record":bool,"should_reduce_mastery":bool,"analysis_limitations":[str]}',
     "translation": '{"translations":list[str]}',
     # diagnosis:v2 - the evidence-linked diagnostic contract (learnova.diagnostics.schema).
@@ -68,7 +130,8 @@ SCHEMA_SUMMARIES = {
     "question_generation": _QUESTION_SCHEMA_SUMMARY,
     "ocr_document_recognition": '{"blocks":list[{"type":enum,"content":str,"bbox":list[4],"confidence":0..1}],"detected_page_number":str}',
     "handwriting_region_review": '{"regions":list[{"index":int,"content":str,"confidence":0..1,"illegible":bool}]}',
-    "project_section_generation": '{"sections":list[{"title":str,"source_page_ids":list[int],"estimated_minutes":int,"recall_cards":list}]}',
+    # v4: the topic map (Fachbegriffe with page and quote, typed items, exam questions).
+    "project_section_generation": '{"sections":list[{"title":str,"main_topic":str,"kind":"main|subtopic","summary":str,"simple_summary":str,"learning_goals":list[str],"source_page_ids":list[int],"terms":list[{"term":str,"definition":str,"simple_definition":str,"example":str,"page_id":int,"quote":str}],"items":list[{"kind":str,"name":str,"detail":str,"page_id":int}],"exam_questions":list[str],"related_topics":list[str],"prerequisites":list[str],"difficulty":"easy|medium|hard","importance":"low|medium|high","estimated_minutes":int}]}',
     "adaptive_practice": '{"question":question}',
     "competency_extraction": '{"competencies":list[{"statement":str,"topic":str,"subtopic":str,"level":"basic|intermediate|advanced","importance":1..3,"source_page_ids":list[int],"coverage":"covered|partial|missing","evidence":str}]}',
     "image_understanding": _VISUAL_READING_SUMMARY,
@@ -94,15 +157,16 @@ def output_contract(task_type: str, language: str, context: dict[str, Any] | Non
     """Build deterministic contract text that can be tested without an AI call."""
 
     context = context or {}
+    variant = prompt_variant(task_type, context)
     lines = [
-        f"PROMPT_VERSION: {prompt_version(task_type)}",
+        f"PROMPT_VERSION: {PROMPT_VARIANTS[variant] if variant else prompt_version(task_type)}",
         f"OUTPUT_LANGUAGE: {language}",
         "Use the requested output language for every student-facing value.",
     ]
     if task_type in STRUCTURED_TASKS:
         lines.extend([
             "Return exactly one JSON value matching the requested structure.",
-            f"REQUIRED_JSON_STRUCTURE: {SCHEMA_SUMMARIES[task_type]}",
+            f"REQUIRED_JSON_STRUCTURE: {VARIANT_SCHEMA_SUMMARIES.get(variant) or SCHEMA_SUMMARIES[task_type]}",
             "Do not add Markdown, code fences, commentary, or text outside JSON.",
             "Include every required field with the documented JSON type; never substitute null.",
         ])
@@ -222,7 +286,7 @@ FEEDBACK ON STUDENT WORK (whenever they attempt something)
 4. Set the next single step: slightly harder after success, the same idea on a new case after a mistake. Before accepting a second example or argument, check it genuinely differs from the first; if it repeats the first, say so kindly and ask for a different angle.
 
 ANSWER FORMAT
-As short as the job allows - often 2 to 8 short lines. Simple markdown is fine: bold, short lists, and a small pipe table when comparing things side by side (like method steps against an example). Leave a blank line between blocks so the reply reads airy, not dense. Write formulas per the subject notation rules.
+As short as the job allows - often 2 to 8 short lines. Simple markdown is fine: bold, short lists, and a small pipe table when comparing things side by side (like method steps against an example). Keep each table row on one line and never break a line inside a table cell; a long formula or a derivation goes below the table, as numbered steps. Leave a blank line between blocks so the reply reads airy, not dense. Write formulas per the subject notation rules.
 When there is a task or a checking question, end with it - only one, never both, never several. A direct answer to a simple question may end without one.
 When the natural answer is a choice or quick self-check, end the message with one final line exactly in this form:
 CHIPS: first option | second option | third option

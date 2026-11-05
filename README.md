@@ -68,26 +68,29 @@ Planner task records store language-neutral kinds and source IDs. The shared tra
 
 ## Main workflow
 
-**The fast path (what a student on a phone actually does):** open **Projects**, add
-photos or a PDF, tap **Start lesson from these pages**. Nothing else is required — no
-project name, no subject, no review. The start page then does the whole chain by itself
-and shows three steps while it runs: *Reading your pages* (one request per page),
-*Building your lesson* (`POST /projects/<id>/quick-start`: accepts the recognition as it
-stands, marked `unreviewed`, builds the sections if there are none, opens an AI lesson on
-the first unfinished section), *Opening your lesson* (redirect to the lesson, which
-explains the material from the student's own pages and then runs the knowledge-gated
-test). Pages that could not be read never block the student; they stay visibly marked for
-the detailed review, which is one link away ("Check the scan first (optional)"). Tapping
-**Continue lesson** on the project page, or `quick-start` again, **resumes** the saved,
-unfinished test instead of starting over; the Overview and the New Lesson page show a
-"Continue where you left off" banner for the newest unfinished lesson. Tests:
-`tests/test_quick_start.py`.
+**The fast path (what a student on a phone actually does):** open **Project Mode**, add
+photos or a PDF and create the project. Nothing else is required — no project name, no
+subject, no review. The start page then does the whole chain by itself and shows three
+steps while it runs: *Reading your pages* (one request per page), *Building your lesson*
+(the topics are worked out in short steps, `POST /projects/<id>/analysis/step`, then
+`POST /projects/<id>/quick-start` accepts the recognition as it stands, marked
+`unreviewed`), and *Opening your lesson*: for a new project that is the topic list, where
+every topic is ticked and **Start learning** opens the first lesson; once the topics are
+confirmed, the lesson on the first unfinished topic, which explains the material from the
+student's own pages and then runs the knowledge-gated test. Files and pages that could not
+be read never block the student: a damaged file keeps its own row with what went wrong and
+Try this file again / Replace file / Remove file, and unclear pages stay visibly marked for
+the detailed review. Tapping **Continue lesson** on the project page, or `quick-start`
+again, **resumes** the saved, unfinished test instead of starting over; the Overview and
+the New Lesson page show a "Continue where you left off" banner for the newest unfinished
+lesson. The full flow is in [docs/PROJECT_MODE.md](docs/PROJECT_MODE.md). Tests:
+`tests/test_quick_start.py`, `tests/test_analysis_steps.py`, `tests/test_upload_robustness.py`.
 
 The detailed path below is still there for students who want to correct the scan first.
 
-1. Open **Study projects** and choose **Upload PDF**, **Upload Images**, and/or **Scan with Camera**. Camera pages and uploads can be combined in one ordered project. A project supports up to 20 pages, 15 MB per file, and 40 MB per request; 10–15 pages is recommended.
+1. Open **Project Mode** and choose **Upload PDF**, **Upload Images**, and/or **Scan with Camera**. Camera pages and uploads can be combined in one ordered project. A project supports up to 40 pages (`PROJECT_MAX_PAGES`), 15 MB per file, and 40 MB per request; 10–15 pages is recommended. One damaged file never costs the others: it is kept as its own document row with the reason, and the valid files are saved.
 2. For camera capture, explicitly open the scanner, position one full page in the frame, capture, review, crop/rotate/retake, accept it, and continue. Front/rear cameras can be switched when the browser exposes both. Closing the scanner stops every camera track.
-3. Learnova stores the original and a lossless processed recognition copy. Processing applies EXIF orientation, student-selected crop/rotation, conservative brightness/contrast/sharpness correction, resolution checks, and blur/glare warnings. Small captures are enlarged so thin strokes survive the vision model's own downscaling; large photos are never shrunk. PDFs—including scanned PDFs—are rendered page by page.
+3. Learnova stores the original and a lossless processed recognition copy. Processing applies EXIF orientation, student-selected crop/rotation, conservative brightness/contrast/sharpness correction, resolution checks, and blur/glare warnings. Small captures are enlarged so thin strokes survive the vision model's own downscaling; large photos are never shrunk. PDFs—including scanned PDFs—are rendered page by page. The processed copy is made when a page is first read or viewed, not in the upload request (`PROJECT_PREPROCESS_ON_UPLOAD=true` restores rendering at upload), and a PDF page with a good text layer is read without being rendered.
 
    Binarisation is **local, not global**: each pixel is compared with its own neighbourhood rather than with one threshold for the whole page. A single global cut assumes even lighting, which a phone photo of a notebook rarely has — on a page with a shadow across one side, the global cut turned that whole side into a black blob and erased every faint pencil stroke in it. Geometry correction (4-point perspective, then rotation deskew) needs `opencv-python-headless` and `numpy` from `requirements.txt`; where those wheels are missing it degrades silently to no-op, so recognition still runs but crooked photos are not straightened.
 4. Run recognition. Each page is saved independently as typed blocks: printed text, handwriting, formulas, tables, diagrams, headings, annotations, uncertain content, and crossed-out content. Blocks retain confidence, bounding boxes, source file/page IDs, and review state.
@@ -138,11 +141,11 @@ Open `http://127.0.0.1:5000`. With the default SQLite URL, the database is `inst
 
 `python -m flask --app app init-db` is idempotent. It creates every missing table and applies versioned, additive upgrades recorded in `schema_migration`; it does not erase saved progress. Startup runs the same initialization automatically. Migration `009_add_query_path_indexes` adds composite indexes for PostgreSQL-scale dashboard, review, attempt, page-order, section-order, and exam queries. Migration `011_add_intelligent_study_planner` adds indexed study plans and calendar sessions. The existing `StudySession` remains the authoritative saved lesson state; planner days use the separate `StudyPlanSession` model to preserve compatibility.
 
-Configuration profiles are selected with `APP_ENV=development|testing|production`. Production requires `SECRET_KEY`, enables secure cookies, and should use a shared `RATELIMIT_STORAGE_URI` such as Redis when running multiple web workers. Tests disable CSRF and rate limiting through their isolated Flask testing context.
+Configuration profiles are selected with `APP_ENV=development|testing|production`. Production requires `SECRET_KEY` and enables secure cookies. Run **one** web worker and scale with threads: lesson sessions, the rate-limit storage (`RATELIMIT_STORAGE_URI=memory://`) and the AI gateway's cooldowns live in the process, so a second worker would not share them ([docs/OPERATIONS.md](docs/OPERATIONS.md#gunicorn)). Tests disable CSRF and rate limiting through their isolated Flask testing context.
 
 The current schema includes users, lessons, attempts, mastery, persisted study sessions, chat messages, learning projects, private source files/pages, structured document blocks, learning sections, recall cards, final exams, exam questions, and autosaved exam answers. `006_link_lessons_to_sections` connects section tests to attempts; `007_add_document_recognition` adds original/processed recognition metadata, confidence, review state, priority, rotation, and recovery fields; `008_add_user_preferred_language` adds the indexed `en`/`de` account preference and safely defaults existing users to English. Back up production data before a deployment.
 
-For PostgreSQL, set `DATABASE_URL` to a valid SQLAlchemy `postgresql://` URL. Render supplies this automatically through `render.yaml`.
+For PostgreSQL, set `DATABASE_URL` to a valid SQLAlchemy `postgresql://` URL. Render supplies this automatically through `render.yaml`. On PostgreSQL one process migrates at a time (an advisory lock), and every migration transaction gives up after `DB_MIGRATION_LOCK_TIMEOUT_MS` instead of waiting behind a busy table; the pool uses `pool_pre_ping` and `DB_POOL_RECYCLE_SECONDS`. Before deploying, follow [docs/OPERATIONS.md](docs/OPERATIONS.md): back up, read `schema_migration` read-only, run the PostgreSQL migration test (migrations 037–041 are new since `origin/main`), and check the settings it recommends.
 
 Community publishing stores approved content in PostgreSQL-backed
 `public_flashcard_set` and immutable `flashcard_publication_version` rows. AI reviews,
@@ -193,7 +196,7 @@ Get-Content .\instance\ai_usage.jsonl -Tail 20 | ConvertFrom-Json | Format-Table
 
 For estimated cost, configure `AI_INPUT_COST_PER_MILLION` and `AI_OUTPUT_COST_PER_MILLION`. Central request safeguards are configurable with `AI_MAX_REQUESTS_PER_USER_HOUR`, `AI_MAX_REQUESTS_PER_USER_DAY`, `AI_MAX_LIVE_REQUESTS_DEVELOPMENT`, and `AI_MAX_OUTPUT_CHARACTERS`. There is no per-session token cap.
 
-Task output defaults are tutor chat 200, answer evaluation 250, translation 400, lesson generation 700, quiz generation 600, project generation 1200, exam generation 1200, OCR 1400, adaptive practice 600, and exam evaluation 600 tokens. Override one with `AI_<TASK_NAME>_MAX_OUTPUT_TOKENS`; input budgets use the corresponding `AI_<TASK_NAME>_MAX_INPUT_TOKENS`. The gateway removes duplicate whitespace/repeated long lines, uses only the bounded context supplied by features, then rejects input that still exceeds its task budget. It never silently submits a complete oversized document.
+Task output defaults are tutor chat 1200, answer evaluation 2600, translation 400, lesson generation 5000, quiz generation 600, project generation 6000, exam generation 6000, OCR 1400, adaptive practice 600, and exam evaluation 600 tokens (see `learnova/ai_services/service.py`). Override one with `AI_<TASK_NAME>_MAX_OUTPUT_TOKENS`; input budgets use the corresponding `AI_<TASK_NAME>_MAX_INPUT_TOKENS`. The gateway removes duplicate whitespace/repeated long lines, uses only the bounded context supplied by features, then rejects input that still exceeds its task budget. It never silently submits a complete oversized document.
 
 Every structured response is checked against its task schema, not merely parsed as JSON. The schemas reject missing/wrong fields, empty required text, invalid enums and scores, duplicates, incorrect counts, and unknown source page/section IDs. Invalid output is never cached or saved. Live/cached modes make at most one corrective retry; a second failure returns a translated safe error and leaves uploads/completed work intact. Mock failure fixtures fail immediately without a provider retry.
 
@@ -208,8 +211,8 @@ GROQ_VISION_MODEL=qwen/qwen3.8-27b
 GROQ_TUTOR_MODEL=openai/gpt-oss-20b
 GROQ_FAST_MODEL=openai/gpt-oss-20b
 AI_TUTOR_CHAT_MODEL=openai/gpt-oss-120b
-LESSON_TOKEN_LIMIT=1800
-ANSWER_TOKEN_LIMIT=1100
+LESSON_TOKEN_LIMIT=5000
+ANSWER_TOKEN_LIMIT=2600
 CHAT_TOKEN_LIMIT=1100
 TRANSLATE_TOKEN_LIMIT=2500
 ```
@@ -601,37 +604,60 @@ gaps** button that starts a gated practice test on the concepts still below targ
 Tests: `tests/test_mastery_gate.py` (rules), `tests/test_knowledge_gate_integration.py`
 (the loop, planned practice and exams with the model patched).
 
-### Beginner tour
+### Tutorial and onboarding
 
-A new account's first visit is an interactive walkthrough, not a slideshow: everything
-dims except the one thing to tap, a short line says what to do ("Tap New Lesson. This is
-where every lesson starts."), and the tour moves on only when the student actually does
-it. It starts wherever registration lands (the New Lesson page), leads through picking a
-subject, saying what to learn (or tapping a "Try asking" idea), building the lesson,
-starting the test and finding the tutor chat, then across to the Overview, and ends with
-where the rest lives (Menu → More). On a phone, a link hidden behind the menu button lights
-the menu button first. The run's position lives in `sessionStorage` so it survives the
-page changes; whether the account has finished or skipped it is stored on the server
-(`User.tour_completed_at`, `POST /api/tour/complete`), so it never opens by itself twice
-on any device. It can be restarted from **Account → Tutorial**, the mobile menu, or the
-"New here?" link on the Overview. Steps and the pure routing rules: `static/js/tour-rules.js`;
-pointing and listening: `static/js/tour.js`; shell: `templates/components/_tour.html`;
-tests: `tests/test_tour.py`, `tests/js/tour-rules.test.mjs`.
+An interactive guided tour of the real interface: it dims the page, lights the real button
+and explains it in one to three sentences with Previous / Next / Exit. It comes in two
+layers, 98 steps in all (a student sees fewer: flags, plan, layout), never everything at once:
+
+* the **quick tour** (up to 12 steps): one step per function the student can use, lit at
+  its real place in the navigation (the desktop bar, More, the Account menu, the phone
+  menu). A new account is offered it once (*Show me around (1 minute)* / *Explore on my own*);
+* **feature tips**: 27 short chapters of 1–6 steps, each on one page. A chapter starts by
+  itself the first time the student uses that feature (its anchor has been on screen for a
+  moment; never over a dialog, a running generation or while typing). Another chapter may
+  follow on the same page when its feature first appears through the student's own action
+  (a first answer, a lesson built in place), a few seconds later; tapping the lit link a tip
+  names counts as doing it.
+  *Skip* means it never starts by itself again, *Finish* marks it done; a step whose
+  element is not there is skipped silently. *Show tips automatically* (the hub and
+  Settings → Help and support) switches this off and on.
+
+Steps of switched-off features (imports and the vocabulary trainer in production) do not
+exist for the student. The hub at **`/tutorial`** shows the overall progress, the quick
+tour and every chapter by feature (Not seen / Skipped / Done) with *Replay* — or, while the
+student has no record for it yet, when it starts ("Starts after your first question in the
+chat.") and *Take me there* — plus *Restart*, *Mark as done* and *Reset all tips*. It is
+linked from the More and Account menus, the phone menu, the Overview, Settings → Help and
+support and the footer. Progress per section and the tips switch are stored in
+`tutorial_progress` (migration `042_tutorial_progress`; no new migration).
+
+Everything about it — architecture, the step registry (`learnova/tutorial/registry.py`),
+gating, the progress API, how to add a step and how to test it — is in
+[docs/TUTORIAL.md](docs/TUTORIAL.md). Files: `learnova/tutorial/`, `static/js/tour.js`,
+`static/js/tour-rules.js`, `templates/components/_tour.html`, `templates/tutorial.html`,
+`templates/components/_tutorial_tips.html`, `static/css/tour.css`, `static/css/tutorial.css`;
+tests: `tests/test_tutorial.py`,
+`tests/test_tour.py`, `tests/test_tutorial_browser.py`, `tests/js/tour-rules.test.mjs`.
 
 ### Direct assistant chat
 
-`/assistant` is a durable, general-purpose conversation with the model — no lesson, no
-upload, no session to expire. Conversations persist, are searchable and archivable, and
-each one carries a **style preset** that decides what the assistant is told to be:
-general, research (separates evidence from inference from what is still open), study coach
-(gives the next step, not the solution), or plain explanation. A "Think harder" toggle
-sends the turn to the stronger model.
+The chat assistant is the home page after login (`/`; the Short Lesson builder lives at
+`/lesson`, and `/?session_id=` / `/?goal=` links still open lessons). Conversations persist,
+can be searched by title and message content, are grouped by date, and have a ⋯ menu to
+rename, archive/restore or delete them. Students can attach photos (JPEG, PNG, WebP; the
+per-message limit follows the vision model's token ceiling), which are read once and reused
+in follow-up questions. Formulas render with KaTeX. Every preset carries a short tutoring
+layer and the student's context (class, explanation level, weak spots), and **Continue
+Learning** turns a conversation into a normal saved lesson that counts against the usual
+lesson allowance. Each conversation carries a **style preset** (general, research, study
+coach, plain explanation); a "Think harder" toggle sends the turn to the stronger model.
 
 Models are named `provider:model`, so pointing any task at another provider is one
 environment variable. Groq, OpenAI, Anthropic and Gemini are registered; only Groq has been
 exercised live from this codebase. Routing, token budgets, provider caps and fallback are
-described in `docs/AI_ROUTING.md`; `docs/ASSISTANT.md` has the
-exact steps and a worked adapter for adding Anthropic. Everything still goes through the
+described in `docs/AI_ROUTING.md`; `docs/ASSISTANT.md` describes the chat, its routes and
+settings, and what adding a provider involves. Everything still goes through the
 one AI gateway, so caching, token budgets, usage limits, sanitized errors and telemetry
 apply to every provider.
 
@@ -666,13 +692,18 @@ flask redact-moderation-quotes                   # apply the quote retention win
 Live decision metrics — the decision mix, escalation rate, latency and cost — appear on
 the protected `/internal/ai-diagnostics` page.
 
+The public **Contact us** page (`/contact`) stores every message first and forwards it to
+`CONTACT_EMAIL` only when SMTP is configured; operators read messages at
+`/admin/contact-messages`. Setup, statuses, retention and the `flask contact` commands are in
+`docs/CONTACT.md`.
+
 ## Current boundaries
 
 - Recognition is deliberately not presented as perfect handwriting recognition. Low-confidence words, formulas, and regions remain visibly marked until the student verifies them.
 - Image cleanup is conservative and uses automatic orientation plus manual crop/90° rotation. It avoids aggressive transformations that could erase handwriting or mathematical marks.
 - Recognition and project generation require the configured AI service. Originals, processed images, and every successfully recognized page remain saved if another page or later generation step fails.
 - Processing is in-memory; Learnova does not create temporary image files. Production retention and deletion policy still needs to be defined before a broad student rollout.
-- This release intentionally does not include payments, leaderboards, parent accounts, voice tutoring, or social features.
+- This release intentionally does not include online payments (Premium is activated with one-time codes), parent accounts, or real-time voice tutoring.
 - Community moderation depends on the classifier being right: plainly written abuse that the model calls clean trips no deterministic detector and is published. Reader reporting is the compensating control, and the evaluation corpus measures this as a separate `classifier_miss_rate` rather than folding it into the policy's own numbers.
 - Moderation thresholds are calibrated against 46 synthetic cases, not production traffic, and an escalation queue only helps if somebody works it.
 
@@ -686,3 +717,5 @@ This repository includes `render.yaml`.
 4. Deploy and open the generated `onrender.com` URL.
 
 Render installs `requirements.txt`, connects PostgreSQL, and starts Gunicorn on `0.0.0.0:$PORT`. The health check is `/health`. Use PostgreSQL in production because Render web-service filesystems are ephemeral. Use HTTPS and define appropriate student-data retention, consent, and backup policies before a wider launch.
+
+**Before any production deploy, read [docs/OPERATIONS.md](docs/OPERATIONS.md):** the pre-deploy checklist and the owner-run PostgreSQL migration test, the settings to change (`render.yaml` still pins `LESSON_TOKEN_LIMIT` and `ANSWER_TOKEN_LIMIT` at 2200; 5000 and 2600 are recommended, with the measurements), the Groq tier, gunicorn and reverse-proxy timeouts, the scheduled `flask` commands (there is no scheduler), rollback and the log lines to watch.

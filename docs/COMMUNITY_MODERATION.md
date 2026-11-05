@@ -299,7 +299,7 @@ hour. Provider calls, tokens, model and latency are stored on each review.
 
 ## Administrator alerts (email)
 
-Alerts go to `COMMUNITY_ALERT_EMAIL` (default `maheswariskillbridge@gmail.com`) when a
+Alerts go to `COMMUNITY_ALERT_EMAIL` (default `contact.studylearnova@gmail.com`) when a
 report enters review, a re-review finds a likely genuine issue or is inconclusive, a
 safety concern needs a person, the quality reviewer and the safety pass disagree, or a
 review keeps failing.
@@ -394,7 +394,7 @@ submission costs one small call rather than a small one plus a large one.
 | `REPORT_REVIEW_MAX_PER_HOUR` | 60 | paid re-reviews site-wide per hour |
 | `REPORT_REVIEW_MAX_ATTEMPTS` | 3 | attempts for one re-review before an alert |
 | `MODERATION_RETRY_MAX_ATTEMPTS` | 3 | automatic re-checks of an unavailable safety check before an alert |
-| `COMMUNITY_ALERT_EMAIL` | maheswariskillbridge@gmail.com | alert recipient |
+| `COMMUNITY_ALERT_EMAIL` | contact.studylearnova@gmail.com | alert recipient |
 | `MAIL_SMTP_*`, `MAIL_FROM` | unset | SMTP delivery; unset means alerts are stored, not sent |
 | `MAIL_MAX_ATTEMPTS` | 3 | delivery attempts per alert |
 | `PUBLIC_BASE_URL` | unset | absolute links in alert emails |

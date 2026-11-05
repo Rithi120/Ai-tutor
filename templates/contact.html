@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Contact us') }} — Learnova{% endblock %}
+{% block head %}
+<meta name="description" content="{{ _('Questions, bug reports or ideas for Learnova? Write to us by email or use the contact form.') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/contact.css', v=static_version) }}">
+{% endblock %}
+{% block body_class %}contact-page{% endblock %}
+{% macro described(field, hint=True) -%}
+  {%- set ids = (['contact-' ~ field ~ '-hint'] if hint else []) + (['contact-' ~ field ~ '-error'] if field_errors.get(field) else []) -%}
+  {%- if ids %}aria-describedby="{{ ids|join(' ') }}"{% endif %}{% if field_errors.get(field) %} aria-invalid="true"{% endif %}
+{%- endmacro %}
+{% macro field_error(field) -%}
+  {% if field_errors.get(field) %}<p class="contact-error" id="contact-{{ field }}-error">{{ field_errors.get(field) }}</p>{% endif %}
+{%- endmacro %}
+{% block content %}
+<main id="main-content" class="contact-shell">
+
+  <section class="contact-hero" aria-labelledby="contact-title">
+    <div class="eyebrow">LEARNOVA</div>
+    <h1 id="contact-title">{{ _('Contact us') }}</h1>
+    <p class="contact-lead">{{ _('Found a bug, have an idea or need help with your account? Tell us, and we will reply by email.') }}</p>
+  </section>
+
+  <div class="contact-layout">
+    <aside class="contact-card contact-email-card" aria-labelledby="contact-email-title">
+      <h2 id="contact-email-title">{{ _('Email us') }}</h2>
+      <p><a class="contact-email-link" href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+      <p class="contact-hint">{{ _('Prefer your own email app? Write to us directly at this address.') }}</p>
+    </aside>
+
+    <section class="contact-card contact-form-card" aria-labelledby="contact-form-title">
+      {% if sent %}
+      <div class="contact-success" role="status" data-contact-sent>
+        <h2 id="contact-form-title" tabindex="-1" data-contact-focus>{{ _('Thank you — your message has arrived.') }}</h2>
+        <p>{{ _('We have saved your message and will reply by email as soon as we can.') }}</p>
+        <div class="contact-actions">
+          <a class="secondary-button" href="{{ url_for('contact') }}">{{ _('Send another message') }}</a>
+          {% if current_user.is_authenticated %}
+          <a class="ghost-button" href="{{ url_for('dashboard') }}">{{ _('Open your dashboard') }}</a>
+          {% else %}
+          <a class="ghost-button" href="{{ url_for('about') }}">{{ _('Back to About') }}</a>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <h2 id="contact-form-title">{{ _('Send us a message') }}</h2>
+      {% if form_error or field_errors %}
+      <div class="contact-error-summary" role="alert" tabindex="-1" data-contact-focus>
+        <h3>{{ _('Your message was not sent yet') }}</h3>
+        {% if form_error %}<p>{{ form_error }}</p>{% endif %}
+        {% if field_errors %}
+        <p>{{ _('Please check the marked fields.') }}</p>
+        <ul>
+          {% for field in ['name', 'email', 'category', 'message'] if field_errors.get(field) %}
+          <li><a href="#contact-{{ field }}">{{ field_errors.get(field) }}</a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endif %}
+      <form class="contact-form" method="post" action="{{ url_for('contact_submit') }}" data-contact-form data-tour-target="contact-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="form_started" value="{{ form_token }}">
+
+        <div class="contact-field">
+          <label for="contact-name">{{ _('Name') }}</label>
+          <p class="contact-hint" id="contact-name-hint">{{ _('Your first name is enough.') }}</p>
+          {{ field_error('name') }}
+          <input id="contact-name" name="name" type="text" autocomplete="name" autocapitalize="words" maxlength="{{ limits.name }}" enterkeyhint="next" required value="{{ values.name }}" {{ described('name') }}>
+        </div>
+
+        <div class="contact-field">
+          <label for="contact-email">{{ _('Email address') }}</label>
+          <p class="contact-hint" id="contact-email-hint">{{ _('We only use it to reply to you.') }}</p>
+          {{ field_error('email') }}
+          <input id="contact-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="{{ limits.email }}" enterkeyhint="next" required value="{{ values.email }}" {{ described('email') }}>
+        </div>
+
+        <div class="contact-field">
+          <label for="contact-category">{{ _('Topic') }}</label>
+          {{ field_error('category') }}
+          <select id="contact-category" name="category" required {{ described('category', hint=False) }}>
+            <option value="" {{ 'selected' if not values.category }}>{{ _('Choose a topic') }}</option>
+            {% for key, label in categories %}
+            <option value="{{ key }}" {{ 'selected' if values.category == key }}>{{ _(label) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="contact-field">
+          <label for="contact-message">{{ _('Message') }}</label>
+          <p class="contact-hint" id="contact-message-hint">{{ _('Between {min} and {max} characters. Please never include passwords or other sensitive information.', min=limits.min, max=limits.max) }}</p>
+          {{ field_error('message') }}
+          <textarea id="contact-message" name="message" rows="7" minlength="{{ limits.min }}" maxlength="{{ limits.max }}" required {{ described('message') }} data-contact-message>{{ values.message }}</textarea>
+          <p class="contact-counter" aria-hidden="true"><span data-contact-count>{{ values.message|length }}</span> / {{ limits.max }}</p>
+        </div>
+
+        <div class="contact-hp" aria-hidden="true"><label for="contact-website">{{ _('Leave this field empty') }}</label><input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off" value=""></div>
+
+        <button class="primary-button contact-submit" type="submit">{{ _('Send message') }}</button>
+        {# The forwarding sentence is shown whether or not email is configured yet: messages stored before then are forwarded once it is. #}
+        <p class="contact-privacy">{{ _('We use your name, email address and message only to reply to you. They are never shown publicly and are deleted from Learnova after {days} days.', days=retention_days) }}{% if current_user.is_authenticated %} {{ _('Because you are signed in, your message is linked to your account.') }}{% endif %} {{ _('A copy may be forwarded to our inbox at {email}. That copy is not deleted automatically.', email=contact_email) }}</p>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/contact.js', v=static_version) }}"></script>{% endblock %}

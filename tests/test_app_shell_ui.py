@@ -51,8 +51,11 @@ class AuthenticatedAppShellTests(unittest.TestCase):
         self.assertIn(b'class="settings-link', html)
         self.assertIn(b'action="/logout"', html)
         desktop = html.split(b'<nav class="desktop-app-nav', 1)[1].split(b"</nav>", 1)[0]
-        self.assertEqual(desktop.count(b'class="app-nav-link'), 3)
-        self.assertIn(b'href="/"', desktop)
+        # Chat (the home page since the assistant upgrade) leads, then Overview, New Lesson
+        # (the lesson builder at /lesson) and Project Mode.
+        self.assertEqual(desktop.count(b'class="app-nav-link'), 4)
+        self.assertLess(desktop.index(b'href="/assistant"'), desktop.index(b'href="/dashboard"'))
+        self.assertIn(b'href="/lesson"', desktop)
         self.assertIn(b'New Lesson', desktop)
         self.assertIn(b'Project Mode', desktop)
         self.assertIn(b'id="moreMenu"', desktop)
@@ -72,8 +75,10 @@ class AuthenticatedAppShellTests(unittest.TestCase):
             self.assertIn(label, mobile)
         self.assertNotIn(b"Exam Mode", mobile)
         self.assertNotIn(b"Study Planner", mobile)
+        self.assertLess(mobile.index(b">Chat<"), mobile.index(b"Overview"))
         self.assertLess(mobile.index(b"Overview"), mobile.index(b"New Lesson"))
         self.assertLess(mobile.index(b"New Lesson"), mobile.index(b"Project Mode"))
+        self.assertNotIn(b">Assistant<", html, "the old More-menu entry is gone: Chat replaces it")
 
     def test_active_state_and_pages_work_without_javascript(self):
         self.register()
@@ -123,18 +128,20 @@ class AuthenticatedAppShellTests(unittest.TestCase):
             self.assertIn(b'New Lesson', response.data)
             self.assertIn(b'href="/"', response.data)
 
-        lesson_creation = self.client.get("/")
+        # The lesson builder moved to /lesson; "/" is the chat home (no builder there).
+        lesson_creation = self.client.get("/lesson")
         self.assertEqual(lesson_creation.status_code, 200)
         self.assertIn(
-            b'class="app-nav-link nav-primary-action is-active" href="/" aria-current="page"',
+            b'class="app-nav-link nav-primary-action is-active" href="/lesson" aria-current="page"',
             lesson_creation.data,
         )
         self.assertNotIn(b'href="/dashboard" aria-current="page"', lesson_creation.data)
         self.assertEqual(lesson_creation.data.count(b'id="uploadForm"'), 1)
+        self.assertNotIn(b'id="uploadForm"', self.client.get("/").data)
 
         dashboard = self.client.get("/dashboard").data
         self.assertIn(b'href="/dashboard" aria-current="page"', dashboard)
-        self.assertNotIn(b'href="/" aria-current="page"', dashboard)
+        self.assertNotIn(b'href="/lesson" aria-current="page"', dashboard)
         self.assertNotIn(b'id="uploadForm"', dashboard)
         index_rules = [rule for rule in application.app.url_map.iter_rules() if rule.endpoint == "index"]
         self.assertEqual(len(index_rules), 1)

@@ -37,6 +37,25 @@ export function looksLikeMath(tex, display) {
   return MATH_SIGNAL.test(tex);
 }
 
+/**
+ * Whether a span between these delimiters is a formula. Only a single `$` is ambiguous
+ * (prices), so only it has to pass looksLikeMath. `\(…\)` is never a price: the models
+ * write `\( a = 2 \)` with inner spaces, and `\(8\)` is a formula too, so any non-empty
+ * content counts - spaces, digits only, newlines and long spans included.
+ */
+export function acceptsMath(open, tex) {
+  if (open === "$") return looksLikeMath(tex, false);
+  return typeof tex === "string" && tex.trim() !== "";
+}
+
+/** A delimiter at `index` is escaped when an odd number of backslashes precedes it:
+ *  `x \\]` is a row break followed by "]", `\\\]` is a row break and then the closer. */
+export function isEscaped(text, index) {
+  let count = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) count += 1;
+  return count % 2 === 1;
+}
+
 function matchAt(text, index) {
   for (const delimiter of DELIMITERS) {
     if (!text.startsWith(delimiter.open, index)) continue;
@@ -44,7 +63,7 @@ function matchAt(text, index) {
     while (search < text.length) {
       const close = text.indexOf(delimiter.close, search);
       if (close === -1) break;
-      if (text[close - 1] === "\\") { search = close + 1; continue; }   // escaped
+      if (isEscaped(text, close)) { search = close + 1; continue; }
       return { delimiter, tex: text.slice(index + delimiter.open.length, close),
                end: close + delimiter.close.length };
     }
@@ -73,7 +92,7 @@ export function splitMath(text) {
       continue;
     }
     const found = matchAt(source, index);
-    if (found && looksLikeMath(found.tex, found.delimiter.display)) {
+    if (found && acceptsMath(found.delimiter.open, found.tex)) {
       flush();
       segments.push({ type: "math", value: found.tex, display: found.delimiter.display });
       index = found.end;
@@ -121,29 +140,103 @@ export function powerSegments(text) {
   return segments.filter(segment => segment.value !== "");
 }
 
+const READABLE_SYMBOLS = {
+  cdot: "·", times: "×", div: "÷", pm: "±", mp: "∓", le: "≤", leq: "≤", ge: "≥", geq: "≥",
+  neq: "≠", ne: "≠", approx: "≈", equiv: "≡", sim: "∼", propto: "∝", infty: "∞",
+  to: "→", rightarrow: "→", leftarrow: "←", Rightarrow: "⇒", Leftarrow: "⇐",
+  Leftrightarrow: "⇔", leftrightarrow: "↔", cdots: "⋯", ldots: "…", dots: "…", circ: "°",
+  degree: "°", in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆", cup: "∪", cap: "∩",
+  forall: "∀", exists: "∃", angle: "∠", triangle: "△", perp: "⊥", parallel: "∥",
+  partial: "∂", nabla: "∇", sum: "Σ", prod: "Π", int: "∫", lvert: "|", rvert: "|",
+  mid: "|", vert: "|", lVert: "‖", rVert: "‖", percent: "%",
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε", zeta: "ζ",
+  eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι", kappa: "κ", lambda: "λ", mu: "μ", nu: "ν",
+  xi: "ξ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", upsilon: "υ", phi: "φ", varphi: "φ",
+  chi: "χ", psi: "ψ", omega: "ω", Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ",
+  Pi: "Π", Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+};
+// Operator names that read correctly as the bare word.
+const READABLE_WORDS = new Set([
+  "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh",
+  "tanh", "log", "ln", "lg", "exp", "lim", "max", "min", "det", "gcd", "dim", "deg",
+]);
+
+/** The balanced `{…}` group starting at `start`, or null. */
+function groupAt(value, start) {
+  if (value[start] !== "{") return null;
+  let depth = 0;
+  for (let cursor = start; cursor < value.length; cursor += 1) {
+    if (value[cursor] === "\\") { cursor += 1; continue; }
+    if (value[cursor] === "{") depth += 1;
+    else if (value[cursor] === "}") {
+      depth -= 1;
+      if (depth === 0) return { inner: value.slice(start + 1, cursor), end: cursor + 1 };
+    }
+  }
+  return null;
+}
+
+/** Rewrite every `\name{a}{b}…` (balanced groups, so nested braces survive). */
+function rewriteCommand(value, pattern, groups, build) {
+  let out = "";
+  let last = 0;
+  pattern.lastIndex = 0;
+  for (let match = pattern.exec(value); match; match = pattern.exec(value)) {
+    let cursor = match.index + match[0].length;
+    let option = "";
+    if (match[0].endsWith("sqrt") && value[cursor] === "[") {
+      const close = value.indexOf("]", cursor);
+      if (close !== -1) { option = value.slice(cursor + 1, close); cursor = close + 1; }
+    }
+    const parts = [];
+    for (let index = 0; index < groups; index += 1) {
+      const group = groupAt(value, cursor);
+      if (!group) break;
+      parts.push(group.inner);
+      cursor = group.end;
+    }
+    if (parts.length !== groups) continue;
+    out += value.slice(last, match.index) + build(parts, option);
+    last = cursor;
+    pattern.lastIndex = cursor;
+  }
+  return out + value.slice(last);
+}
+
 /**
  * A LaTeX source made readable as plain text, for when the formula renderer is not
  * available (offline, CDN blocked): \frac{a}{b} -> (a)/(b), \cdot -> ·, \sqrt{x} -> √(x).
  * Powers are kept as "^" so powerSegments can raise them. Never alters the mathematics,
  * only its spelling.
+ *
+ * With `strict` (the renderer's offline fallback) it returns null as soon as anything
+ * it cannot spell remains - an unknown command, a matrix, a row break - so the caller
+ * shows the formula's source instead. Dropping the backslash of an unknown command is
+ * how a student once saw "frac{x2}{ (a+b )}". Read-aloud uses the lenient default,
+ * where an unknown command is spoken as its name.
  */
-export function readableTex(tex) {
+export function readableTex(tex, { strict = false } = {}) {
   let value = String(tex ?? "");
-  for (let pass = 0; pass < 3; pass += 1) {
-    value = value
-      .replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, "($1)/($2)")
-      .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)");
+  for (let pass = 0; pass < 6; pass += 1) {
+    const before = value;
+    value = rewriteCommand(value, /\\[dt]?frac(?![A-Za-z])/g, 2, ([top, bottom]) => `(${top})/(${bottom})`);
+    value = rewriteCommand(value, /\\sqrt(?![A-Za-z])/g, 1, ([inner], index) => `${index}√(${inner})`);
+    value = rewriteCommand(value, /\\(?:text|textbf|textit|mathrm|mathbf|mathit|operatorname)(?![A-Za-z])/g, 1,
+                           ([inner]) => inner);
+    if (value === before) break;
   }
-  const symbols = {
-    cdot: "·", times: "×", div: "÷", pm: "±", mp: "∓", le: "≤", leq: "≤", ge: "≥", geq: "≥",
-    neq: "≠", ne: "≠", approx: "≈", infty: "∞", pi: "π", alpha: "α", beta: "β", gamma: "γ",
-    delta: "δ", Delta: "Δ", lambda: "λ", mu: "μ", sigma: "σ", theta: "θ", rightarrow: "→",
-    to: "→", Rightarrow: "⇒", cdots: "⋯", ldots: "…", circ: "°", degree: "°",
-  };
+  let unknown = false;
   value = value
-    .replace(/\\(?:left|right|displaystyle|,|;|!|quad|qquad)/g, " ")
-    .replace(/\\(?:text|mathrm|mathbf|operatorname)\{([^{}]*)\}/g, "$1")
-    .replace(/\\([A-Za-z]+)/g, (whole, name) => symbols[name] ?? name)
+    .replace(/\\(?:left|right|displaystyle|textstyle|big|Big|bigg|Bigg)(?![A-Za-z])/g, "")
+    .replace(/\\(?:quad|qquad)(?![A-Za-z])|\\[,;:! ]/g, " ")
+    .replace(/\\([{}%$&#_|])/g, "$1")
+    .replace(/\\([A-Za-z]+)/g, (whole, name) => {
+      if (Object.prototype.hasOwnProperty.call(READABLE_SYMBOLS, name)) return READABLE_SYMBOLS[name];
+      if (READABLE_WORDS.has(name)) return name;
+      unknown = true;
+      return name;
+    })
     .replace(/_\{([^{}]*)\}/g, "_$1");
+  if (strict && (unknown || value.includes("\\"))) return null;
   return value.replace(/\s+/g, " ").trim();
 }

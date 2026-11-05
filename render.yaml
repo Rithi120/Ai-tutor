@@ -52,7 +52,7 @@ services:
       # Report alerts. Stored and shown on /internal/moderation always; emailed only once
       # MAIL_SMTP_HOST and MAIL_FROM are set. Credentials live in the dashboard, never here.
       - key: COMMUNITY_ALERT_EMAIL
-        value: maheswariskillbridge@gmail.com
+        value: contact.studylearnova@gmail.com
       - key: MAIL_SMTP_HOST
         sync: false
       - key: MAIL_SMTP_PORT

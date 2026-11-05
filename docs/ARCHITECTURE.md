@@ -15,6 +15,9 @@ flowchart LR
     Projects --> OCR[OCR service]
     Projects --> AI[AI provider boundary]
     Learning --> Diagnostics[diagnostics engine]
+    Web --> Assistant[chat assistant - the home page]
+    Assistant --> AI
+    Assistant --> DB
     Web --> Moderation[community moderation]
     Moderation --> AI
     Moderation --> DB
@@ -39,16 +42,17 @@ learnova/
   authentication/    account normalization, validation and authentication
   dashboard/         optimized dashboard and daily-practice read models
   diagnostics/       evidence-based mistake diagnosis, knowledge model, adaptive policy
-  assistant/         direct chat: system-prompt presets and context-window mechanics
+  assistant/         chat assistant (the home page): presets and tutoring layer, context window, titles, history groups and search snippets, reply formatting, Continue Learning rules
   moderation/        community content safety: preprocessing, classification contract, decision policy
   exams/             exam scoring and allocation rules
-  lessons/           lesson/session domain namespace
+  lessons/           canonical subjects, subject teaching strategies, lesson plans and part guards
   ocr/               magic-byte validation, image processing and recognition helpers
-  projects/          source-grounded project and study-plan rules
+  projects/          material report, topic map, Fachbegriff cards, coverage, scheduler
   quizzes/           deterministic mastery, scheduling and adaptive selection
   settings/          account preference domain namespace
   study_planner/     deterministic schedules, redistribution and readiness metrics
   translations/      single interface catalogue
+  tutorial/          guided-tutorial registry (sections, steps, hooks), visibility/payload and progress rules
   uploads/           transactional upload/PDF ingestion
   utilities/         cross-cutting, domain-neutral helpers
   web/               response envelopes and browser security policy
@@ -74,9 +78,10 @@ The top-level `adaptive_learning.py`, `document_processing.py`, `study_projects.
 | `ocr` | file signatures, conservative image work and recognition normalization; `ocr.local` is the on-server OCR engine seam (RapidOCR) with word boxes | account authorization |
 | `vocabulary` | parsing, validation and practice rules; `language` (function-word detection), `layout` (blocks, columns, the sentence around a word), `translate` (DeepL / LibreTranslate / MyMemory behind one HTTP seam, cached) | Flask, the database, any language model |
 | `ai_services` | cached/live gateway, the provider registry and sole provider client, per-provider request adapters (`adapters.py`), task routing and fallback (`routing.py`), token budgets (`budgets.py`), the usage-ledger interface, private cache keys, sanitized accounting, JSON parsing and shared prompts | database transactions or raw student-data logging |
-| `assistant` | what the direct assistant is told to be, and what of a conversation the model sees | persistence, authorization, or the provider call itself |
+| `assistant` | what the chat assistant is told to be (presets, the tutoring layer, the STUDENT CONTEXT block), what of a conversation the model sees (window with the pinned first turn), when a message may name a thread, date groups, search snippets and list cursors, reply post-processing (LaTeX backslash normaliser, hidden CHIPS/TOPIC lines), and the Continue Learning gate, transcript and lesson prompt (see `docs/ASSISTANT.md`) | persistence, authorization, the per-conversation send claim, quotas, or the provider call itself (all in `app.py`) |
 | `moderation` | community safety vocabulary, text preprocessing and obfuscation signals, the classification contract, and the decision policy | provider access, database writes, or publishing anything itself |
-| `projects` | section normalization, source weighting and preparation plans | Flask globals |
+| `projects` | page and document states, duplicate detection, topic-map extraction and reconciliation, Fachbegriff flashcards, learning coverage, the scheduler (see `docs/PROJECT_MODE.md`) | Flask globals, the database or AI calls |
+| `lessons` | canonical subjects, the subject strategy registry, lesson step plans, part repair and guards that hold a lesson to the student's notes | Flask globals, the database or AI calls |
 | `quizzes` | deterministic mastery, difficulty and spaced repetition | AI mastery decisions |
 | `study_planner` | exam countdowns, task priority, schedule generation, incremental adaptation, redistribution, calendar/readiness metrics | Flask requests, ownership, AI decisions, or translated persistence text |
 
@@ -84,6 +89,8 @@ Browser-native speech recognition and speech synthesis are optional frontend acc
 | `exams` | deterministic scoring and question allocation | answer visibility policy in templates |
 | `dashboard` | user-filtered read queries and eager loading | mutations |
 | `translations` | interface strings and frontend catalogue | learning records |
+| `tutorial` | the guided tutorial's steps and what they light (`registry`), who sees which step and the translated JSON for `static/js/tour.js` (`visibility`), progress rules (`progress`) (see `docs/TUTORIAL.md`) | Flask, the database, the DOM |
+| `contact` | contact-form validation, categories, the form timing token, the duplicate digest and the forward email (see `docs/CONTACT.md`) | Flask, the database or sending mail |
 | `web` | JSON envelopes, headers and HTTP concerns | learning rules |
 
 ## Persistence and scaling

@@ -25,6 +25,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
+from tests.config_isolation import keep_config  # noqa: E402
 
 FIFTEEN = [
     "Gleichförmige Bewegung", "Geschwindigkeit", "Beschleunigung", "Freier Fall", "Kraft",
@@ -65,6 +66,8 @@ def lesson(title="Thema"):
 
 class ProjectModeV2Tests(unittest.TestCase):
     def setUp(self):
+        # Put back what this setUp changes, so it cannot leak into later modules.
+        keep_config(self, application.app.config, "AI_MODE", "CURRICULUM_CLEARED_SOURCES")
         application.app.config.update(TESTING=True, AI_MODE="cached", CURRICULUM_CLEARED_SOURCES="")
         application.SESSIONS.clear()
         application._curriculum_index_cache.update(key=None, index=None)
@@ -144,7 +147,9 @@ class ProjectModeV2Tests(unittest.TestCase):
     def test_twenty_pages_of_notes_become_fifteen_topics_with_page_references(self):
         project_id = self.upload(20)
         self.read_and_find(project_id)
-        self.assertEqual(self.calls.count("project_section_generation"), 2, "long notes are read in batches")
+        # Four pages per call (learnova/projects/topics.py MAX_BATCH_PAGES): a 28k-character
+        # batch used to need a longer answer than the output budget allows.
+        self.assertEqual(self.calls.count("project_section_generation"), 5, "long notes are read in batches")
         self.assertNotIn("competency_extraction", self.calls, "no Kompetenzraster needed")
         with application.app.app_context():
             project = self.project(project_id)
