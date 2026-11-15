@@ -371,6 +371,19 @@
   padding: .02rem .45rem; border-radius: 999px; border: 1px solid var(--ln-line);
   background: var(--ln-surface-raised); color: var(--ln-muted); font-size: .7rem; font-weight: 750;
 }
+/* Which group this is (promoted or demoted last week); a staying group needs no label. */
+.league-cohort { margin: .15rem 0 0; font-size: .82rem; font-weight: 750; }
+.league-cohort-up { color: #15803d; }
+.league-cohort-down { color: #c2410c; }
+:root[data-theme="dark"] .league-cohort-up { color: #4ade80; }
+:root[data-theme="dark"] .league-cohort-down { color: #fb923c; }
+/* A member of the league who has not earned XP this week: listed below the ranking. */
+.league-waiting-chip {
+  padding: .02rem .45rem; border-radius: 999px; border: 1px dashed var(--ln-line);
+  color: var(--ln-muted); font-size: .7rem; font-weight: 750;
+}
+.league-row.zone-waiting .league-xp { color: var(--ln-muted); }
+.league-divider-waiting { color: var(--ln-muted); }
 /* First visit only: two lines and OK. */
 .league-intro { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .9rem; }
 .league-intro p { margin: 0; flex: 1 1 16rem; font-weight: 600; }

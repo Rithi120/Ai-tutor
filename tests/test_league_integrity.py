@@ -458,13 +458,20 @@ class XpIntegrityTests(Base):
         session = self.start(self.make_set())
         item = session["items"][0]
         url = f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer"
-        paid = self.client.post(url, json={"answer": self.expected(item["id"]), "request_id": "r1"}).get_json()
+        answered = self.client.post(url, json={"answer": self.expected(item["id"]), "request_id": "r1"}).get_json()
         replay = self.client.post(url, json={"answer": self.expected(item["id"]), "request_id": "r2"}).get_json()
-        self.assertGreater(paid["xp_earned"], 0)
+        self.assertEqual(answered["xp_earned"], 0, "no XP per answer")
         self.assertTrue(replay["duplicate"])
+        self.assertEqual(application.LearningEvent.query.filter(
+            application.LearningEvent.idempotency_key.like(f"fc-answer:{session['id']}:%")).count(), 1)
+        complete = f"/api/flashcards/sessions/{session['id']}/complete"
+        first_done = self.client.post(complete).get_json()
+        second_done = self.client.post(complete).get_json()
+        self.assertEqual(first_done["session"]["xp_earned"], 1)
+        self.assertTrue(second_done["duplicate"])
         keys = [row.idempotency_key for row in self.ledger()]
         self.assertEqual(len(keys), len(set(keys)))
-        self.assertEqual(sum(1 for key in keys if key.startswith(f"xp:fc-answer:{session['id']}")), 1)
+        self.assertEqual(sum(1 for key in keys if key.startswith(f"xp:fc-complete:{session['id']}")), 1)
 
     def test_a_manipulated_request_cannot_change_xp_rank_or_league(self):
         session = self.start(self.make_set())
@@ -476,18 +483,15 @@ class XpIntegrityTests(Base):
             response = self.client.post(f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
                                         json={**forged, "answer": self.expected(item["id"]), "response_ms": 2000})
             earned.append(response.get_json()["xp_earned"])
-        # Each correct answer pays the server's amount, even with the same client request id.
-        self.assertTrue(all(0 < value <= 4 for value in earned), earned)
+        # No answer pays anything, whatever the request claims.
+        self.assertEqual(earned, [0, 0, 0, 0, 0])
         completed = self.client.post(f"/api/flashcards/sessions/{session['id']}/complete",
                                      json={**forged, "max_combo": 999}).get_json()["session"]
         rows = self.ledger()
-        allowed = {"flashcard_reviewed": {2, 3, 4},
-                   "flashcard_mastered": {gamification.XP_VALUES["flashcard_mastered"]},
-                   "learn_session_completed": {gamification.XP_VALUES["learn_session_completed"]}}
-        for row in rows:
-            if row.session_id == session["id"]:
-                self.assertIn(row.amount, allowed.get(row.event_type, set()), (row.event_type, row.amount))
-        self.assertIn("learn_session_completed", {row.event_type for row in rows})
+        # The only XP is the completed session's: 5 correct answers, halved and rounded up.
+        session_rows = [(row.event_type, row.amount) for row in rows if row.session_id == session["id"]]
+        self.assertEqual(session_rows, [("learn_session_completed", gamification.study_session_xp(5))])
+        self.assertEqual(gamification.study_session_xp(5), 3)
         self.assertNotIn("forged", " ".join(row.idempotency_key for row in rows))
         self.assertEqual(completed["xp_earned"], sum(row.amount for row in rows if row.session_id == session["id"]))
         for path in ("/api/leaderboard", "/api/leaderboard/result-seen"):
@@ -500,31 +504,24 @@ class XpIntegrityTests(Base):
         data = self.client.get("/api/leaderboard").get_json()
         self.assertEqual(data["me"]["weekly_xp"], sum(row.amount for row in self.ledger()))
 
-    def test_a_short_session_pays_its_answers_but_no_completion_xp(self):
+    def test_a_session_pays_half_its_correct_answers_when_it_is_complete(self):
+        """Owner rule 2026-11-15: nothing per answer; at the end 1 XP per correct answer,
+        halved and rounded up (30 of 30 correct: +15)."""
         set_id = self.make_set()
         session = self.start(set_id)
         self.assertGreaterEqual(session["total_items"], 5)
-        for item in session["items"][:4]:                 # 4 of 8: below min(5, 8)
-            self.client.post(f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
-                             json={"answer": self.expected(item["id"]), "response_ms": 1500})
+        for index, item in enumerate(session["items"][:5]):         # 4 right, 1 wrong
+            answer = self.expected(item["id"]) if index < 4 else "definitely wrong"
+            response = self.client.post(f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
+                                        json={"answer": answer, "response_ms": 1500}).get_json()
+            self.assertEqual(response["xp_earned"], 0)
+        self.assertEqual(sum(row.amount for row in self.ledger()), 0, "nothing before the session is complete")
         done = self.client.post(f"/api/flashcards/sessions/{session['id']}/complete").get_json()["session"]
-        self.assertEqual(done["status"], "completed")
-        events = {row.event_type for row in self.ledger()}
-        self.assertNotIn("learn_session_completed", events)
-        self.assertGreater(done["xp_earned"], 0)          # the four answers still paid
-        self.assertEqual(application.LearningEvent.query.filter_by(event_type="learn_session_completed").count(), 1)
-        # Five answered items: the completion is paid.
-        session = self.start(set_id, key="two")
-        for item in session["items"][:5]:
-            self.client.post(f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
-                             json={"answer": self.expected(item["id"]), "response_ms": 1500})
-        self.client.post(f"/api/flashcards/sessions/{session['id']}/complete")
-        paid = [row for row in self.ledger() if row.event_type == "learn_session_completed"]
-        self.assertEqual([row.amount for row in paid], [gamification.XP_VALUES["learn_session_completed"]])
-        # A set shorter than five needs every item.
-        self.assertTrue(gamification.session_completion_pays(2, 2))
-        self.assertFalse(gamification.session_completion_pays(1, 2))
-        self.assertFalse(gamification.session_completion_pays(4, 30))
+        self.assertEqual((done["status"], done["correct_count"]), ("completed", 4))
+        self.assertEqual(done["xp_earned"], 2)
+        self.assertEqual([(row.event_type, row.amount) for row in self.ledger()], [("learn_session_completed", 2)])
+        for correct, xp in ((30, 15), (7, 4), (1, 1), (0, 0)):
+            self.assertEqual(gamification.study_session_xp(correct), xp, correct)
 
     def test_a_project_exam_is_paid_from_the_practice_budget(self):
         for index in range(20):                           # the flashcard budget is used up today

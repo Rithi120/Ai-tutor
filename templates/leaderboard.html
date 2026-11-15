@@ -14,6 +14,8 @@
     </ol>
     <div class="league-hero-title">
       <h1>{{ view.league.name }}</h1>
+      {% if view.joined and view.cohort == 'up' %}<p class="league-cohort league-cohort-up">▲ {{ _('Group of learners who moved up last week') }}</p>
+      {% elif view.joined and view.cohort == 'down' %}<p class="league-cohort league-cohort-down">▼ {{ _('Group of learners who moved down last week') }}</p>{% endif %}
       {# Server text first (works without JavaScript); profile.js keeps it ticking and, once the
          week is over, says so and reloads once after the short close grace. #}
       <p class="league-timer"><span aria-hidden="true">⏱</span> <span data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"
@@ -61,12 +63,13 @@
   {# One line: your place, your XP and the next goal. Gaps come from the server
      (league_rules.xp_gaps); ties go to whoever got there first. #}
   <section class="league-status league-status-{{ view.me.zone }}" role="status" data-tour-target="league-standing">
-    <span class="league-status-rank">#{{ view.me.rank }}</span>
+    <span class="league-status-rank">{% if view.me.rank %}#{{ view.me.rank }}{% else %}–{% endif %}</span>
     <div class="league-status-main">
       <b>{{ view.me.message }}</b>
       <ul class="league-gaps" aria-label="{{ _('Your week in numbers') }}">
         <li><b>{{ view.me.weekly_xp }}</b> {{ _('XP this week') }}</li>
-        {% if view.me.rank == 1 %}<li class="league-gap-top">{{ _('You are in first place') }}</li>
+        {% if view.me.zone == 'waiting' %}
+        {% elif view.me.rank == 1 %}<li class="league-gap-top">{{ _('You are in first place') }}</li>
         {% elif view.me.xp_to_next_rank %}<li>{{ _('{xp} XP to pass #{rank}', xp=view.me.xp_to_next_rank, rank=view.me.rank - 1) }}</li>{% endif %}
         {% if view.me.xp_to_promotion %}<li class="league-gap-up">{{ _('{xp} XP to reach the promotion zone', xp=view.me.xp_to_promotion) }}</li>{% endif %}
         {% if view.me.xp_to_leave_demotion %}<li class="league-gap-down">{{ _('{xp} XP to leave the demotion zone', xp=view.me.xp_to_leave_demotion) }}</li>{% endif %}
@@ -75,14 +78,15 @@
   </section>
   <ol class="league-table" aria-label="{{ _('Ranking this week') }}">
     {% for row in view.standings %}
+    {% if row.zone == 'waiting' and loop.index == view.size + 1 %}<li class="league-divider league-divider-waiting" aria-hidden="true"><span>{{ _('Not started this week') }}</span></li>{% endif %}
     {% if row.rank == view.promote + 1 and view.promote %}<li class="league-divider league-divider-up" aria-hidden="true"><span>▲ {{ _('Promotion zone') }} ▲</span></li>{% endif %}
     {% if view.demote and row.rank == view.size - view.demote + 1 %}<li class="league-divider league-divider-down" aria-hidden="true"><span>▼ {{ _('Demotion zone') }} ▼</span></li>{% endif %}
     <li class="league-row zone-{{ row.zone }}{{ ' is-me' if row.me }}{{ ' is-rival' if row.rival }}" {% if row.me %}aria-current="true"{% endif %}>
-      <span class="league-rank{% if row.rank <= 3 %} league-rank-top league-rank-{{ row.rank }}{% endif %}">{{ row.rank }}</span>
+      <span class="league-rank{% if row.rank and row.rank <= 3 %} league-rank-top league-rank-{{ row.rank }}{% endif %}">{{ row.rank or '–' }}</span>
       <span class="avatar-frame avatar-sm" style="--avatar-accent: {{ row.accent }}"><img src="{{ row.avatar_url }}" alt="" width="256" height="256" loading="lazy" decoding="async"></span>
       <span class="league-name">
         <span class="league-name-line"><span class="league-name-text">{% if row.profile_url and not row.me %}<a href="{{ row.profile_url }}"{% if not row.rival %} data-tour-target="league-profile-link"{% endif %}>{{ row.username }}</a>{% else %}{{ row.username }}{% endif %}{% if row.me %} <small>({{ _('you') }})</small>{% endif %}</span>{% if row.premium %}{{ premium_badge(compact=True) }}{% endif %}</span>
-        <span class="league-name-meta">{% if row.level %}<span>{{ _('Level') }} {{ row.level }}</span>{% endif %}{% if row.rival %}<span class="league-rival-chip" title="{{ _('Simulated rival') }}">{{ _('Rival') }}</span>{% endif %}</span>
+        <span class="league-name-meta">{% if row.level %}<span>{{ _('Level') }} {{ row.level }}</span>{% endif %}{% if row.rival %}<span class="league-rival-chip" title="{{ _('Simulated rival') }}">{{ _('Rival') }}</span>{% endif %}{% if row.zone == 'waiting' %}<span class="league-waiting-chip">{{ _('Not started yet') }}</span>{% endif %}</span>
       </span>
       <span class="league-xp">{{ row.weekly_xp }} <small>XP</small></span>
     </li>
@@ -115,8 +119,10 @@
     <summary><h2>{{ _('How leagues work') }}</h2></summary>
     <ul>
       <li>{{ _('Each week you compete with up to {size} learners in your league, using only the XP you earn by learning.', size=config.LEAGUE_GROUP_SIZE) }}</li>
-      <li>{{ _('When the week ends on Monday at midnight, the top places move up and the bottom places move down. Smaller groups have smaller zones.') }}</li>
-      {% if config.LEAGUE_RIVALS %}<li>{{ _('A group with fewer than 27 learners is filled up to 30 with simulated rivals, marked “Rival”. They learn on their own schedule and leave when the week ends.') }}</li>{% endif %}
+      <li>{{ _('Every league runs from Monday 00:00 to Sunday 24:00, the same for everyone: if you start on Sunday evening, your league still ends that night. Then the top places move up and the bottom places move down. Smaller groups have smaller zones.') }}</li>
+      <li>{{ _('Groups are formed by last week: learners who moved up meet each other, learners who moved down meet each other, and learners who stayed in their league meet each other.') }}</li>
+      <li>{{ _('Everyone in your league who learned in the last four weeks gets a place in your group. They enter the ranking with their first XP of the week; without XP they keep their league.') }}</li>
+      {% if config.LEAGUE_RIVALS %}<li>{{ _('A group with fewer than 27 learners is filled up to 30 with simulated rivals, marked “Rival”. They start at 0, learn as the week goes on at the pace of the fastest learner in the group (the strongest three a little faster) and leave when the week ends.') }}</li>{% endif %}
       <li>{{ _('Weekly XP starts again from zero each week. Your level and total XP never reset.') }}</li>
       <li>{{ _('Not for you? You can turn leagues off in Settings at any time.') }}</li>
       <li>{{ _('Leaving in the middle of a week does not avoid a demotion: if you are in the demotion zone when you leave, you move down a league.') }}</li>

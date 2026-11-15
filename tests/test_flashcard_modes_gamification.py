@@ -135,17 +135,24 @@ class FlashcardModeWorkflowTests(unittest.TestCase):
             application.db.session.commit()
             self.assertEqual(total, gamification.DAILY_XP_CAPS["flashcards"])
 
-    def test_legacy_review_pays_once_per_card_per_day(self):
+    def test_legacy_review_is_recorded_once_per_card_per_day_and_pays_no_xp(self):
         with application.app.app_context():
             card_id = application.db.session.scalar(
                 application.db.select(application.Flashcard.id))
         first = self.client.post(f"/api/flashcards/cards/{card_id}/review",
                                  json={"grade": "good", "request_id": "replay-1"}).get_json()
-        self.assertGreater(first["xp_earned"], 0)
-        # The old key trusted the client's request_id, so a fresh id paid again forever.
+        # Outside a session a review pays nothing: flashcard XP comes with completed sessions.
+        self.assertEqual(first["xp_earned"], 0)
+        # The old key trusted the client's request_id, so a fresh id counted again forever.
         replay = self.client.post(f"/api/flashcards/cards/{card_id}/review",
                                   json={"grade": "good", "request_id": "replay-2"}).get_json()
         self.assertEqual(replay["xp_earned"], 0)
+        with application.app.app_context():
+            recorded = application.db.session.scalar(application.db.select(
+                application.db.func.count(application.LearningEvent.id)).where(
+                application.LearningEvent.event_type == "flashcard_reviewed",
+                application.LearningEvent.source_id == str(card_id)))
+        self.assertEqual(recorded, 1, "the activity is recorded once per card and day")
 
     def test_award_responses_carry_totals_and_the_navbar_shows_the_chip(self):
         session = self.start("flashcards", key="chip")
@@ -153,9 +160,13 @@ class FlashcardModeWorkflowTests(unittest.TestCase):
         answer = self.client.post(
             f"/api/flashcards/sessions/{session['id']}/items/{item['id']}/answer",
             json={"answer": "good", "response_ms": 700, "request_id": "chip-1"}).get_json()
-        self.assertGreater(answer["xp_earned"], 0)
-        self.assertGreaterEqual(answer["xp"]["total_xp"], answer["xp_earned"])
+        # No XP per answer (owner rule 2026-11-15); the totals still come with every answer.
+        self.assertEqual(answer["xp_earned"], 0)
         self.assertGreaterEqual(answer["xp"]["level"], 1)
+        before = answer["xp"]["total_xp"]
+        done = self.client.post(f"/api/flashcards/sessions/{session['id']}/complete").get_json()
+        self.assertEqual(done["session"]["xp_earned"], 1, "1 correct answer: half of 1, rounded up")
+        self.assertEqual(done["xp"]["total_xp"], before + 1)
         page = self.client.get(f"/flashcards/{self.set_id}/study").data.decode("utf-8")
         self.assertIn("data-xp-chip", page)
         self.assertIn("xp-chip-bar", page)
@@ -320,7 +331,7 @@ class FlashcardModeWorkflowTests(unittest.TestCase):
             f"/api/flashcards/cards/{card_id}/review",
             json={"grade": "good", "response_ms": 800, "request_id": "legacy-one"})
         self.assertEqual(reviewed.status_code, 200)
-        self.assertGreater(reviewed.get_json()["xp_earned"], 0)
+        self.assertEqual(reviewed.get_json()["xp_earned"], 0, "outside a session: no XP")
         with application.app.app_context():
             card = application.db.session.get(application.Flashcard, card_id)
             assert card is not None

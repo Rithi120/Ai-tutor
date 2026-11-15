@@ -17,7 +17,6 @@ os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 import app as application  # noqa: E402
 from learnova.gamification import avatars, challenges, leagues, usernames  # noqa: E402
-from learnova.gamification import service as gamification  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 db = application.db
@@ -631,6 +630,120 @@ class PageTests(Base):
             self.assertIn("var(--ln-", block, selector)
         self.assertIn("@media (max-width: 760px)", css)
 
+
+
+class FixedLeagueWeekTests(Base):
+    """One league week for everyone: Monday 00:00 to Sunday 24:00 in APP_TIMEZONE (owner
+    rule 2026-11-15). Starting late never gives a learner a week of their own: whoever
+    starts on Sunday at 22:00 joins the running league, which ends 2 hours later."""
+
+    BERLIN = __import__("zoneinfo").ZoneInfo("Europe/Berlin")
+
+    def join(self, name, local_moment):
+        account = self.user(name)
+        moment = local_moment.astimezone(timezone.utc)
+        db.session.add(application.XPTransaction(user_id=account.id, event_type="test", amount=10, reason="test",
+                                                 idempotency_key=f"first:{name}", created_at=moment))
+        db.session.commit()
+        with patch.object(application, "utcnow", return_value=moment):
+            entry = application.ensure_league_entry(account.id, moment)
+            db.session.commit()
+        return account, entry
+
+    def test_a_learner_starting_on_sunday_at_22_joins_the_league_that_ends_at_midnight(self):
+        application.app.config.update(APP_TIMEZONE="Europe/Berlin")
+        early, first = self.join("early.bird", datetime(2026, 11, 23, 8, 0, tzinfo=self.BERLIN))       # Monday
+        late, last = self.join("late.owl", datetime(2026, 11, 29, 22, 0, tzinfo=self.BERLIN))          # Sunday
+        self.assertEqual(first.week_start, date(2026, 11, 23))
+        self.assertEqual((last.week_start, last.tier, last.group_number), (first.week_start, first.tier, first.group_number),
+                         "the same running league and group, not a week of their own")
+        week = db.session.get(application.LeagueWeek, date(2026, 11, 23))
+        self.assertEqual(application.as_utc(week.starts_at), datetime(2026, 11, 23, tzinfo=self.BERLIN))
+        self.assertEqual(application.as_utc(week.ends_at), datetime(2026, 11, 30, tzinfo=self.BERLIN),
+                         "Sunday 24:00 = Monday 00:00")
+        sunday_22 = datetime(2026, 11, 29, 22, 0, tzinfo=self.BERLIN).astimezone(timezone.utc)
+        with patch.object(application, "utcnow", return_value=sunday_22), application.app.test_request_context():
+            view = application.league_view(db.session.get(application.User, late.id), sunday_22)
+        self.assertEqual(view["seconds_left"], 2 * 3600)
+        self.assertEqual(view["time_left"], "2 h 0 min")
+        self.assertEqual({row["username"] for row in view["standings"]}, {"early.bird", "late.owl"})
+        # Monday 00:00 (+ the close grace): both get their result, and a new week begins for everyone.
+        after = datetime(2026, 11, 30, 0, 5, tzinfo=self.BERLIN).astimezone(timezone.utc)
+        self.assertEqual(application.process_due_league_weeks(after), [date(2026, 11, 23)])
+        for account in (early, late):
+            entry = db.session.scalar(db.select(application.LeagueEntry).where(
+                application.LeagueEntry.user_id == account.id))
+            self.assertIn(entry.outcome, {"promoted", "stayed"}, account.username)
+        starts, ends, week_start = application.league_week_bounds(after)
+        self.assertEqual((week_start, ends - starts), (date(2026, 11, 30), timedelta(days=7)))
+
+
+class LeagueCohortTests(Base):
+    """Inside a league, last week's movers meet each other (owner request 2026-11-15):
+    promoted into the league, demoted into it, and stayed are three kinds of group."""
+
+    def setUp(self):
+        super().setUp()
+        starts, ends, self.week_start = application.league_week_bounds()
+        self.last_week = self.week_start - timedelta(days=7)
+        db.session.add(application.LeagueWeek(week_start=self.last_week, starts_at=starts - timedelta(days=7),
+                                              ends_at=starts, status="closed"))
+        db.session.commit()
+        self.starts = starts
+
+    def learner(self, name, *, last_tier=None, now_tier=1, learned_this_week=True):
+        account = self.user(name)
+        if last_tier is not None:
+            outcome = "promoted" if now_tier > last_tier else "demoted" if now_tier < last_tier else "stayed"
+            db.session.add(application.LeagueEntry(
+                week_start=self.last_week, user_id=account.id, tier=last_tier, group_number=1,
+                joined_at=self.starts - timedelta(days=6), final_xp=50, final_rank=1, group_size=5,
+                outcome=outcome, tier_after=now_tier, result_seen_at=self.starts))
+            db.session.add(application.LeagueMembership(user_id=account.id, tier=now_tier))
+        moment = application.utcnow() if learned_this_week else self.starts - timedelta(days=2)
+        db.session.add(application.XPTransaction(user_id=account.id, event_type="test", amount=20, reason="test",
+                                                 idempotency_key=f"xp:{name}", created_at=moment))
+        db.session.commit()
+        return account
+
+    def entry(self, account):
+        return db.session.scalar(db.select(application.LeagueEntry).where(
+            application.LeagueEntry.week_start == self.week_start, application.LeagueEntry.user_id == account.id))
+
+    def test_promoted_demoted_and_staying_learners_get_separate_groups(self):
+        up_one = self.learner("up.one", last_tier=1, now_tier=2)
+        down = self.learner("down.one", last_tier=3, now_tier=2)
+        stay = self.learner("stay.one", last_tier=2, now_tier=2)
+        up_two = self.learner("up.two", last_tier=1, now_tier=2)
+        waiting_up = self.learner("up.waiting", last_tier=1, now_tier=2, learned_this_week=False)
+        newcomer = self.learner("new.one")
+        for account in (up_one, down, stay, up_two, newcomer):
+            application.ensure_league_entry(account.id)
+            db.session.commit()
+        entries = {account.username: self.entry(account) for account in (up_one, down, stay, up_two, waiting_up, newcomer)}
+        self.assertEqual({name: entry.cohort for name, entry in entries.items()},
+                         {"up.one": "up", "up.two": "up", "up.waiting": "up", "down.one": "down",
+                          "stay.one": "stay", "new.one": "stay"})
+        silver = {name: entry.group_number for name, entry in entries.items() if entry.tier == 2}
+        self.assertEqual(silver["up.one"], silver["up.two"], "the promoted meet each other")
+        self.assertEqual(silver["up.waiting"], silver["up.one"], "a seated member joins their own kind of group")
+        self.assertEqual(len({silver["up.one"], silver["down.one"], silver["stay.one"]}), 3, "three kinds, three groups")
+        self.assertEqual(entries["new.one"].tier, 1, "a first week: Bronze, with the learners who stayed")
+        for name, number in silver.items():
+            kinds = set(db.session.scalars(db.select(application.LeagueEntry.cohort).where(
+                application.LeagueEntry.week_start == self.week_start, application.LeagueEntry.tier == 2,
+                application.LeagueEntry.group_number == number)).all())
+            self.assertEqual(len(kinds), 1, f"{name}: one kind per group")
+        with application.app.test_request_context():
+            view = application.league_view(db.session.get(application.User, up_one.id))
+        self.assertEqual(view["cohort"], "up")
+        self.assertEqual({row["username"] for row in view["standings"]}, {"up.one", "up.two", "up.waiting"})
+        application.g.pop("_login_user", None)
+        html = self.client_for("down.one").get("/leaderboard").get_data(as_text=True)
+        self.assertIn("league-cohort-down", html)
+        application.g.pop("_login_user", None)      # Base keeps one app context: no cached viewer
+        stay_page = self.client_for("stay.one").get("/leaderboard").get_data(as_text=True)
+        self.assertNotIn('class="league-cohort', stay_page, "a staying group needs no label")
 
 if __name__ == "__main__":
     unittest.main()

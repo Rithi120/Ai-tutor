@@ -7,12 +7,10 @@ from math import sqrt
 from typing import Any
 
 
+# Flashcard and vocabulary study is paid per completed session (study_session_xp), not
+# from this table.
 XP_VALUES = {
-    "basic_answer": 2, "written_answer": 3, "difficult_answer": 4,
-    "flashcard_mastered": 10, "flashcard_session_completed": 15,
-    "learn_session_completed": 20, "test_completed": 20,
-    "test_perfect_score": 25, "match_completed": 15,
-    "blast_completed": 15, "blocks_completed": 15,
+    "test_completed": 20,               # a project's final or practice exam
     "quiz_completed": 10, "lesson_completed": 10,
     "practice_answer": 3, "mistake_corrected": 5,
     "study_plan_task_completed": 10, "daily_goal_completed": 20,
@@ -46,17 +44,16 @@ _CAP_GROUPS = {
 }
 
 
-# A flashcard session pays its completion XP (and a test's perfect-score bonus) only
-# after real effort: at least this many answered items, or the whole session when it is
-# shorter. Answer XP is paid per answer as before. Without it, a one-card session paid
-# about 17 XP for a single tap, and the daily budget could be collected in a minute.
-FLASHCARD_COMPLETION_MIN_ITEMS = 5
+def study_session_xp(correct_answers: int) -> int:
+    """XP for a completed flashcard or vocabulary session (owner rule 2026-11-15).
 
-
-def session_completion_pays(answered_items: int, total_items: int) -> bool:
-    """Whether a finished flashcard session has earned its completion XP."""
-    needed = min(FLASHCARD_COMPLETION_MIN_ITEMS, max(1, int(total_items or 0)))
-    return int(answered_items or 0) >= needed
+    Nothing is paid per answer. When the session is complete, every correct answer counts
+    1 XP and the sum is halved, rounded up: 30 correct pay 15, 7 pay 4, 1 pays 1. It is
+    the session's whole XP - no completion, perfect-score or mastery bonus on top. Because
+    it only grows with correct answers, a short session pays little by itself; the daily
+    budgets (DAILY_XP_CAPS) still bound replaying a set.
+    """
+    return (max(0, int(correct_answers or 0)) + 1) // 2
 
 
 def xp_cap_group(event_type: str) -> str | None:
@@ -89,13 +86,6 @@ def level_progress(total_xp: int) -> dict[str, int]:
         "xp_to_next_level": max(0, next_start - int(total_xp)),
     }
 
-
-def bounded_answer_xp(*, correct: bool, written: bool, difficult: bool) -> int:
-    if not correct:
-        return 0
-    if difficult:
-        return XP_VALUES["difficult_answer"]
-    return XP_VALUES["written_answer" if written else "basic_answer"]
 
 
 def effective_streak(current: int, last_date: date | None, today: date) -> int:
