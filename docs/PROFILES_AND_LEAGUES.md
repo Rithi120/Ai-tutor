@@ -117,8 +117,33 @@ sees "Emerald". The top league's crest glows (`.league-diamond`).
 
 * **Joining a week.** A participating learner enters the week with their first XP of it,
   into a group of at most `LEAGUE_GROUP_SIZE` (30) in their league. Joining mid-week is
-  normal; weekly XP counts the whole week. Someone with no activity takes no part that
-  week: they keep their league and cannot be demoted for being away. On PostgreSQL the
+  normal; weekly XP counts the whole week.
+* **Simulated rivals, paced live (owner request 2026-11-15).** A group of fewer than 27
+  real learners is filled up to 30 with rivals labelled "Rival" (`learnova/gamification/rivals.py`).
+  A rival starts at 0 when its seat is filled and earns only in the 15-minute slots that
+  have passed since, in its profile's waking hours (`advance_group_rivals`, run whenever the
+  group is shown, a rival profile is opened or the week closes; each slot is paced once,
+  claimed through `league_rival.advanced_until`). Its weekly target follows what the
+  group's fastest real learner is on course for, measured up to the start of today: a fast
+  learner meets faster rivals, a slow one slower ones. The 3 strongest rivals aim 8-22 %
+  above that pace and the next 2 level with it, so a steady learner finishes just behind
+  the top 3 and a strong day (the rivals answer only the next day) or a faster week gets
+  past them. One simulated session is 2-45 XP; a rival earns at most
+  `LEAGUE_RIVAL_MAX_DAILY_XP` a day and `LEAGUE_RIVAL_MAX_WEEKLY_XP` a week. Rivals created
+  before pacing (`advanced_until` NULL) keep the week planned for them.
+* **Groups by last week (owner request 2026-11-15).** Inside a league, learners who moved
+  up into it last week, learners who moved down into it, and learners who stayed (a second
+  or later week in the league, a first week ever, or a return after a break) are grouped
+  separately (`league_cohort`, `league_entry.cohort`, `open_league_group`). Each group is
+  filled with rivals on its own, and the page labels a promoted or demoted group.
+* **Real learners before rivals (owner request 2026-11-15).** When anyone of a league
+  enters the week, or opens the league page, every participating member of that league
+  with XP in the last `LEAGUE_MEMBER_ACTIVE_DAYS` (28) days gets a seat too
+  (`enroll_league_members`); rivals fill only the seats that are left. A member without XP
+  this week is listed under "Not started this week" and is not ranked: at the end of the
+  week their entry is closed as `inactive`, they keep their league and see no result card.
+  Someone with no activity therefore still cannot be demoted for being away, and leaving
+  the leagues before starting the week keeps the league too. On PostgreSQL the
   "count the group, then join it" step holds a transaction-scoped advisory lock per league
   and week (`lock_league_group_assignment`), so two learners joining at the same moment
   cannot make a group of 31. SQLite allows one writer at a time, so it needs no lock.
@@ -128,11 +153,14 @@ sees "Emerald". The top league's crest glows (`.league-diamond`).
   total_xp + n`, so two awards at the same moment both count.
 * **Farming** is bounded by the daily XP budgets per activity group (flashcards 200,
   practice 150, vocabulary 100, planning 50, measured on the server's day in
-  `APP_TIMEZONE`) plus once-per-period goal, challenge and badge XP. A flashcard session
-  pays its completion XP (and a test's perfect-score bonus) only when at least
-  `min(5, items in the session)` items were answered
-  (`service.FLASHCARD_COMPLETION_MIN_ITEMS`, `session_completion_pays`). Shorter sessions
-  still pay their answers, count as activity and complete normally. Project final and
+  `APP_TIMEZONE`) plus once-per-period goal, challenge and badge XP.
+* **Flashcard and vocabulary XP (owner rule 2026-11-15).** Nothing is paid per answer.
+  When a session is complete it pays half its correct answers, rounded up
+  (`service.study_session_xp`): 30 of 30 correct show "+15 XP", 7 correct pay 4. That is
+  the session's whole XP - there is no separate completion, perfect-test or card-mastered
+  bonus. Every answer, mastered card and completed session is still recorded, so streaks,
+  daily goals, challenges and badges work as before. A card reviewed outside a session
+  pays no XP. Project final and
   practice exams are still recorded as `test_completed` learning events (challenges,
   badges and statistics are unchanged), but their XP is booked as
   `project_exam_completed` and drawn from the **practice** budget, not the flashcard one
@@ -226,6 +254,9 @@ contain no scripts, foreign objects, images, text or external references.
 | `LEAGUE_PROMOTE` / `LEAGUE_DEMOTE` | 10 / 10 | places per group that move up / down |
 | `LEAGUE_GROUP_SIZE` | 30 | most learners in one group |
 | `LEAGUE_CLOSE_GRACE_SECONDS` | 120 | how long after a week ends it is closed (late commits still count) |
+| `LEAGUE_MEMBER_ACTIVE_DAYS` | 28 | members with XP in this many days are seated before rivals (0: off) |
+| `LEAGUE_RIVALS` | true | simulated rivals fill groups of fewer than 27 learners |
+| `LEAGUE_RIVAL_MAX_DAILY_XP` / `LEAGUE_RIVAL_MAX_WEEKLY_XP` | 600 / 3500 | the most one rival earns |
 | `USERNAME_CHANGE_COOLDOWN_DAYS` | 30 | between two changes |
 | `USERNAME_HOLD_DAYS` | 90 | how long a released name stays unavailable to others |
 | `APP_TIMEZONE` | Europe/Berlin | days, weeks and resets |
@@ -317,9 +348,9 @@ validates the XML, the per-file id prefixes and the absence of scripts, images a
    lock is held until the joining request commits; XP is awarded at the end of a request,
    so this is milliseconds, and only learners joining the same league in the same week ever
    wait.
-8. Farming is bounded, not prevented: self-graded flashcard answers still earn answer XP
-   (within the flashcard budget), and a one-card set's session needs only that one card for
-   its completion XP (`min(5, items)`).
+8. Farming is bounded, not prevented: self-graded flashcard answers still count toward a
+   session's XP (within the flashcard budget). A session pays only half its correct
+   answers, so replaying a one-card set earns 1 XP a session.
 9. A withdrawn learner who left from the promotion zone does not move up, and their
    promotion place passes to the next learner, so leaving can lift someone else. Zones
    among the remaining learners never overlap; if many learners leave from the top of a

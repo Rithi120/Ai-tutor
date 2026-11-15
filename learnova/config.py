@@ -1031,13 +1031,16 @@ def configure_app(app, environment: str | None = None) -> str:
                                # Seconds after a week ends before it is closed, so an award
                                # committed just after midnight still counts for its week.
                                ("LEAGUE_CLOSE_GRACE_SECONDS", "120", 0),
+                               # Members of a league with XP in this many days get a seat in
+                               # its weekly group before any rival (0: only this week's learners).
+                               ("LEAGUE_MEMBER_ACTIVE_DAYS", "28", 0),
                                # Simulated rivals (learnova/gamification/rivals.py): the weekly XP
                                # they are calibrated on without enough history (Bronze; higher
                                # leagues scale it), the real results needed to use last week's
                                # median instead, its bounds, and the most a rival earns.
                                ("LEAGUE_RIVAL_BASELINE_XP", "60", 1), ("LEAGUE_RIVAL_MIN_SAMPLES", "5", 1),
                                ("LEAGUE_RIVAL_MIN_BASELINE_XP", "20", 1), ("LEAGUE_RIVAL_MAX_BASELINE_XP", "400", 1),
-                               ("LEAGUE_RIVAL_MAX_DAILY_XP", "150", 10), ("LEAGUE_RIVAL_MAX_WEEKLY_XP", "600", 10),
+                               ("LEAGUE_RIVAL_MAX_DAILY_XP", "600", 10), ("LEAGUE_RIVAL_MAX_WEEKLY_XP", "3500", 10),
                                # Days between two username changes, and how long a released
                                # name stays unavailable to everyone else.
                                ("USERNAME_CHANGE_COOLDOWN_DAYS", "30", 0),

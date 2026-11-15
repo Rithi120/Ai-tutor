@@ -4,16 +4,26 @@ A weekly league group has 30 seats. When fewer than 27 real learners are in it, 
 are filled with simulated rivals (`rival_count`): 3 learners meet 27 rivals, 26 meet 4,
 27 or more meet none. Rivals are clearly labelled as simulated wherever they appear.
 
-Each rival is planned once, when its seat is filled, from a stored seed:
-- a name from curated lists ("nathan7", "emanuel.sc", "mia.study") with its display name;
-- a behaviour profile - casual 40 %, consistent 40 %, competitive 15 %, strong 5 % of the
-  seats - that sets how much it learns and how regularly;
-- a target for the week: the league's calibrated baseline (last week's median real XP, or
-  a configured default) times a bounded factor of its profile, within the weekly limit;
-- a schedule of simulated learning events (lesson, quiz, flashcards, vocabulary, practice)
-  spread over the week at plausible times, each worth what the real XP rules give and never
-  more than the daily limit. A rival's weekly XP at any moment is the sum of its events
-  that have happened by then: no jumps, no reaction to any particular learner.
+Each rival's identity is planned once, when its seat is filled, from a stored seed: a
+name from curated lists ("nathan7", "emanuel.sc", "mia.study") with its display name, a
+level, badges, and a behaviour profile - casual 40 %, consistent 40 %, competitive 15 %,
+strong 5 % of the seats - that sets when and how regularly it learns.
+
+Its score is paced live (owner request 2026-11-15):
+- **It starts at 0** when its seat is filled and earns only in the 15-minute slots that
+  have passed since (`advance`), in its own waking hours, so the board moves as time passes.
+- **It follows the group's pace.** Its weekly target is recomputed from what the group's
+  fastest real learner is on course for (`reference_xp`): a fast learner meets faster
+  rivals, a slow one slower rivals. The pace is measured up to the start of today, so a
+  strong day can lift a learner past the rivals and they answer from the next day on.
+  Early in the week the projection leans on the league's calibrated baseline (last
+  week's median real XP, or a configured default).
+- **The top places are hard.** The 3 strongest rivals aim a little above that pace and the
+  next 2 level with it (`roles`, `target_for`): reaching the top 3 means beating your own
+  pace. They stay beatable: a target only steers the rest of the week, every event and day
+  is bounded, and a late sprint leaves them too little time to answer.
+Past its target a rival keeps learning lightly (up to 15 % above it), so the board never
+freezes. A rival's weekly XP at any moment is the sum of its events so far: it never goes down.
 
 Nothing here touches a real account. The app stores the plan in its own tables
 (league_rival, league_rival_event) and deletes them when the week ends.
@@ -24,23 +34,36 @@ from __future__ import annotations
 import hashlib
 import random
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 SEATS = 30
 NO_RIVALS_FROM = 27          # 27 or more real learners: no rivals at all
 
-# (profile, seats out of 30, factor range of the baseline, active days range)
-BEHAVIOURS: tuple[tuple[str, int, tuple[float, float], tuple[int, int]], ...] = (
-    ("casual", 12, (0.35, 0.75), (2, 4)),
-    ("consistent", 12, (0.8, 1.15), (5, 7)),
-    ("competitive", 4, (1.2, 1.5), (5, 7)),
-    ("strong", 2, (1.5, 1.8), (6, 7)),
+# (profile, seats out of 30, share of the group's pace it aims for, chance a day is active)
+BEHAVIOURS: tuple[tuple[str, int, tuple[float, float], float], ...] = (
+    ("casual", 12, (0.15, 0.45), 0.55),
+    ("consistent", 12, (0.45, 0.8), 0.9),
+    ("competitive", 4, (0.7, 0.92), 1.0),
+    ("strong", 2, (0.85, 0.98), 1.0),
 )
 BEHAVIOUR_KEYS = tuple(item[0] for item in BEHAVIOURS)
+# Local hours a profile learns on a school day (weekends start two hours later), and the
+# chance it learns in one 15-minute slot of an active hour.
+WAKING_HOURS = {"casual": (15, 21), "consistent": (7, 22), "competitive": (7, 23), "strong": (6, 23)}
+SLOT_CHANCE = {"casual": 0.25, "consistent": 0.3, "competitive": 0.35, "strong": 0.4}
+SLOT = timedelta(minutes=15)
+# The strongest rivals of a group and how far above (or level with) the pace they aim.
+PACESETTERS, PACESETTER_FACTOR = 3, (1.08, 1.22)
+CHASERS, CHASER_FACTOR = 2, (0.9, 1.02)
+STRENGTH = {"strong": 0, "competitive": 1, "consistent": 2, "casual": 3}
+EVENT_XP_BOUNDS = (2, 45)           # one simulated session: never a jump
+# Past its target a rival keeps learning lightly (short sessions, less often), up to this
+# much above it, so the board never freezes; then it stops for the week.
+KEEP_GOING_LIMIT, KEEP_GOING_XP, KEEP_GOING_CHANCE = 1.15, (2, 6), 0.3
 
-# What one simulated learning event earns, from the real XP rules (gamification.XP_VALUES):
-# a lesson is 10 XP plus its answers (3 each), a flashcard session 15 plus reviews, …
+# What one simulated learning event earns, in the range real sessions pay: a lesson is 10 XP
+# plus its answers (3 each), a flashcard session half its correct answers (30 correct: 15), …
 EVENT_XP: dict[str, tuple[int, int]] = {
     "lesson": (18, 30), "quiz": (14, 24), "flashcards": (12, 28), "vocabulary": (8, 20), "practice": (6, 18),
 }
@@ -55,8 +78,10 @@ class Limits:
     min_samples: int = 5            # real results needed to trust last week's median
     min_baseline: int = 20
     max_baseline: int = 400
-    max_daily_xp: int = 150
-    max_weekly_xp: int = 600
+    # The most a rival earns: high enough to keep pace with a learner near the real daily
+    # XP budgets, so a fast learner still meets competition.
+    max_daily_xp: int = 600
+    max_weekly_xp: int = 3500
 
 
 # Each league up is a little more demanding when there is no history to calibrate from.
@@ -168,9 +193,7 @@ class Plan:
     behaviour: str
     level: int
     avatar_pick: int        # 0 = the default avatar; else an index into the unlocked ones
-    target_xp: int
     achievements: tuple[str, ...]
-    events: tuple[Event, ...] = field(default_factory=tuple)
 
 
 # Badges a learner of a given level plausibly has: (key, lowest level, chance). Only ones
@@ -182,48 +205,10 @@ _BADGE_ODDS = (
 )
 
 
-def _schedule(rng: random.Random, target: int, days: int, week_start_local: datetime,
-              limits: Limits) -> tuple[Event, ...]:
-    """Learning events adding up to `target`, on `days` days of the week, at the times a
-    student learns (afternoons and evenings, later mornings at the weekend)."""
-
-    smallest = min(low for low, _high in EVENT_XP.values())
-    # A day needs room for at least one event; a small target means fewer active days.
-    days = max(1, min(7, days, target // smallest or 1))
-    chosen_days = sorted(rng.sample(range(7), days))
-    weights = [rng.uniform(0.6, 1.4) for _ in chosen_days]
-    budgets = [min(limits.max_daily_xp, int(target * weight / sum(weights))) for weight in weights]
-    budgets[-1] = min(limits.max_daily_xp, budgets[-1] + max(0, target - sum(budgets)))
-    events: list[tuple[int, int, str, int]] = []      # (day, minute, kind, xp)
-    for day, budget in zip(chosen_days, budgets):
-        left = budget
-        while left >= smallest:
-            kinds = [kind for kind in EVENT_KINDS if EVENT_XP[kind][0] <= left]
-            kind = rng.choice(kinds)
-            low, high = EVENT_XP[kind]
-            xp = min(rng.randint(low, high), left)
-            if left - xp < smallest and left - xp > 0 and xp + (left - xp) <= high + smallest:
-                xp = left                              # the remainder joins this event
-            if day >= 5:                               # Saturday, Sunday
-                minute = rng.randint(9 * 60, 20 * 60)
-            else:
-                minute = rng.randint(14 * 60, 21 * 60 + 30)
-            events.append((day, minute, kind, xp))
-            left -= xp
-    events.sort()
-    used: set[tuple[int, int]] = set()
-    out = []
-    for day, minute, kind, xp in events:
-        while (day, minute) in used:                   # two events never at the same minute
-            minute += 7
-        used.add((day, minute))
-        out.append(Event(week_start_local + timedelta(days=day, minutes=minute), kind, xp))
-    return tuple(out)
-
-
 def plan_rival(week_start_local: datetime, tier: int, group_number: int, seat: int, *,
-               baseline_xp: int, limits: Limits = Limits(), name_attempt: int = 0) -> Plan:
-    """Everything about one rival, reproducible from (week, league, group, seat).
+               name_attempt: int = 0) -> Plan:
+    """Who one rival is, reproducible from (week, league, group, seat). Its score is not
+    planned here: it is paced live (`advance`).
 
     week_start_local: Monday 00:00 of the week in the app's timezone (timezone-aware).
     name_attempt: > 0 only when the name was taken; it changes the name, nothing else.
@@ -233,10 +218,6 @@ def plan_rival(week_start_local: datetime, tier: int, group_number: int, seat: i
     seed = seed_for(week_key, tier, group_number, seat)
     rng = random.Random(seed)
     behaviour = behaviour_for(week_key, tier, group_number, seat)
-    _key, _seats, (low, high), (fewest, most) = next(item for item in BEHAVIOURS if item[0] == behaviour)
-    target = int(min(limits.max_weekly_xp, max(1, round(baseline_xp * rng.uniform(low, high)))))
-    days = rng.randint(fewest, most)
-    events = _schedule(rng, target, days, week_start_local, limits)
     level_low, level_high = TIER_LEVELS.get(int(tier), TIER_LEVELS[7])
     if behaviour in ("competitive", "strong"):
         level_low = min(level_high, level_low + 2)
@@ -248,8 +229,130 @@ def plan_rival(week_start_local: datetime, tier: int, group_number: int, seat: i
     return Plan(
         seat=int(seat), seed=seed, username=username, display_name=display, behaviour=behaviour,
         level=level, avatar_pick=0 if rng.random() < 0.2 else 1 + rng.randrange(level),
-        target_xp=sum(event.xp for event in events), achievements=tuple(achievements[:6]), events=events,
+        achievements=tuple(achievements[:6]),
     )
+
+
+# ------------------------------------------------------------------ pacing
+
+def reference_xp(real_weekly_xp: list[int], now: datetime, week_start: datetime, week_end: datetime,
+                 baseline_xp: int) -> float:
+    """The weekly XP the group's fastest real learner is on course for.
+
+    `real_weekly_xp` is measured up to `now` (the app passes the start of the local day).
+    Their XP so far projected over the whole week, trusted fully after one day of the
+    week (before that it is blended with the league's baseline, so one early burst does
+    not send the rivals flying). Never below what they already have.
+    """
+
+    week = max(1.0, (week_end - week_start).total_seconds())
+    elapsed = min(week, max(0.0, (now - week_start).total_seconds()))
+    top = max((int(value) for value in real_weekly_xp), default=0)
+    if top <= 0:
+        return float(max(1, baseline_xp))
+    projected = top / max(elapsed / week, 1 / 28)   # never project from under six hours
+    trust = min(1.0, elapsed / 86400)
+    return max(float(top), trust * projected + (1 - trust) * baseline_xp)
+
+
+def roles(rivals: list[tuple[int, int, str]]) -> dict[int, str]:
+    """{seat: role} for a group's rivals given as (seat, seed, behaviour): the 3 strongest
+    are "pacesetter", the next 2 "chaser", the rest keep their behaviour."""
+
+    order = sorted(rivals, key=lambda item: (STRENGTH.get(item[2], 9), item[1]))
+    out = {}
+    for index, (seat, _seed, behaviour) in enumerate(order):
+        out[int(seat)] = ("pacesetter" if index < PACESETTERS else
+                          "chaser" if index < PACESETTERS + CHASERS else behaviour)
+    return out
+
+
+def target_for(role: str, seed: int, reference: float, limits: Limits = Limits()) -> int:
+    """A rival's weekly target: its share of the group's pace. The share is fixed per rival
+    (from its seed), so the target moves only when the pace does."""
+
+    if role == "pacesetter":
+        low, high = PACESETTER_FACTOR
+    elif role == "chaser":
+        low, high = CHASER_FACTOR
+    else:
+        low, high = next(item[2] for item in BEHAVIOURS if item[0] == role)
+    factor = random.Random(int(seed) * 31 + 7).uniform(low, high)
+    return int(min(limits.max_weekly_xp, max(1, round(reference * factor))))
+
+
+def slot_floor(moment: datetime) -> datetime:
+    """The start of the 15-minute slot `moment` is in (slots are aligned in UTC)."""
+
+    seconds = int(moment.timestamp())
+    return datetime.fromtimestamp(seconds - seconds % int(SLOT.total_seconds()), tz=moment.tzinfo)
+
+
+def _active_slots(seed: int, behaviour: str, start: datetime, end: datetime, zone) -> list[datetime]:
+    """The slots in [start, end) in which this rival is awake (start is slot-aligned)."""
+
+    first_hour, last_hour = WAKING_HOURS.get(behaviour, WAKING_HOURS["consistent"])
+    day_chance = next((item[3] for item in BEHAVIOURS if item[0] == behaviour), 0.9)
+    days: dict = {}
+    out = []
+    moment = start
+    while moment < end:
+        local = moment.astimezone(zone)
+        day = local.date()
+        if day not in days:
+            days[day] = random.Random(int(seed) * 7 + day.toordinal()).random() < day_chance
+        shift = 2 if local.weekday() >= 5 else 0
+        if days[day] and first_hour + shift <= local.hour < last_hour:
+            out.append(moment)
+        moment += SLOT
+    return out
+
+
+def advance(*, seed: int, behaviour: str, earned: int, target: int, after: datetime, until: datetime,
+            week_end: datetime, zone, day_xp: dict | None = None, limits: Limits = Limits()) -> list[Event]:
+    """Simulated learning in the 15-minute slots that ended after `after` and by `until`.
+
+    `after` is where the last call stopped (slot-aligned). Each event is sized so the rival
+    is on course for `target` by `week_end`, so a new target only steers what is left of
+    the week. `day_xp` ({local date: XP}) is what it already earned on those days.
+    """
+
+    stop = slot_floor(min(until, week_end))
+    if stop <= after:
+        return []
+    awake = _active_slots(seed, behaviour, after, week_end, zone)
+    chance = SLOT_CHANCE.get(behaviour, 0.3)
+    totals = dict(day_xp or {})
+    low_xp, high_xp = EVENT_XP_BOUNDS
+    events = []
+    ceiling = min(limits.max_weekly_xp, int(int(target) * KEEP_GOING_LIMIT))
+    for index, slot in enumerate(awake):
+        if slot >= stop:
+            break
+        need = int(target) - int(earned)
+        rng = random.Random(int(seed) * 1_000_003 + int(slot.timestamp()) // 60)
+        roll = rng.random()
+        day = slot.astimezone(zone).date()
+        room = limits.max_daily_xp - totals.get(day, 0)
+        if need <= 0:                           # target reached: a short session now and then
+            room = min(room, ceiling - int(earned))
+            if roll >= chance * KEEP_GOING_CHANCE or room < KEEP_GOING_XP[0]:
+                continue
+            xp = min(room, rng.randint(*KEEP_GOING_XP))
+        else:
+            # A small target learns less often rather than in sessions below the minimum,
+            # so it is not reached early in the week.
+            left = max(1, len(awake) - index)
+            odds = min(chance, need / (left * low_xp))
+            if roll >= odds or room <= 0:
+                continue
+            per_event = need / (left * odds)
+            xp = min(need, room, max(low_xp, min(high_xp, round(per_event * rng.uniform(0.6, 1.4)))))
+        fitting = [kind for kind in EVENT_KINDS if EVENT_XP[kind][0] <= xp] or ["practice"]
+        events.append(Event(slot + timedelta(seconds=rng.randrange(int(SLOT.total_seconds()))), rng.choice(fitting), xp))
+        earned += xp
+        totals[day] = totals.get(day, 0) + xp
+    return events
 
 
 def lifetime_xp(level: int, seed: int, weekly_xp: int) -> int:

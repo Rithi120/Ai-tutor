@@ -2263,6 +2263,9 @@ class LeagueEntry(db.Model):
     tier_after = db.Column(db.Integer, nullable=True)
     # When the learner saw the result card, so it is shown once.
     result_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Which kind of group the learner is in this week (league_cohort): "up" (promoted into
+    # this league last week), "down" (demoted into it) or "stay". A group holds one kind only.
+    cohort = db.Column(db.String(10), nullable=False, default="stay")
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -2297,6 +2300,9 @@ class LeagueRival(db.Model):
     target_xp = db.Column(db.Integer, nullable=False)
     achievements_json = db.Column(db.Text, nullable=False, default="[]")
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    # Live pacing (advance_group_rivals): the end of the last 15-minute slot already paced.
+    # NULL only for a rival created before pacing (its whole week was planned up front).
+    advanced_until = db.Column(db.DateTime(timezone=True), nullable=True)
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)  # pyright: ignore[reportCallIssue]
@@ -3763,6 +3769,26 @@ def ensure_database():
         # 052: public reviews - product_review, review_report, review_moderation_event and
         # review_block are new tables (create_all above); nothing existing changes.
         apply_schema_migration("052_product_reviews", lambda: None)
+        # 053: rivals are paced live. league_rival gains one nullable column; existing rows
+        # keep NULL (their week was planned up front) and nothing else changes.
+        rival_columns = {column["name"] for column in inspect(db.engine).get_columns("league_rival")}
+
+        def add_rival_pacing():
+            if "advanced_until" not in rival_columns:
+                ddl = "TIMESTAMP WITH TIME ZONE" if db.engine.dialect.name == "postgresql" else "DATETIME"
+                with db.engine.begin() as connection:
+                    connection.execute(text(f"ALTER TABLE league_rival ADD COLUMN advanced_until {ddl}"))
+        apply_schema_migration("053_rival_pacing", add_rival_pacing)
+        # 054: league groups by last week's movement. league_entry gains "cohort" with a
+        # default; existing entries become "stay" (their groups stay as they are).
+        entry_columns = {column["name"] for column in inspect(db.engine).get_columns("league_entry")}
+
+        def add_league_cohort():
+            if "cohort" not in entry_columns:
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        "ALTER TABLE league_entry ADD COLUMN cohort VARCHAR(10) NOT NULL DEFAULT 'stay'"))
+        apply_schema_migration("054_league_cohorts", add_league_cohort)
         # 036: one Projektmodus. Projects gain an optional class; nothing else changes -
         # study plans, exams and topics already belong to the project.
         if "grade" not in {column["name"] for column in inspect(db.engine).get_columns("learning_project")}:
@@ -23565,14 +23591,85 @@ def ensure_league_entry(user_id: int, now: datetime | None = None) -> "LeagueEnt
     if membership is None or (membership.rejoin_from and membership.rejoin_from > week_start):
         return None
     lock_league_group_assignment(week_start, membership.tier)
-    group_number = open_league_group(week_start, membership.tier)
+    cohort = league_cohort(user_id, week_start, membership.tier)
+    group_number = open_league_group(week_start, membership.tier, cohort)
     insert_ignoring_conflicts(
         LeagueEntry, week_start=week_start, user_id=user_id, tier=membership.tier,
-        group_number=group_number, joined_at=now, outcome="")
-    # Same transaction and lock as the join: the group now holds 30 - real rivals (or none).
-    sync_group_rivals(week_start, membership.tier, group_number)
+        group_number=group_number, joined_at=now, outcome="", cohort=cohort)
+    # Everyone else of this league who learned recently takes a seat too, before any rival
+    # does (enroll_league_members). Same transaction and lock as the join: each group now
+    # holds 30 - real rivals (or none).
+    groups = {group_number} | enroll_league_members(week_start, membership.tier, now)
+    for number in sorted(groups):
+        sync_group_rivals(week_start, membership.tier, number)
     return db.session.scalar(db.select(LeagueEntry).where(
         LeagueEntry.week_start == week_start, LeagueEntry.user_id == user_id))
+
+
+def league_member_candidates(week_start: date, tier: int, now: datetime) -> list[int]:
+    """Participating learners of this league with XP in the last LEAGUE_MEMBER_ACTIVE_DAYS
+    and no entry this week, most recently active first.
+
+    A learner who never joined a week has no membership row yet: they are in Bronze.
+    """
+
+    days = int(app.config.get("LEAGUE_MEMBER_ACTIVE_DAYS", 28))
+    if days <= 0:
+        return []
+    joined = db.select(LeagueEntry.user_id).where(LeagueEntry.week_start == week_start)
+    last_xp = func.max(XPTransaction.created_at)
+    rows = db.session.execute(
+        db.select(XPTransaction.user_id, last_xp)
+        .join(User, User.id == XPTransaction.user_id)
+        .outerjoin(LeagueMembership, LeagueMembership.user_id == XPTransaction.user_id)
+        .where(XPTransaction.created_at >= now - timedelta(days=days),
+               User.leaderboard_enabled.is_(True), XPTransaction.user_id.not_in(joined),
+               func.coalesce(LeagueMembership.tier, league_rules.LOWEST) == int(tier),
+               or_(LeagueMembership.rejoin_from.is_(None), LeagueMembership.rejoin_from <= week_start))
+        .group_by(XPTransaction.user_id).order_by(last_xp.desc(), XPTransaction.user_id)).all()
+    return [int(user_id) for user_id, _last in rows]
+
+
+def enroll_league_members(week_start: date, tier: int, now: datetime) -> set[int]:
+    """Seat every recently active learner of this league in this week's groups.
+
+    Real learners always come before simulated rivals: a group is first filled with the
+    people of its league, then sync_group_rivals fills only the seats that are left. A
+    member who has not earned XP this week yet is listed as "not started" and is not
+    ranked: at the end of the week they keep their league, as if they had not been
+    entered (league_view, process_due_league_weeks). Returns the groups that changed.
+    """
+
+    if not leagues_enabled():
+        return set()
+    if db.session.scalar(db.select(LeagueWeek.week_start).where(
+            LeagueWeek.status != "closed", LeagueWeek.ends_at <= now).limit(1)):
+        return set()        # last week first: its results decide this week's leagues
+    candidates = league_member_candidates(week_start, tier, now)
+    if not candidates:
+        return set()
+    starts, ends, _week = league_week_bounds(now)
+    insert_ignoring_conflicts(LeagueWeek, week_start=week_start, starts_at=starts, ends_at=ends, status="open")
+    lock_league_group_assignment(week_start, tier)
+    groups: set[int] = set()
+    for user_id in candidates:
+        insert_ignoring_conflicts(LeagueMembership, user_id=user_id, tier=league_rules.LOWEST,
+                                  created_at=now, updated_at=now)
+        cohort = league_cohort(user_id, week_start, tier)
+        number = open_league_group(week_start, tier, cohort)
+        insert_ignoring_conflicts(LeagueEntry, week_start=week_start, user_id=user_id, tier=tier,
+                                  group_number=number, joined_at=now, outcome="", cohort=cohort)
+        groups.add(number)
+    for number in sorted(groups):
+        sync_group_rivals(week_start, tier, number)
+    return groups
+
+
+def ranked_part(standings: list[league_rules.Standing]) -> list[league_rules.Standing]:
+    """The standings that are ranked: rivals and learners with XP this week. A member who
+    has not started the week yet is shown but never promoted or demoted."""
+
+    return [item for item in standings if item.user_id < 0 or item.weekly_xp > 0]
 
 
 def lock_league_group_assignment(week_start: date, tier: int) -> None:
@@ -23591,19 +23688,46 @@ def lock_league_group_assignment(week_start: date, tier: int) -> None:
         "namespace": _LEAGUE_GROUP_LOCK_NAMESPACE, "key": week_start.toordinal() * 8 + int(tier)})
 
 
-def open_league_group(week_start: date, tier: int) -> int:
-    """The first group of this league and week with room, or a new one.
+LEAGUE_COHORTS = ("up", "down", "stay")
 
-    Withdrawn entries (left mid-week) keep their seat: they still count toward the
-    group's size, so a group never holds more than `group_size` entries in total.
+
+def league_cohort(user_id: int, week_start: date, tier: int) -> str:
+    """Which kind of group a learner joins this week (owner request 2026-11-15):
+    "up" when last week moved them up into this league, "down" when it moved them down
+    into it, "stay" otherwise - a second or later week in the league, a first week ever,
+    or a return after a break."""
+
+    last = db.session.scalar(db.select(LeagueEntry).where(
+        LeagueEntry.user_id == user_id, LeagueEntry.week_start == week_start - timedelta(days=7)))
+    if last is None or last.tier_after is None or last.tier_after != int(tier):
+        return "stay"
+    if last.tier_after > last.tier:
+        return "up"
+    if last.tier_after < last.tier:
+        return "down"
+    return "stay"
+
+
+def open_league_group(week_start: date, tier: int, cohort: str = "stay") -> int:
+    """The first group of this league, week and cohort with room, or a new one.
+
+    Promoted, demoted and staying learners never share a group: a group belongs to the
+    cohort of its entries. Withdrawn entries (left mid-week) keep their seat: they still
+    count toward the group's size, so a group never holds more than `group_size` entries.
     """
 
-    sizes: dict[int, int] = {int(row[0]): int(row[1]) for row in db.session.execute(
-        db.select(LeagueEntry.group_number, func.count(LeagueEntry.id)).where(
-            LeagueEntry.week_start == week_start, LeagueEntry.tier == tier).group_by(LeagueEntry.group_number)).all()}
+    rows = db.session.execute(
+        db.select(LeagueEntry.group_number, LeagueEntry.cohort, func.count(LeagueEntry.id)).where(
+            LeagueEntry.week_start == week_start, LeagueEntry.tier == tier)
+        .group_by(LeagueEntry.group_number, LeagueEntry.cohort)).all()
+    sizes: dict[int, int] = {}
+    kinds: dict[int, set[str]] = {}
+    for number, kind, count in rows:
+        sizes[int(number)] = sizes.get(int(number), 0) + int(count)
+        kinds.setdefault(int(number), set()).add(kind or "stay")
     limit = league_settings()["group_size"]
     for number in sorted(sizes):
-        if sizes[number] < limit:
+        if kinds[number] == {cohort} and sizes[number] < limit:
             return int(number)
     return (max(sizes) + 1) if sizes else 1
 
@@ -23643,8 +23767,8 @@ def rival_limits() -> league_rivals.Limits:
         min_samples=int(config.get("LEAGUE_RIVAL_MIN_SAMPLES", 5)),
         min_baseline=int(config.get("LEAGUE_RIVAL_MIN_BASELINE_XP", 20)),
         max_baseline=int(config.get("LEAGUE_RIVAL_MAX_BASELINE_XP", 400)),
-        max_daily_xp=int(config.get("LEAGUE_RIVAL_MAX_DAILY_XP", 150)),
-        max_weekly_xp=int(config.get("LEAGUE_RIVAL_MAX_WEEKLY_XP", 600)))
+        max_daily_xp=int(config.get("LEAGUE_RIVAL_MAX_DAILY_XP", 600)),
+        max_weekly_xp=int(config.get("LEAGUE_RIVAL_MAX_WEEKLY_XP", 3500)))
 
 
 def rival_baseline(week_start: date, tier: int) -> int:
@@ -23673,16 +23797,18 @@ def delete_rivals(rival_ids) -> int:
     return len(ids)
 
 
-def sync_group_rivals(week_start: date, tier: int, group_number: int) -> None:
+def sync_group_rivals(week_start: date, tier: int, group_number: int, now: datetime | None = None) -> None:
     """Make one group hold exactly rival_count(real learners) rivals in seats 1…n.
 
     Idempotent: running it twice changes nothing. A learner who joins takes the last
     rival's seat. Runs inside the join's transaction and group lock; on PostgreSQL the
     unique seat and username constraints are the backstop, each insert in a savepoint.
+    A new rival starts at 0 XP and is paced from now on (advance_group_rivals).
     """
 
     if not league_rivals_enabled():
         return
+    now = now or utcnow()
     real = int(db.session.scalar(db.select(func.count(LeagueEntry.id)).where(
         LeagueEntry.week_start == week_start, LeagueEntry.tier == tier,
         LeagueEntry.group_number == group_number)) or 0)
@@ -23692,14 +23818,14 @@ def sync_group_rivals(week_start: date, tier: int, group_number: int) -> None:
     missing = sorted(set(range(1, wanted + 1)) - {rival.seat for rival in existing})
     if not missing:
         return
-    starts, _ends, _week = league_week_bounds(datetime.combine(week_start, datetime.min.time(), app_zone()))
+    starts, ends, _week = league_week_bounds(datetime.combine(week_start, datetime.min.time(), app_zone()))
     local_start = starts.astimezone(app_zone())
     base = rival_baseline(week_start, tier)
-    limits = rival_limits()
+    # Paced from the slot it is created in: nothing is earned before the seat existed.
+    paced_from = league_rivals.slot_floor(min(max(as_utc(now), starts), ends))
     for seat in missing:
         for attempt in range(25):
-            plan = league_rivals.plan_rival(local_start, tier, group_number, seat, baseline_xp=base,
-                                            limits=limits, name_attempt=attempt)
+            plan = league_rivals.plan_rival(local_start, tier, group_number, seat, name_attempt=attempt)
             # Never a real learner's name, never twice in a week.
             if db.session.scalar(db.select(User.id).where(User.username == plan.username)) is not None:
                 continue
@@ -23712,19 +23838,87 @@ def sync_group_rivals(week_start: date, tier: int, group_number: int) -> None:
                 LeagueRival, week_start=week_start, tier=tier, group_number=group_number, seat=seat,
                 username=plan.username, display_name=plan.display_name,
                 avatar_id=rival_avatar_id(plan.level, plan.avatar_pick), level=plan.level,
-                behaviour=plan.behaviour, seed=plan.seed, baseline_xp=base, target_xp=plan.target_xp,
-                achievements_json=json.dumps(list(plan.achievements)), created_at=utcnow())
+                behaviour=plan.behaviour, seed=plan.seed, baseline_xp=base, target_xp=base,
+                achievements_json=json.dumps(list(plan.achievements)), created_at=now, advanced_until=paced_from)
             holder = db.session.scalar(db.select(LeagueRival).where(
                 LeagueRival.week_start == week_start, LeagueRival.tier == tier,
                 LeagueRival.group_number == group_number, LeagueRival.seat == seat))
             if holder is None:
                 continue                # the name was taken meanwhile: the next name
-            if holder.username == plan.username and holder.seed == plan.seed and not db.session.scalar(
-                    db.select(LeagueRivalEvent.id).where(LeagueRivalEvent.rival_id == holder.id).limit(1)):
-                db.session.add_all([LeagueRivalEvent(rival_id=holder.id, occurs_at=event.at.astimezone(timezone.utc),
-                                                     kind=event.kind, xp=event.xp) for event in plan.events])
-                db.session.flush()
             break                       # the seat is filled (by this call or a concurrent one)
+
+
+def advance_group_rivals(week: "LeagueWeek", tier: int, group_number: int, until: datetime) -> int:
+    """Pace one group's rivals up to `until` (learnova/gamification/rivals.py). Returns how
+    many simulated events were added.
+
+    Each rival's target is recomputed from what the group's fastest real learner is on
+    course for, then the 15-minute slots that passed since the rival was last paced are
+    simulated. A slot is paced once: the rival is claimed with a conditional UPDATE of
+    advanced_until, so two requests at the same moment cannot both add its events. Does
+    not commit: it runs inside the caller's transaction (the week's close included).
+    """
+
+    if not league_rivals_enabled():
+        return 0
+    starts, ends = as_utc(week.starts_at), as_utc(week.ends_at)
+    until = min(as_utc(until), ends)
+    rivals = group_rivals(week.week_start, tier, group_number)
+    stop = league_rivals.slot_floor(until)
+    # A rival planned before pacing keeps what it already earned; the planned sessions that
+    # have not happened yet are dropped and it is paced live from here on.
+    for rival in rivals:
+        if rival.advanced_until is None:
+            converted = db.session.execute(
+                update(LeagueRival).where(LeagueRival.id == rival.id, LeagueRival.advanced_until.is_(None))
+                .values(advanced_until=stop).execution_options(synchronize_session=False)
+            ).rowcount  # pyright: ignore[reportAttributeAccessIssue]
+            if converted:
+                db.session.execute(sql_delete(LeagueRivalEvent).where(
+                    LeagueRivalEvent.rival_id == rival.id, LeagueRivalEvent.occurs_at > stop)
+                    .execution_options(synchronize_session=False))
+            db.session.expire(rival, ["advanced_until"])
+    due = [rival for rival in rivals if rival.advanced_until is not None and as_utc(rival.advanced_until) < stop]
+    if not due:
+        return 0
+    real_ids = db.session.scalars(db.select(LeagueEntry.user_id).where(
+        LeagueEntry.week_start == week.week_start, LeagueEntry.tier == tier,
+        LeagueEntry.group_number == group_number, LeagueEntry.outcome == "")).all()
+    zone = app_zone()
+    # The pace up to the start of today: a strong day lifts a learner past the rivals, who
+    # answer from tomorrow on (learnova/gamification/rivals.py).
+    today = datetime.combine(until.astimezone(zone).date(), datetime.min.time(), zone).astimezone(timezone.utc)
+    measured_to = min(until, max(starts, today))
+    real_xp = [total for total, _last in weekly_xp_by_user(real_ids, starts, measured_to).values()]
+    limits = rival_limits()
+    reference = league_rivals.reference_xp(real_xp, measured_to, starts, ends, due[0].baseline_xp)
+    role_of = league_rivals.roles([(rival.seat, int(rival.seed), rival.behaviour) for rival in rivals])
+    added = 0
+    for rival in due:
+        previous = rival.advanced_until
+        after = as_utc(previous)
+        target = league_rivals.target_for(role_of[rival.seat], int(rival.seed), reference, limits)
+        claimed = db.session.execute(
+            update(LeagueRival).where(LeagueRival.id == rival.id, LeagueRival.advanced_until == previous)
+            .values(advanced_until=stop, target_xp=target).execution_options(synchronize_session=False)
+        ).rowcount  # pyright: ignore[reportAttributeAccessIssue]
+        # The bulk UPDATE bypassed the session: reload these two fields on next access.
+        db.session.expire(rival, ["advanced_until", "target_xp"])
+        if not claimed:
+            continue                    # paced by a concurrent request
+        earned = int(db.session.scalar(db.select(func.coalesce(func.sum(LeagueRivalEvent.xp), 0)).where(
+            LeagueRivalEvent.rival_id == rival.id)) or 0)
+        day_start = datetime.combine(after.astimezone(zone).date(), datetime.min.time(), zone)
+        today = int(db.session.scalar(db.select(func.coalesce(func.sum(LeagueRivalEvent.xp), 0)).where(
+            LeagueRivalEvent.rival_id == rival.id, LeagueRivalEvent.occurs_at >= day_start.astimezone(timezone.utc))) or 0)
+        events = league_rivals.advance(
+            seed=int(rival.seed), behaviour=rival.behaviour, earned=earned, target=target, after=after,
+            until=until, week_end=ends, zone=zone, day_xp={day_start.date(): today}, limits=limits)
+        db.session.add_all([LeagueRivalEvent(rival_id=rival.id, occurs_at=event.at.astimezone(timezone.utc),
+                                             kind=event.kind, xp=event.xp) for event in events])
+        added += len(events)
+    db.session.flush()
+    return added
 
 
 def rival_avatar_id(level: int, pick: int) -> str:
@@ -23766,6 +23960,8 @@ def group_standings(week: "LeagueWeek", tier: int, group_number: int,
 
 def group_standings_with_rivals(week: "LeagueWeek", tier: int, group_number: int, now: datetime | None = None
                                 ) -> tuple[list[league_rules.Standing], dict[int, "LeagueRival"]]:
+    # Rivals learn as time passes: pace them up to this moment first (the caller commits).
+    advance_group_rivals(week, tier, group_number, now or utcnow())
     user_ids = db.session.scalars(db.select(LeagueEntry.user_id).where(
         LeagueEntry.week_start == week.week_start, LeagueEntry.tier == tier,
         LeagueEntry.group_number == group_number, LeagueEntry.outcome == "")).all()
@@ -23787,9 +23983,11 @@ def group_withdrawals(week_start: date, tier: int, group_number: int) -> dict[st
     Both feed league_rules.zone_sizes: the leavers still count toward the group's size,
     and a demoted leaver keeps the demotion place they took."""
 
+    # A leaver who had not started the week (no rank) was never in the ranking.
     afters = db.session.scalars(db.select(LeagueEntry.tier_after).where(
         LeagueEntry.week_start == week_start, LeagueEntry.tier == tier,
-        LeagueEntry.group_number == group_number, LeagueEntry.outcome == "withdrawn")).all()
+        LeagueEntry.group_number == group_number, LeagueEntry.outcome == "withdrawn",
+        LeagueEntry.final_rank.is_not(None))).all()
     return {"withdrawn": len(afters),
             "withdrawn_demoted": sum(1 for after in afters if after is not None and after < tier)}
 
@@ -23805,12 +24003,13 @@ def withdraw_league_entry(entry: "LeagueEntry", standings: list[league_rules.Sta
     """
 
     rank, outcome, weekly_xp = None, "stayed", 0
+    # Not started this week (no XP): not ranked, so leaving keeps the league (rank None).
     for standing, place, result in league_rules.outcomes(
-            standings, entry.tier, promote=settings["promote"], demote=settings["demote"], **counts):
+            ranked_part(standings), entry.tier, promote=settings["promote"], demote=settings["demote"], **counts):
         if standing.user_id == entry.user_id:
             rank, outcome, weekly_xp = place, result, standing.weekly_xp
             break
-    entry.final_xp, entry.final_rank, entry.group_size = weekly_xp, rank, len(standings)
+    entry.final_xp, entry.final_rank, entry.group_size = weekly_xp, rank, len(ranked_part(standings))
     entry.outcome = "withdrawn"
     entry.tier_after = league_rules.tier_after(entry.tier, "demoted") if outcome == "demoted" else entry.tier
     # Nothing to celebrate or announce: the history lists it, the result card does not.
@@ -23856,7 +24055,7 @@ def process_due_league_weeks(now: datetime | None = None) -> list[date]:
             pending = [entry for entry in entries if not entry.outcome]
             withdrawals: dict[tuple[int, int], dict[str, int]] = {}
             for entry in entries:
-                if entry.outcome == "withdrawn":
+                if entry.outcome == "withdrawn" and entry.final_rank is not None:
                     counts = withdrawals.setdefault((entry.tier, entry.group_number), _no_withdrawals())
                     counts["withdrawn"] += 1
                     if entry.tier_after is not None and entry.tier_after < entry.tier:
@@ -23873,8 +24072,9 @@ def process_due_league_weeks(now: datetime | None = None) -> list[date]:
                 counts = dict(withdrawals.get((tier, number), _no_withdrawals()))
                 standings = [league_rules.Standing(entry.user_id, *totals.get(entry.user_id, (0, None)))
                              for entry in members]
-                # The group's simulated rivals at their final XP (their events up to the end).
+                # The group's simulated rivals at their final XP (paced up to the end).
                 if league_rivals_enabled():
+                    advance_group_rivals(week, tier, number, as_utc(week.ends_at))
                     standings += rival_standings(group_rivals(week.week_start, tier, number), as_utc(week.ends_at))
                 leaving = [entry for entry in members if entry.user_id in opted_out]
                 if leaving:
@@ -23887,6 +24087,16 @@ def process_due_league_weeks(now: datetime | None = None) -> list[date]:
                         1 for entry in leaving if entry.tier_after is not None and entry.tier_after < tier)
                     members = [entry for entry in members if entry.user_id not in opted_out]
                     standings = [item for item in standings if item.user_id not in opted_out]
+                # Seated with their league but no XP all week: not ranked, the league is
+                # kept, and there is no result card to show (enroll_league_members).
+                ranked_standings = ranked_part(standings)
+                active = {item.user_id for item in ranked_standings}
+                for entry in members:
+                    if entry.user_id not in active:
+                        entry.final_xp, entry.final_rank, entry.group_size = 0, None, len(ranked_standings)
+                        entry.outcome, entry.tier_after, entry.result_seen_at = "inactive", tier, now
+                members = [entry for entry in members if entry.user_id in active]
+                standings = ranked_standings
                 by_user = {entry.user_id: entry for entry in members}
                 for standing, rank, outcome in league_rules.outcomes(
                         standings, tier, promote=settings["promote"], demote=settings["demote"], **counts):
@@ -24087,6 +24297,15 @@ def league_view(user: Any, now: datetime | None = None) -> dict[str, Any]:
             if entry is not None and entry.outcome:     # withdrawn earlier this week
                 entry = None
             db.session.commit()
+        # Everyone of the league who learned recently (the viewer included) is seated
+        # before rivals: a classmate who has not learned yet this week still shows.
+        membership = db.session.get(LeagueMembership, user.id)
+        current_tier = entry.tier if entry else (membership.tier if membership else league_rules.LOWEST)
+        if enroll_league_members(week_start, current_tier, now):
+            db.session.commit()
+            if entry is None:
+                entry = db.session.scalar(db.select(LeagueEntry).where(
+                    LeagueEntry.week_start == week_start, LeagueEntry.user_id == user.id, LeagueEntry.outcome == ""))
         membership = db.session.get(LeagueMembership, user.id)
     tier = entry.tier if entry else (membership.tier if membership else league_rules.LOWEST)
     settings = league_settings()
@@ -24128,33 +24347,43 @@ def league_view(user: Any, now: datetime | None = None) -> dict[str, Any]:
         sync_group_rivals(week_start, entry.tier, entry.group_number)
         db.session.commit()
     everyone, rivals = group_standings_with_rivals(week, entry.tier, entry.group_number, now)
-    standings = league_rules.ranked(everyone)
+    db.session.commit()                 # the rivals' pacing up to now
+    ordered = league_rules.ranked(everyone)
+    # The ranking, then the members who have not started this week (shown, not ranked).
+    standings = ranked_part(ordered)
+    waiting = [item for item in ordered if item not in standings]
     counts = group_withdrawals(week_start, entry.tier, entry.group_number)
     size = len(standings)
     up, down = league_rules.zone_sizes(size, entry.tier, promote=settings["promote"],
                                        demote=settings["demote"], **counts)
-    cards = identity_cards([item.user_id for item in standings if item.user_id > 0])
+    cards = identity_cards([item.user_id for item in ordered if item.user_id > 0])
     cards.update({key: rival_card(rival) for key, rival in rivals.items()})
     rows = []
-    for rank, item in enumerate(standings, start=1):
+    for rank, item in enumerate(standings + waiting, start=1):
         card = cards.get(item.user_id) or {}
-        zone_name = league_rules.zone(rank, size, entry.tier, item.weekly_xp,
-                                      promote=settings["promote"], demote=settings["demote"], **counts)
+        started = rank <= size
+        zone_name = league_rules.zone(rank, size, entry.tier, item.weekly_xp, promote=settings["promote"],
+                                      demote=settings["demote"], **counts) if started else "waiting"
         row = {
-            "rank": rank, "username": card.get("username", ""), "avatar_url": card.get("avatar_url", ""),
+            "rank": rank if started else None, "username": card.get("username", ""),
+            "avatar_url": card.get("avatar_url", ""),
             "accent": card.get("accent", ""), "premium": bool(card.get("premium")),
             "profile_url": card.get("profile_url"), "weekly_xp": item.weekly_xp, "zone": zone_name,
             "me": item.user_id == user.id, "level": card.get("level"), "rival": bool(card.get("rival")),
         }
         rows.append(row)
-        if row["me"]:
+        if row["me"] and not started:
+            view["me"] = {"rank": None, "weekly_xp": item.weekly_xp, "zone": zone_name,
+                          "message": tr("Earn XP to enter this week’s ranking"),
+                          "xp_to_next_rank": 0, "xp_to_promotion": 0, "xp_to_leave_demotion": 0}
+        elif row["me"]:
             gaps = league_rules.xp_gaps(standings, rank - 1, up, down)
             view["me"] = {"rank": rank, "weekly_xp": item.weekly_xp, "zone": zone_name,
                           "message": league_message(zone_name, entry.tier),
                           "xp_to_next_rank": gaps["to_next_rank"],
                           "xp_to_promotion": gaps["to_promotion"],
                           "xp_to_leave_demotion": gaps["to_leave_demotion"]}
-    view.update(standings=rows, promote=up, demote=down, size=size)
+    view.update(standings=rows, promote=up, demote=down, size=size, cohort=entry.cohort or "stay")
     return view
 
 
@@ -24565,9 +24794,6 @@ def answer_flashcard_session_item(session_id, item_id):
     grade = grade or ("good" if correct else "again")
     before, after = update_flashcard_performance(
         card, correct, response_ms, grade)
-    written = item.question_type in flashcard_modes.WRITTEN_TYPES
-    xp = gamification.bounded_answer_xp(
-        correct=correct, written=written, difficult=card.difficulty == "hard")
     item.student_answer, item.correct, item.response_ms = student, correct, response_ms
     item.attempts += 1
     item.srs_grade, item.mastery_after = grade, after
@@ -24579,7 +24805,9 @@ def answer_flashcard_session_item(session_id, item_id):
         subject=card.set.subject, active_seconds=min(120, response_ms // 1000),
         metadata={"correct": correct, "mode": session.mode, "difficult": card.difficulty == "hard",
                   # The learner graded this one themselves; it is practice, not proof.
-                  "self_graded": item.question_type == "self_grade"}, xp=xp)
+                  "self_graded": item.question_type == "self_grade"},
+        # No XP per answer: the session pays half its correct answers when it is complete.
+        xp=0)
     item.xp_earned = earned
     session.answered_items += 1
     session.correct_count += int(correct)
@@ -24591,8 +24819,7 @@ def answer_flashcard_session_item(session_id, item_id):
         _, mastery_xp = record_learning_event(
             current_user.id, "flashcard_mastered", f"fc-mastered:{item.card_id}",
             source_type="flashcard", source_id=item.card_id, session_id=session.id,
-            subject=item.card.set.subject, metadata={"correct": True},
-            xp=gamification.XP_VALUES["flashcard_mastered"])
+            subject=item.card.set.subject, metadata={"correct": True}, xp=0)
         session.xp_earned += mastery_xp
     db.session.commit()
     return jsonify(
@@ -24656,10 +24883,8 @@ def complete_flashcard_session(session_id):
         "test": "test_completed", "match": "match_completed",
         "blast": "blast_completed", "blocks": "blocks_completed",
     }[session.mode]
-    # Completion XP needs min(5, total) answered items (service.session_completion_pays);
-    # the event is still recorded, so streaks, goals and challenges see the activity.
-    completion_pays = gamification.session_completion_pays(session.answered_items, session.total_items)
-    completion_xp = gamification.XP_VALUES[completion_event] if completion_pays else 0
+    # The session's XP: half its correct answers, rounded up (service.study_session_xp).
+    completion_xp = gamification.study_session_xp(session.correct_count)
     metadata = {
         "accuracy": session.accuracy, "score": session.score,
         "correct": session.correct_count, "active_seconds": session.active_seconds,
@@ -24674,13 +24899,6 @@ def complete_flashcard_session(session_id):
         subject=completed_set.subject if completed_set else "",
         metadata=metadata, xp=completion_xp)
     session.xp_earned += earned
-    if session.mode == "test" and session.accuracy == 100 and completion_pays:
-        _, bonus = record_learning_event(
-            current_user.id, "test_perfect_score", f"fc-perfect:{session.id}",
-            source_type="flashcard_set", source_id=session.flashcard_set_id,
-            session_id=session.id, metadata=metadata,
-            xp=gamification.XP_VALUES["test_perfect_score"])
-        session.xp_earned += bonus
     personal_best = None
     if session.mode in {"match", "blast", "blocks"}:
         best = db.session.scalar(db.select(GamePersonalBest).where(
@@ -24707,7 +24925,7 @@ def complete_flashcard_session(session_id):
         item.card_id for item in result_items if item.correct is False]
     session.summary_json = json.dumps({
         **metadata, "xp_earned": session.xp_earned, "weak_cards": weak_cards,
-        "personal_best": personal_best, "completion_xp_paid": completion_pays,
+        "personal_best": personal_best, "completion_xp_paid": earned > 0,
         "recommended": "learn" if weak_cards else "test",
     })
     db.session.commit()
@@ -26540,8 +26758,7 @@ def answer_vocabulary_practice(list_id, entry_id):
         active_seconds=min(
             120, max(0, int(payload.get("response_ms") or 0)) // 1000),
         metadata={"correct": checked["correct"], "direction": direction},
-        xp=gamification.bounded_answer_xp(
-            correct=checked["correct"], written=True, difficult=False))
+        xp=0)                   # paid with the completed session (service.study_session_xp)
     session_id = str(payload.get("session_id") or "")
     practice_session = db.session.scalar(db.select(VocabularyPracticeSession).where(
         VocabularyPracticeSession.id == session_id,
@@ -26569,11 +26786,12 @@ def answer_vocabulary_practice(list_id, entry_id):
                 metadata={"accuracy": accuracy, "direction": direction,
                           "improved": improved_on_previous(
                               current_user.id, "vocabulary_session_completed", item.id, accuracy)},
-                xp=10)
+                xp=gamification.study_session_xp(practice_session.correct_count))
             practice_session.xp_earned += completion_xp
     db.session.commit()
     return jsonify(
-        ok=True, **checked, expected=expected, xp_earned=earned,
+        ok=True, **checked, expected=expected,
+        xp_earned=practice_session.xp_earned if session_complete and practice_session else earned,
         mastery=state.mastery_level,
         next_review_at=as_utc(state.next_review_at).isoformat(),
         session_complete=session_complete)
@@ -27652,8 +27870,7 @@ def review_flashcard(card_id):
         source_type="flashcard", source_id=card.id, subject=card.set.subject,
         active_seconds=min(120, response_ms // 1000),
         metadata={"correct": correct, "mode": "flashcards", "self_graded": True},
-        xp=gamification.bounded_answer_xp(
-            correct=correct, written=False, difficult=card.difficulty == "hard"),
+        xp=0,                   # outside a session: no XP (flashcard XP comes with completed sessions)
     )
     db.session.commit()
     return jsonify(
@@ -31049,6 +31266,7 @@ def rival_profile(rival_id: int):
         abort(404)
     now = utcnow()
     standings = league_rules.ranked(group_standings(week, rival.tier, rival.group_number, now))
+    db.session.commit()                 # the rivals' pacing up to now
     me = next(((index + 1, item) for index, item in enumerate(standings) if item.user_id == -rival.id), None)
     weekly_xp = me[1].weekly_xp if me else 0
     events = db.session.scalars(db.select(LeagueRivalEvent).where(

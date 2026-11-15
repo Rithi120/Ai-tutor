@@ -158,7 +158,8 @@ async function finish() {
   clearInterval(state.timer);
   try {
     const data = await api(`/api/flashcards/sessions/${state.session.id}/complete`, { method: "POST", body: { max_combo: state.maxCombo } });
-    announceXp({ xp_earned: 0, xp: data.xp }, `complete:${state.session.id}`);
+    // Answers pay nothing on their own: the session's XP (half its correct answers) comes now.
+    announceXp({ xp_earned: data.session?.xp_earned || 0, xp: data.xp }, `complete:${state.session.id}`);
     state.session = data.session; showSummary();
   } catch (e) { error(e.message); state.finishing = false; }
 }
