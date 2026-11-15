@@ -95,7 +95,10 @@ class GroqLikeProvider:
 LIVE_SETTINGS = dict(TESTING=True, RUN_LIVE_AI_TEST=True, AI_MODE="live", ALLOW_LIVE_AI=True,
                      GROQ_API_KEY="test-key", GROQ_TUTOR_MODEL=SMALL_MODEL, GROQ_ANALYSIS_MODEL=LARGE_MODEL,
                      AI_REQUEST_TOKEN_CEILINGS="", AI_TEXT_REQUEST_TOKEN_CEILING=0, AI_FALLBACK_MODEL="",
-                     AI_SLOW_MODEL="", AI_PREMIUM_REASONING_MODEL="", AI_PREMIUM_GRADING_MODEL="")
+                     AI_SLOW_MODEL="", AI_PREMIUM_REASONING_MODEL="", AI_PREMIUM_GRADING_MODEL="",
+                     # These tests fit lessons to the small model's 8000-token limit; lessons
+                     # are written by AI_LESSON_MODEL since Reliability V1, so pin it to it.
+                     AI_LESSON_MODEL=SMALL_MODEL, AI_MATH_VERIFY_MODEL=SMALL_MODEL)
 
 
 class GatewayCase(unittest.TestCase):

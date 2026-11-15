@@ -337,6 +337,27 @@ class FalsePositiveRegressionTests(unittest.TestCase):
         self.assertIn("messaging_app", moderation.inspect("add me on snapchat @lena.k").signals.contact_markers)
 
 
+class DivisionSignWarningTests(unittest.TestCase):
+    """Live 2026-11-14: the reviewer flagged every formula written with ":" (the division sign
+    German schools teach) as a grammar problem and suggested "/"."""
+
+    CARDS = [{"front": "Tageszinsen", "back": "Z = K · p · t : 36000"},
+             {"front": "Prozentwert", "back": "W = G · p : 100"}]
+
+    def test_a_notation_only_suggestion_is_no_warning(self):
+        raw = [{"entry": 1, "side": "back", "kind": "grammar", "text": "Z = K · p · t : 36000",
+                "note": "Unklare Notation, das Zeichen \":\" ist nicht üblich", "suggestion": "Z = K · p · t / 36000"},
+               {"entry": 2, "side": "back", "kind": "grammar", "text": "W = G · p : 100",
+                "note": "", "suggestion": "W = G · p ÷ 100"}]
+        self.assertEqual(community.normalize_entry_warnings(raw, self.CARDS), [])
+
+    def test_a_real_correction_of_the_formula_stays(self):
+        raw = [{"entry": 2, "side": "back", "kind": "factual", "text": "W = G · p : 100",
+                "note": "", "suggestion": "W = G · p : 1000"}]
+        kept = community.normalize_entry_warnings(raw, self.CARDS)
+        self.assertEqual([item["suggestion"] for item in kept], ["W = G · p : 1000"])
+
+
 class EntryWarningTests(CommunityTestCase):
     def setUp(self):
         super().setUp()
@@ -741,7 +762,10 @@ class EmailTests(CommunityTestCase):
             for name in ("cara", "dan"):
                 self.report(self.register(name), self.public_id,
                             Responder(report_review=VALID_TRANSLATION_REPORT), entry=1)
-        self.assertEqual(connection.send_message.call_count, 1)
+        # Registration also sends each new student one welcome email (docs/AUTHENTICATION.md).
+        recipients = [call.args[0]["To"] for call in connection.send_message.call_args_list]
+        self.assertEqual(recipients.count(ALERT_EMAIL), 1)
+        self.assertEqual(sorted(r for r in recipients if r != ALERT_EMAIL), ["cara@example.com", "dan@example.com"])
 
 
 class MailerTests(unittest.TestCase):

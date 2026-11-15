@@ -422,6 +422,15 @@ def _data_pages(page, base: str, project_id: int) -> dict:
             concept = application.get_or_create_mastery(user.id, "Physics", "Gleichförmige Bewegung")
             session.commit()
             urls["CONCEPT"] = f"/concepts/{concept.id}"
+            # Long lists (owner request 2026-11-13): saved lessons with mistakes and used
+            # Premium codes, so /dashboard and /settings are measured with their "Show more"
+            # buttons and the delete controls (tests/dashboard_seed.py).
+            from tests import dashboard_seed
+            for number in range(7):
+                dashboard_seed.short_lesson(application, user.id, mistakes=1, created_offset=60 + number,
+                                            title=f"Lektion mit einem ziemlich langen Titel Nummer {number}")
+            dashboard_seed.premium_codes(application, user.id, 5)
+            session.commit()
             # Real rival accounts so the league table, Premium badge and a public profile
             # render with content: long names, a Premium member, and the audit account.
             application.award_xp(user.id, "audit", 60, "audit:xp:self")

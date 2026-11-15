@@ -1,0 +1,21 @@
+{# Settings → Profile: the student's own review of Learnova (app.py my_review_context). #}
+{% set mr = my_review %}
+<section class="settings-profile settings-review" id="my-review" aria-labelledby="settings-review-title">
+  <h2 id="settings-review-title">{{ _('Your review of Learnova') }}</h2>
+  {% if mr.review %}
+  <p class="stars" role="img" aria-label="{{ _('{value} out of 5 stars', value=mr.review.rating) }}">{% for n in range(1, 6) %}<span class="{{ 'is-on' if n <= mr.review.rating }}" aria-hidden="true">★</span>{% endfor %}</p>
+  {% if mr.review.review_text %}<p class="review-body">{{ mr.review.review_text }}</p>{% endif %}
+  <p class="security-note">{{ _('Submitted on {date}', date=mr.date) }}{% if mr.review.status == 'pending' %} · {{ _('waiting for a moderator') }}{% elif mr.review.status != 'published' %} · {{ _('not public') }}{% endif %}</p>
+  <div class="settings-review-actions">
+    <a class="secondary-button" href="{{ url_for('about') }}#write-review">{{ _('Edit') }}</a>
+    <form method="post" action="{{ url_for('delete_review') }}" data-confirm="{{ _('Delete your review?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost-button" type="submit">{{ _('Delete') }}</button></form>
+  </div>
+  {% elif mr.eligible %}
+  <p>{{ _('You can now tell other students what you think of Learnova.') }}</p>
+  <a class="secondary-button" href="{{ url_for('about') }}#write-review">{{ _('Write your review') }}</a>
+  {% elif mr.reason == 'level' %}
+  <p>{{ _('You can submit a review starting at Level 3.') }} {{ _('You are at Level {level}. Every lesson and practice brings you closer.', level=mr.level) }}</p>
+  {% else %}
+  <p>{{ _('You cannot write reviews at the moment.') }}</p>
+  {% endif %}
+</section>

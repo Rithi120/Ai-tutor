@@ -703,6 +703,19 @@ def guard_parts(parts: Sequence[Mapping[str, Any]], *, item_kinds: Iterable[str]
         if kind in (INTERPRETIVE_KINDS | HELD_KINDS) and part.get("from_notes") and page_words is not None:
             out.extend(_held_to_pages(part, page_words, strict=kind in HELD_KINDS, note_sentences=note_sentences))
             continue
+        if (part.get("from_notes") and page_words is not None and kind not in ("terms", "flashcards")
+                and kind not in NOTES_ONLY_PARTS and _judgeable(part) and not page_words.retold(part)
+                and not _numbers_from_pages(part, source_text)):
+            # Reliability V1: a worked example, a list of mistakes, an exercise, a summary or
+            # the objective was "from your notes" on the model's word alone (live 2026-11-14:
+            # an invented "100 € bei 4 %" example and wrong "typical mistakes" carried the
+            # label). Like a retelling, it must be told from the pages; otherwise it is added.
+            # Its page citation stays when it is derived from the page (a quarter of its words
+            # are there: "added, based on p. 1"); background that is not on it loses the page.
+            part["from_notes"] = False
+            words = {word for word in keywords(parts_text([part])) if word not in _SUPPORT_STOP}
+            if not words or page_words.share(words) < TOLD_SHARE:
+                part["source_pages"] = []
         if kind == "terms" and part.get("from_notes") and isinstance(part.get("items"), list) and (verified or source):
             own, added = [], []
             for item in part["items"]:
@@ -724,6 +737,38 @@ def guard_parts(parts: Sequence[Mapping[str, Any]], *, item_kinds: Iterable[str]
                 continue
         out.append(part)
     return out
+
+
+_NUMBER_IN_TEXT = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    """The numbers a text writes, with "1.200" / "1 200" / "1200" and "0,5" / "0.5" alike."""
+
+    joined = re.sub(r"(?<=\d)[ .\u202f\u00a0](?=\d{3}\b)", "", str(text or ""))
+    return {value.replace(",", ".") for value in _NUMBER_IN_TEXT.findall(joined)}
+
+
+def _judgeable(part: Mapping[str, Any]) -> bool:
+    """A part says enough to be judged (MIN_CHECKED_WORDS content words, as for sentences):
+    "Kurz." is neither shown to be from the pages nor shown not to be."""
+
+    return len({word for word in keywords(parts_text([part])) if word not in _SUPPORT_STOP}) >= MIN_CHECKED_WORDS
+
+
+def _numbers_from_pages(part: Mapping[str, Any], source_text: str) -> bool:
+    """Reliability V1: a worked example or exercise is the notes' own when it uses the notes'
+    numbers - at least two numbers besides 0-10, and every one of them on the pages (the
+    teacher's "1200 €, 3 %, 90 Tage"). Its calculation steps add results, which are left out."""
+
+    if part.get("kind") not in ("worked_example", "guided_exercise", "practice", "example"):
+        # Only an example or an exercise is "the notes' own" by its numbers: a list of mistakes
+        # that names 100 and 36000 is not on the page because the formula is (live 2026-11-14).
+        return False
+    text = parts_text([part])
+    stated = _numbers(" ".join(re.split(r"=", text)[0::2])) if "=" in text else _numbers(text)
+    significant = {number for number in stated if not re.fullmatch(r"\d", number) and number != "10"}
+    return len(significant) >= 2 and significant <= _numbers(source_text)
 
 
 def _told_content(part: Mapping[str, Any]) -> dict[str, Any]:
@@ -1056,8 +1101,11 @@ def resolve_part_pages(parts: Sequence[Mapping[str, Any]], pages: Sequence[Sourc
         words = keywords(parts_text([part]))
         page_ids: list[int] = []
         labels: list[str] = []
+        resolved: list[int] = []
         for number in dict.fromkeys(cited):
             candidates = by_number.get(number) or []
+            if candidates:
+                resolved.append(number)
             if len(candidates) > 1:
                 scores = [len(words & keywords(page.text)) for page in candidates]
                 best = max(scores)
@@ -1070,6 +1118,10 @@ def resolve_part_pages(parts: Sequence[Mapping[str, Any]], pages: Sequence[Sourc
                 labels.append(" / ".join(display.get(page.page_id, "") for page in candidates))
         part["source_page_ids"] = list(dict.fromkeys(page_ids))
         part["source_labels"] = [label for label in dict.fromkeys(labels) if label]
+        # The bare numbers too: the page shows them when there are no labels (older lessons),
+        # so a number no page has ("S. 42" - the textbook exercise a Kompetenzraster row
+        # names, live 2026-11-14) would still be shown as a page of the student's notes.
+        part["source_pages"] = resolved
         out.append(part)
     return out
 

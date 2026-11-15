@@ -401,8 +401,8 @@ class ReplyPromptRuleTests(unittest.TestCase):
     def test_versions_were_bumped(self):
         # v6 added the MEDIA line (learning resources) and, separately, the EXAM line
         # (spec 1.2); v7 is the merged prompt with both, keeping every CHAT_FIX2 rule.
-        self.assertEqual(ai_prompts.PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v7")
-        self.assertEqual(ai_prompts.PROMPT_VERSIONS["tutor_chat"], "tutor_chat:v6")
+        self.assertEqual(ai_prompts.PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v8")
+        self.assertEqual(ai_prompts.PROMPT_VERSIONS["tutor_chat"], "tutor_chat:v7")
         for language in ("en", "de"):
             meta = json.loads((FIXTURES / "ai" / language / "valid.json").read_text(encoding="utf-8"))["_meta"]
             self.assertEqual(meta["prompt_versions"], ai_prompts.PROMPT_VERSIONS)

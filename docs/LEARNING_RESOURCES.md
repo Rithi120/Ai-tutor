@@ -59,7 +59,10 @@ including replies stored before this change. The only clickable videos are check
 
 `learnova/media_enrichment.py` (the one image system). The existing relevance rules are
 unchanged (exact title, no biographies, no disambiguation, no redirect to another title, no
-icons/flags/logos, `upload.wikimedia.org` only). New:
+icons/flags/logos, `upload.wikimedia.org` and `thumb.wikimedia.org` only -
+`ALLOWED_IMAGE_HOSTS`; since 2026-11-14 Wikipedia's API gives scaled thumbnails on
+`thumb.wikimedia.org`, and with the upload host alone no picture was ever shown, see
+REAL_WORLD_ACCEPTANCE_AUDIT.md). New:
 
 1. The page lookup asks for the file name (`piprop=thumbnail|name`) and pins
    `pilicense=free`.
@@ -137,10 +140,11 @@ Cards point at `/media/yt-thumb/<id>`. That route (login required, 300/hour) acc
 `https://i.ytimg.com/vi/<id>/mqdefault.jpg` server-side (no redirects, JPEG/WebP only,
 ≤ 300 KB), keeps up to 300 (at most 12 MB) in memory and serves them with `Cache-Control: private,
 max-age=86400`. No student IP or cookie reaches Google, and the CSP `img-src` stays
-`'self' data: blob: https://upload.wikimedia.org` with no `frame-src`. Clicking a card opens
+`'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org` with no `frame-src`. Clicking a card opens
 youtube.com in a new tab - that is the moment the student's browser contacts YouTube.
 
-Wikimedia pictures are still loaded directly from `upload.wikimedia.org` (unchanged; the
+Wikimedia pictures are still loaded directly from Wikimedia (`upload.wikimedia.org` or
+`thumb.wikimedia.org`; `static/js/resources.js` `IMAGE_URL` accepts the same two hosts; the
 referrer is suppressed with `referrerpolicy=no-referrer`).
 
 ### The key

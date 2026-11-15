@@ -40,7 +40,20 @@ class AuthenticatedAppShellTests(unittest.TestCase):
         html = response.data
         self.assertIn(b'class="desktop-app-nav global-nav-links"', html)
         self.assertIn(b'aria-controls="moreMenu"', html)
-        self.assertIn(b'id="moreMenu" class="app-dropdown" role="menu"', html)
+        self.assertIn(b'id="moreMenu" class="app-dropdown nav-groups" role="menu"', html)
+        # Compact like Settings: League, then three folding groups (Flashcards, Overview, More).
+        more = html.split(b'id="moreMenu"', 1)[1].split(b"</nav>", 1)[0]
+        self.assertEqual(more.count(b'<details class="nav-group"'), 3)
+        self.assertLess(more.index(b'href="/leaderboard"'), more.index(b'id="nav-cards"'))
+        self.assertLess(more.index(b'id="nav-cards"'), more.index(b'id="nav-overview"'))
+        self.assertLess(more.index(b'id="nav-overview"'), more.index(b'id="nav-more"'))
+        for group, links in ((b"nav-cards", (b'href="/flashcards"', b'href="/vocabulary/import"', b'href="/community"')),
+                             (b"nav-overview", (b'href="/progress"', b'#mistake-notebook', b'href="/insights/mistakes"',
+                                                b'href="/practice/today"')),
+                             (b"nav-more", (b'href="/about"', b'href="/contact"', b'href="/tutorial"'))):
+            body = more.split(b'id="' + group + b'"', 1)[1].split(b"</details>", 1)[0]
+            for link in links:
+                self.assertIn(link, body, (group, link))
         self.assertIn(b'Mistake Notebook', html)
         self.assertIn(b"Today&#39;s Practice", html)
         # One Projektmodus: no separate exam-mode or study-planner entries any more.

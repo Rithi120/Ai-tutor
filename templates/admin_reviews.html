@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Reviews') }} — Learnova{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/about.css') }}">{% endblock %}
+{% block content %}
+<main class="admin-reviews">
+  <h1>{{ _('Reviews') }}</h1>
+  <p>{{ _('Criticism is welcome: hide or reject only spam, abuse, personal data or text that is not about Learnova. Every decision is logged.') }}</p>
+  {% include 'components/_alerts.html' %}
+  <nav class="admin-review-tabs">
+    {% for key, label in (('pending', _('Waiting')), ('reported', _('Reported')), ('published', _('Published')), ('hidden', _('Hidden')), ('rejected', _('Rejected'))) %}
+    <a class="{{ 'is-active' if status == key }}" href="{{ url_for('admin_reviews', status=key) }}">{{ label }}{% if key in counts %} ({{ counts[key] }}){% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% for row in rows %}
+  {% set card = cards[row.id] %}
+  <article class="review-card admin-review">
+    <header><b>{{ card.identity.username or row.user_id }}</b> · {{ row.rating }} ★ · {{ card.date }} · {{ row.status }}{% if row.hold_reason %} · {{ row.hold_reason }}{% endif %}{% if row.report_count %} · {{ _('{count} reports', count=row.report_count) }}{% endif %}</header>
+    {% if row.review_text %}<p class="review-body">{{ row.review_text }}</p>{% endif %}
+    <form method="post" action="{{ url_for('moderate_review', review_id=row.id) }}" class="admin-review-actions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ status }}">
+      <input name="note" maxlength="300" placeholder="{{ _('Note (optional)') }}">
+      {% if row.status != 'published' %}<button class="primary-button" name="action" value="{{ 'restore' if row.status in ('hidden', 'rejected') else 'publish' }}">{{ _('Publish') if row.status == 'pending' else _('Restore') }}</button>{% endif %}
+      {% if row.status != 'hidden' %}<button class="secondary-button" name="action" value="hide">{{ _('Hide') }}</button>{% endif %}
+      {% if row.status != 'rejected' %}<button class="secondary-button" name="action" value="reject">{{ _('Reject') }}</button>{% endif %}
+      <button class="ghost-button" name="action" value="block_author">{{ _('Hide and block author') }}</button>
+    </form>
+  </article>
+  {% else %}
+  <p>{{ _('Nothing here.') }}</p>
+  {% endfor %}
+</main>
+{% endblock %}

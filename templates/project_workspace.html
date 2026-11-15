@@ -600,6 +600,15 @@
     </details>
     <p class="pm-links"><a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check every recognized page in detail') }} →</a></p>
   </section>
+
+  {# Delete the whole project (owner request 2026-11-13; delete_project in app.py). One
+     confirmation in the browser (static/js/confirm-delete.js); a plain form without it. #}
+  <section id="delete-project" class="pm-card pm-delete" aria-labelledby="deleteProjectTitle">
+    <details><summary id="deleteProjectTitle">{{ _('Delete this project') }}</summary>
+      <p>{{ _('Removes the pages, topics, lessons, plan and practice exams of this project. Your XP, your progress in each concept and the project’s flashcards are kept. This cannot be undone.') }}</p>
+      <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}" data-confirm-delete="{{ _('Delete the project “{title}” with its pages, topics, lessons and exams? This cannot be undone. Your XP and your flashcards are kept.', title=project.title) }}">{{ csrf }}<input type="hidden" name="next" value="{{ url_for('projects') }}"><button class="item-delete-button item-delete-labelled" type="submit"><svg class="item-delete-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4.5h6V7m-8 0 1 13h8l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>{{ _('Delete project') }}</span></button></form>
+    </details>
+  </section>
 </main>
 {% endblock %}
 {% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/project-pages.js') }}"></script>{% endblock %}

@@ -173,7 +173,7 @@ class PromptTests(unittest.TestCase):
     def test_prompt_versions_were_bumped(self):
         from learnova.ai_services.prompts import PROMPT_VERSIONS
         # v6 (CHAT_FIX2): one line per table row, decimal commas as {,}; v5 carried the notation.
-        self.assertEqual(PROMPT_VERSIONS["tutor_chat"], "tutor_chat:v6")
+        self.assertEqual(PROMPT_VERSIONS["tutor_chat"], "tutor_chat:v7")
         # v3 carried the chat notation change; later versions (v4: the tutoring layer) keep it.
         self.assertGreaterEqual(int(PROMPT_VERSIONS["assistant_chat"].rsplit(":v", 1)[1]), 3)
 

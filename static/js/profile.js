@@ -138,3 +138,17 @@ document.querySelector("[data-dismiss-result]")?.addEventListener("click", async
   event.currentTarget.closest("[data-league-result]")?.remove();
   try { await fetch("/api/leaderboard/result-seen", { method: "POST" }); } catch (_) { /* shown again next time */ }
 });
+
+/* ---------------------------------------------------------------- league intro */
+
+// "OK" on the league intro: gone at once; the server sets a cookie so it stays away.
+// Without JavaScript the same form posts and the page reloads without it.
+const intro = document.querySelector("[data-league-intro]");
+intro?.querySelector("form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  intro.remove();
+  try {
+    await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
+  } catch (_) { /* shown again next time */ }
+});

@@ -333,6 +333,29 @@ def _configure_community_alerts(app, selected: str) -> None:
     # Links in alert emails need an absolute address, and a background thread has no
     # request to take one from. Without it the email names the set id and the page path.
     app.config["PUBLIC_BASE_URL"] = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    # ---- Login & security (learnova/authentication, docs/AUTHENTICATION.md) ----
+    # A provider is offered only when all its settings are present; nothing is faked.
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID",
+                 "SMS_API_KEY", "SMS_SENDER"):
+        app.config[name] = os.getenv(name, "").strip()
+    # Secrets are never stripped of inner content (a PEM key spans lines; "\n" escapes are accepted).
+    app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    app.config["APPLE_PRIVATE_KEY"] = os.getenv("APPLE_PRIVATE_KEY", "")
+    app.config["SMS_API_SECRET"] = os.getenv("SMS_API_SECRET", "")
+    app.config["SMS_PROVIDER"] = os.getenv("SMS_PROVIDER", "").strip().lower()
+    for name, default, minimum in (("AUTH_OTP_EXPIRY_SECONDS", "300", 60), ("AUTH_OTP_RESEND_COOLDOWN", "60", 10),
+                                   ("AUTH_OTP_MAX_ATTEMPTS", "5", 1), ("AUTH_OTP_MAX_PER_NUMBER_HOUR", "5", 1),
+                                   ("AUTH_OTP_MAX_PER_NUMBER_DAY", "10", 1), ("AUTH_OTP_MAX_PER_IP_HOUR", "20", 1),
+                                   ("AUTH_REAUTH_MINUTES", "15", 1), ("AUTH_PENDING_SIGNUP_DAYS", "7", 1),
+                                   ("AUTH_SECURITY_EMAILS_PER_HOUR", "6", 1)):
+        try:
+            app.config[name] = max(minimum, int(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+    app.config["AUTH_WELCOME_SMS"] = os.getenv("AUTH_WELCOME_SMS", "").strip().lower() in {"1", "true", "yes", "on"}
+    app.config["AUTH_NEW_DEVICE_ALERTS"] = os.getenv("AUTH_NEW_DEVICE_ALERTS", "true").strip().lower() in {
+        "1", "true", "yes", "on"}
+    app.config["AUTH_SECURITY_SMS"] = os.getenv("AUTH_SECURITY_SMS", "true").strip().lower() in {"1", "true", "yes", "on"}
     for name, default in (("MAIL_TIMEOUT_SECONDS", "10"),):
         try:
             app.config[name] = max(1.0, float(os.getenv(name, default)))
@@ -495,6 +518,18 @@ def configure_app(app, environment: str | None = None) -> str:
     # the fast model behind it, so a rate limit degrades instead of failing.
     app.config["AI_TUTOR_CHAT_MODEL"] = os.getenv(
         "AI_TUTOR_CHAT_MODEL", app.config["GROQ_ANALYSIS_MODEL"]).strip()
+    # Reliability V1: lessons (Short Lessons, project topics, Continue Learning, practice
+    # lessons) are written by the stronger model - the live audit found calculation and
+    # logic errors in lessons written by the 20b model. Routing keeps the standard model
+    # behind it, so a rate limit still gives a lesson (marked as degraded), and every
+    # lesson's calculations are checked by learnova/lessons/math_check.py either way.
+    app.config["AI_LESSON_MODEL"] = os.getenv(
+        "AI_LESSON_MODEL", app.config["GROQ_ANALYSIS_MODEL"]).strip() or app.config["GROQ_ANALYSIS_MODEL"]
+    # The model that corrects a lesson whose calculations failed the check. It never falls
+    # back to a weaker model (signal strict_model): if it is unavailable, the lesson keeps
+    # its flagged calculation instead of a second guess from a smaller model.
+    app.config["AI_MATH_VERIFY_MODEL"] = os.getenv(
+        "AI_MATH_VERIFY_MODEL", app.config["AI_LESSON_MODEL"]).strip() or app.config["AI_LESSON_MODEL"]
     # Community moderation runs the cheapest capable model on every submission and
     # re-runs the strongest one only when the deterministic pass or the first
     # classification says the case is genuinely hard. Both are named here so a
@@ -658,7 +693,10 @@ def configure_app(app, environment: str | None = None) -> str:
         "IMAGE_UNDERSTANDING": 10000,
         "ADAPTIVE_PRACTICE": 6000,
         "FINAL_EXAM_EVALUATION": 8000, "FLASHCARD_GENERATION": 10000,
-        "FLASHCARD_BACK_SUGGESTION": 800,
+        # 2600, not 800: the request is the shared tutor rules (~900-1200 tokens by subject),
+        # the card prompt and the output contract - 800 refused every call before it reached a
+        # model ("material too large"; found 2026-11-15, the mocked tests could not see it).
+        "FLASHCARD_BACK_SUGGESTION": 2600,
         "FLASHCARD_REVIEW": 12000, "CONTENT_MODERATION": 12000,
         "ASSISTANT_CHAT": 12000,
     }
@@ -864,6 +902,14 @@ def configure_app(app, environment: str | None = None) -> str:
     # 40 phone photos 96 s, in one request); each page's picture is made when it is first
     # read or shown. true restores rendering at upload: the rollback switch.
     app.config["PROJECT_PREPROCESS_ON_UPLOAD"] = _feature_flag("PROJECT_PREPROCESS_ON_UPLOAD", False)
+    # Reliability V1: the calculation check of every generated lesson, and at most this many
+    # correction calls per lesson (0 = check and flag only, never ask the model again).
+    app.config["FEATURE_LESSON_MATH_CHECK"] = _feature_flag("FEATURE_LESSON_MATH_CHECK", True)
+    try:
+        attempts = int(os.getenv("AI_MATH_CORRECTION_ATTEMPTS", "1"))
+    except ValueError:
+        attempts = 1
+    app.config["AI_MATH_CORRECTION_ATTEMPTS"] = max(0, min(2, attempts))
     # Share of a PDF page covered by raster images (0..1) from which its text layer counts
     # as partial: the page is read by vision, not stored from the text layer alone (a pasted
     # photo of a handwritten note, a scanner app's OCR layer over a photo).
@@ -985,6 +1031,13 @@ def configure_app(app, environment: str | None = None) -> str:
                                # Seconds after a week ends before it is closed, so an award
                                # committed just after midnight still counts for its week.
                                ("LEAGUE_CLOSE_GRACE_SECONDS", "120", 0),
+                               # Simulated rivals (learnova/gamification/rivals.py): the weekly XP
+                               # they are calibrated on without enough history (Bronze; higher
+                               # leagues scale it), the real results needed to use last week's
+                               # median instead, its bounds, and the most a rival earns.
+                               ("LEAGUE_RIVAL_BASELINE_XP", "60", 1), ("LEAGUE_RIVAL_MIN_SAMPLES", "5", 1),
+                               ("LEAGUE_RIVAL_MIN_BASELINE_XP", "20", 1), ("LEAGUE_RIVAL_MAX_BASELINE_XP", "400", 1),
+                               ("LEAGUE_RIVAL_MAX_DAILY_XP", "150", 10), ("LEAGUE_RIVAL_MAX_WEEKLY_XP", "600", 10),
                                # Days between two username changes, and how long a released
                                # name stays unavailable to everyone else.
                                ("USERNAME_CHANGE_COOLDOWN_DAYS", "30", 0),
@@ -993,6 +1046,10 @@ def configure_app(app, environment: str | None = None) -> str:
             app.config[name] = max(low, int(os.getenv(name, default)))
         except ValueError as error:
             raise RuntimeError(f"{name} must be an integer") from error
+    # Simulated rivals fill a weekly group of fewer than 27 real learners up to 30, and earn
+    # XP from scheduled simulated learning (learnova/gamification/rivals.py). Off: groups of
+    # real learners only, with zones shrunk to the group's size.
+    app.config["LEAGUE_RIVALS"] = _feature_flag("LEAGUE_RIVALS", True)
     app.config["FEATURE_FLASHCARD_GAMES"] = all(app.config[name] for name in (
         "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
         "FEATURE_FLASHCARD_BLOCKS_GAME",
@@ -1032,6 +1089,21 @@ def configure_app(app, environment: str | None = None) -> str:
         for item in os.getenv("PREMIUM_ADMIN_IDENTIFIERS", "").split(",")
         if item.strip()
     }
+    # Bulk Premium vouchers (PREMIUM_VOUCHER_IMPLEMENTATION.md). The pepper keys the
+    # HMAC-SHA256 every voucher is stored as; it is a secret like SECRET_KEY: never shown,
+    # never logged, never in a response. Without it no batch can be generated and single
+    # codes stay the older SHA-256 kind. A pepper that is set but short stops the deploy.
+    pepper = os.getenv("PREMIUM_VOUCHER_PEPPER", "").strip()
+    if pepper and len(pepper) < 32:
+        raise RuntimeError("PREMIUM_VOUCHER_PEPPER must be at least 32 characters (use: openssl rand -hex 32)")
+    app.config["PREMIUM_VOUCHER_PEPPER"] = pepper
+    try:
+        voucher_days = int(os.getenv("PREMIUM_VOUCHER_VALIDITY_DAYS", "365"))
+    except ValueError as error:
+        raise RuntimeError("PREMIUM_VOUCHER_VALIDITY_DAYS must be a whole number of days") from error
+    if not 1 <= voucher_days <= 730:
+        raise RuntimeError("PREMIUM_VOUCHER_VALIDITY_DAYS must be between 1 and 730")
+    app.config["PREMIUM_VOUCHER_VALIDITY_DAYS"] = voucher_days
     # Plans, prices, free allowances and activation-code policy (learnova/subscriptions,
     # docs/SUBSCRIPTIONS.md). Validated here so a bad value stops the deploy.
     from learnova.subscriptions.plans import load_settings

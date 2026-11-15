@@ -581,14 +581,30 @@ regenerate. Its fields:
 ## Exam material: Short Lessons or Project Mode (spec 1.2, 2026-11-13)
 
 **The signal.** `TUTORING_LAYER` asks for one more hidden line when the student shares
-material for a test or exam, or asks to prepare for one (`assistant_chat:v6`; the line costs
-22 estimated tokens, the layer is at 393 of its 420):
-`EXAM: topic | topic | ...`. `formatting.reply_trailers` cuts it off with CHIPS and TOPIC
+material for a test or exam, or asks to prepare for one (built as `assistant_chat:v6` beside
+the MEDIA line's v6, merged as `assistant_chat:v7`; the line costs 22 estimated tokens and
+the layer with both lines is at about 415 of its 420):
+`EXAM: topic | topic | ...`. `formatting.reply_trailers` cuts it off with CHIPS, TOPIC and MEDIA
 (`split_reply_trailers` keeps its three values); `study_format.parse_exam_topics` trims
 each topic to 120 characters, keeps bracketed subtopics ("Brüche (kürzen, erweitern)"),
 drops "none", dedupes by `learnova.projects.topics.topic_key` and keeps at most 20. The
 reply stores them in `conversation_message.study_json` (`{"exam_topics": [{title, key,
 subtopics}]}`, migration `044_chat_study_format`).
+
+**When the model leaves the line out** (`app.reply_trailer_backstop`, real-world audit
+2026-11-14). Live on `gpt-oss-20b` no reply to six exam requests had an EXAM line and none
+to three explicit picture requests had a MEDIA line, while all nine had their TOPIC line -
+so the card and the pictures never appeared. A reworded OUTPUT block made the model write
+EXAM and MEDIA lines for plain questions too (and copy the MEDIA placeholder), so the prompt
+stays as it is and the student's words decide: a message that names a test or exam
+(`study_format._EXAM_WORDS`) takes the topics its reply's TOPIC line lists when there are
+two or more (`study_format.exam_topics_from_topic`; one topic stays the single Continue
+Learning lesson); a message that asks for a picture in so many words
+(`resources.asks_for_picture`: Bild, Skizze, Diagramm, picture, …) offers a diagram of the
+reply's topic, bracketed subtopic removed, through `media_offer`'s veto and the exact-title
+lookup. A line the model did write always wins. `reply_trailers` also takes a bare keyword
+heading with its value on the next line ("**MEDIA**" / "Diagramm: …") as one hidden line;
+the student saw both before.
 
 **The decision** (`learnova/assistant/study_format.py`, pure, thresholds are named
 constants and parameters):

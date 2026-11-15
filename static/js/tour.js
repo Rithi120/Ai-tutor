@@ -211,9 +211,22 @@ function setUp() {
 
   // ------------------------------------------------------------------ finding things
 
+  // Inside a closed <details> (anywhere but its own summary). Current Chrome hides that
+  // content with content-visibility, which keeps a layout box: it measured as "shown" at
+  // the summary's place, so a step lit the summary instead of asking to open it.
+  function inClosedDetails(node) {
+    for (let holder = node.closest("details:not([open])"); holder;
+      holder = holder.parentElement ? holder.parentElement.closest("details:not([open])") : null) {
+      const summary = holder.querySelector(":scope > summary");
+      if (!summary || !summary.contains(node)) return true;
+    }
+    return false;
+  }
+
   function shown(node) {
     if (!(node instanceof Element) || !node.isConnected) return false;
     if (node.closest("[hidden], .hidden, [inert]")) return false;
+    if (inClosedDetails(node)) return false;
     const rect = node.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
     const style = window.getComputedStyle(node);
@@ -273,8 +286,18 @@ function setUp() {
 
   // A target hidden in a closed menu, drawer, panel or <details>: its opener, following the
   // chain when the opener hides in another container (the ⋯ inside the phone drawer).
+  // The first container around the node that is closed: a link in a folded group of an
+  // already open More menu is held by the group, not by the menu.
+  function closedHolderOf(node) {
+    for (const container of payload?.containers || []) {
+      const holder = closest(node, container.inside);
+      if (holder && isClosed(holder)) return { container, holder };
+    }
+    return holderOf(node);
+  }
+
   function resolveOpener(node, depth = 0) {
-    const found = holderOf(node);
+    const found = closedHolderOf(node);
     if (!found || !isClosed(found.holder)) return null;
     const { container, holder } = found;
     const openers = container.opener.startsWith(":scope") ? all(container.opener, holder) : all(container.opener);

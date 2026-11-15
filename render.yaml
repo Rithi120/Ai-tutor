@@ -67,6 +67,27 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false
+      # Login & security (docs/AUTHENTICATION.md): set in the dashboard; empty = not offered.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: APPLE_CLIENT_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      - key: SMS_PROVIDER
+        sync: false
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_API_SECRET
+        sync: false
+      - key: SMS_SENDER
+        sync: false
       - key: GROQ_MODERATION_MODEL
         value: openai/gpt-oss-safeguard-20b
       - key: GROQ_MODERATION_ESCALATION_MODEL

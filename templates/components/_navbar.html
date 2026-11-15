@@ -31,17 +31,8 @@
       <a class="app-nav-link {{ 'is-active' if project_mode_active }}" href="{{ url_for('projects') }}" {% if project_mode_active %}aria-current="page"{% endif %} data-tour-target="projects">{{ _('Project Mode') }}</a>
       <div class="app-menu">
         <button class="app-menu-trigger {{ 'is-active' if practice_active }}" data-tour-target="more" type="button" aria-expanded="false" aria-controls="moreMenu">{{ _('More') }} <span aria-hidden="true">⌄</span></button>
-        <div id="moreMenu" class="app-dropdown" role="menu" aria-hidden="true">
-          {% if feature_flags.private_flashcards %}<a role="menuitem" class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %} data-tour-target="flashcards">{{ _('Flashcards') }}</a>{% endif %}
-          {% if feature_flags.vocabulary_trainer %}<a role="menuitem" class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_import_page') }}" data-tour-target="vocabulary">{{ _('Vocabulary Trainer') }}</a>{% endif %}
-          {% if feature_flags.community_library %}<a role="menuitem" class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %} data-tour-target="community">{{ _('Community') }}</a>{% endif %}
-          {% if feature_flags.gamification_enabled %}<a role="menuitem" href="{{ url_for('progress_page') }}" data-tour-target="progress">{{ _('Progress') }}</a>{% endif %}
-          <a role="menuitem" href="{{ url_for('dashboard') }}#mistake-notebook" data-tour-target="mistake-notebook">{{ _('Mistake Notebook') }}</a>
-          <a role="menuitem" class="{{ 'is-active' if endpoint == 'mistake_intelligence' }}" href="{{ url_for('mistake_intelligence') }}" data-tour-target="mistake-insights">{{ _('Mistake Intelligence') }}</a>
-          <a role="menuitem" class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %} data-tour-target="practice-today">{{ _("Today's Practice") }}</a>
-          <a role="menuitem" class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %} data-tour-target="about">{{ _('About Learnova') }}</a>
-          <a role="menuitem" class="{{ 'is-active' if contact_active }}" href="{{ url_for('contact') }}" {% if contact_active %}aria-current="page"{% endif %} data-tour-target="contact">{{ _('Contact us') }}</a>
-          <a role="menuitem" class="{{ 'is-active' if tutorial_active }}" href="{{ url_for('tutorial_hub') }}"{% if tutorial_active %} aria-current="page"{% endif %} data-tutorial-link data-tour-target="tutorial">{{ _('Tutorial') }}</a>
+        <div id="moreMenu" class="app-dropdown nav-groups" role="menu" aria-hidden="true">
+          {% set nav_menu = True %}{% set nav_prefix = 'nav' %}{% include "components/_nav_groups.html" %}
         </div>
       </div>
     </nav>
@@ -101,21 +92,13 @@
     <a class="{{ 'is-active' if dashboard_active }}" href="{{ url_for('dashboard') }}" {% if dashboard_active %}aria-current="page"{% endif %} data-tour-target="overview">{{ _('Overview') }}</a>
     <a class="nav-primary-action {{ 'is-active' if lesson_creation_active }}" href="{{ url_for('short_lesson') }}" {% if lesson_creation_active %}aria-current="page"{% endif %} data-tour-target="new-lesson"><span aria-hidden="true">+</span> {{ _('New Lesson') }}</a>
     <a class="{{ 'is-active' if project_mode_active }}" href="{{ url_for('projects') }}" {% if project_mode_active %}aria-current="page"{% endif %} data-tour-target="projects">{{ _('Project Mode') }}</a>
-    {% if feature_flags.private_flashcards %}<a class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %} data-tour-target="flashcards">{{ _('Flashcards') }}</a>{% endif %}
-    {% if feature_flags.vocabulary_trainer %}<a class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_import_page') }}" data-tour-target="vocabulary">{{ _('Vocabulary Trainer') }}</a>{% endif %}
-    {% if feature_flags.community_library %}<a class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %} data-tour-target="community">{{ _('Community') }}</a>{% endif %}
-    {% if feature_flags.gamification_enabled %}<a href="{{ url_for('progress_page') }}" data-tour-target="progress">{{ _('Progress') }}</a>{% endif %}
-    <a href="{{ url_for('dashboard') }}#mistake-notebook" data-tour-target="mistake-notebook">{{ _('Mistake Notebook') }}</a>
-    <a href="{{ url_for('mistake_intelligence') }}" data-tour-target="mistake-insights">{{ _('Mistake Intelligence') }}</a>
-    <a class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %} data-tour-target="practice-today">{{ _("Today's Practice") }}</a>
-    <a class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %} data-tour-target="about">{{ _('About Learnova') }}</a>
-    <a class="{{ 'is-active' if contact_active }}" href="{{ url_for('contact') }}" {% if contact_active %}aria-current="page"{% endif %} data-tour-target="contact">{{ _('Contact us') }}</a>
+    {# Phones: the four main places stay separate rows above; the rest folds like the desktop "More". #}
+    <div class="mobile-menu-divider"></div>
+    <div class="nav-groups">{% set nav_menu = False %}{% set nav_prefix = 'mnav' %}{% include "components/_nav_groups.html" %}</div>
     <div class="mobile-menu-divider"></div>
     <a class="{{ 'is-active' if endpoint == 'profile_page' }}" href="{{ url_for('profile_page') }}" data-tour-target="profile">{{ _('My profile') }}</a>
-    {% if leagues_on %}<a class="{{ 'is-active' if leaderboard_active }}" href="{{ url_for('leaderboard_page') }}" data-tour-target="leagues">{{ _('Leagues') }}</a>{% endif %}
     <a class="settings-link {{ 'is-active' if profile_active and endpoint != 'profile_page' }}" href="{{ url_for('settings', next=request.path) }}" data-tour-target="settings">{{ _('Settings') }}</a>
     <a data-tour-target="language" href="{{ url_for('settings', next=request.path) }}#language">{{ _('Language') }} · {{ nav_language.native if nav_language else 'English' }}</a>
-    <a class="{{ 'is-active' if tutorial_active }}" href="{{ url_for('tutorial_hub') }}"{% if tutorial_active %} aria-current="page"{% endif %} data-tutorial-link data-tour-target="tutorial">{{ _('Tutorial') }}</a>
     <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="nav-logout" type="submit" data-tour-target="logout">{{ _('Log out') }}</button></form>
   </nav>
   {% endif %}

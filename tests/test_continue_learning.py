@@ -446,7 +446,8 @@ class PromptTests(ContinueLearningTestCase):
                       "Subject: Mathematics", "Topic: Quadratische Gleichungen"):
             self.assertIn(piece, prompt)
         self.assertEqual(call["prompt_version"], PROMPT_VERSIONS["lesson_generation"] + "+chat1")
-        self.assertEqual(call["model"], application.TUTOR_MODEL)
+        # Reliability V1: lessons are written by AI_LESSON_MODEL (the stronger model).
+        self.assertEqual(call["model"], application.app.config["AI_LESSON_MODEL"])
         self.assertIn("EXPLANATION LEVEL", call["instructions"])
         for identifier in ("alice", "alice@example.com"):
             self.assertNotIn(identifier, f"{call['instructions']}\n{prompt}")

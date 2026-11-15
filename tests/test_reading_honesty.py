@@ -368,7 +368,7 @@ class StaleWarningTests(Base):
         self.assertIn("Possible glare detected.", warning, "a picture advisory is no reading's warning")
 
 
-PAUSE_MESSAGE = "The AI is busy right now. Learnova read this page offline for now and paused reading the other pages"
+PAUSE_MESSAGE = "The AI is busy right now, so Learnova read your pages offline for now."
 
 
 class BusyProviderStopsTheRunTests(Base):
@@ -376,7 +376,19 @@ class BusyProviderStopsTheRunTests(Base):
     limit). With the offline OCR available - production installs it - a rate-limited vision
     model answered with a provisional offline reading, which counted as a success: the start
     page, Continue reading, quick-start and /reanalyze all went on to the next photo and asked
-    the busy model again, one refused request per page."""
+    the busy model again, one refused request per page.
+
+    The fix stopped the run there, which left every later page unread (live 2026-11-14: the
+    Kompetenzraster after the first photo, and the project was planned without it). Now the
+    busy model is still asked once, and the later pages get the same provisional offline
+    reading without a request, to be read by vision later (D4)."""
+
+    def later_pages_read_offline(self, page_ids):
+        self.assertEqual(self.statuses(page_ids), ["ready"] * len(page_ids), "no page is left unread")
+        for page_id in page_ids[1:]:
+            saved = self.saved(page_id)
+            self.assertEqual(saved["text_source"], "local_ocr")
+            self.assertTrue(saved["vision_pending"]["busy"], "vision reads it again later")
 
     def setUp(self):
         super().setUp()
@@ -419,18 +431,35 @@ class BusyProviderStopsTheRunTests(Base):
         response = self.post(f"/projects/{project_id}/pages/{page_ids[0]}/recognize", json={})
         body = response.get_json()
         self.assertEqual((response.status_code, body["state"]), (200, "needs_review"), "the page itself was read")
-        self.assertTrue(body.get("paused"), "project-start.js stops sending pages")
+        self.assertTrue(body.get("paused"), "project-start.js sends the next pages offline")
         self.assertIn(PAUSE_MESSAGE, body.get("pause_message", ""))
         self.assertEqual(self.ocr_calls, 1)
         script = (Path(application.__file__).parent / "static" / "js" / "project-start.js").read_text(encoding="utf-8")
         self.assertIn("result.paused", script)
+        self.assertIn("JSON.stringify({ offline: true })", script)
+
+    def test_the_start_pages_next_pages_are_read_offline_without_asking_the_ai(self):
+        project_id, page_ids = self.upload_photos()
+        self.post(f"/projects/{project_id}/pages/{page_ids[0]}/recognize", json={})
+        for page_id in page_ids[1:]:
+            response = self.post(f"/projects/{project_id}/pages/{page_id}/recognize", json={"offline": True})
+            body = response.get_json()
+            self.assertEqual((response.status_code, body["state"]), (200, "needs_review"))
+            self.assertTrue(body.get("paused"))
+        self.assertEqual(self.ocr_calls, 1, "the busy model was asked once")
+        self.later_pages_read_offline(page_ids)
+
+    def test_offline_never_overrides_what_the_student_asked_for(self):
+        project_id, page_ids = self.upload_photos(count=1)
+        self.post(f"/projects/{project_id}/pages/{page_ids[0]}/recognize", json={"offline": True, "retry": True})
+        self.assertEqual(self.ocr_calls, 1, "Try again goes to the AI")
 
     def test_continue_reading_asks_the_busy_model_once(self):
         project_id, page_ids = self.upload_photos()
         response = self.post(f"/projects/{project_id}/recognize")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.ocr_calls, 1, "not one refused request per photo")
-        self.assertEqual(self.statuses(page_ids), ["ready", "pending", "pending", "pending"])
+        self.later_pages_read_offline(page_ids)
         with self.client.session_transaction() as session:
             flashed = [message for _category, message in session.get("_flashes", [])]
         self.assertTrue(any(PAUSE_MESSAGE in message for message in flashed), flashed)
@@ -439,7 +468,7 @@ class BusyProviderStopsTheRunTests(Base):
         project_id, page_ids = self.upload_photos()
         self.post(f"/projects/{project_id}/quick-start", json={}, headers={"Accept": "application/json"})
         self.assertEqual(self.ocr_calls, 1)
-        self.assertEqual(self.statuses(page_ids), ["ready", "pending", "pending", "pending"])
+        self.later_pages_read_offline(page_ids)
         self.post(f"/projects/{project_id}/quick-start", json={}, headers={"Accept": "application/json"})
         self.assertEqual(self.ocr_calls, 1, "a busy reading moments ago: the provider is not asked again yet")
 
@@ -447,7 +476,7 @@ class BusyProviderStopsTheRunTests(Base):
         project_id, page_ids = self.upload_photos()
         self.post(f"/projects/{project_id}/reanalyze")
         self.assertEqual(self.ocr_calls, 1)
-        self.assertEqual(self.statuses(page_ids), ["ready", "pending", "pending", "pending"])
+        self.later_pages_read_offline(page_ids)
 
 
 # --------------------------------------------------------------------------- D1

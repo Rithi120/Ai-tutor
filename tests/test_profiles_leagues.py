@@ -31,6 +31,10 @@ class Base(unittest.TestCase):
             FEATURE_COMMUNITY_LIBRARY=True, FEATURE_COMMUNITY_PUBLISHING=True,
             FEATURE_COMMUNITY_MODERATION=False, FEATURE_PRIVATE_FLASHCARDS=True,
             LEAGUE_PROMOTE=10, LEAGUE_DEMOTE=10, LEAGUE_GROUP_SIZE=30,
+            # These tests pin the rules for groups of real learners (zones shrink in a small
+            # group). Simulated rivals, which fill groups up to 30, are tested in
+            # tests/test_league_rivals.py, including that these rules stay unchanged with them.
+            LEAGUE_RIVALS=False,
             USERNAME_CHANGE_COOLDOWN_DAYS=30, USERNAME_HOLD_DAYS=90,
             COMMUNITY_MODERATORS={"mod.anna"}, PREMIUM_ADMIN_IDENTIFIERS=set(), AI_DIAGNOSTICS_ADMINS=set())
         application.SESSIONS.clear()

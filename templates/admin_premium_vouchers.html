@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Premium vouchers') }} — Learnova{% endblock %}
+{% block content %}
+<main class="account-shell voucher-admin">
+  <section class="account-card">
+    <div class="eyebrow">LEARNOVA · ADMIN</div>
+    <h1>{{ _('Premium vouchers') }}</h1>
+    <p>{{ _('Generate a batch of codes to sell for cash. Each code activates {months} month(s) of Premium once.', months=default_months) }}</p>
+    <p class="sub-note">{{ _('Only a keyed hash of each code is stored. Nobody - not even an administrator - can see a code again after this page. Lost codes cannot be recovered: revoke them and generate new ones.') }}</p>
+    <p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Issue a single code for a payment') }} →</a></p>
+
+    {% if generated %}
+    <div class="issued-code voucher-issued" role="alert">
+      <p><strong>{{ _('Save these {count} codes now. They are shown only this once and cannot be retrieved later.', count=generated.codes|length) }}</strong></p>
+      <p>{{ _('Batch {batch} · {months} month(s) each · redeem before {date}', batch=generated.public_id, months=generated.months, date=generated.expires_at.strftime('%d.%m.%Y')) }}</p>
+      <label for="voucherCodes" class="visually-hidden">{{ _('Generated codes') }}</label>
+      <textarea id="voucherCodes" class="voucher-codes" rows="10" readonly spellcheck="false" wrap="off">{{ generated.codes|join('\n') }}</textarea>
+      <script type="application/json" id="voucherExport" nonce="{{ csp_nonce() }}">{{ {"batch": generated.public_id, "months": generated.months, "codes": generated.codes|list}|tojson }}</script>
+      <div class="voucher-actions">
+        <button class="primary-button" type="button" data-voucher-copy data-copied-label="{{ _('Copied') }}">{{ _('Copy all codes') }}</button>
+        <button class="secondary-button" type="button" data-voucher-download="csv" data-duration-label="{{ _('1 month') if generated.months == 1 else _('{count} months', count=generated.months) }}">{{ _('Download CSV') }}</button>
+        <button class="secondary-button" type="button" data-voucher-download="txt">{{ _('Download TXT') }}</button>
+      </div>
+      <p class="sub-note">{{ _('The files are made in your browser from this page; nothing is stored on the server. Keep them somewhere private - anyone with a code can use it.') }}</p>
+    </div>
+    {% endif %}
+
+    {% if not vouchers_enabled %}
+    <p class="form-error" role="alert">{{ _('Voucher generation is switched off: PREMIUM_VOUCHER_PEPPER is not set on the server (see PREMIUM_VOUCHER_IMPLEMENTATION.md).') }}</p>
+    {% else %}
+    <form method="post" action="{{ url_for('admin_generate_vouchers') }}" autocomplete="off" class="admin-code-form" data-busy-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <fieldset class="voucher-quantity">
+        <legend>{{ _('Number of codes') }}</legend>
+        {% for value in presets %}
+        <label class="sub-check"><input type="radio" name="quantity" value="{{ value }}" {{ 'checked' if loop.first }}> {{ value }}</label>
+        {% endfor %}
+        <label class="sub-check"><input type="radio" name="quantity" value="custom"> {{ _('Custom') }}</label>
+        <label for="voucher-custom">{{ _('Custom number (1-{max})', max=max_batch) }}</label>
+        <input id="voucher-custom" name="custom_quantity" type="number" min="1" max="{{ max_batch }}" inputmode="numeric">
+      </fieldset>
+      <label for="voucher-months">{{ _('Months of Premium per code') }}</label>
+      <select id="voucher-months" name="months">
+        {% for value in range(1, settings_value.code_max_duration_months + 1) %}
+        <option value="{{ value }}" {{ 'selected' if value == default_months }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+      <label for="voucher-note">{{ _('Note (optional, no student names)') }}</label>
+      <input id="voucher-note" name="note" maxlength="200" autocomplete="off">
+      <button class="primary-button" type="submit" data-busy-label="{{ _('Generating…') }}">{{ _('Generate codes') }}</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="account-card">
+    <h2>{{ _('Batches') }}</h2>
+    <p><a href="{{ url_for('admin_voucher_stats_csv') }}">{{ _('Download statistics (CSV, no codes)') }}</a></p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>{{ _('Batch') }}</th><th>{{ _('Created') }}</th><th>{{ _('By') }}</th><th>{{ _('Codes') }}</th><th>{{ _('Unused') }}</th><th>{{ _('Redeemed') }}</th><th>{{ _('Revoked') }}</th><th>{{ _('Expired') }}</th><th></th></tr></thead>
+      <tbody>{% for row in batches %}
+      <tr>
+        <td><a href="{{ url_for('admin_premium_vouchers', batch=row.public_id) }}">{{ row.public_id }}</a>{% if row.note %}<br><small>{{ row.note }}</small>{% endif %}</td>
+        <td>{{ row.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        <td>{{ row.creator }}</td>
+        <td>{{ row.total }}</td><td>{{ row.unused }}</td><td>{{ row.redeemed }}</td><td>{{ row.revoked }}</td><td>{{ row.expired }}</td>
+        <td>{% if row.unused %}<form method="post" action="{{ url_for('admin_revoke_voucher_batch', batch_id=row.id) }}" data-voucher-confirm="{{ _('Revoke all {count} unused codes of {batch}? Redeemed codes stay active.', count=row.unused, batch=row.public_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">{{ _('Revoke unused') }}</button></form>{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="9">{{ _('No batches yet.') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  <section class="account-card">
+    <h2>{{ _('Vouchers') }}</h2>
+    <form method="get" action="{{ url_for('admin_premium_vouchers') }}" class="voucher-filter">
+      <label for="voucher-batch">{{ _('Batch ID') }}</label>
+      <input id="voucher-batch" name="batch" value="{{ batch_query }}" maxlength="40" placeholder="B-20261114-XXXX">
+      <label for="voucher-status">{{ _('Status') }}</label>
+      <select id="voucher-status" name="status">
+        {% for value, label in status_choices %}
+        <option value="{{ value }}" {{ 'selected' if value == status_filter }}>{{ _(label) }}</option>
+        {% endfor %}
+      </select>
+      <button class="secondary-button" type="submit">{{ _('Filter') }}</button>
+    </form>
+    <div class="table-scroll"><table>
+      <thead><tr><th>{{ _('Code') }}</th><th>{{ _('Batch') }}</th><th>{{ _('Status') }}</th><th>{{ _('Grants') }}</th><th>{{ _('Redeemed') }}</th><th>{{ _('Account') }}</th><th>{{ _('Premium until') }}</th><th></th></tr></thead>
+      <tbody>{% for row in records %}
+      <tr>
+        <td>#{{ row.id }} <span class="sub-hint">{{ '…' ~ row.hint if row.hint else '' }}</span></td>
+        <td>{{ row.batch }}</td>
+        <td>{{ _(row.status|capitalize) }}</td>
+        <td>{{ _('{count} month(s)', count=row.months) }}</td>
+        <td>{% if row.redeemed_at %}{{ row.redeemed_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}</td>
+        <td>{{ row.account or '' }}</td>
+        <td>{% if row.new_expires_at %}{{ row.new_expires_at.strftime('%d.%m.%Y') }}{% endif %}</td>
+        <td>{% if row.status == 'unused' %}<form method="post" action="{{ url_for('admin_revoke_voucher', key_id=row.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button type="submit">{{ _('Revoke') }}</button></form>{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="8">{{ _('No vouchers match.') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if records|length >= record_limit %}<p class="sub-note">{{ _('Showing the newest {count}. Filter by batch or status to see others.', count=record_limit) }}</p>{% endif %}
+    <p class="sub-note">{{ _('Times are UTC.') }}</p>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/subscription.js', v=static_version) }}"></script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/premium-vouchers.js', v=static_version) }}"></script>
+{% endblock %}

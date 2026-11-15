@@ -255,6 +255,25 @@ def goal_topics(text: str) -> list[ExamTopic]:
     return parse_exam_topics(pieces) if len(pieces) >= 2 else []
 
 
+_TOPIC_LIST_SPLIT = re.compile(r"\s*[,;|]\s*")
+
+
+def exam_topics_from_topic(student_text: str, topic: str) -> list[ExamTopic]:
+    """The exam topics a reply's TOPIC line lists, for a reply without an EXAM line.
+
+    Only when the student's own message names a test or exam (_EXAM_WORDS) and the topic
+    lists at least two topics separated by commas, semicolons or "|"; [] otherwise. Live on
+    gpt-oss-20b (2026-11-14) no reply to six exam requests carried the EXAM line, while every
+    TOPIC line listed the topics ("Terme, Gleichungen, lineare Funktionen, Prozent- und
+    Zinsrechnung") - so the format card never appeared. A reworded prompt made the model
+    write EXAM lines for plain questions too, so the student's words decide instead."""
+
+    if not _EXAM_WORDS.search(str(student_text or "")):
+        return []
+    pieces = [piece for piece in _TOPIC_LIST_SPLIT.split(_one_line(topic)) if piece.strip()]
+    return parse_exam_topics(pieces) if len(pieces) >= 2 else []
+
+
 def material_hint(*, headings: Sequence[str], goal: str, photo_count: int, reading_chars: int,
                   exam_date: date | None = None, today: date | None = None) -> FormatDecision | None:
     """For the Short Lesson builder: the decision for what was sent, when Project Mode is
@@ -349,7 +368,8 @@ __all__ = [
     "EXAM_FAR_DAYS", "EXAM_FAR_MIN_TOPICS", "EXAM_SOON_DAYS", "EXAM_SOON_MAX_TOPICS", "HEAVY_MINUTES",
     "HEAVY_PHOTOS", "HEAVY_READING_CHARACTERS", "KINDS", "LARGE_MIN_TOPICS", "LONG_MINUTES", "MAX_EXAM_TOPICS",
     "MINUTES_BY_STATE", "PROJECT_KEY", "SMALL_MAX_TOPICS", "ExamTopic", "FormatDecision", "MaterialSignals",
-    "decide_format", "exam_date_from_text", "goal_topics", "linked_topic_count", "material_hint",
+    "decide_format", "exam_date_from_text", "exam_topics_from_topic", "goal_topics", "linked_topic_count",
+    "material_hint",
     "parse_exam_topics", "topic_minutes",
     "topics_from_json", "topics_to_json",
 ]

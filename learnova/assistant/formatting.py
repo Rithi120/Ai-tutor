@@ -686,6 +686,10 @@ MEDIA_KINDS = frozenset({"diagram", "map", "video"})
 _TRAILER_LINE = re.compile(
     r"^\s*(?:<!--\s*)?(?:(?:#{1,6}|[-*+]|\d{1,2}[.)])\s+)?(?:[*_`>]+\s*)?(CHIPS|TOPIC|MEDIA|EXAM)(?:[*_`]+)?\s*:\s*"
     r"(?:[*_`]+\s*)?(.*?)\s*(?:[*_`]+)?\s*(?:-->)?\s*$")
+# The keyword alone as a heading, its value on the next line ("**MEDIA**" / "Diagramm: ...",
+# live 2026-11-14): the pair is one hidden line, never shown to the student.
+_BARE_TRAILER_KEY = re.compile(
+    r"^\s*(?:(?:#{1,6}|[-*+])\s+)?(?:[*_`>]+\s*)?(CHIPS|TOPIC|MEDIA|EXAM)(?:[*_`]+)?\s*:?\s*(?:[*_`]+)?\s*$")
 # The most trailer lines taken off one reply: a model that repeats a line ("TOPIC: ..." twice)
 # loses every copy, while a long tail of look-alike lines is never eaten.
 _MAX_TRAILER_LINES = 6
@@ -870,9 +874,14 @@ def reply_trailers(text: str) -> ReplyTrailers:
         while lines and not lines[-1].strip():
             lines.pop()
         match = _TRAILER_LINE.match(lines[-1]) if lines else None
-        if match is None:
-            break
-        key, value = match.group(1), match.group(2)
+        if match is not None:
+            key, value = match.group(1), match.group(2)
+        else:
+            bare = _BARE_TRAILER_KEY.match(lines[-2]) if len(lines) >= 2 and lines[-1].strip() else None
+            if bare is None:
+                break
+            key, value = bare.group(1), lines[-1].strip().strip("*_`").strip()
+            lines.pop()          # the value line; the keyword line goes below
         if key not in seen:          # read bottom-up: the last line written wins
             seen.add(key)
             if key == "CHIPS":

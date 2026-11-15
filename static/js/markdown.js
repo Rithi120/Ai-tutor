@@ -19,6 +19,7 @@
  */
 import { escapeAttr, escapeHtml } from "./dom.js";
 import { FENCE, LITERAL_DOLLAR, MATH_TOKEN, protectMath } from "./math-protect.js";
+import { sectionize } from "./markdown-sections.js";
 
 const LINK_TOKEN = /(\d+)/g;
 const MAX_LIST_DEPTH = 3;
@@ -324,7 +325,9 @@ function renderBlocks(text, spans) {
     out.push(`<pre class="asst-code"><code>${escapeHtml(code.join("\n"))}</code></pre>`);
   }
   flushBlocks();
-  return out.join("\n");
+  // Labelled parts of an answer ("**Beispiel**", "### Formel") become sections; a plain
+  // answer is unchanged (markdown-sections.js).
+  return sectionize(out).join("\n");
 }
 
 /* ----------------------------------------------------------------- restore */

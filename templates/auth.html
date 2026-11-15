@@ -25,6 +25,7 @@
       <p>{{ _('Your lessons and progress stay connected to your account.') }}</p>
     </div>
     {% include 'components/_alerts.html' %}
+    {% include 'components/_auth_providers.html' %}
     <form id="authForm" class="auth-form" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if request.args.get('next') %}<input type="hidden" name="next" value="{{ request.args.get('next') }}">{% endif %}
@@ -37,7 +38,7 @@
       <label class="auth-field auth-reveal"><span>{{ _('Username or email') }}</span><input name="identifier" autocomplete="username" maxlength="255" value="{{ request.form.get('identifier', request.form.get('email', '')) }}" required></label>
       {% endif %}
       <label class="auth-field auth-reveal"><span>{{ _('Password') }}</span><span class="auth-password-control"><input id="authPassword" name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required><button class="password-toggle" type="button" aria-controls="authPassword" aria-label="{{ _('Show password') }}" title="{{ _('Show password') }}"><span aria-hidden="true">◉</span></button></span></label>
-      {% if mode == 'login' %}<label class="remember auth-reveal"><input name="remember" type="checkbox" {{ 'checked' if request.form.get('remember') }}> <span>{{ _('Keep me logged in') }}</span></label>{% endif %}
+      {% if mode == 'login' %}<div class="auth-row auth-reveal"><label class="remember"><input name="remember" type="checkbox" {{ 'checked' if request.form.get('remember') }}> <span>{{ _('Keep me logged in') }}</span></label><a class="auth-forgot" href="{{ url_for('forgot_password') }}">{{ _('Forgot password?') }}</a></div>{% endif %}
       <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Create account') if mode == 'register' else _('Log in') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
     </form>
     <div class="auth-card-footer auth-reveal">

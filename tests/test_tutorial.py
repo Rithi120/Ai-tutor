@@ -1123,7 +1123,8 @@ class HookTests(TutorialCase):
         self.register()
         page = self.client.get("/dashboard").get_data(as_text=True)
         mobile = page.split('id="mobileAppMenu"', 1)[1].split("</nav>", 1)[0]
-        more = page.split('id="moreMenu"', 1)[1].split("</div>", 1)[0]
+        # The More menu folds into groups (nested <div>s): it ends with the desktop <nav>.
+        more = page.split('id="moreMenu"', 1)[1].split("</nav>", 1)[0]
         account = page.split('id="profileMenu"', 1)[1].split("</div>", 1)[0]
         desktop = page.split('<nav class="desktop-app-nav', 1)[1].split("</nav>", 1)[0]
         for name in ("flashcards", "community", "practice-today", "mistake-insights", "tutorial"):
@@ -1443,7 +1444,8 @@ class EntryPointTests(TutorialCase):
         self.register()
         page = self.client.get("/dashboard").get_data(as_text=True)
         self.assertEqual(page.count("data-tutorial-link"), 5)
-        more = page.split('id="moreMenu"', 1)[1].split("</div>", 1)[0]
+        # The More menu folds into groups (nested <div>s): it ends with the desktop <nav>.
+        more = page.split('id="moreMenu"', 1)[1].split("</nav>", 1)[0]
         account = page.split('id="profileMenu"', 1)[1].split("</div>", 1)[0]
         mobile = page.split('id="mobileAppMenu"', 1)[1].split("</nav>", 1)[0]
         footer = page.split('<footer class="global-footer">', 1)[1].split("</footer>", 1)[0]

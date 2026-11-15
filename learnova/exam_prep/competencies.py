@@ -124,10 +124,26 @@ def expected_rows(page_text: Any) -> list[str]:
                 if trailing:
                     segment = segment[:trailing.start()]
             text = " ".join(segment.strip(" \t|").split())
-            if text:
+            if text and not _is_column_header(text):
                 rows.append(text)
-        open_row = bool(rows) and not rows[-1].endswith((".", "!", "?"))
+        open_row = bool(rows) and not _is_column_header(line) and not rows[-1].endswith((".", "!", "?"))
     return rows
+
+
+# A column heading "Ich kann …" / "I can ..." says what the rows below begin with; it is no
+# competency of its own (live 2026-11-14: a photographed grid with 13 rows was reported as
+# "14 rows, 13 found", and "Add the missing rows" offered "Ich kann ..." as a competency).
+_HEADER_REST = re.compile(r"[^\W\d_]{2,}")
+_HEADER_DOTS = re.compile(r"^(?:\.{2,}|…)")
+
+
+def _is_column_header(text: str) -> bool:
+    """A row start with nothing after its "Ich kann" but a colon, or dots / an ellipsis first
+    (a text layer joins the heading row's other cells: "Ich kann …   Niveau   Buch")."""
+
+    rest = _LEADING_CAN.sub("", " ".join(str(text or "").split()), count=1).strip()
+    return bool(_ROW_START.search(str(text or ""))) and (
+        not _HEADER_REST.search(rest) or bool(_HEADER_DOTS.match(rest)))
 
 
 def page_gap(*, expected: int, found: int, rejected: int = 0, dropped: int = 0) -> dict[str, int] | None:

@@ -1,0 +1,37 @@
+{# The grouped "More" part of the navigation (desktop dropdown and phone drawer), compact like
+   the Settings rows: League, then three folding groups. Included from _navbar.html with
+   nav_menu (True in the desktop dropdown: ARIA menu items) and nav_prefix (unique ids).
+   A group opens by itself when the current page is inside it. #}
+{% set item_role = ' role="menuitem"'|safe if nav_menu else '' %}
+{% set cards_on = feature_flags.private_flashcards or feature_flags.vocabulary_trainer or feature_flags.community_library %}
+{% set cards_open = flashcards_active or vocabulary_active or community_active %}
+{% set overview_open = practice_active or endpoint in ['progress_page', 'mistake_intelligence'] %}
+{% set more_open = about_active or contact_active or tutorial_active %}
+{% if leagues_on %}<a{{ item_role }} class="nav-group-single {{ 'is-active' if leaderboard_active }}" href="{{ url_for('leaderboard_page') }}" {% if leaderboard_active %}aria-current="page"{% endif %}{% if not nav_menu %} data-tour-target="leagues"{% endif %}><span class="nav-group-icon" aria-hidden="true">🏆</span>{{ _('League') }}</a>{% endif %}
+{% if cards_on %}
+<details class="nav-group" id="{{ nav_prefix }}-cards" data-nav-group{% if cards_open %} open{% endif %}>
+  <summary{{ item_role }} class="{{ 'is-active' if cards_open }}"{% if nav_menu %} aria-haspopup="true" aria-expanded="{{ 'true' if cards_open else 'false' }}"{% endif %}><span class="nav-group-icon" aria-hidden="true">🃏</span><span class="nav-group-label">{{ _('Flashcards') }}</span><span class="nav-group-chevron" aria-hidden="true"></span></summary>
+  <div class="nav-group-items" role="group" aria-label="{{ _('Flashcards') }}">
+    {% if feature_flags.private_flashcards %}<a{{ item_role }} class="{{ 'is-active' if flashcards_active }}" href="{{ url_for('flashcards_page') }}" {% if flashcards_active %}aria-current="page"{% endif %} data-tour-target="flashcards">{{ _('My flashcards') }}</a>{% endif %}
+    {% if feature_flags.vocabulary_trainer %}<a{{ item_role }} class="{{ 'is-active' if vocabulary_active }}" href="{{ url_for('vocabulary_import_page') }}" data-tour-target="vocabulary">{{ _('Vocabulary Trainer') }}</a>{% endif %}
+    {% if feature_flags.community_library %}<a{{ item_role }} class="{{ 'is-active' if community_active }}" href="{{ url_for('community_page') }}" {% if community_active %}aria-current="page"{% endif %} data-tour-target="community">{{ _('Community') }}</a>{% endif %}
+  </div>
+</details>
+{% endif %}
+<details class="nav-group" id="{{ nav_prefix }}-overview" data-nav-group{% if overview_open %} open{% endif %}>
+  <summary{{ item_role }} class="{{ 'is-active' if overview_open }}"{% if nav_menu %} aria-haspopup="true" aria-expanded="{{ 'true' if overview_open else 'false' }}"{% endif %}><span class="nav-group-icon" aria-hidden="true">📊</span><span class="nav-group-label">{{ _('Overview') }}</span><span class="nav-group-chevron" aria-hidden="true"></span></summary>
+  <div class="nav-group-items" role="group" aria-label="{{ _('Overview') }}">
+    {% if feature_flags.gamification_enabled %}<a{{ item_role }} class="{{ 'is-active' if endpoint == 'progress_page' }}" href="{{ url_for('progress_page') }}" data-tour-target="progress">{{ _('Progress') }}</a>{% endif %}
+    <a{{ item_role }} href="{{ url_for('dashboard') }}#mistake-notebook" data-tour-target="mistake-notebook">{{ _('Mistake Notebook') }}</a>
+    <a{{ item_role }} class="{{ 'is-active' if endpoint == 'mistake_intelligence' }}" href="{{ url_for('mistake_intelligence') }}" data-tour-target="mistake-insights">{{ _('Mistake Intelligence') }}</a>
+    <a{{ item_role }} class="{{ 'is-active' if practice_active }}" href="{{ url_for('todays_practice') }}" {% if practice_active %}aria-current="page"{% endif %} data-tour-target="practice-today">{{ _("Today's Practice") }}</a>
+  </div>
+</details>
+<details class="nav-group" id="{{ nav_prefix }}-more" data-nav-group{% if more_open %} open{% endif %}>
+  <summary{{ item_role }} class="{{ 'is-active' if more_open }}"{% if nav_menu %} aria-haspopup="true" aria-expanded="{{ 'true' if more_open else 'false' }}"{% endif %}><span class="nav-group-icon" aria-hidden="true">💬</span><span class="nav-group-label">{{ _('More') }}</span><span class="nav-group-chevron" aria-hidden="true"></span></summary>
+  <div class="nav-group-items" role="group" aria-label="{{ _('More') }}">
+    <a{{ item_role }} class="{{ 'is-active' if about_active }}" href="{{ url_for('about') }}" {% if about_active %}aria-current="page"{% endif %} data-tour-target="about">{{ _('About Learnova') }}</a>
+    <a{{ item_role }} class="{{ 'is-active' if contact_active }}" href="{{ url_for('contact') }}" {% if contact_active %}aria-current="page"{% endif %} data-tour-target="contact">{{ _('Contact us') }}</a>
+    <a{{ item_role }} class="{{ 'is-active' if tutorial_active }}" href="{{ url_for('tutorial_hub') }}"{% if tutorial_active %} aria-current="page"{% endif %} data-tutorial-link data-tour-target="tutorial">{{ _('Tutorial') }}</a>
+  </div>
+</details>

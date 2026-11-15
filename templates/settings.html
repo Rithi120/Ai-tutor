@@ -9,49 +9,93 @@
   <section class="account-card">
     <div class="eyebrow">LEARNOVA</div>
     <h1>{{ _('Settings') }}</h1>
-    <form method="post" action="{{ url_for('update_language') }}" data-tour-target="settings-language">
-      <label for="language">{{ _('Interface language') }}</label>
-      <p>{{ _('Choose the language used for the interface and AI learning content.') }}</p>
-      {{ language_selector() }}
-      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <button class="primary-button" type="submit">{{ _('Save') }}</button>
-    </form>
-    {% if current_user.is_authenticated %}
-    <form method="post" action="{{ url_for('update_grade') }}" class="settings-grade" data-tour-target="settings-grade">
-      <label for="grade">{{ _('Grade / level') }}</label>
-      <p>{{ _('This helps Learnova match explanations and difficulty to your level.') }}</p>
-      {{ grade_selector(selected=current_grade, required=True) }}
-      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <button class="primary-button" type="submit">{{ _('Save grade') }}</button>
-    </form>
-    <form method="post" action="{{ url_for('update_school_type') }}" class="settings-grade">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label for="school_type">{{ _('School type') }}</label>
-      <p>{{ _('Learnova follows the Baden-Württemberg Bildungsplan for your school type.') }}</p>
-      <select id="school_type" name="school_type" required>
-        <option value="" {{ 'selected' if not current_school_type }} disabled hidden>{{ _('Select your school type') }}</option>
-        {% for choice in school_type_choices %}
-        <option value="{{ choice.value }}" {{ 'selected' if current_school_type == choice.value }}>{{ _(choice.label) }}</option>
-        {% endfor %}
-      </select>
-      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <button class="primary-button" type="submit">{{ _('Save school type') }}</button>
-    </form>
-    {% include "components/_profile_settings.html" %}
-    {% endif %}
-    {% if current_user.is_authenticated %}{% include "components/_subscription.html" %}{% endif %}
-    <section class="settings-profile settings-help" id="help" aria-labelledby="settings-help-title">
-      <h2 id="settings-help-title">{{ _('Help and support') }}</h2>
-      <p>{{ _('Learn every feature step by step, or ask us.') }}</p>
-      <div class="settings-help-links">
-        {% if current_user.is_authenticated %}<a class="primary-button" href="{{ url_for('tutorial_hub') }}" data-tutorial-link>{{ _('Open the tutorial') }}</a>{% endif %}
-        <a class="secondary-button" href="{{ url_for('about') }}">{{ _('About Learnova') }}</a>
-        <a class="secondary-button" href="{{ url_for('contact') }}">{{ _('Contact us') }}</a>
-        {% if premium_admin %}<a class="ghost-button" href="{{ url_for('admin_contact_messages') }}">{{ _('Contact messages') }}</a>{% endif %}
-      </div>
-      {% if current_user.is_authenticated %}{% set tips_back = 'settings' %}{% include "components/_tutorial_tips.html" %}{% endif %}
-    </section>
+    {# One row per group ("Profil ›"); a tap opens it, so nobody scrolls past every setting to
+       reach the one they want. A link to #profile, #subscription, #help … opens its group
+       (settings-groups.js); the tutorial opens a group itself ("Open this part first"). #}
+    <div class="settings-groups">
+      <details class="settings-group" id="learning">
+        <summary class="settings-group-row">
+          <span class="settings-group-icon" aria-hidden="true">📚</span>
+          <span class="settings-group-text"><b>{{ _('Learning preferences') }}</b><small>{{ _('Language, class, school type') }}</small></span>
+        </summary>
+        <div class="settings-group-body">
+          <form method="post" action="{{ url_for('update_language') }}" data-tour-target="settings-language">
+            <label for="language">{{ _('Interface language') }}</label>
+            <p>{{ _('Choose the language used for the interface and AI learning content.') }}</p>
+            {{ language_selector() }}
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+            <button class="primary-button" type="submit">{{ _('Save') }}</button>
+          </form>
+          {% if current_user.is_authenticated %}
+          <form method="post" action="{{ url_for('update_grade') }}" class="settings-grade" data-tour-target="settings-grade">
+            <label for="grade">{{ _('Grade / level') }}</label>
+            <p>{{ _('This helps Learnova match explanations and difficulty to your level.') }}</p>
+            {{ grade_selector(selected=current_grade, required=True) }}
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+            <button class="primary-button" type="submit">{{ _('Save grade') }}</button>
+          </form>
+          <form method="post" action="{{ url_for('update_school_type') }}" class="settings-grade">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="school_type">{{ _('School type') }}</label>
+            <p>{{ _('Learnova follows the Baden-Württemberg Bildungsplan for your school type.') }}</p>
+            <select id="school_type" name="school_type" required>
+              <option value="" {{ 'selected' if not current_school_type }} disabled hidden>{{ _('Select your school type') }}</option>
+              {% for choice in school_type_choices %}
+              <option value="{{ choice.value }}" {{ 'selected' if current_school_type == choice.value }}>{{ _(choice.label) }}</option>
+              {% endfor %}
+            </select>
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+            <button class="primary-button" type="submit">{{ _('Save school type') }}</button>
+          </form>
+          {% endif %}
+        </div>
+      </details>
+      {% if current_user.is_authenticated %}
+      <details class="settings-group" id="profile-group">
+        <summary class="settings-group-row">
+          <span class="settings-group-icon" aria-hidden="true">👤</span>
+          <span class="settings-group-text"><b>{{ _('Profile') }}</b><small>@{{ current_user.username }} · {{ _('Avatar, privacy, leagues') }}</small></span>
+        </summary>
+        <div class="settings-group-body">{% include "components/_profile_settings.html" %}{% include "components/_review_settings.html" %}</div>
+      </details>
+      <details class="settings-group" id="security-group">
+        <summary class="settings-group-row">
+          <span class="settings-group-icon" aria-hidden="true">🔐</span>
+          <span class="settings-group-text"><b>{{ _('Login & Security') }}</b><small>{{ _('Google, Apple, phone, password') }}</small></span>
+        </summary>
+        <div class="settings-group-body">{% include "components/_security_settings.html" %}</div>
+      </details>
+      <details class="settings-group" id="subscription-group">
+        <summary class="settings-group-row">
+          <span class="settings-group-icon" aria-hidden="true">⭐</span>
+          <span class="settings-group-text"><b>{{ _('Subscription') }}</b><small>{{ _('Premium') if plan_premium else _('Free') }} · {{ _('Redeem a Premium code') }}</small></span>
+        </summary>
+        <div class="settings-group-body">{% include "components/_subscription.html" %}</div>
+      </details>
+      {% endif %}
+      <details class="settings-group" id="help-group">
+        <summary class="settings-group-row">
+          <span class="settings-group-icon" aria-hidden="true">ℹ️</span>
+          <span class="settings-group-text"><b>{{ _('Help and support') }}</b><small>{{ _('Tutorial, contact, about Learnova') }}</small></span>
+        </summary>
+        <div class="settings-group-body">
+          <section class="settings-profile settings-help" id="help" aria-labelledby="settings-help-title">
+            <h2 id="settings-help-title">{{ _('Help and support') }}</h2>
+            <p>{{ _('Learn every feature step by step, or ask us.') }}</p>
+            <div class="settings-help-links">
+              {% if current_user.is_authenticated %}<a class="primary-button" href="{{ url_for('tutorial_hub') }}" data-tutorial-link>{{ _('Open the tutorial') }}</a>{% endif %}
+              <a class="secondary-button" href="{{ url_for('about') }}">{{ _('About Learnova') }}</a>
+              <a class="secondary-button" href="{{ url_for('contact') }}">{{ _('Contact us') }}</a>
+              {% if premium_admin %}<a class="ghost-button" href="{{ url_for('admin_contact_messages') }}">{{ _('Contact messages') }}</a>{% endif %}
+            </div>
+            {% if current_user.is_authenticated %}{% set tips_back = 'settings' %}{% include "components/_tutorial_tips.html" %}{% endif %}
+          </section>
+        </div>
+      </details>
+    </div>
   </section>
 </main>
 {% endblock %}
-{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/subscription.js', v=static_version) }}"></script>{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/subscription.js', v=static_version) }}"></script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/settings-groups.js', v=static_version) }}"></script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/reviews.js', v=static_version) }}"></script>{% endblock %}

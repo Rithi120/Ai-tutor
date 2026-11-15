@@ -1,0 +1,15 @@
+{% extends "auth_simple.html" %}
+{% block title %}{{ _('Forgot password?') }} — Learnova{% endblock %}
+{% block card %}
+<div class="auth-heading auth-reveal">
+  <h1>{{ _('Forgot password?') }}</h1>
+  <p>{{ _('Enter your username or email. If your account has an email address, we send you a link to set a new password.') }}</p>
+</div>
+{% include 'components/_alerts.html' %}
+<form class="auth-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="auth-field auth-reveal"><span>{{ _('Username or email') }}</span><input name="identifier" autocomplete="username" maxlength="255" required autofocus></label>
+  <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Send link') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+</form>
+{% if auth_providers.phone %}<p class="auth-small auth-reveal">{{ _('Signed up with your phone?') }} <a href="{{ url_for('auth_phone_page') }}">{{ _('Continue with phone number') }}</a></p>{% endif %}
+{% endblock %}

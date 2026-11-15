@@ -1,0 +1,21 @@
+{% extends "auth_base.html" %}
+{# The card of the login page for the smaller account pages: phone, onboarding, password. #}
+{% block body_class %}account-page auth-body{% endblock %}
+{% block content %}
+<main class="auth-page">
+  <div class="auth-background" aria-hidden="true">
+    <div class="auth-ellipse auth-ellipse-1"></div>
+    <div class="auth-ellipse auth-ellipse-2"></div>
+    <div class="auth-ellipse auth-ellipse-4"></div>
+  </div>
+  <section class="auth-card {% block card_class %}{% endblock %}">
+    {% block back %}<a class="auth-back" href="{{ url_for('login') }}"><span aria-hidden="true">←</span> {{ _('Back to log in') }}</a>{% endblock %}
+    <a class="auth-brand auth-reveal" href="{{ url_for('login') }}" aria-label="Learnova">
+      <img src="{{ url_for('static', filename='learnova-logo.svg') }}" alt=""><span>Learnova</span>
+    </a>
+    {% block card %}{% endblock %}
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/auth.js') }}"></script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/auth-onboarding.js') }}"></script>{% endblock %}

@@ -468,7 +468,7 @@ class RequestTests(LearningRouteTestCase):
         # v5 (CHAT_FIX2): table rows on one line, decimal commas as {,}, partial photo readings.
         # v6: the hidden MEDIA line and the no-links honesty rule (learning resources) and,
         # in a separate lane, the hidden EXAM line (spec 1.2); v7 is the merged prompt.
-        self.assertEqual(PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v7")
+        self.assertEqual(PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v8")
 
 
 class PhotoCompactionTests(LearningRouteTestCase):

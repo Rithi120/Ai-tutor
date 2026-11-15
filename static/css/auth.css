@@ -137,3 +137,52 @@
   .auth-submit, .auth-field input, .auth-field select, .password-toggle { transition-duration: .01ms !important; }
   .auth-submit:hover:not(:disabled), .auth-submit:active:not(:disabled) { transform: none; }
 }
+
+/* ---- Continue with Google / Apple / phone (components/_auth_providers.html) ---- */
+.auth-social { display: grid; gap: 10px; margin-top: 24px; }
+.auth-provider { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 12px; padding: 10px 16px; border: 1px solid #747775; border-radius: 12px; background: #fff; color: #1f1f1f; font: 600 15px/1.2 Roboto, "DM Sans", system-ui, sans-serif; text-decoration: none; transition: background .16s ease, box-shadow .16s ease; }
+.auth-provider:hover { background: #f6f7f9; box-shadow: 0 2px 8px rgba(24, 35, 63, .08); }
+.auth-provider:focus-visible { outline: 3px solid rgba(117, 101, 232, .35); outline-offset: 2px; }
+.auth-provider-logo { width: 20px; height: 20px; flex: 0 0 20px; display: inline-grid; place-items: center; font-size: 18px; line-height: 1; }
+.auth-provider-apple { border-color: #000; background: #000; color: #fff; }
+.auth-provider-apple:hover { background: #1d1d1f; }
+.auth-provider-phone { border-color: #d6d8e3; color: #303a54; }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 -6px; color: #7a8196; font-size: 13px; font-weight: 600; text-transform: lowercase; }
+.auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: #e3e4ec; }
+.auth-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.auth-forgot { color: #5146ba; font-weight: 700; font-size: 14px; text-decoration: none; }
+.auth-forgot:hover { text-decoration: underline; }
+.auth-small { margin: 4px 0 0; color: #6b7287; font-size: 14px; text-align: center; }
+.auth-small a { color: #5146ba; font-weight: 700; }
+
+/* ---- Phone ---- */
+.phone-row { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 10px; }
+.phone-row select, .phone-row input { min-height: 48px; }
+.otp-input { font: 700 24px/1 "DM Mono", ui-monospace, monospace; letter-spacing: .35em; text-align: center; }
+@media (max-width: 380px) { .phone-row { grid-template-columns: 1fr; } }
+
+/* ---- Onboarding ---- */
+.onboarding-steps { display: flex; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; }
+.onboarding-steps li { display: flex; flex: 1; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: #f1f1f7; color: #6b7287; font-size: 13px; font-weight: 700; }
+.onboarding-steps li b { display: inline-grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: #fff; color: inherit; font-size: 12px; }
+.onboarding-steps li.is-current { background: #ebe8fd; color: #4a3fb0; }
+.onboarding-steps li.is-done { color: #2f7d5b; }
+.onboarding-steps li.is-done b::before { content: "✓"; }
+.onboarding-steps li.is-done b { font-size: 0; }
+.onboarding-steps li.is-done b::before { font-size: 12px; }
+.field-hint, .field-ok, .field-error { font-size: 13px; font-weight: 500; line-height: 1.4; }
+.field-hint { color: #6b7287; }
+.field-ok { color: #2f7d5b; font-weight: 700; }
+.field-error { color: #b2412b; font-weight: 700; }
+.interest-picker { margin: 0; padding: 0; border: 0; }
+.interest-picker legend { margin-bottom: 8px; padding: 0; }
+.interest-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.interest-chip { position: relative; }
+.interest-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.interest-chip span { display: inline-flex; min-height: 40px; align-items: center; padding: 6px 14px; border: 1px solid #d6d8e3; border-radius: 999px; background: #fff; color: #414b63; font-size: 14px; font-weight: 600; }
+.interest-chip input:checked + span { border-color: #6758d8; background: #ebe8fd; color: #4a3fb0; }
+.interest-chip input:focus-visible + span { outline: 3px solid rgba(117, 101, 232, .35); outline-offset: 2px; }
+.onboarding-actions { display: flex; gap: 10px; justify-content: space-between; }
+.onboarding-actions .auth-submit { flex: 1; }
+.onboarding-welcome { text-align: center; }
+.onboarding-wave { font-size: 44px; line-height: 1; }

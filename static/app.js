@@ -428,6 +428,16 @@ const PART_LABEL_KEYS = {
   flashcards: "lpKind_flashcards",
   alternative: "lpKind_alternative",
 };
+// One small icon per kind of lesson part, so a student scrolling a long lesson sees at a
+// glance where the rule, the example, the mistakes and the exercise are (readability
+// upgrade, 2026-11-14). Decorative only: the title text is unchanged for screen readers.
+const PART_ICONS = {
+  objective: "🎯", why: "🎯", explanation: "🧠", terms: "📚", rule: "⚡", structure: "🧩",
+  example: "💡", worked_example: "💡", experiment: "🧪", thought_experiment: "💭", theory: "🧠",
+  argument: "💬", perspectives: "👀", timeline: "🕰️", cause_effect: "🔗", process: "🔁",
+  diagram: "📈", source_analysis: "📜", model_analysis: "🧩", mistakes: "⚠️",
+  guided_exercise: "📝", summary: "✅", flashcards: "🃏", alternative: "🔄",
+};
 // Items of these kinds are a sequence (steps of a process or a worked solution), so they
 // are numbered; every other kind lists its items as "label — text".
 const ORDERED_PART_KINDS = new Set(["process", "worked_example", "structure"]);
@@ -538,6 +548,22 @@ function itemList(items, { ordered = false, className = "lp-items" } = {}) {
 function originBadge(fromNotes) {
   return el("span", `lp-origin ${fromNotes ? "lp-origin-notes" : "lp-origin-added"}`,
     fromNotes ? t("lpFromNotes") : t("lpAddedByLearnova"));
+}
+
+// Reliability V1: a part whose calculations Learnova recomputed says so quietly; one it could
+// not confirm asks the student to work it out. Parts without a checked calculation show nothing.
+function mathBadge(part) {
+  if (part.math === "verified" || part.math === "corrected") {
+    return el("span", "lp-origin lp-origin-checked", `✓ ${t("lpMathVerified")}`);
+  }
+  return null;
+}
+
+function mathNote(part) {
+  if (part.math !== "needs_check") return null;
+  const note = el("p", "lp-math-check", t("lpMathCheck"));
+  note.setAttribute("role", "note");
+  return note;
 }
 
 function sourcePages(part) {
@@ -768,10 +794,18 @@ function partCard(part, number) {
   const meta = el("div", "lp-meta");
   if (title) meta.appendChild(el("span", "card-kicker lp-kicker", label));
   meta.appendChild(originBadge(part.from_notes === true));
+  const checked = mathBadge(part);
+  if (checked) meta.appendChild(checked);
   meta.append(...sourcePages(part));
-  main.append(meta, el("h2", "lp-title", title || label));
+  const heading = el("h2", "lp-title");
+  const icon = el("span", "lp-title-icon", PART_ICONS[kind] || "");
+  icon.setAttribute("aria-hidden", "true");
+  heading.append(icon, document.createTextNode(title || label));
+  main.append(meta, heading);
   const render = PART_RENDERERS[kind] || genericContent;
   main.appendChild(render(part, partItems(part), kind));
+  const unconfirmed = mathNote(part);
+  if (unconfirmed) main.appendChild(unconfirmed);
   const figures = partFigures(part);
   if (figures) main.appendChild(figures);
   card.append(badge, main);

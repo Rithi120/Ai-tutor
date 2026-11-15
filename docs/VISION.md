@@ -118,8 +118,9 @@ call site, including ones that do not use the reader:
   that page and none of the other 21 (docs/PROJECT_MODE.md, "Reading honesty").
 - **A busy vision model is asked once per Project Mode run (review B B-1).** While the only
   vision model cools down after a 429, `ocr_document_recognition` fails at once without a
-  call (`COOLDOWN_FAIL_FAST_TASKS`) and the page is read offline; the reading loops stop at
-  the first page read offline because the AI was busy. Chat photos (`image_understanding`
+  call (`COOLDOWN_FAIL_FAST_TASKS`) and the page is read offline; after the first page read
+  offline because the AI was busy, the rest of the run is read offline without asking the AI
+  (`offline`, docs/PROJECT_MODE.md - it used to stop there and leave the later pages unread). Chat photos (`image_understanding`
   and their close-up second look) still ask the model as before.
 - **"Try reading again" is a real re-read (PF3 D3).** Page readings are cached
   (`DETERMINISTIC_TASKS`), so a retry used to return the same reading for free. The retry

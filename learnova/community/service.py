@@ -210,6 +210,18 @@ def _folded(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
+_DIVISION_SIGNS = str.maketrans({":": "/", "÷": "/", "∶": "/"})
+
+
+def _division_sign_only(quoted: str, suggestion: str) -> bool:
+    """The suggestion only writes the division sign another way (":" / "/" / "÷")."""
+
+    def plain(value: str) -> str:
+        return "".join(str(value or "").split()).casefold().translate(_DIVISION_SIGNS)
+
+    return quoted != suggestion and plain(quoted) == plain(suggestion) and "/" in plain(quoted)
+
+
 def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep only warnings that name a real entry and quote text that is in it.
 
@@ -250,6 +262,11 @@ def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict
             continue
         seen.add(key)
         suggestion = " ".join(str(item.get("suggestion") or "").split())[:200]
+        if suggestion and _division_sign_only(quoted, suggestion):
+            # ":" is the division sign German schools teach ("Z = K · p · t : 36000"); live
+            # 2026-11-14 the reviewer flagged all four such formulas of a deck as "grammar",
+            # suggesting "/". A change of notation only is no mistake in the card.
+            continue
         if _folded(suggestion) == _folded(quoted):
             suggestion = ""
         result.append({

@@ -134,9 +134,17 @@ class ResourceNodeTests(_Case):
         self.assertIn("Bild: Ann <b>Example</b>, CC BY-SA 4.0 (Wikimedia Commons)", view["caption"])
         self.assertEqual([href for href, _text in view["links"]], [IMAGE["file_url"], IMAGE["licence_url"]])
         self.assertEqual(view["bold"], 0)
-        for missing in ({"licence": ""}, {"file_url": "https://evil.example/x"}, {"url": "https://evil.example/x.png"}):
+        for missing in ({"licence": ""}, {"file_url": "https://evil.example/x"}, {"url": "https://evil.example/x.png"},
+                        {"url": "https://maps.wikimedia.org/img/x.png"}):
             with self.subTest(missing=missing):
                 self.assertIsNone(self.evaluate("(mod, image) => mod.imageFigureNode(image)", {**IMAGE, **missing}))
+
+    def test_a_thumbnail_from_wikimedias_thumbnail_host_is_shown(self):
+        # Live 2026-11-14 Wikipedia's API gave thumb.wikimedia.org; the page dropped it unseen.
+        thumb = {**IMAGE, "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Ohm.png/960px-Ohm.png"
+                                 "?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"}
+        src = self.evaluate("(mod, image) => mod.imageFigureNode(image).querySelector('img').getAttribute('src')", thumb)
+        self.assertEqual(src, thumb["url"])
 
     def test_durations(self):
         self.assertEqual(self.evaluate("(mod, values) => values.map(mod.formatDuration)", [65, 3723, 0, None]),

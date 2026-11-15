@@ -45,10 +45,15 @@ _USER_AGENT = "LearnovaTutor/1.0 (educational study app; contact via app)"
 # looked up in English - which is what happened to fr/es/it/pt/nl/ar before.
 WIKI_LANGUAGES = frozenset({"en", "de", "fr", "es", "it", "pt", "nl", "ar"})
 
-# The only image host the CSP allows (learnova/web/security.py). The previous check
+# The only image hosts the CSP allows (learnova/web/security.py). The previous check
 # accepted any *.wikimedia.org, so an image from another Wikimedia host passed the server
 # and was then blocked by the browser - a broken picture under a confident caption.
-ALLOWED_IMAGE_HOST = "upload.wikimedia.org"
+# Wikipedia's API serves scaled thumbnails from thumb.wikimedia.org (live 2026-11-14: every
+# lead image of "Satz des Pythagoras", "Mitose", "Baden-Württemberg" came from there, so
+# with upload.wikimedia.org alone no chat or lesson picture was ever shown); an unscaled
+# original still comes from upload.wikimedia.org.
+ALLOWED_IMAGE_HOSTS = frozenset({"upload.wikimedia.org", "thumb.wikimedia.org"})
+ALLOWED_IMAGE_HOST = "upload.wikimedia.org"   # the original files' host (kept for callers)
 
 # What a teaching picture can be. A term that does not claim one of these is not shown:
 # this is what makes "only when the thing is visual" a rule the app enforces rather than
@@ -309,7 +314,7 @@ def judge_page(request: ImageRequest, page: Any, wiki: str = "en") -> ImageDecis
         host = urllib.parse.urlsplit(source).hostname or ""
     except ValueError:
         return no("no_image")
-    if host != ALLOWED_IMAGE_HOST:
+    if host not in ALLOWED_IMAGE_HOSTS:
         return no("host_not_allowed")
     try:
         width = int(thumbnail.get("width") or 0)

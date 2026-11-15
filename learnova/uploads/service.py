@@ -117,6 +117,9 @@ class NothingUsableError(ValueError):
 
     def __init__(self, failed_files: Iterable[FailedFile] = ()):
         self.failed_files = tuple(failed_files)
+        # The notes upload's per-file outcomes, for the JSON answer of the multi-image form
+        # (app.create_learning_project sets it; None when the error came from elsewhere).
+        self.upload_result: Any = None
         super().__init__(self.msgid)
 
     @property

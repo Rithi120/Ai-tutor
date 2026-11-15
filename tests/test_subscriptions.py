@@ -288,7 +288,7 @@ class SubscriptionPageTests(AppTestCase):
         self.register()
         self.client.post("/settings/language", data={"language": "de"})
         page = self.client.get("/settings").get_data(as_text=True)
-        self.assertIn(">Abo<", page)
+        self.assertIn('id="subscription-title"><span aria-hidden="true">⭐</span> Abo</h2>', page)
         self.assertIn("3,00 € / Monat", page)
         self.assertIn("Learnova nimmt derzeit keine Online-Zahlungen an.", page)
         self.assertIn("Premium aktivieren", page)
@@ -534,15 +534,19 @@ class AllowanceTests(AppTestCase):
                 self.reserve("project", reference="project:3")
 
     def test_a_released_or_abandoned_reservation_gives_the_allowance_back(self):
-        with application.app.test_request_context():
-            reservation = application.entitlements.reserve(self.user_id(), "lesson")
-            reservation.release()
-            application.db.session.remove()
-            application.entitlements.flush_deferred(application.db.engine.begin)
-        self.reserve("lesson")
-        self.reserve("lesson", commit=False)   # a worker that died mid-call
-        later = application.utcnow() + timedelta(minutes=16)
-        with patch.object(application, "utcnow", return_value=later):
+        # Pinned to mid-morning: on the real clock a run in the last 16 minutes before midnight
+        # (Europe/Berlin) moved "later" into the next day, whose fresh allowance let the last
+        # reservation through (full run overnight, 2026-11-15).
+        start = application.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
+        with patch.object(application, "utcnow", return_value=start):
+            with application.app.test_request_context():
+                reservation = application.entitlements.reserve(self.user_id(), "lesson")
+                reservation.release()
+                application.db.session.remove()
+                application.entitlements.flush_deferred(application.db.engine.begin)
+            self.reserve("lesson")
+            self.reserve("lesson", commit=False)   # a worker that died mid-call
+        with patch.object(application, "utcnow", return_value=start + timedelta(minutes=16)):
             self.reserve("lesson")
             with self.assertRaises(application.subscriptions.QuotaExceededError):
                 self.reserve("lesson")

@@ -143,7 +143,7 @@ Everything else is routine and never leaves Groq, however much budget there is.
   candidate follows it. When it is the last candidate it is asked again, except by
   `ocr_document_recognition` (`COOLDOWN_FAIL_FAST_TASKS`): a Project Mode page reading then
   fails at once with the cooldown's category and remaining seconds, and the page is read
-  offline meanwhile (review B B-1). Chat photos and their close-up second look still ask.
+  offline meanwhile (review B B-1; the rest of that run is read offline, docs/PROJECT_MODE.md). Chat photos and their close-up second look still ask.
 - **A limit or budget error stops the request at once.** Nothing is retried around a cap.
 - **Every provider call is bounded.** Clients are built with `max_retries=0` (the gateway
   does its own rotating and cooling down) and a `timeout` of `AI_PROVIDER_TIMEOUT_SECONDS`
@@ -276,7 +276,7 @@ appends its own suffix:
 
 | Label | What it is |
 | --- | --- |
-| `assistant_chat:v6` | The chat assistant: tutoring layer, STUDENT CONTEXT, hidden CHIPS/TOPIC/EXAM lines, one line per table row, decimal commas in formulas as `{,}` ([ASSISTANT.md](ASSISTANT.md)) |
+| `assistant_chat:v7` | The chat assistant: tutoring layer, STUDENT CONTEXT, hidden CHIPS/TOPIC/MEDIA/EXAM lines (v6 MEDIA and v6 EXAM were built in separate lanes and merged as v7), one line per table row, decimal commas in formulas as `{,}` ([ASSISTANT.md](ASSISTANT.md)) |
 | `tutor_chat:v6` | The lesson tutor chat: `\( … \)` / `\[ … \]` with single backslashes, the lesson state as plain text, one line per table row, decimal commas as `{,}` |
 | `image_understanding:chat1+chat` | A chat photo's compact reading (no bbox, author or confidence; cut-off readings kept as partial) ([VISION.md](VISION.md)) |
 | `image_understanding:v2+lesson` / `+solution` | A photo reading for a New lesson, or for a photographed answer (the full reading) |

@@ -1,0 +1,31 @@
+{% extends "auth_simple.html" %}
+{% block title %}{{ _('Continue with phone number') }} — Learnova{% endblock %}
+{% block back %}{% if purpose == 'link' %}<a class="auth-back" href="{{ url_for('settings') }}#security"><span aria-hidden="true">←</span> {{ _('Back to Settings') }}</a>{% else %}{{ super() }}{% endif %}{% endblock %}
+{% block card %}
+<div class="auth-heading auth-reveal">
+  <h1>{{ _('Enter the code') if stage == 'code' else _('Your mobile number') }}</h1>
+  <p>{% if stage == 'code' %}{{ _('We sent a 6-digit code by SMS to {number}. It is valid for 5 minutes.', number=masked) }}{% else %}{{ _('We send you a 6-digit code by SMS. Your number is never shown to anyone.') }}{% endif %}</p>
+</div>
+{% include 'components/_alerts.html' %}
+{% if stage == 'code' %}
+<form class="auth-form" method="post" action="{{ url_for('auth_phone_code') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="auth-field auth-reveal"><span>{{ _('Code') }}</span>
+    <input class="otp-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus></label>
+  <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Confirm') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+</form>
+<p class="auth-small auth-reveal">{% if purpose == 'link' %}<a href="{{ url_for('settings') }}#security">{{ _('Use another number') }}</a>{% else %}<a href="{{ url_for('auth_phone_page') }}">{{ _('No SMS? Request a new code') }}</a>{% endif %}</p>
+{% else %}
+<form class="auth-form" method="post" action="{{ url_for('auth_phone_page') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="phone-row auth-reveal">
+    <label class="auth-field"><span>{{ _('Country') }}</span>
+      <select name="region" autocomplete="tel-country-code">{% for region, code, name in countries %}<option value="{{ region }}"{% if region == (request.form.get('region') or 'DE') %} selected{% endif %}>{{ name }} ({{ code }})</option>{% endfor %}</select></label>
+    <label class="auth-field"><span>{{ _('Mobile number') }}</span>
+      <input name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="0151 23456789" maxlength="30" value="{{ request.form.get('phone', '') }}" required autofocus></label>
+  </div>
+  <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Send code') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+</form>
+<p class="auth-small auth-reveal">{{ _('Standard SMS rates of your provider may apply.') }}</p>
+{% endif %}
+{% endblock %}

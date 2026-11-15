@@ -2,7 +2,7 @@
    route that changes only the signed-in account. #}
 {% from "components/_identity.html" import avatar_frame with context %}
 <section id="profile" class="settings-profile" aria-labelledby="profileSettingsTitle">
-  <h2 id="profileSettingsTitle">{{ _('Profile') }}</h2>
+  <h2 id="profileSettingsTitle"><span aria-hidden="true">👤</span> {{ _('Profile') }}</h2>
   <div class="settings-profile-head">
     {% if nav_avatar %}{{ avatar_frame(nav_avatar.url, nav_avatar.accent, "md") }}{% endif %}
     <div>

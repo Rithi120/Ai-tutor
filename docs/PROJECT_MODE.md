@@ -185,12 +185,18 @@ and adds their topics (`project_pages_to_analyse`).
 - **A busy provider is asked once per run, not once per photo (review B B-1, spec §2C).**
   A provisional offline reading counts as read, so every reading loop went on to the next
   photo and collected another refusal. Now a page read offline because the AI was busy
-  (`page_read_while_busy`: the busy `vision_pending` note) stops the loops like a waiting
-  page: the per-page route answers 200 with its real state plus `paused` and
-  `pause_message` ("The AI is busy right now. Learnova read this page offline for now and
-  paused reading the other pages – …"), and project-start.js stops sending pages;
-  Continue reading, quick-start and `/reanalyze` break there; quick-start does not read
-  again within `WAITING_RETRY_AFTER` of such a page (`page_recently_busy`). In the gateway,
+  (`page_read_while_busy`: the busy `vision_pending` note) switches the rest of the run to
+  offline reading: the per-page route answers 200 with its real state plus `paused` and
+  `pause_message` ("The AI is busy right now, so Learnova read your pages offline for now.
+  …"), project-start.js sends the next pages with `{"offline": true}`, and Continue reading,
+  quick-start and `/reanalyze` pass `offline=True` to `recognize_single_project_page`, which
+  then asks the AI nothing and stores the same provisional offline reading (text layer, else
+  the offline OCR; vision reads it again later, D4). A waiting page still ends the run;
+  quick-start does not read again within `WAITING_RETRY_AFTER` of such a page
+  (`page_recently_busy`). Until the real-world audit (2026-11-14) the loops stopped at the
+  busy page instead: on a key whose vision output limit refuses every page reading, the
+  Kompetenzraster uploaded after the first photo was never read and the project was planned
+  without it (REAL_WORLD_ACCEPTANCE_AUDIT.md, A-1). In the gateway,
   `ocr_document_recognition` fails at once, without a call, while its only model is cooling
   down after a 429 (`COOLDOWN_FAIL_FAST_TASKS`; the error keeps the cooldown's category and
   remaining seconds); every other task - chat photos and their close-up second look

@@ -282,7 +282,7 @@
 :root[data-theme="dark"] .profile-avatar { background: rgba(149, 136, 255, .2); color: var(--ln-violet); }
 :root[data-theme="dark"] .profile-avatar.has-image { background: linear-gradient(135deg, #7c5cff, #18b9bd); }
 :root[data-theme="dark"] :is(.app-dropdown, .mobile-app-menu, .global-nav-links) {
-  background: var(--ln-surface-raised); border-color: var(--ln-line-strong);
+  background: var(--ln-surface-solid); border-color: var(--ln-line-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
 }
 :root[data-theme="dark"] :is(.app-dropdown a, .app-dropdown .nav-logout,
@@ -297,6 +297,12 @@
 :root[data-theme="dark"] .mobile-nav-toggle { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); }
 :root[data-theme="dark"] .mobile-menu-head button { background: var(--fc-muted-surface); color: var(--ln-ink); }
 :root[data-theme="dark"] .mobile-menu-divider { background: var(--ln-line-strong); }
+/* The grouped "More" rows (navigation.css .nav-group). */
+:root[data-theme="dark"] .nav-group > summary { color: var(--ln-ink); }
+:root[data-theme="dark"] :is(.nav-group > summary:hover, .nav-group > summary:focus-visible, .nav-group > summary.is-active) {
+  background: rgba(149, 136, 255, .16); color: var(--ln-violet);
+}
+:root[data-theme="dark"] .nav-group-items { border-left-color: var(--ln-line-strong); }
 /* Settings, the activation-code page and other account cards: styles.css paints them
    #fff, so in dark mode the light ink of the headings and labels sat on white and was
    near-invisible ("Einstellungen", "Abo"). */
@@ -466,3 +472,40 @@
 /* The tutorial hub (tutorial.css) and the dashboard invite: the deep violet is too dim on
    dark surfaces for small text; the lighter one reads. */
 :root[data-theme="dark"] :is(a.tour-invite, .tutorial-card.is-in-progress .tutorial-status) { color: var(--ln-violet); }
+
+/* Delete controls and "Show more" (owner request 2026-11-13): the saved-lesson rules above
+   paint every link, button and span of a row green or muted; the delete control stays red. */
+:root[data-theme="dark"] .saved-actions .item-delete-button,
+:root[data-theme="dark"] .saved-lesson .item-delete-button span { color: var(--ln-danger-text); }
+/* Login & security (auth.css, profile.css .settings-security). The Google button stays
+   white and the Apple button black in both themes, as their brand guidelines ask. */
+:root[data-theme="dark"] .auth-provider-phone { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .auth-provider-apple { border-color: #fff; }
+:root[data-theme="dark"] .auth-divider { color: var(--ln-muted); }
+:root[data-theme="dark"] .auth-divider::before, :root[data-theme="dark"] .auth-divider::after { background: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(.auth-forgot, .auth-small a) { color: var(--ln-violet); }
+:root[data-theme="dark"] .auth-small, :root[data-theme="dark"] .field-hint { color: var(--ln-muted); }
+:root[data-theme="dark"] .field-ok { color: #6fd3a5; }
+:root[data-theme="dark"] .field-error { color: #ff9c86; }
+:root[data-theme="dark"] .onboarding-steps li { background: var(--fc-muted-surface); color: var(--ln-muted); }
+:root[data-theme="dark"] .onboarding-steps li b { background: var(--ln-surface-solid); }
+:root[data-theme="dark"] .onboarding-steps li.is-current { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
+:root[data-theme="dark"] .interest-chip span { background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] .interest-chip input:checked + span { background: rgba(149, 136, 255, .18); border-color: var(--ln-violet); color: var(--ln-violet); }
+:root[data-theme="dark"] .security-method { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(.security-text small, .security-note) { color: var(--ln-muted); }
+:root[data-theme="dark"] .security-icon { background: var(--fc-muted-surface); color: var(--ln-ink); }
+/* Reviews (about.css, profile.css .settings-review). */
+:root[data-theme="dark"] :is(.review-card, .review-preview) { background: var(--ln-surface-solid); border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .review-write { background: var(--fc-muted-surface); }
+:root[data-theme="dark"] :is(.reviews-average strong, .review-body, .reviews-bars a) { color: var(--ln-ink); }
+:root[data-theme="dark"] :is(.reviews-note, .review-who small, .review-card footer, .reviews-average small, .reviews-bars small, .review-counter, .reviews-empty p) { color: var(--ln-muted); }
+:root[data-theme="dark"] :is(.reviews-bars a:hover, .reviews-bars a.is-active) { background: rgba(149, 136, 255, .14); }
+:root[data-theme="dark"] .reviews-bar { background: var(--ln-line-strong); }
+:root[data-theme="dark"] :is(.reviews-filters select, .review-text textarea) { background: #101a2c; border-color: var(--ln-line-strong); color: var(--ln-ink); }
+:root[data-theme="dark"] :is(.star-picker label, .reviews-section .stars, .settings-review .stars, .reviews-empty-stars) { color: #4a5470; }
+:root[data-theme="dark"] .review-verified { color: #6fd3a5; }
+:root[data-theme="dark"] .reviews-empty { border-color: var(--ln-line-strong); }
+:root[data-theme="dark"] .review-avatar { background: rgba(149, 136, 255, .18); color: var(--ln-violet); }
+:root[data-theme="dark"] .admin-review-tabs a { background: var(--fc-muted-surface); color: var(--ln-ink); }
+:root[data-theme="dark"] .review-preview .stars { color: #f5a623; }

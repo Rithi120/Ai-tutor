@@ -150,6 +150,28 @@ class ExamTrailerTests(unittest.TestCase):
         self.assertEqual((fenced.text, [item.title for item in fenced.exam_topics]), ("Hallo", ["a", "b"]))
         self.assertEqual(formatting.reply_trailers("Hallo\nEXAM: none").exam_topics, [])
 
+    def test_a_bare_keyword_heading_with_its_value_below_is_a_hidden_line(self):
+        # Live 2026-11-14 the model wrote "**MEDIA**" on its own line and the description under
+        # it; the student saw both. A bold heading that is no keyword stays.
+        leaked = "Antwort.\n\n---\n\n**MEDIA**  \nDiagramm: Gerade mit Punkten A und B."
+        self.assertEqual(formatting.reply_trailers(leaked).text, "Antwort.")
+        pair = formatting.reply_trailers("Antwort.\n**MEDIA**\ndiagram | Satz des Pythagoras\nTOPIC: Mathematics | a")
+        self.assertEqual((pair.text, pair.media), ("Antwort.", ("diagram", "Satz des Pythagoras")))
+        kept = "Erklärung.\n\n**Check-Frage**\nWas ist 2 + 2?"
+        self.assertEqual(formatting.reply_trailers(kept).text, kept)
+
+    def test_exam_topics_come_from_the_topic_line_only_for_a_message_about_a_test(self):
+        listed = "Terme, Gleichungen, lineare Funktionen, Prozent- und Zinsrechnung"
+        exam = "Ich schreibe am Freitag eine Mathearbeit über Terme und Gleichungen, lineare Funktionen und Zinsen."
+        self.assertEqual([item.title for item in sf.exam_topics_from_topic(exam, listed)],
+                         ["Terme", "Gleichungen", "lineare Funktionen", "Prozent- und Zinsrechnung"])
+        self.assertEqual(sf.exam_topics_from_topic("Was ist die Steigung einer Geraden?", listed), [],
+                         "no test named: a plain question never gets the card")
+        self.assertEqual(sf.exam_topics_from_topic("Morgen Test über Pythagoras", "Satz des Pythagoras"), [],
+                         "one topic stays the single Continue Learning lesson")
+        self.assertEqual(sf.exam_topics_from_topic("Hausarbeit über Brüche, Prozente", "Brüche, Prozente"), [],
+                         "a Hausarbeit is no test")
+
     def test_split_reply_trailers_keeps_its_three_values(self):
         self.assertEqual(assistant.split_reply_trailers(exam_reply(THREE)),
                          ("Super, das schaffen wir. Wo möchtest du anfangen?", [], ("Mathematics", "Klassenarbeit")))
@@ -159,7 +181,7 @@ class ExamTrailerTests(unittest.TestCase):
         self.assertLessEqual(assistant.estimate_tokens(presets.TUTORING_LAYER), 420)
         line = next(item for item in presets.TUTORING_LAYER.split("\n") if "EXAM:" in item)
         self.assertLessEqual(assistant.estimate_tokens("\n" + line), 22, "room for another lane's MEDIA line")
-        self.assertEqual(PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v6")
+        self.assertEqual(PROMPT_VERSIONS["assistant_chat"], "assistant_chat:v8")
 
 
 # ------------------------------------------------------------------------ pure: Short Lesson plan
@@ -259,6 +281,30 @@ class SendTests(StudyFormatRouteCase):
                 application.ConversationMessage.role == "assistant")).one())
         self.assertEqual([item["title"] for item in stored["exam_topics"]], THREE)
 
+
+    def test_a_reply_without_an_exam_line_takes_the_topics_its_topic_line_lists(self):
+        # Live 2026-11-14 (gpt-oss-20b): six exam requests, no EXAM line, every TOPIC line
+        # listing the topics - the card never appeared.
+        conversation_id = self.client.post("/api/assistant/conversations", json={}).get_json()["conversation"]["id"]
+        with FakeAI(chat="So lernst du am besten …\nTOPIC: Mathematics | Bruchrechnung, Prozentrechnung, Zinsrechnung"):
+            sent = self.client.post(f"/api/assistant/conversations/{conversation_id}/messages",
+                                    json={"message": "Morgen schreiben wir eine Klassenarbeit über Bruchrechnung, "
+                                                     "Prozentrechnung und Zinsrechnung."})
+        self.assertEqual(sent.status_code, 201, sent.get_data(as_text=True))
+        state = sent.get_json()["conversation"]["continue_learning"]
+        self.assertEqual(state["format"]["kind"], "lessons")
+        self.assertEqual([item["title"] for item in state["format"]["topics"]], THREE)
+
+    def test_a_plain_question_listing_topics_gets_no_card(self):
+        conversation_id = self.client.post("/api/assistant/conversations", json={}).get_json()["conversation"]["id"]
+        with FakeAI(chat="Brüche und Prozente hängen zusammen …\nTOPIC: Mathematics | Bruchrechnung, Prozentrechnung"):
+            sent = self.client.post(f"/api/assistant/conversations/{conversation_id}/messages",
+                                    json={"message": "Wie hängen Brüche und Prozente zusammen?"})
+        self.assertNotIn("format", sent.get_json()["conversation"]["continue_learning"])
+        with application.app.app_context():
+            stored = db.session.scalars(db.select(application.ConversationMessage.study_json).where(
+                application.ConversationMessage.role == "assistant")).one()
+        self.assertEqual(stored, "{}")
 
     def test_the_card_does_not_depend_on_chat_photos(self):
         # Review fix: the page flag also required FEATURE_CHAT_IMAGES, so with photos off the

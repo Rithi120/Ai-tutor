@@ -108,6 +108,22 @@ class KompetenzrasterInventoryTests(unittest.TestCase):
         self.assertEqual(len(rows), 7, "a sentence that only contains 'Ich kann' mid-line is no row")
         self.assertEqual(len(competencies.expected_rows(FIFTEEN_PAGE)), 15)
 
+    def test_the_column_heading_ich_kann_is_no_row(self):
+        # Live 2026-11-14: the offline OCR of a photographed grid gives the heading cell
+        # "Ich kann ..." its own line; it was counted ("14 rows, 13 found" for 13 rows) and
+        # "Add the missing rows" offered "Ich kann ..." as a competency.
+        ocr = ("Kompetenzraster Mathematik – Klasse 8b\nNr.\nIch kann ...\nNiveau\nÜbung im\nBuch\n"
+               "A Terme und Gleichungen\n1\nIch kann Terme mit Klammern ausmultiplizieren und zusammenfassen.\nG\n"
+               "2\nIch kann einen Term durch Ausklammern faktorisieren.\nM")
+        self.assertEqual(competencies.expected_rows(ocr), [
+            "Ich kann Terme mit Klammern ausmultiplizieren und zusammenfassen.",
+            "Ich kann einen Term durch Ausklammern faktorisieren."])
+        for heading in ("Ich kann …", "Ich kann:", "I can ...", "Ich kann …   Niveau   Übung im Buch"):
+            self.assertEqual(competencies.expected_rows(f"{heading}\n• Ich kann Brüche kürzen."),
+                             ["Ich kann Brüche kürzen."], heading)
+        self.assertEqual(competencies.expected_rows("Ich kann: Brüche addieren."), ["Ich kann: Brüche addieren."],
+                         "a row written after a colon is a row")
+
     def test_a_complete_answer_gives_fifteen_verified_rows_and_no_gap(self):
         inventory = competencies.ground_page(grid_rows(), page_id=7, page_text=FIFTEEN_PAGE)
         self.assertEqual(len(inventory.rows), 15)

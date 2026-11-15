@@ -1,0 +1,29 @@
+{# One card per published review. Text is auto-escaped by Jinja (never |safe) and shown
+   with white-space: pre-line, so line breaks survive and markup stays text. #}
+{% for card in cards %}
+<article class="review-card" data-review-id="{{ card.id }}">
+  <header>
+    {% set who = card.identity %}
+    <span class="review-avatar" aria-hidden="true">{% if who.avatar_url %}<img src="{{ who.avatar_url }}" alt="" width="40" height="40" loading="lazy" decoding="async">{% else %}{{ (who.username or '?')[:1]|upper }}{% endif %}</span>
+    <span class="review-who"><b>{{ who.username or _('Learnova student') }}</b>
+      <small>{% if who.level %}{{ _('Level') }} {{ who.level }} · {% endif %}<span class="review-verified" title="{{ _('A real Learnova account that reached Level 3 before writing.') }}">✓ {{ _('Verified learner') }}</span></small></span>
+    <span class="stars" role="img" aria-label="{{ _('{value} out of 5 stars', value=card.rating) }}">{% for n in range(1, 6) %}<span class="{{ 'is-on' if n <= card.rating }}" aria-hidden="true">★</span>{% endfor %}</span>
+  </header>
+  {% if card.text %}<p class="review-body">{{ card.text }}</p>{% endif %}
+  <footer>
+    <time datetime="{{ card.iso }}">{{ card.date }}</time>{% if card.edited %} · {{ _('edited') }}{% endif %}
+    {% if current_user.is_authenticated and not card.mine %}
+    <details class="review-report"><summary>{{ _('Report') }}</summary>
+      <form method="post" action="{{ url_for('report_review', review_id=card.id) }}" data-review-report>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label><span class="sr-only">{{ _('Reason') }}</span><select name="reason" required>
+          <option value="">{{ _('Choose a reason') }}</option>
+          {% for key, label in reasons.items() %}<option value="{{ key }}">{{ _(label) }}</option>{% endfor %}
+        </select></label>
+        <button class="ghost-button" type="submit">{{ _('Send report') }}</button>
+      </form>
+    </details>
+    {% endif %}
+  </footer>
+</article>
+{% endfor %}

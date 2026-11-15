@@ -828,7 +828,9 @@ COMMUNITY_SET = Section(
 
 SETTINGS = Section(
     id="settings", title="Settings", icon="⚙️", group="account", page="settings",
-    anchor='[data-tour-target="settings-language"]', url="/settings",
+    # Settings groups are closed rows (templates/settings.html): the chapter starts from the
+    # first row and asks to open it ("Open this part first").
+    anchor="#learning > summary", url="/settings",
     steps=(
         Step("account-language", "settings", "Language",
              "Choose the language of Learnova and of your lessons: {languages}.",
@@ -856,6 +858,7 @@ SETTINGS = Section(
 # choice: read steps only.
 SETTINGS_PLAN = Section(
     id="settings-plan", title="Your plan", icon="💎", group="account", page="settings",
+    # Inside the closed Subscription row: the chapter comes when the student opens it.
     anchor='[data-tour-target="plan-status"]', url="/settings#subscription",
     steps=(
         Step("account-status-free", "settings", "Your plan",

@@ -12,7 +12,9 @@ import { t } from "./i18n.js";
 
 const WATCH_URL = /^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/;
 const THUMBNAIL_URL = /^\/media\/yt-thumb\/[A-Za-z0-9_-]{11}$/;
-const IMAGE_URL = /^https:\/\/upload\.wikimedia\.org\//;
+// The hosts media_enrichment.ALLOWED_IMAGE_HOSTS accepts and the CSP allows: Wikipedia's
+// API gives scaled thumbnails on thumb.wikimedia.org (live 2026-11-14), originals on upload.
+const IMAGE_URL = /^https:\/\/(?:upload|thumb)\.wikimedia\.org\//;
 const CREDIT_URL = /^https:\/\/([a-z0-9-]+\.)*(wikimedia\.org|wikipedia\.org|creativecommons\.org)\//i;
 
 /** "4:05", "1:02:03"; "" for an unknown length. */

@@ -2,7 +2,7 @@
 {% set price = premium_price %}
 <section class="sub-section" id="subscription" aria-labelledby="subscription-title">
   <div class="sub-head" data-tour-target="plan-status">
-    <h2 id="subscription-title">{{ _('Subscription') }}</h2>
+    <h2 id="subscription-title"><span aria-hidden="true">⭐</span> {{ _('Subscription') }}</h2>
     <span class="sub-badge{{ ' is-premium' if plan_premium }}">{{ _('Premium') if plan_premium else _('Free') }}</span>
   </div>
 
@@ -65,12 +65,14 @@
     {% endif %}
     {% if payment_instructions %}<p class="sub-instructions">{{ payment_instructions }}</p>{% endif %}
     <p class="sub-note">{{ _('Learnova does not accept online payments at this time.') }}</p>
+    <h4 class="sub-redeem-title">{{ _('Redeem a Premium code') }}</h4>
+    <p>{{ _('Enter your Premium code to unlock one month of Premium.') }}</p>
     <form method="post" action="{{ url_for('redeem_premium_key') }}" autocomplete="off" class="sub-form" data-busy-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="activation-code">{{ _('Activation code') }}</label>
-      <input id="activation-code" name="activation_code" type="text" required maxlength="40"
+      <input id="activation-code" name="activation_code" type="text" required maxlength="80"
              autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"
-             placeholder="LN-XXXXX-XXXXX-XXXXX-XXXXX" aria-describedby="activation-code-help">
+             placeholder="LN-PREM-XXXX-XXXX-XXXX-…" aria-describedby="activation-code-help">
       <small id="activation-code-help">{{ _('Capitals, spaces and dashes do not matter.') }}</small>
       <button class="primary-button" type="submit" data-busy-label="{{ _('Activating…') }}">{{ _('Activate Premium') }}</button>
     </form>
@@ -79,7 +81,7 @@
   {% if redemptions %}
   <div class="sub-history">
     <h3>{{ _('Codes used on this account') }}</h3>
-    <ul>
+    <ul id="redemptionHistory" data-show-more="3" data-show-more-step="10">
       {% for item in redemptions %}
       <li><span class="sub-hint" aria-label="{{ _('Code ending in {hint}', hint=item.hint) if item.hint else _('Code') }}">{{ '…' ~ item.hint if item.hint else '••••' }}</span>
         <span>{% if item.months %}{{ _('{count} month(s)', count=item.months) }}{% else %}{{ _('{count} days', count=item.days) }}{% endif %}
@@ -90,5 +92,5 @@
   {% endif %}
 
   <p class="sub-version">{{ _('Learnova version {version}', version=app_version) }} · {{ _('Times in {zone}', zone=app_timezone) }}</p>
-  {% if premium_admin %}<p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Manage activation codes') }}</a></p>{% endif %}
+  {% if premium_admin %}<p><a href="{{ url_for('admin_premium_keys') }}">{{ _('Manage activation codes') }}</a> · <a href="{{ url_for('admin_premium_vouchers') }}">{{ _('Premium vouchers') }}</a></p>{% endif %}
 </section>

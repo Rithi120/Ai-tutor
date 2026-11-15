@@ -230,7 +230,8 @@ DEFAULT_INPUT_TOKEN_BUDGETS = {
     "adaptive_practice": 6000,
     "final_exam_evaluation": 8000,
     "flashcard_generation": 10000,
-    "flashcard_back_suggestion": 800,
+    # The tutor rules alone are ~900-1200 tokens: 800 refused every call (see learnova/config.py).
+    "flashcard_back_suggestion": 2600,
     "flashcard_review": 12000,
     "content_moderation": 12000,
     "report_review": 12000,

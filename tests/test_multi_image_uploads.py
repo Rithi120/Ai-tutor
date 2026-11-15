@@ -123,6 +123,20 @@ class BatchedUploadTests(Base):
         self.assertEqual([(row["index"], row["status"]) for row in body["results"]], [(0, "added"), (1, "added")])
         self.assertEqual(body["max_pages"], 40)
 
+    def test_what_the_json_does_not_carry_is_said_on_the_next_page(self):
+        # Merge seam (exam lane x uploads lane): the script answer used to return before the
+        # "only the first 40 topics" notice, so typed topics over the limit vanished silently.
+        topics = "\n".join(f"Thema {n}" for n in range(1, 46))
+        response = self.create([("p1.jpg", photo(1), "image/jpeg")], topics=topics)
+        self.assertEqual(response.status_code, 201, response.data[:300])
+        with self.client.session_transaction() as session:
+            flashes = [message for _category, message in session.get("_flashes", [])]
+        self.assertEqual(len(flashes), 1, flashes)
+        self.assertIn("40", flashes[0])
+        self.assertIn("45", flashes[0])
+        # The notes photo itself is answered in the JSON only, never flashed as well.
+        self.assertEqual([row["status"] for row in response.get_json()["results"]], ["added"])
+
     def test_batches_append_in_order_and_a_resent_batch_adds_nothing(self):
         first = self.create([(f"p{n}.jpg", photo(n), "image/jpeg") for n in (1, 2, 3)]).get_json()
         project_id = first["project_id"]

@@ -1116,6 +1116,9 @@ class PartPagesTests(unittest.TestCase):
         self.assertEqual(out[1]["source_labels"], ["A.pdf p. 1 / B.pdf p. 1"])
         self.assertEqual((out[2]["source_page_ids"], out[2]["source_labels"]), ([], []),
                          "a page the lesson does not have is not shown")
+        # static/app.js shows the bare numbers when there are no labels: they must go too.
+        self.assertEqual(out[2]["source_pages"], [], "nor its bare number (the page's fallback)")
+        self.assertEqual(out[0]["source_pages"], [1, 2])
         self.assertNotIn("source_labels", out[3])
 
 

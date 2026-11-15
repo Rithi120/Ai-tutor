@@ -1,0 +1,14 @@
+{% extends "auth_simple.html" %}
+{% block title %}{{ _('New password') }} — Learnova{% endblock %}
+{% block card %}
+<div class="auth-heading auth-reveal">
+  <h1>{{ _('New password') }}</h1>
+  <p>{{ _('Choose a new password with at least 8 characters.') }}</p>
+</div>
+{% include 'components/_alerts.html' %}
+<form class="auth-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="auth-field auth-reveal"><span>{{ _('New password') }}</span><span class="auth-password-control"><input id="authPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required autofocus><button class="password-toggle" type="button" aria-controls="authPassword" aria-label="{{ _('Show password') }}" title="{{ _('Show password') }}"><span aria-hidden="true">◉</span></button></span></label>
+  <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Save password') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+</form>
+{% endblock %}

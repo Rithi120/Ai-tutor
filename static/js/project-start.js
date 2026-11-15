@@ -15,9 +15,11 @@ import { t } from "./i18n.js";
 // A page that comes back "waiting" means the AI provider is busy or the student's hourly
 // AI allowance is nearly used up. Sending the next pages would only spend requests to learn
 // the same thing (and could trip a six-hour cooldown), so reading stops there, the page
-// says that reading continues later, and the chain goes on with what was read. The same
-// for a page that comes back read but "paused": the offline OCR read it because the AI is
-// busy.
+// says that reading continues later, and the chain goes on with what was read. A page that
+// comes back read but "paused" was read by the offline OCR because the AI is busy: the
+// next pages are sent with {"offline": true}, so they are read the same way without asking
+// the AI again (live 2026-11-14: stopping there left the Kompetenzraster after the first
+// photo unread, and the project was planned without it).
 const card = document.getElementById("projectStart");
 
 if (card) {
@@ -100,20 +102,21 @@ if (card) {
     return () => { stopped = true; };
   }
 
-  async function readPage(pageId) {
+  async function readPage(pageId, offline) {
     const url = card.dataset.recognizeUrl.replace(/\/0\/recognize$/, `/${pageId}/recognize`);
     const node = dot(pageId);
     if (node) node.dataset.state = "active";
     try {
       const response = await fetch(url, {
-        method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: "{}",
+        method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: offline ? JSON.stringify({ offline: true }) : "{}",
       });
       const data = await response.json().catch(() => ({}));
       if (data.file) showFile(data.file);
       else if (node) node.dataset.state = response.ok ? "read" : "unreadable";
       if (summary && typeof data.summary === "string") summary.textContent = data.summary;
       // paused: the page was read offline because the AI is busy - asking it again for the
-      // next page would only cost another refused request, so reading stops here too.
+      // next page would only cost another refused request, so the next pages go offline.
       return {
         state: data.state || (response.ok ? "read" : "unreadable"), message: data.message || "",
         paused: data.paused === true, pauseMessage: data.pause_message || "",
@@ -212,19 +215,19 @@ if (card) {
     try {
       mark("read", "active");
       let trouble = false;
+      let offline = "";
       for (let index = 0; index < pageIds.length; index += 1) {
         detail.textContent = t("startReadingPage", { current: index + 1, total: pageIds.length });
-        const result = await readPage(pageIds[index]);
+        const result = await readPage(pageIds[index], Boolean(offline));
         if (result.state !== "read") trouble = true;
         if (result.state === "waiting") {
           showNotice(result.message || t("startReadingPaused"));
+          offline = "";
           break;
         }
-        if (result.paused) {
-          showNotice(result.pauseMessage || t("startReadingPaused"));
-          break;
-        }
+        if (result.paused) offline = result.pauseMessage || t("startReadingPaused");
       }
+      if (offline) showNotice(offline);
       await refreshReport();
       detail.textContent = summary ? summary.textContent : "";
       mark("read", trouble ? "warn" : "done");

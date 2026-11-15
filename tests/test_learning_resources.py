@@ -241,6 +241,23 @@ class TrailerAndVetoTests(unittest.TestCase):
 
 # ---------------------------------------------------------------------- chat (Test 9)
 class ChatResourcesTests(ResourcesCase):
+    def test_a_student_asking_for_a_picture_gets_an_offer_without_a_media_line(self):
+        # Live 2026-11-14: three explicit picture requests, no MEDIA line from the model.
+        created = self.client.post("/api/assistant/conversations", json={}).get_json()["conversation"]["id"]
+        explanation = "Das ohmsche Gesetz verbindet Spannung, Stromstärke und Widerstand. " * 6
+        with FakeAI(chat=f"{explanation}\nTOPIC: Physics | Ohmsches Gesetz (Spannung, Stromstärke)"):
+            sent = self.client.post(f"/api/assistant/conversations/{created}/messages",
+                                    json={"message": "Kannst du mir das ohmsche Gesetz mit einem Bild zeigen?"})
+        reply = sent.get_json()["reply"]
+        self.assertEqual(reply["resources"]["image_pending"], True)
+        with application.app.app_context():
+            stored = json.loads(db.session.get(application.ConversationMessage, reply["id"]).resources_json)
+        self.assertEqual((stored["offer"]["kind"], stored["offer"]["term"]), ("diagram", "Ohmsches Gesetz"))
+        with FakeAI(chat=f"{explanation}\nTOPIC: Physics | Ohmsches Gesetz"):
+            plain = self.client.post(f"/api/assistant/conversations/{created}/messages",
+                                     json={"message": "Und was ist der Widerstand?"}).get_json()["reply"]
+        self.assertNotIn("resources", plain, "no picture asked for, no MEDIA line: no offer")
+
     def test_ohms_law_gets_a_credited_diagram_and_on_tap_checked_videos(self):
         reply, sent = self.chat_reply(OHM_REPLY)
         self.assertNotIn("MEDIA", reply["content"])
@@ -529,7 +546,7 @@ class QuotaAndCacheTests(ResourcesCase):
         with youtube(ohm_videos()):
             self.search()
         for row in self.cache_rows():
-            self.assertNotIn(KEY, row.payload_json + row.query)
+            self.assertNotIn(KEY, row.payload_json + row.search_query)
 
 
 # ---------------------------------------------------------------------- thumbnail proxy
@@ -575,6 +592,12 @@ class MigrationTests(ResourcesCase):
                 connection.execute(text("ALTER TABLE conversation_message DROP COLUMN resources_json"))
                 connection.execute(text("DROP TABLE learning_resource_cache"))
                 connection.execute(text("DELETE FROM schema_migration WHERE version = '046_learning_resources'"))
+            # An old database is met by a starting process with fresh connections. A pooled SQLite
+            # connection that is idle since before the DROP keeps its cached schema and would
+            # refuse the ADD COLUMN as a duplicate (seen only when earlier tests left pooled
+            # connections behind, e.g. test_analysis_steps' migration test).
+            db.session.remove()
+            db.engine.dispose()
             application.ensure_database()
             application.ensure_database()
             columns = {column["name"] for column in inspect(db.engine).get_columns("conversation_message")}

@@ -153,6 +153,23 @@ class AcceptsTheRightPictureTests(unittest.TestCase):
         self.assertEqual(image["alt"], "Cut-away drawing of a mitochondrion")
         self.assertEqual(image["kind"], "anatomy")
 
+    def test_a_thumbnail_from_wikimedias_thumbnail_host_is_shown(self):
+        # Recorded live 2026-11-14 (de.wikipedia, "Satz des Pythagoras"): the API now gives
+        # scaled thumbnails on thumb.wikimedia.org, with tracking parameters. Refusing that
+        # host refused every lead image; the CSP allows it too (test below).
+        thumb = ("https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/01-Rechtwinkliges_Dreieck-Pythagoras.svg/"
+                 "960px-01-Rechtwinkliges_Dreieck-Pythagoras.svg.png?utm_source=de.wikipedia.org&utm_campaign=api"
+                 "&utm_content=thumbnail")
+        image = self.accepted(want("Satz des Pythagoras", kind="diagram"),
+                              page("Satz des Pythagoras", thumb=thumb), wiki="de")
+        self.assertEqual(image["url"], thumb)
+
+    def test_every_accepted_image_host_is_allowed_by_the_csp(self):
+        from learnova.web import security
+        img_src = dict(security._BASE)["img-src"].split()
+        for host in media.ALLOWED_IMAGE_HOSTS:
+            self.assertIn(f"https://{host}", img_src, host)
+
     def test_wikipedias_own_qualifier_still_counts_as_the_same_article(self):
         self.accepted(want("Cell (biology)", kind="structure"),
                       page("Cell (biology)", thumb=UPLOAD + "Animal_cell_structure.png"))

@@ -41,6 +41,21 @@ _VOCABULARY = re.compile(
     re.IGNORECASE)
 
 
+# A student asking for a picture in so many words ("mit einem Bild", "eine Skizze", "show me a
+# diagram"). Nouns only: "zeig mir, wie das geht" asks for an explanation, not a picture.
+_PICTURE_REQUEST = re.compile(
+    r"\b(?:bild(?:er|chen)?|abbildung(?:en)?|diagramm(?:e|en)?|skizze(?:n)?|schaubild(?:er)?|zeichnung(?:en)?|"
+    r"grafik(?:en)?|pictures?|images?|diagrams?|sketch(?:es)?|drawings?|illustrations?|sch[ée]mas?|dessins?|"
+    r"imagen(?:es)?|dibujos?|esquemas?)\b", re.IGNORECASE)
+
+
+def asks_for_picture(text: Any) -> bool:
+    """The student's message asks for a picture (a reply without a MEDIA line still offers one,
+    resources.media_offer and the exact-title lookup deciding as for any MEDIA line)."""
+
+    return bool(_PICTURE_REQUEST.search(str(text or "")))
+
+
 def media_offer(media: tuple[str, str] | None, *, subject: str, topic: str,
                 reply_text: str) -> dict[str, Any] | None:
     """What may be offered under a reply: {"kind", "term", "subject"} or None (vetoed).

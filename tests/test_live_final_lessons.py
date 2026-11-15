@@ -313,8 +313,8 @@ class PromptAndPageRuleTests(unittest.TestCase):
         self.assertIn("only what the student thought or missed, never the right alternative", source)
         self.assertIn("the written answer itself (never an option letter)", source)
         self.assertIn("Every `statement` is shown to the student too", diagnosis_system_prompt("History", "German"))
-        self.assertEqual(application.PROMPT_VERSIONS["lesson_generation"], "lesson_generation:v10")
-        self.assertEqual(application.PROMPT_VERSIONS["answer_evaluation"], "answer_evaluation:v8")
+        self.assertEqual(application.PROMPT_VERSIONS["lesson_generation"], "lesson_generation:v12")
+        self.assertEqual(application.PROMPT_VERSIONS["answer_evaluation"], "answer_evaluation:v9")
         self.assertEqual(application.PROMPT_VERSIONS["answer_diagnosis"], "answer_diagnosis:v4")
 
     def test_the_lesson_page_marks_its_scrolling_formulas(self):
