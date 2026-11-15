@@ -4,7 +4,8 @@
 {% block body_class %}project-page learning-page{% endblock %}
 {% block content %}
 {#- Track DASH context (app.py learn_section + section_notes_context): terms[] = {term, simple, definition,
-    example, source, from_notes}; item_groups[] = {kind, label, entries[] = {name, detail, source, from_notes}};
+    example, source, from_notes}; item_groups[] = {kind, label, entries[] = {name, detail, source, from_notes; formulas also display (LaTeX in \( \) or
+    the page's notation), teacher_marked, variables[] = {symbol, meaning, unit}}};
     source_labels ("<file> p. 3–4"); topic_summary; state_label; flashcard_set. Old list columns are
     shown through the entry_text filter (they may hold objects). -#}
   <main class="learning-shell">
@@ -33,7 +34,7 @@
         {% endif %}
         {% for group in item_groups %}
         <article class="learning-block notes-items" data-kind="{{ group.kind }}"><span class="block-number">{{ loop.index + 1 }}</span><div><h2>{{ group.label }}</h2>
-          <ul class="study-list">{% for item in group.entries %}<li><b>{{ item.name }}</b>{% if item.detail %} – {{ item.detail }}{% endif %}{% if item.source or not item.from_notes or item.unverified %} <small class="pm-term-source">{% if item.source %}{{ item.source }}{% endif %}{% if item.unverified %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('From a page that still needs checking') }}</span>{% elif not item.from_notes %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('Added explanation') }}</span>{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
+          <ul class="study-list">{% for item in group.entries %}<li><b{% if item.display %} class="pm-formula"{% endif %}>{{ item.display or item.name }}</b>{% if item.detail %} – {{ item.detail }}{% endif %}{% if item.variables %}<span class="pm-formula-variables">{% for variable in item.variables %}<span>{{ variable.symbol }}: {{ variable.meaning }}{% if variable.unit %} ({{ variable.unit }}){% endif %}</span>{% endfor %}</span>{% endif %}{% if item.source or not item.from_notes or item.unverified or item.display %} <small class="pm-term-source">{% if item.source %}{{ item.source }}{% endif %}{% if item.unverified %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('From a page that still needs checking') }}</span>{% elif not item.from_notes %}{% if item.source %} · {% endif %}<span class="pm-origin is-added">{{ _('Added explanation') }}</span>{% elif item.teacher_marked %}{% if item.source %} · {% endif %}<span class="pm-origin">{{ _('Marked by your teacher') }}</span>{% elif item.display %}{% if item.source %} · {% endif %}<span class="pm-origin">{{ _('From your notes') }}</span>{% endif %}</small>{% endif %}</li>{% endfor %}</ul>
         </div></article>
         {% endfor %}
         {% if fields.important_facts %}<article class="learning-block"><span class="block-number">!</span><div><span class="card-kicker">{{ _('CORE KNOWLEDGE') }}</span><h2>{{ _('Important facts') }}</h2><ul class="study-list">{% for item in fields.important_facts %}<li>{{ item|entry_text }}</li>{% endfor %}</ul></div></article>{% endif %}

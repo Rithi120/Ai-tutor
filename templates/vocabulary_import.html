@@ -47,12 +47,21 @@
 
     <!-- Step 2: the material. Only the chosen method's input is shown. -->
     <section class="import-step import-only{{ ' hidden' if initial_method == 'scan' }}">
+      {# Several pages per import (up to max_pages): the gallery input takes many photos or
+         PDFs at once and has no `capture`, so a phone offers its photo library and files;
+         the camera has its own button. static/js/vocabulary.js gathers them in order. #}
       <label id="vocabularyFileField" class="upload-drop">
-        <input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" capture="environment">
+        <input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" multiple>
         <span class="upload-icon" aria-hidden="true">⬆</span>
-        <span class="upload-title" data-upload-title>{{ _('Tap to choose a photo or PDF') }}</span>
-        <span class="upload-hint" data-upload-hint>{{ _('JPG, PNG, WebP or PDF') }}</span>
+        <span class="upload-title" data-upload-title>{{ _('Tap to choose photos or PDFs') }}</span>
+        <span class="upload-hint" data-upload-hint>{{ _('JPG, PNG, WebP or PDF · up to {count} pages', count=max_pages) }}</span>
       </label>
+      <div id="vocabularyFileExtras" class="vocabulary-file-extras">
+        <div class="imgcol-add">
+          <label class="imgcol-add-button">📷 {{ _('Take a photo') }}<input id="vocabularyCameraInput" type="file" accept="image/*" capture="environment"></label>
+        </div>
+        <div id="vocabularyImages" data-max="{{ max_pages }}" data-max-bytes="{{ [max_image_bytes, max_pdf_bytes]|max }}"></div>
+      </div>
       <div id="vocabularyManualField" class="manual-entry hidden">
         <div class="manual-head" aria-hidden="true">
           <span>{{ _('Source word') }}</span><span>{{ _('Translation') }}</span><span>{{ _('Example sentence') }}</span><span></span>
@@ -88,6 +97,7 @@
 
     <div class="import-actions import-only{{ ' hidden' if initial_method == 'scan' }}">
       <button class="primary-button" type="submit">{{ _('Upload and extract') }}</button>
+      <button id="vocabularyRetryFailed" class="ghost-button imgcol-retry" type="button" hidden>{{ _('Retry the pages that failed') }}</button>
       <p id="vocabularyImportStatus" class="import-status" role="status" aria-live="polite"></p>
     </div>
     <p id="vocabularyImportError" class="form-error hidden" role="alert"></p>

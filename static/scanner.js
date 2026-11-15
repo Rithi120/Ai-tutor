@@ -17,6 +17,40 @@ const ui = key => window.LEARNOVA_I18N?.[key] || key;
 // Without live camera access (no getUserMedia, permission refused, no camera) the fallback
 // is the phone's own camera app through a file input, feeding the same review step.
 
+// static/js/project-create.js (the multi-image collection) marks the form when it runs.
+// Then the accepted scans are handed to its one ordered list when the scanner closes, and
+// it sends the form; without it (the module failed to load) this script sends everything.
+const collectionActive = () => projectForm?.dataset.imageCollection === "ready";
+const collectionCount = () => Number(projectForm?.dataset.collectionCount || 0);
+
+function handOverScans() {
+  if (!collectionActive() || !acceptedScans.length) return;
+  const scans = acceptedScans.map(scan => ({ blob: scan.blob, rotation: scan.rotation, crop: { ...scan.crop } }));
+  acceptedScans.forEach(scan => URL.revokeObjectURL(scan.previewUrl));
+  acceptedScans = [];
+  retakeIndex = null;
+  document.dispatchEvent(new CustomEvent("learnova:scans-finished", { detail: { scans } }));
+  renderScans();
+}
+
+function closeScanner() {
+  stopCamera();
+  if (pendingScan) URL.revokeObjectURL(pendingScan.previewUrl);
+  pendingScan = null;
+  retakeIndex = null;
+  captureReview.classList.add("hidden");
+  scannerModal.classList.add("hidden");
+  handOverScans();
+}
+
+function showCaptureStep() {
+  // Live video when there is a stream; the camera-app fallback otherwise (a dead video
+  // with a capture button that does nothing was shown after a retake without a stream).
+  captureReview.classList.add("hidden");
+  liveCapture.classList.toggle("hidden", !cameraStream);
+  cameraFallback.classList.toggle("hidden", Boolean(cameraStream));
+}
+
 function stopCamera() {
   if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
   cameraStream = null;
@@ -70,7 +104,8 @@ const gridCount = () => document.querySelector("#competencyGridInput")?.files.le
 const typedTopics = () => (document.querySelector("#projectTopics")?.value || "").split(/[\n,]/).map(item => item.trim()).filter(Boolean).length;
 
 function updateMaterialSummary() {
-  const uploaded = [...document.querySelectorAll('#pdfInput, #imageUploadInput')].reduce((sum, input) => sum + input.files.length, 0);
+  const uploaded = collectionActive() ? collectionCount()
+    : [...document.querySelectorAll('#pdfInput, #imageUploadInput')].reduce((sum, input) => sum + input.files.length, 0);
   const parts = [];
   if (uploaded) parts.push(`${uploaded} ${ui(uploaded === 1 ? "uploadedFile" : "uploadedFiles")}`);
   if (gridCount()) parts.push(`${gridCount()} ${ui("competencyGridFiles")}`);
@@ -89,8 +124,8 @@ document.querySelector("#openScanner").addEventListener("click", () => {
   scannerModal.classList.remove("hidden");
   startCamera();
 });
-document.querySelector("#closeScanner").addEventListener("click", () => { stopCamera(); scannerModal.classList.add("hidden"); });
-document.querySelector("#finishScanning").addEventListener("click", () => { stopCamera(); scannerModal.classList.add("hidden"); });
+document.querySelector("#closeScanner").addEventListener("click", closeScanner);
+document.querySelector("#finishScanning").addEventListener("click", closeScanner);
 document.querySelector("#switchCamera").addEventListener("click", () => { facingMode = facingMode === "environment" ? "user" : "environment"; startCamera(); });
 
 document.querySelector("#capturePage").addEventListener("click", () => {
@@ -114,31 +149,38 @@ document.querySelectorAll("[data-crop]").forEach(input => input.addEventListener
 }));
 document.querySelector("#retakePage").addEventListener("click", () => {
   if (pendingScan) URL.revokeObjectURL(pendingScan.previewUrl);
-  pendingScan = null; captureReview.classList.add("hidden");
-  (cameraStream ? liveCapture : cameraFallback).classList.remove("hidden");
+  pendingScan = null;
+  showCaptureStep();
 });
 document.querySelector("#acceptPage").addEventListener("click", () => {
   if (!pendingScan) return;
-  if (retakeIndex === null) acceptedScans.push(pendingScan);
-  else acceptedScans.splice(retakeIndex, 0, pendingScan);
+  if (retakeIndex === null || !acceptedScans[retakeIndex]) acceptedScans.push(pendingScan);
+  else {
+    // A retake replaces its page only now, when the new capture is accepted: closing the
+    // scanner halfway through a retake keeps the old page.
+    URL.revokeObjectURL(acceptedScans[retakeIndex].previewUrl);
+    acceptedScans.splice(retakeIndex, 1, pendingScan);
+  }
   pendingScan = null; retakeIndex = null;
-  captureReview.classList.add("hidden"); (cameraStream ? liveCapture : cameraFallback).classList.remove("hidden"); renderScans();
+  showCaptureStep(); renderScans();
 });
 
 scanThumbnails.addEventListener("click", event => {
   const card = event.target.closest("[data-index]"); if (!card) return;
   const index = Number(card.dataset.index);
-  if (event.target.closest("[data-retake]")) { URL.revokeObjectURL(acceptedScans[index].previewUrl); acceptedScans.splice(index, 1); retakeIndex = index; pendingScan = null; captureReview.classList.add("hidden"); liveCapture.classList.remove("hidden"); renderScans(); return; }
-  if (event.target.closest("[data-delete]")) { URL.revokeObjectURL(acceptedScans[index].previewUrl); acceptedScans.splice(index, 1); }
+  if (event.target.closest("[data-retake]")) { retakeIndex = index; if (pendingScan) URL.revokeObjectURL(pendingScan.previewUrl); pendingScan = null; showCaptureStep(); return; }
+  if (event.target.closest("[data-delete]")) { URL.revokeObjectURL(acceptedScans[index].previewUrl); acceptedScans.splice(index, 1); if (retakeIndex !== null) retakeIndex = null; }
   if (event.target.closest("[data-move='up']") && index > 0) [acceptedScans[index - 1], acceptedScans[index]] = [acceptedScans[index], acceptedScans[index - 1]];
   if (event.target.closest("[data-move='down']") && index < acceptedScans.length - 1) [acceptedScans[index + 1], acceptedScans[index]] = [acceptedScans[index], acceptedScans[index + 1]];
   renderScans();
 });
 document.querySelectorAll("#pdfInput, #imageUploadInput, #competencyGridInput").forEach(input => input.addEventListener("change", updateMaterialSummary));
 document.querySelector("#projectTopics")?.addEventListener("input", updateMaterialSummary);
+document.addEventListener("learnova:collection-changed", updateMaterialSummary);
 
 projectForm.addEventListener("submit", async event => {
   event.preventDefault();
+  if (collectionActive()) return;   // project-create.js sends it, in batches
   // One combined input (photos and PDFs) on the new form; the count works with either.
   const uploadCount = [...document.querySelectorAll("#pdfInput, #imageUploadInput")].reduce((sum, input) => sum + input.files.length, 0);
   if (!uploadCount && !acceptedScans.length && !gridCount() && !typedTopics()) { selectedMaterial.textContent = ui("chooseProjectInput"); return; }

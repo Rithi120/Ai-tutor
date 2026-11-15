@@ -284,15 +284,76 @@ def plan_steps(strategy: SubjectStrategy, *, mode: str, state: str,
     return steps
 
 
-def _capped(steps: list[LessonStep]) -> list[LessonStep]:
+# --------------------------------------------------------------------------- Short Lessons
+
+# Spec 1.3: every Short Lesson (the /lesson builder and a chat topic lesson) teaches the
+# objective, the key terms, worked steps, the typical mistakes and a guided exercise with
+# its solution, whatever the subject strategy leaves out for a project lesson (Mathematics
+# learn has no terms part, History no mistakes part - kept as they are for Project Mode).
+SHORT_LESSON_KINDS = ("objective", "terms", "mistakes", "guided_exercise", "summary")
+_EXAMPLE_KINDS = frozenset({"example", "worked_example", "model_analysis", "source_analysis"})
+SHORT_TERMS = LessonStep("terms", "List the important technical terms of this topic as items: label = the term "
+                         "exactly as the student's material or class writes it, text = a short, simple definition.",
+                         modes=ALL_MODES)
+SHORT_EXAMPLE = LessonStep("worked_example", "Work through one typical example step by step in items (label = "
+                           "what you do, text = the step and why it follows), then give the result.",
+                           modes=ALL_MODES)
+SHORT_MISTAKES = LessonStep("mistakes", "List the typical mistakes students make with this topic in class tests, "
+                            "each with the correct idea and how to notice the mistake.", modes=ALL_MODES)
+SHORT_CHECK = (" End with one short understanding check: a question the student answers in one line, and its "
+               "answer.")
+SHORT_LESSON_RULE = (
+    "SHORT LESSON: this one lesson must teach the topic completely on its own - the learning objective, the "
+    "explanation at the student's level, the key terms, worked steps, the typical mistakes, a guided exercise "
+    "with its solution and a short understanding check. When the student's material shows how their teacher "
+    "does it (a named method, a scheme, a notation, a way of writing the solution), teach exactly that method "
+    "first and say that it is the method from their material.")
+
+
+def short_lesson_steps(steps: Iterable[LessonStep]) -> list[LessonStep]:
+    """The planned steps of a Short Lesson: `steps` (from plan_steps) plus whatever of
+    objective, key terms, a worked example, typical mistakes, a guided exercise and a
+    summary with an understanding check they lack, in teaching order and within
+    MAX_PLAN_STEPS. The strategy's own steps keep their instructions and order."""
+
+    steps = list(steps) or [_GENERIC_STEPS[kind] for kind in _FALLBACK_KINDS]
+    kinds = {step.kind for step in steps}
+    if "objective" not in kinds:
+        steps.insert(0, _GENERIC_STEPS["objective"])
+
+    def before_practice() -> int:
+        return next((i for i, step in enumerate(steps) if step.kind in {"mistakes", "guided_exercise", "summary"}),
+                    len(steps))
+
+    if "terms" not in kinds:
+        # After the first explaining part (the term is met in context), else before practice.
+        first = next((i for i, step in enumerate(steps) if step.kind in EXPLANATION_KINDS), None)
+        steps.insert(first + 1 if first is not None else before_practice(), SHORT_TERMS)
+    if not kinds & _EXAMPLE_KINDS:
+        steps.insert(before_practice(), SHORT_EXAMPLE)
+    if "mistakes" not in kinds:
+        guided = next((i for i, step in enumerate(steps) if step.kind in {"guided_exercise", "summary"}), len(steps))
+        steps.insert(guided, SHORT_MISTAKES)
+    if "guided_exercise" not in kinds:
+        summary = next((i for i, step in enumerate(steps) if step.kind == "summary"), len(steps))
+        steps.insert(summary, _GENERIC_STEPS["guided_exercise"])
+    if "summary" not in kinds:
+        steps.append(_GENERIC_STEPS["summary"])
+    steps = [replace(step, instruction=step.instruction + SHORT_CHECK)
+             if step.kind == "summary" and "understanding check" not in step.instruction else step
+             for step in steps]
+    return _capped(steps, keep=set(SHORT_LESSON_KINDS) | set(_EXAMPLE_KINDS))
+
+
+def _capped(steps: list[LessonStep], *, keep: set[str] | None = None) -> list[LessonStep]:
     """At most MAX_PLAN_STEPS steps. A subject made of three (Sachunterricht: sciences,
     geography and history) would plan sixteen parts, more than a lesson answer holds; the
     explaining parts nearest the practice phase go first, parts that wait for an item
     kind before the others, and the objective, an explaining part, the practice and the
-    summary always stay."""
+    summary always stay (`keep`: further kinds that stay, for a Short Lesson)."""
 
     steps = list(steps)
-    keep = {"objective", "guided_exercise", "summary", "mistakes"}
+    keep = {"objective", "guided_exercise", "summary", "mistakes"} | set(keep or ())
     while len(steps) > MAX_PLAN_STEPS:
         explaining = [i for i, step in enumerate(steps) if step.kind in EXPLANATION_KINDS]
         candidates = [i for i, step in enumerate(steps) if step.kind not in keep
@@ -443,6 +504,11 @@ _KIND_ALIASES = {
     # diagram
     "diagramm": "diagram", "diagrams": "diagram", "map": "diagram", "karte": "diagram", "graph": "diagram",
     "chart": "diagram", "schaubild": "diagram",
+    # alternative (spec Phase 2: an additional tip after the notes' own method). A bare "tip" is
+    # not one: a tip may retell the notes, and an alternative is always marked as added.
+    "additional_tip": "alternative", "zusatztipp": "alternative",
+    "alternative_method": "alternative", "alternativ": "alternative", "alternative_formula": "alternative",
+    "andere_methode": "alternative",
     # source analysis
     "quellenanalyse": "source_analysis", "source": "source_analysis", "sources": "source_analysis",
     "quelle": "source_analysis", "quellen": "source_analysis", "translation": "source_analysis",

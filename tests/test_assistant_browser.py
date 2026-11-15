@@ -19,6 +19,7 @@ import base64
 import io
 import json
 import os
+import re
 import socket
 import tempfile
 import time
@@ -54,6 +55,12 @@ WIDE = ("Die lange Rechnung:\n\n\\[\n" + " + ".join(f"\\frac{{{n}}}{{{n + 1}}}" 
         "Und inline: $" + " + ".join(f"a_{{{n}}} x^{{{n}}}" for n in range(1, 30)) + "$\nTOPIC: Mathematics | Brüche")
 LONG_QUESTION = "Wie löse ich die Gleichung x^2 - 2x - 3 = 0? Ich verstehe die Lösungsformel nicht."
 # Formulas inside table cells (the cells must not break a formula over several lines).
+# Exam material (spec 1.2): the hidden EXAM line lists the separate topics.
+REPLY_EXAM_THREE = ("Gut, das schaffen wir zusammen. Womit möchtest du anfangen?\n"
+                    "EXAM: Bruchrechnung | Prozentrechnung | Zinsrechnung\nTOPIC: Mathematics | Klassenarbeit")
+REPLY_EXAM_SIX = ("Das ist eine ganze Arbeit. So können wir vorgehen.\n"
+                  "EXAM: Satzglieder | Kommasetzung | Erörterung | Inhaltsangabe | Konjunktiv | Zeitformen\n"
+                  "TOPIC: German | Deutscharbeit")
 TABLE_MATH = ("Die beiden Gleichungen:\n\n| Gleichung | Lösung |\n|---|---|\n"
               "| $x^2 - 2x - 3 = 0$ | $x_1 = 3$ und $x_2 = -1$ |\n"
               "| $\\frac{a}{b} + \\frac{c}{d} = \\frac{ad + bc}{bd}$ | gilt für $b, d \\neq 0$ |\n\n"
@@ -196,6 +203,47 @@ class ChatRulesTests(unittest.TestCase):
         self.assertEqual(views[0], {"kind": "guidance", "text": "Tell me which topic you are working on."})
         self.assertEqual(views[1:], ["none", "none", "none"])
 
+    def test_the_study_format_card_arranges_what_the_server_decided(self):
+        views = self.rule("""(m) => {
+            const topics = [{key: "a", title: "A", position: 1, status: "ready", url: "/?session_id=1", completed: true, access: "now"},
+                            {key: "b", title: "B", position: 2, status: "none", access: "now"},
+                            {key: "c", title: "C", position: 3, status: "none", access: "later"},
+                            {key: "d", title: "D", position: 4, status: "failed", access: "now"}];
+            return [
+              m.formatView(null).kind,
+              m.formatView({kind: "none"}).kind,
+              m.formatView({kind: "lessons", recommended: "lessons", topics, lessons_left: 1, lesson_limit: 2, plan: "free",
+                            reasons: ["few_topics"]}),
+              m.formatView({kind: "choice", recommended: "project", topics, reasons: ["exam_far"]}).options,
+              m.formatView({kind: "choice", recommended: "lessons", topics}).options,
+              m.formatView({kind: "lessons", topics}, {busyTopics: new Set(["b"])}).topics[1].state,
+              m.formatView({kind: "project", topics, project_allowed: false, project_resets_at: "2026-11-20T00:00:00+00:00"}).project,
+              m.formatView({kind: "project", topics, project: {status: "ready", url: "/projects/4"}}).project,
+              m.formatView({kind: "project", topics}, {projectBusy: true}).project.state,
+            ];
+        }""")
+        self.assertEqual(views[:2], ["none", "none"])
+        lessons = views[2]
+        self.assertEqual([item["state"] for item in lessons["topics"]], ["done", "start", "locked", "retry"])
+        self.assertEqual((lessons["done"], lessons["locked"], lessons["lessonsLeft"], lessons["lessonLimit"], lessons["free"]),
+                         (1, 1, 1, 2, True))
+        self.assertEqual(lessons["reasonKey"], "asstFormatWhyFew")
+        self.assertEqual(views[3], ["project", "lessons"], "the recommended option comes first")
+        self.assertEqual(views[4], ["lessons", "project"])
+        self.assertEqual(views[5], "pending")
+        self.assertEqual(views[6], {"state": "locked", "url": None})
+        self.assertEqual(views[7], {"state": "ready", "url": "/projects/4"})
+        self.assertEqual(views[8], "pending")
+
+    def test_exam_date_chips_count_from_the_servers_day(self):
+        chips = self.rule("(m) => [m.examDateChoices('2026-11-13', '2026-12-01'), m.examDateChoices('2026-11-13', '2026-11-20'),"
+                          " m.examDateChoices('', '')]")
+        self.assertEqual([(item["value"], item["key"]) for item in chips[0]],
+                         [("2026-12-01", "asstExamOn"), ("2026-11-20", "asstExamInWeek"), ("2026-11-27", "asstExamInTwoWeeks"),
+                          ("", "asstExamNoDate")])
+        self.assertEqual([item["value"] for item in chips[1]], ["2026-11-20", "2026-11-27", ""], "no chip twice")
+        self.assertEqual(chips[2], [{"value": "", "key": "asstExamNoDate"}])
+
     def test_failures_are_worded_by_status_and_a_lost_send_is_checked_first(self):
         keys = self.rule("""(m) => [m.failureKey({network: true}), m.failureKey({status: 401}), m.failureKey({toLogin: true}),
                               m.failureKey({status: 413}), m.failureKey({status: 502}), m.failureKey({status: 504}),
@@ -263,7 +311,8 @@ class ChatPageTests(unittest.TestCase):
         if "SLOW" in latest:
             time.sleep(2.5)
         reply = (WIDE if "WIDE" in latest else TABLE_MATH if "TABLEMATH" in latest
-                 else REPLY_NO_TOPIC if "NOTOPIC" in latest else REPLY)
+                 else REPLY_NO_TOPIC if "NOTOPIC" in latest else REPLY_EXAM_THREE if "EXAMTHREE" in latest
+                 else REPLY_EXAM_SIX if "EXAMSIX" in latest else REPLY)
 
         class Usage:
             input_tokens = output_tokens = total_tokens = 10
@@ -820,6 +869,97 @@ class ChatPageTests(unittest.TestCase):
         self.assertIn("Open lesson:", page.text_content(".asst-continue-link"))
         page.reload(wait_until="load")
         page.wait_for_selector(".asst-continue-link")   # the link survives a reload
+
+    def test_three_exam_topics_offer_three_lessons_and_one_tap_builds_one(self):
+        page = self.student(390, 844)
+        cid = self.conversation(page, "EXAMTHREE Morgen schreiben wir eine Klassenarbeit über Bruchrechnung, "
+                                      "Prozentrechnung und Zinsrechnung.")
+        self.open_thread(page, cid)
+        page.wait_for_selector(".asst-format")
+        self.assertEqual(page.locator(".asst-continue-button").count(), 0, "no weaker button beside the card")
+        self.assertEqual(page.locator(".asst-format-start").count(), 3)
+        self.assertIn("Lesson 2: Prozentrechnung", page.text_content(".asst-format-topic >> nth=1"))
+        posts = []
+        page.on("request", lambda request: posts.append(request.url)
+                if request.method == "POST" and request.url.endswith("/lesson") else None)
+        page.locator(".asst-format-start >> nth=1").dblclick()
+        page.wait_for_selector(".asst-format-topic.is-ready .asst-format-open", timeout=20000)
+        self.assertEqual(len(posts), 1, "a double tap builds one lesson")
+        self.assertTrue(page.get_attribute(".asst-format-open", "href").startswith("/?session_id="))
+        self.assertEqual(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), True)
+        for button in page.locator(".asst-format-start").all():
+            self.assertGreaterEqual(button.bounding_box()["height"], 44)
+        page.reload(wait_until="load")
+        page.wait_for_selector(".asst-format-topic.is-ready")   # survives a reload
+        self.assertEqual(self.errors, [])
+
+    def test_a_topic_lesson_being_built_elsewhere_turns_ready_without_a_reload(self):
+        # Review fix: a row the server reports as pending (another tab, a reload during the
+        # build) used to keep its spinner until the page was reloaded.
+        page = self.student(390, 844)
+        cid = self.conversation(page, "EXAMTHREE Morgen schreiben wir eine Klassenarbeit über Bruchrechnung, "
+                                      "Prozentrechnung und Zinsrechnung.")
+        application, db = self.application, self.application.db
+        with application.app.app_context():
+            reply = db.session.scalars(db.select(application.ConversationMessage).where(
+                application.ConversationMessage.conversation_id == cid,
+                application.ConversationMessage.role == "assistant")).one()
+            now = application.utcnow()
+            row = application.ConversationLesson(
+                user_id=db.session.get(application.Conversation, cid).user_id, conversation_id=cid,
+                source_message_id=reply.id, status="pending", subject="Mathematics", topic="Bruchrechnung",
+                topic_key=application.assistant.study_format.parse_exam_topics("Bruchrechnung")[0].key,
+                position=1, kind="lesson", created_at=now, updated_at=now)
+            db.session.add(row)
+            db.session.commit()
+            row_id = row.id
+        self.open_thread(page, cid)
+        page.wait_for_selector(".asst-format-topic.is-pending")
+        with application.app.app_context():
+            db.session.execute(db.update(application.ConversationLesson).where(
+                application.ConversationLesson.id == row_id).values(status="ready", session_id="built-elsewhere",
+                                                                    title="Bruchrechnung"))
+            db.session.commit()
+        page.wait_for_selector(".asst-format-topic.is-ready .asst-format-open", timeout=15000)
+        self.assertEqual(page.get_attribute(".asst-format-open", "href"), "/?session_id=built-elsewhere")
+        self.assertEqual(self.errors, [])
+
+    def test_a_borderline_exam_shows_the_recommended_option_first_and_the_card_reads_in_dark(self):
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                page = self.student(320, 640, theme=theme)
+                page.emulate_media(reduced_motion="reduce")
+                cid = self.conversation(page, "EXAMSIX Deutscharbeit in 2 Wochen: Satzglieder, Kommasetzung, Erörterung, "
+                                              "Inhaltsangabe, Konjunktiv und Zeitformen.")
+                self.open_thread(page, cid)
+                page.wait_for_selector(".asst-format")
+                self.assertEqual(page.locator(".asst-format-option.is-recommended .asst-format-badge").count(), 1)
+                self.assertEqual(page.locator(".asst-format-option.is-recommended .asst-format-project").count(), 1)
+                self.assertEqual(page.locator(".asst-date-chips .asst-chip[aria-pressed=true]").count(), 1)
+                page.click(".asst-format-more")
+                page.wait_for_selector(".asst-format-lessons")
+                self.assertEqual(page.evaluate(self.audit.AUDIT_JS)["invisibleText"], [])
+                self.assertEqual(page.evaluate(CONTRAST_JS, ".asst-format"), [])
+                self.assertEqual(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), True)
+
+    def test_a_pdf_is_handed_to_project_creation_instead_of_an_error(self):
+        import pymupdf
+
+        document = pymupdf.open()
+        document.new_page().insert_text((72, 72), "Kapitel 1: Gleichförmige Bewegung")
+        pdf = document.tobytes()
+        document.close()
+        page = self.student(390, 844)
+        self.open(page)
+        page.set_input_files("#asstPdf", files=[{"name": "Physik-Test.pdf", "mimeType": "application/pdf",
+                                                  "buffer": pdf}])
+        page.wait_for_selector("#asstPdfPanel:not([hidden])")
+        self.assertIn("Physik-Test.pdf", page.text_content("#asstPdfTitle"))
+        self.assertEqual(page.locator("#asstPdfDates .asst-chip[aria-pressed=true]").count(), 1, "No date yet")
+        page.locator("#asstPdfDates .asst-chip >> nth=0").click()
+        with page.expect_navigation(url=re.compile(r"/projects/\d+/start\?auto=1"), timeout=20000):
+            page.click("#asstPdfCreate")
+        self.assertEqual(self.errors, [])
 
     def test_continue_learning_asks_for_the_subject_when_it_is_unknown(self):
         page = self.student()

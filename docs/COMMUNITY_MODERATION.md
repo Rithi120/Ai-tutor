@@ -91,6 +91,89 @@ moderation decision to be `allow`. Every public read path goes through it, and
 `test_every_public_read_path_is_gated_on_the_moderation_decision` fails if a new endpoint
 forgets.
 
+## What the author is told: publication visibility
+
+The database and the real access were always right; the labels were not. The owner's set
+list drew a hardcoded "Private" on every card, its API carried no publication data, and the
+overview showed moderation words ("Approved") guessed from the raw status. Since 2026-11-13
+there is one server-side derivation and every page renders only that.
+
+`community.publication_visibility(status, moderation_decision, moderation_on=...)` is the
+Python twin of `visible_set_filters()` (`publication_is_visible` applies it to a row).
+`test_published_holds_exactly_when_the_public_filter_matches` builds a row for every status
+x decision x moderation on/off and checks the two agree, so they cannot drift.
+
+| `visibility` | When | Label (en / de) |
+| --- | --- | --- |
+| `private` | no publication, or `unpublished` | Private / Privat |
+| `published` | passes `visible_set_filters` - others really get it | Published / Veröffentlicht |
+| `pending` | draft, any `pending_*`, or approved but not cleared by the safety gate | Being checked / Wird geprüft |
+| `action_needed` | `rejected`, `changes_requested` | Changes requested / Änderungen erforderlich |
+| `hidden` | restricted by a moderator | Hidden / Ausgeblendet |
+
+`publication_summary()` adds `is_public`, `public_id`, `public_url` (only while public),
+and `update_state` / `update_version` / `update_status` for an update queued behind a live
+deck (`pending` -> "Published · update being checked", `action_needed` -> "Published ·
+update not accepted"). It is returned by `GET /api/flashcards/sets` (as `publication` on
+each row; two queries for the whole list, not one per set), by `GET
+/api/flashcards/sets/<id>/publication`, and by the publish, resubmit and unpublish
+responses. `published` on the publication endpoint keeps its old meaning ("a publication
+record exists") for older clients. The JS map lives once in
+`static/js/flashcards/common.js` (`VISIBILITY_KEY`, `UPDATE_KEY`, `publicationBadge`);
+the set list, overview and publish page re-read the state on a back/forward-cache
+`pageshow`, the publish page re-reads it after publishing instead of drawing the POST
+response, and Share on the overview copies the public `/community/sets/<id>` URL while the
+set is public (the owner page otherwise).
+
+**"Changed since publish"** compares the private set's `updated_at` with the newest
+version's `submitted_at` (falling back to the publication's `created_at`), not with the
+public row's `updated_at`, which moves whenever anyone studies, rates or saves the set. A
+card-only edit now bumps the private set's `updated_at` (`update_flashcard_set` does it
+when a card is added, removed, moved or really changed; a no-op save does not).
+
+## Updating a published deck: the approved version stays public
+
+Owner decision (2026-11-13). Before it, "Publish changes" set the live set to
+`pending_moderation`, so a published deck disappeared from the library for as long as the
+re-check took - indefinitely when the check was unavailable. Now:
+
+- `resubmit_public_set` leaves `status` and `moderation_decision` of a deck that is public
+  right now untouched and runs the normal pipeline on the new
+  `FlashcardPublicationVersion`.
+- `is_pending_update(public_set, version)` (a version that is not the active one, on a set
+  that is publicly visible) makes `apply_moderation_outcome` and `store_quality_review`
+  write the outcome to the version row only. A hold, a rejection or a revision request of
+  the update never narrows the live set, and the update's quality scores are only copied
+  onto the set when it goes live.
+- Public reads already serve the active version (`active_publication_version`) and the
+  set's own copied fields, which only `activate_publication_version` writes - so the
+  library, the detail page, study and save-a-copy keep serving the approved snapshot and
+  never the unchecked text. The public detail's quality review is now the active version's
+  (`live_quality_review`), not simply the newest review, whose flagged-card notes could
+  quote the unchecked text.
+- When the update passes it is activated and replaces the old version. When it is rejected
+  or held, the old version stays public and the author sees "Published · update not
+  accepted" / "being checked" plus the moderation outcome on the publish page.
+- An update held because the check was unavailable is retried exactly like a held first
+  publication (`recheck_community_set` keys on the latest moderation record). A moderator
+  decision on a held update goes through `activate_cleared_update`: `allow` makes it live
+  (with its own quality review, or with the quality check pending); anything else leaves
+  the live version public. Open reports are about the live text, so a decision on an
+  update does not resolve them. A version a newer submission has superseded is never
+  activated by a late decision.
+- A deck that is not public (held, rejected, hidden, unpublished) has nothing live to
+  keep, and is re-checked exactly as before. No migration: everything derives from
+  existing columns.
+- A withdrawn set stays withdrawn. `recheck_community_set` (background retry and `flask
+  community retry`) returns `withdrawn` without checking anything when the set is
+  `unpublished` (author) or `hidden` (moderator restriction), because a passing retry
+  would activate the held version and set it `approved`. A moderator decision on an
+  `unpublished` set is recorded (reports resolved, a rejection still retires the version)
+  but the set stays `unpublished`; only the author republishes. Before this, either path
+  could quietly put an unpublished set back in the library
+  (`test_a_late_check_never_republishes_a_withdrawn_set`). An author resubmitting a
+  `hidden` set is unchanged and still re-checks it (pre-existing, out of scope here).
+
 ## Dimensions
 
 Thirteen independent judgements, each `pass` / `flag` / `unknown` / `not_applicable`.
@@ -511,6 +594,16 @@ moderation requests have run.
 9. **"Sent" is SMTP acceptance.** Bounces after acceptance are not tracked.
 10. **Entry warnings and report findings are model opinions**, grounded in the text but
     not verified; that is why they are suggestions and never act on their own.
+11. **"Changed since publish" can be cleared by a moderator correction.** Its baseline is
+    the newest version's `submitted_at`; a moderator's "Correct one entry" also creates a
+    version, so an author edit made before such a correction no longer shows as unpublished.
+    There is no column telling author and moderator versions apart.
+12. **A rejected update keeps its label until the author acts.** "Published · update not
+    accepted" stays on the deck until the next resubmission (or unpublish); the approved
+    version is public throughout.
+13. **The back/forward-cache refresh is not browser-verified end to end.** The `pageshow`
+    handlers are checked in source and the badge module runs in a real browser
+    (`tests/test_publication_badge_browser.py`), but no test drives Publish -> Back.
 
 ## Extending it
 

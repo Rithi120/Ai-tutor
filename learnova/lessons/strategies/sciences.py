@@ -13,7 +13,13 @@ come before the exercise.
 
 from __future__ import annotations
 
-from .base import ALL_MODES, NOT_SECURE, RETEACH_ONLY, LessonStep, SubjectStrategy
+from .base import (
+    ALL_MODES, ALTERNATIVE_STEP, FORMULA_RULE_STEP, NOT_SECURE, RETEACH_ONLY, LessonStep, SubjectStrategy,
+)
+
+# The formula steps of the sciences: not part of NwT (strategies/__init__.py), whose plan is
+# already at MAX_PLAN_STEPS; NwT relies on the lesson prompt's FORMULA_TEACHING_RULE.
+FORMULA_STEPS = (FORMULA_RULE_STEP, ALTERNATIVE_STEP)
 
 _OBJECTIVE = LessonStep("objective", "Say in one or two sentences which phenomenon or principle the student will "
                         "be able to explain after this lesson.", modes=ALL_MODES)
@@ -54,10 +60,12 @@ SCIENCES = SubjectStrategy(
         _EXPERIMENT,
         _PROCESS,
         _DIAGRAM,
+        FORMULA_RULE_STEP,
         LessonStep("worked_example", "Solve one calculation with the formula step by step in items: given values, "
                    "formula, substitution, result with unit, and a sentence that answers the question.",
                    when_items=("formula",)),
         _RETEACH_EXAMPLE,
+        ALTERNATIVE_STEP,
         LessonStep("mistakes", "List the typical misconceptions (everyday ideas that contradict the science, "
                    "confused terms, observation mixed up with explanation), each with the correct idea."),
         _GUIDED,
@@ -104,10 +112,12 @@ PHYSICS = SubjectStrategy(
         _EXPERIMENT,
         _PROCESS,
         _DIAGRAM,
+        FORMULA_RULE_STEP,
         LessonStep("worked_example", "Solve one calculation step by step in items: given values with units, "
                    "formula, unit conversion, substitution with units, result with unit, answer sentence.",
                    when_items=("formula",)),
         _RETEACH_EXAMPLE,
+        ALTERNATIVE_STEP,
         LessonStep("mistakes", "List the typical mistakes (wrong or missing units, confused quantities, formula "
                    "used outside its conditions, everyday ideas that contradict physics) with the correction."),
         _GUIDED,

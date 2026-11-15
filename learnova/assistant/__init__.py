@@ -34,9 +34,17 @@ from .presets import (
     student_context,
     system_prompt,
 )
-from . import continue_learning, history, titles
+from . import continue_learning, history, resources, study_format, titles
 from .continue_learning import Gate, lesson_gate, lesson_prompt, sanitize_evidence, select_transcript
-from .formatting import DECIMAL_COMMA_LANGUAGES, decimal_commas_in_math, split_reply_trailers
+from .formatting import (
+    DECIMAL_COMMA_LANGUAGES,
+    ReplyTrailers,
+    Trailers,
+    decimal_commas_in_math,
+    reply_trailers,
+    split_reply_trailers,
+)
+from .resources import media_offer, strip_video_links
 from .history import GROUPS, date_group, decode_cursor, encode_cursor, resolve_zone, snippet
 from .titles import GENERIC_REQUESTS, GREETINGS, next_title, title_quality
 
@@ -57,6 +65,7 @@ __all__ = [
     "USER",
     "ConversationWindow",
     "Gate",
+    "Trailers",
     "build_window",
     "clean_message",
     "continue_learning",
@@ -78,7 +87,13 @@ __all__ = [
     "sanitize_evidence",
     "select_transcript",
     "snippet",
+    "reply_trailers",
     "split_reply_trailers",
+    "strip_video_links",
+    "ReplyTrailers",
+    "media_offer",
+    "resources",
+    "study_format",
     "student_context",
     "system_prompt",
     "title_quality",

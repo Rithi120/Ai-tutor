@@ -64,6 +64,8 @@
         </div>
         <div id="lessonContent">
           <p id="materialNotes" class="material-notes hidden" role="note"></p>
+          {# Spec 1.2: material that looks like a whole exam gets a light pointer to Project Mode. #}
+          <p id="formatHint" class="material-notes format-hint hidden" role="note"></p>
           <div id="testProgress" class="test-progress hidden">
             <div class="progress-copy"><strong id="progressLabel">Question 1 of 5</strong><span><button id="finishTest" class="finish-test" type="button" hidden data-i18n="finishTest">{{ _('Finish test') }}</button> <span id="progressPercent">0%</span></span></div>
             <div class="progress-track"><i id="progressFill"></i></div>
@@ -101,10 +103,10 @@
           </article>
           <article class="content-card teacher-notes-card">
             <div class="card-number">03</div>
-            <div class="wide"><span class="card-kicker" data-i18n="teacherNotes">TEACHER NOTES</span>
+            <div class="wide"><span class="card-kicker" data-i18n="teacherNotes">TIPS</span>
               <h2 data-i18n="tipsAndExceptions">Tips, traps, and exceptions</h2>
               <div class="teacher-notes-grid">
-                <section class="tips-box"><h3 data-i18n="teacherTips">Teacher tips</h3><ul id="teacherTips"></ul></section>
+                <section class="tips-box"><h3 data-i18n="teacherTips">Learnova tips</h3><ul id="teacherTips"></ul></section>
                 <section class="exceptions-box"><h3 data-i18n="exceptions">Exceptions and special cases</h3><ul id="exceptionsList"></ul></section>
               </div>
             </div>

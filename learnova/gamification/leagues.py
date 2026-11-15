@@ -37,8 +37,10 @@ LEAGUES: tuple[League, ...] = (
     League(3, "gold", "Gold League", "#ffc94a", "#c78a10"),
     League(4, "sapphire", "Sapphire League", "#4f8cff", "#2146b8"),
     League(5, "ruby", "Ruby League", "#ff5577", "#b01e44"),
-    League(6, "diamond", "Diamond League", "#7fe3ff", "#2a9ec4"),
-    League(7, "legendary", "Legendary League", "#b48cff", "#5b3fd6"),
+    # Stored as integers (league_membership.tier, league_entry.tier): renaming a tier
+    # needs no migration. Until 2026-11 tier 6 was "Diamond" and tier 7 "Legendary".
+    League(6, "emerald", "Emerald League", "#3ddc97", "#138a5b"),
+    League(7, "diamond", "Diamond League", "#7fe3ff", "#2a9ec4"),
 )
 LEAGUE_BY_TIER = {league.tier: league for league in LEAGUES}
 LOWEST, HIGHEST = LEAGUES[0].tier, LEAGUES[-1].tier
@@ -70,32 +72,46 @@ def ranked(standings: Iterable[Standing]) -> list[Standing]:
     return sorted(standings, key=key)
 
 
-def zone_sizes(size: int, tier: int, *, promote: int = PROMOTE, demote: int = DEMOTE) -> tuple[int, int]:
-    """How many places promote and demote in a group of `size`.
+def zone_sizes(size: int, tier: int, *, promote: int = PROMOTE, demote: int = DEMOTE,
+               withdrawn: int = 0, withdrawn_demoted: int = 0) -> tuple[int, int]:
+    """How many of the `size` learners still ranked in a group promote and demote.
 
     A full group uses the configured numbers. A group too small for both zones (fewer
     than promote + demote learners) shrinks them to a third each, so there is always a
     safe middle; with two or more learners at least one place still promotes, so a
     small league is never stuck. One learner alone neither rises nor falls.
+
+    Learners who left the leagues mid-week (`withdrawn`) still count toward the size the
+    zones are computed from, so leaving cannot shrink everyone else's zones. Those who
+    left from the demotion zone were demoted on leaving (`withdrawn_demoted`) and keep the
+    place they took there: the demotion zone of the rest shrinks by that many. A promotion
+    place is never taken by someone who left, so it passes to the next learner.
     """
 
     size = max(0, int(size))
+    withdrawn = max(0, int(withdrawn))
     promote, demote = max(0, int(promote)), max(0, int(demote))
-    if size < 2:
+    counted = size + withdrawn
+    if size < 1 or counted < 2:
         return 0, 0
-    if size >= promote + demote:
+    if counted >= promote + demote:
         up, down = promote, demote
     else:
-        up, down = max(1, size // 3), size // 3
+        up, down = max(1, counted // 3), counted // 3
     if tier >= HIGHEST:
         up = 0
     if tier <= LOWEST:
         down = 0
+    down = max(0, down - max(0, int(withdrawn_demoted)))
+    # Only the learners still ranked can fill the zones; promotion wins an overlap.
+    up = min(up, size)
+    down = min(down, size - up)
     return up, down
 
 
 def outcomes(
     standings: Iterable[Standing], tier: int, *, promote: int = PROMOTE, demote: int = DEMOTE,
+    withdrawn: int = 0, withdrawn_demoted: int = 0,
 ) -> list[tuple[Standing, int, str]]:
     """(standing, rank, outcome) for one group: promoted | demoted | stayed.
 
@@ -104,7 +120,8 @@ def outcomes(
     """
 
     order = ranked(standings)
-    up, down = zone_sizes(len(order), tier, promote=promote, demote=demote)
+    up, down = zone_sizes(len(order), tier, promote=promote, demote=demote,
+                          withdrawn=withdrawn, withdrawn_demoted=withdrawn_demoted)
     result = []
     for index, item in enumerate(order):
         rank = index + 1
@@ -127,12 +144,49 @@ def tier_after(tier: int, outcome: str) -> int:
 
 
 def zone(rank: int, size: int, tier: int, weekly_xp: int, *,
-         promote: int = PROMOTE, demote: int = DEMOTE) -> str:
+         promote: int = PROMOTE, demote: int = DEMOTE,
+         withdrawn: int = 0, withdrawn_demoted: int = 0) -> str:
     """Where a current rank sits right now: promotion | safe | demotion."""
 
-    up, down = zone_sizes(size, tier, promote=promote, demote=demote)
+    up, down = zone_sizes(size, tier, promote=promote, demote=demote,
+                          withdrawn=withdrawn, withdrawn_demoted=withdrawn_demoted)
     if rank <= up and weekly_xp > 0:
         return "promotion"
     if rank > size - down:
         return "demotion"
     return "safe"
+
+
+def xp_gaps(order: list[Standing], index: int, up: int, down: int) -> dict[str, int]:
+    """How much weekly XP the learner at `order[index]` needs, server-side only.
+
+    `order` is ranked best first. Ties go to whoever reached the total first, and the
+    learner's next XP is always later, so passing someone needs one XP more than they
+    have. 0 means "already there" (or nothing to reach).
+
+    - to_next_rank: XP to pass the learner one place above.
+    - to_promotion: XP to enter the promotion zone (0 inside it or without one).
+    - to_leave_demotion: XP to climb above the demotion zone (0 when not in it).
+    """
+
+    me = order[index]
+    rank, size = index + 1, len(order)
+
+    def beat(other: Standing) -> int:
+        return max(1, int(other.weekly_xp) - int(me.weekly_xp) + 1)
+
+    to_next = beat(order[index - 1]) if index > 0 else 0
+    if up <= 0 or (rank <= up and me.weekly_xp > 0):
+        to_promotion = 0
+    elif rank <= up:            # in a promotion place but with no XP yet: one XP is enough
+        to_promotion = 1
+    else:
+        to_promotion = beat(order[up - 1])
+    last_safe = size - down     # rank of the last place outside the demotion zone
+    if down <= 0 or rank <= last_safe:
+        to_leave = 0
+    elif last_safe >= 1:
+        to_leave = beat(order[last_safe - 1])
+    else:
+        to_leave = 0
+    return {"to_next_rank": to_next, "to_promotion": to_promotion, "to_leave_demotion": to_leave}

@@ -84,6 +84,13 @@
   .status-rejected, .status-pending_manual_review, .status-pending_ai_review) {
   color: #0b1220;
 }
+/* Flashcard visibility badges (set list, overview, publish page): light hue, dark text */
+:root[data-theme="dark"] :is(.ln-status, .review-status):is(
+  .visibility-private, .visibility-published, .visibility-pending,
+  .visibility-action_needed, .visibility-hidden,
+  .visibility-update-pending, .visibility-update-action_needed) {
+  color: #0b1220;
+}
 
 /* ---- Toast keeps its dark chrome; ensure contrast ---- */
 :root[data-theme="dark"] .toast { background: #1d2740; color: var(--ln-ink); border: 1px solid var(--ln-line-strong); }
@@ -173,6 +180,12 @@
 :root[data-theme="dark"] :is(.lesson-top, .example-answer, .summary-card, .explanation-levels, .content-card) {
   background: var(--ln-surface-solid); border-color: var(--ln-line-strong); color: var(--ln-ink);
 }
+/* Lesson video rows: styles.css hardcodes a near-white #f8f6ff row while the card's text
+   is --ln-ink (near-white in dark), so the row's text was invisible. */
+:root[data-theme="dark"] .media-video { background: var(--fc-muted-surface); color: var(--ln-ink); }
+/* Many Wikimedia diagrams are transparent PNGs drawn for a white page: black lines on the
+   dark card would vanish (the chat's .resource-image img has the same white backing). */
+:root[data-theme="dark"] .media-image img { background: #fff; }
 /* Answer option pills */
 :root[data-theme="dark"] .answer-option > span {
   background: var(--fc-muted-surface); border-color: var(--ln-line-strong); color: var(--ln-ink);
@@ -437,6 +450,10 @@
    plain class, so a variant with its own fill (the chat dialog, a danger button) keeps it. */
 :root[data-theme="dark"] :where(.primary-button:not([class*="danger"])) { background: #5a49ef; color: #fff; }
 :root[data-theme="dark"] :where(.primary-button:not([class*="danger"])):hover { background: #4d3de0; }
+
+/* The Short Lesson's "make a project" hint (attachments.css): the deep violet link is too dark
+   on the dark surface. */
+:root[data-theme="dark"] .format-hint a { color: #b3a8ff; }
 
 /* The guided tutorial (tour.css): on dark pages the light theme's .55 dimming was barely
    visible, so the lit element did not stand out; a darker veil and a lighter ring. */

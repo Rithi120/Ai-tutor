@@ -27,6 +27,9 @@ TOPIC_STATES = ("not_started", "taught", "practising", "understood", "mastered")
 ACTIVITIES = ("start_lesson", "continue_practice", "reteach", "review_due", "study_terms", "exam_practice", "done")
 CHECK_CODES = ("documents_processed", "topics_extracted", "terms_explained", "objectives_covered",
                "items_explained", "understanding_demonstrated")
+# Only for a project with a Kompetenzraster inventory (spec 1.1): every competency practised
+# or mastered (learnova/exam_prep/competencies.competency_check). Appended after CHECK_CODES.
+COMPETENCY_CHECK_CODE = "competencies_addressed"
 
 UNDERSTOOD_MASTERY = 60.0
 MASTERED_MASTERY = 85.0
@@ -37,7 +40,7 @@ IMPORTANT = 3                  # importance of a topic the overview must never h
 # Learning checks behind "percent"; understanding is what the project is for, so it weighs
 # as much as having been taught everything plus knowing the terms.
 PERCENT_WEIGHTS = {"terms_explained": 1.0, "objectives_covered": 1.0, "items_explained": 1.0,
-                   "understanding_demonstrated": 2.0}
+                   "understanding_demonstrated": 2.0, COMPETENCY_CHECK_CODE: 2.0}
 
 _PROCESSED_FILE_STATES = frozenset({"analysed", "needs_ocr_review"})
 _EXTRACTION_ISSUES = frozenset({"analysis_failed", "not_analysed", "uncovered_pages"})
@@ -212,7 +215,8 @@ def _extraction_check(report: Mapping[str, Any]) -> dict[str, Any]:
     return check
 
 
-def project_coverage(report: Mapping[str, Any], topics: Sequence[TopicEvidence]) -> dict[str, Any]:
+def project_coverage(report: Mapping[str, Any], topics: Sequence[TopicEvidence],
+                     competencies: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Whether a project's material is covered and learned, check by check.
 
     `report` is `document_analysis.material_report(...)` ({} for a project without
@@ -230,6 +234,11 @@ def project_coverage(report: Mapping[str, Any], topics: Sequence[TopicEvidence])
     learning checks (PERCENT_WEIGHTS; a passed check counts fully, otherwise done/total;
     terms and items only when the project has any). The material checks gate it instead:
     it reaches 100 only when every check, material included, passes.
+
+    `competencies` is the "competencies_addressed" check of a project with a
+    Kompetenzraster inventory (exam_competencies.competency_check: {code, ok, done, total,
+    gaps}); it is appended after the six checks and weighs like understanding. A project
+    without one keeps exactly the six checks.
     """
 
     report = report if isinstance(report, Mapping) else {}
@@ -255,6 +264,12 @@ def project_coverage(report: Mapping[str, Any], topics: Sequence[TopicEvidence])
         _check("understanding_demonstrated", bool(included) and understood == len(included),
                understood, len(included)),
     ]
+    if isinstance(competencies, Mapping) and competencies.get("code") == COMPETENCY_CHECK_CODE:
+        check = _check(COMPETENCY_CHECK_CODE, bool(competencies.get("ok")), _int(competencies.get("done")),
+                       _int(competencies.get("total")))
+        if _int(competencies.get("gaps")):
+            check["gaps"] = _int(competencies.get("gaps"))
+        checks.append(check)
     complete = all(check["ok"] for check in checks)
     weighted = total_weight = 0.0
     for check in checks:

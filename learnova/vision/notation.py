@@ -22,11 +22,19 @@ _SYMBOLS = {
     "−": "-", "–": "-", "—": "-", "·": "*", "⋅": "*", "×": "*", "∙": "*", "÷": ":",
     "≤": "<=", "≥": ">=", "≠": "!=", "√": "sqrt", "π": "pi",
 }
+# Every command is matched as a whole word, arrows first: "\\right" used to match the start
+# of "\\rightarrow", so a reaction equation read "2H_2+O_2arrow2H_2O".
 _LATEX = (
-    (r"\\left|\\right", ""), (r"\\cdot|\\times|\\ast", "*"), (r"\\div", ":"),
-    (r"\\leq?", "<="), (r"\\geq?", ">="), (r"\\neq", "!="), (r"\\pi", "pi"),
-    (r"\\,|\\;|\\!|\\quad|~", ""),
+    (r"\\rightleftharpoons(?![A-Za-z])|⇌", "<=>"),
+    (r"\\(?:long)?rightarrow(?![A-Za-z])|\\to(?![A-Za-z])|→|⟶", "->"),
+    (r"\\(?:long)?leftarrow(?![A-Za-z])|←", "<-"),
+    (r"\\(?:left|right)(?![A-Za-z])", ""), (r"\\(?:cdot|times|ast)(?![A-Za-z])", "*"), (r"\\div(?![A-Za-z])", ":"),
+    (r"\\leq?(?![A-Za-z])", "<="), (r"\\geq?(?![A-Za-z])", ">="), (r"\\neq?(?![A-Za-z])", "!="),
+    (r"\\pi(?![A-Za-z])", "pi"),
+    (r"\\,|\\;|\\!|\\quad(?![A-Za-z])|~", ""),
 )
+# "\\ce{2H2 + O2 -> 2H2O}" (mhchem) is the reaction it wraps.
+_CHEMISTRY = re.compile(r"^\\ce\s*\{(.*)\}$", re.S)
 
 
 def _frac(text: str) -> str:
@@ -39,6 +47,7 @@ def _frac(text: str) -> str:
 def canonical_math(expression: str) -> str:
     text = str(expression or "").strip()
     text = re.sub(r"^\$+|\$+$", "", text).strip()
+    text = _CHEMISTRY.sub(r"\1", text).strip()
     text = text.replace("\\(", "").replace("\\)", "").replace("\\[", "").replace("\\]", "")
     text = _frac(text)
     text = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"sqrt(\1)", text)

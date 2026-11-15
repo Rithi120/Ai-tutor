@@ -1,27 +1,23 @@
-import { api, toast, escapeHtml, t, renderMath, SET_ID, selectedLanguage, FLAGS } from "./common.js";
+import { api, toast, escapeHtml, t, renderMath, SET_ID, selectedLanguage, FLAGS, publicationBadge } from "./common.js";
 
 const isDe = selectedLanguage === "German";
-const STATUS_KEY = {
-  pending_ai_review: "fcStatusPendingAi", pending_manual_review: "fcStatusPendingManual",
-  approved: "fcStatusApproved", rejected: "fcStatusRejected", hidden: "fcStatusHidden",
-  unpublished: "fcStatusUnpublished",
-};
+// Where "Share" points: the public page while the set is really public, else the owner page.
+let publicUrl = null;
 
 async function showPublicationState() {
   const badge = document.querySelector("#ovStatus");
   const publish = document.querySelector("#ovPublish");
   try {
     const state = await api(`/api/flashcards/sets/${SET_ID}/publication`);
-    if (state.published && state.status !== "unpublished") {
-      badge.textContent = t(STATUS_KEY[state.status] || state.status) || state.status;
-      badge.className = `review-status status-${state.status}`;
-      badge.classList.remove("hidden");
-      if (publish) publish.textContent = t("fcViewStatus");
-    } else {
-      badge.textContent = t("fcStatusPrivate");
-      badge.className = "review-status status-draft";
-      badge.classList.remove("hidden");
-    }
+    // The label is the server's visibility (same rule as the public library), not the
+    // moderation word: "Published", "Being checked", "Private" ...
+    const view = publicationBadge(state);
+    badge.textContent = view.text;
+    badge.className = `review-status ${view.className}`;
+    badge.dataset.visibility = view.visibility;
+    badge.classList.remove("hidden");
+    publicUrl = state.is_public && state.public_url ? state.public_url : null;
+    if (publish) publish.textContent = view.visibility === "private" ? t("fcPublish") : t("fcViewStatus");
   } catch (_) { /* publication state is best-effort */ }
 }
 
@@ -51,7 +47,7 @@ async function load() {
 
 function init() {
   document.querySelector("#ovShare").addEventListener("click", () => {
-    const url = `${window.location.origin}/flashcards/${SET_ID}`;
+    const url = `${window.location.origin}${publicUrl || `/flashcards/${SET_ID}`}`;
     navigator.clipboard?.writeText(url).then(() => toast(t("fcCopied"), "success"), () => toast(url, "info"));
   });
   document.querySelector("#ovDelete").addEventListener("click", async () => {
@@ -65,4 +61,9 @@ function init() {
   load();
 }
 
+// Back from the publish page restores this page from the back/forward cache with the old
+// badge ("Private" right after publishing); read the real state again instead.
+window.addEventListener("pageshow", event => {
+  if (event.persisted && FLAGS.community_publishing) showPublicationState();
+});
 document.addEventListener("DOMContentLoaded", init);

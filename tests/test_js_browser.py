@@ -427,6 +427,11 @@ class NodeStyleTests(unittest.TestCase):
         # the feature chapters that start by themselves, since 2026-11-04).
         self.run_file("tour-rules.test.mjs", 32)
 
+    def test_the_image_collection_rule_suite(self):
+        # static/js/image-collection-rules.js: the multi-image upload's batches, order,
+        # limits, file checks and gestures (Project Mode and Vocabulary Mode, 2026-11-13).
+        self.run_file("image-collection-rules.test.mjs", 16)
+
 
 class RealKatexTests(_BrowserCase):
     """The gpt-oss shaped corpus through the real KaTeX 0.16.11 (opt-in, see the module doc)."""

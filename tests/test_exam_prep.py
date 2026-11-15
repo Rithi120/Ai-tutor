@@ -65,6 +65,155 @@ class CompetencyTests(unittest.TestCase):
         self.assertEqual(competencies.missing_for_section([{**rows[2], "section_id": 7}], 7), ["c"])
 
 
+# A Kompetenzraster page with 15 "Ich kann" rows under five headings (spec 1.1 tests).
+FIFTEEN_ROWS = [
+    ("Lineare Funktionen", ["Ich kann die Steigung einer linearen Funktion bestimmen.",
+                            "Ich kann den Graphen einer linearen Funktion zeichnen.",
+                            "Ich kann die Funktionsgleichung einer Geraden aufstellen."]),
+    ("Quadratische Funktionen", ["Ich kann den Scheitelpunkt einer quadratischen Funktion bestimmen.",
+                                 "Ich kann eine Normalparabel verschieben.",
+                                 "Ich kann die Scheitelpunktform in die Normalform umwandeln."]),
+    ("Lineare Gleichungssysteme", ["Ich kann ein lineares Gleichungssystem mit dem Einsetzungsverfahren lösen.",
+                                   "Ich kann ein lineares Gleichungssystem grafisch lösen.",
+                                   "Ich kann das Additionsverfahren anwenden."]),
+    ("Satz des Pythagoras", ["Ich kann fehlende Seitenlängen im rechtwinkligen Dreieck berechnen.",
+                             "Ich kann die Hypotenuse erkennen.",
+                             "Ich kann den Satz des Pythagoras im Raum anwenden."]),
+    ("Wahrscheinlichkeitsrechnung", ["Ich kann Laplace-Wahrscheinlichkeiten berechnen.",
+                                     "Ich kann ein Baumdiagramm zeichnen.",
+                                     "Ich kann die Pfadregeln anwenden."]),
+]
+FIFTEEN_PAGE = "Kompetenzraster Mathematik Klasse 9\n" + "\n".join(
+    f"{heading}\n" + "\n".join(f"☐ {row}" for row in rows) for heading, rows in FIFTEEN_ROWS)
+
+
+def grid_rows(rows=None):
+    picked = rows if rows is not None else [(heading, row) for heading, items in FIFTEEN_ROWS for row in items]
+    return {"competencies": [{"statement": row, "group_path": ["Kompetenzraster", heading], "level": "basic",
+                              "importance": 2, "source_page_ids": [7], "section_title": heading}
+                             for heading, row in picked]}
+
+
+class KompetenzrasterInventoryTests(unittest.TestCase):
+    """Spec 1.1: every row extracted, grounded, counted and tracked on its own."""
+
+    def test_the_row_counter_reads_bullets_numbers_checkboxes_columns_and_wrapped_rows(self):
+        page = ("Kompetenzraster\n• Ich kann lineare Funktionen zeichnen.\n- Ich kann die Steigung einer\n"
+                "linearen Funktion bestimmen.\n1. Ich kann quadratische Gleichungen lösen\n"
+                "☐ Ich kann die Mitternachtsformel anwenden.   Ich kann die Diskriminante deuten.\n"
+                "I can solve systems | I can draw graphs\nIn der Klasse arbeiten wir viel. Ich kann das nicht.")
+        rows = competencies.expected_rows(page)
+        self.assertEqual(rows[:2], ["Ich kann lineare Funktionen zeichnen.",
+                                    "Ich kann die Steigung einer linearen Funktion bestimmen."])
+        self.assertEqual(len(rows), 7, "a sentence that only contains 'Ich kann' mid-line is no row")
+        self.assertEqual(len(competencies.expected_rows(FIFTEEN_PAGE)), 15)
+
+    def test_a_complete_answer_gives_fifteen_verified_rows_and_no_gap(self):
+        inventory = competencies.ground_page(grid_rows(), page_id=7, page_text=FIFTEEN_PAGE)
+        self.assertEqual(len(inventory.rows), 15)
+        self.assertTrue(all(row["verified"] and row["source_page_ids"] == [7] for row in inventory.rows))
+        self.assertIsNone(inventory.gap)
+        self.assertEqual(inventory.rows[0]["group_path"], ["Kompetenzraster", "Lineare Funktionen"])
+
+    def test_twelve_of_fifteen_is_a_gap(self):
+        picked = [(heading, row) for heading, items in FIFTEEN_ROWS for row in items][:12]
+        inventory = competencies.ground_page(grid_rows(picked), page_id=7, page_text=FIFTEEN_PAGE)
+        self.assertEqual(inventory.gap, {"expected": 15, "found": 12, "missing": 3, "rejected": 0, "dropped": 0})
+
+    def test_an_invented_statement_is_never_verified(self):
+        payload = grid_rows()
+        payload["competencies"].append({"statement": "Ich kann Integrale mit der Substitutionsregel berechnen.",
+                                        "group_path": ["Analysis"], "source_page_ids": [7]})
+        inventory = competencies.ground_page(payload, page_id=7, page_text=FIFTEEN_PAGE)
+        self.assertEqual(len(inventory.rows), 15)
+        self.assertEqual(inventory.rejected, ["Ich kann Integrale mit der Substitutionsregel berechnen."])
+        self.assertEqual(inventory.gap["rejected"], 1, "an unverified row is a gap, never silent")
+
+    def test_rows_differing_in_one_word_stay_two_and_the_cap_is_counted(self):
+        rows = competencies.normalize_competencies({"competencies": [
+            {"statement": "Ich kann lineare Funktionen zeichnen."},
+            {"statement": "Ich kann quadratische Funktionen zeichnen."},
+            {"statement": "ich kann  lineare Funktionen zeichnen"}]}, valid_page_ids=[1])
+        self.assertEqual([row["statement"] for row in rows],
+                         ["Ich kann lineare Funktionen zeichnen.", "Ich kann quadratische Funktionen zeichnen."])
+        many = {"competencies": [{"statement": f"Ich kann Aufgabe {number} lösen"} for number in range(100)]}
+        inventory = competencies.ground_page(many, page_id=1, page_text="\n".join(
+            f"Ich kann Aufgabe {number} lösen" for number in range(100)))
+        self.assertEqual((len(inventory.rows), inventory.dropped), (competencies.MAX_PER_PAGE, 40))
+        self.assertEqual(inventory.gap["dropped"], 40)
+
+    def test_the_parser_is_the_fallback_inventory(self):
+        inventory = competencies.parsed_page(7, FIFTEEN_PAGE)
+        self.assertEqual((len(inventory.rows), inventory.source, inventory.gap), (15, "parser", None))
+
+    def test_attach_uses_stems_prefers_the_narrower_topic_and_leaves_ties_unassigned(self):
+        sections = [{"id": 1, "title": "Lineare Funktionen", "main_topic": "Funktionen"},
+                    {"id": 2, "title": "Quadratische Funktionen", "main_topic": "Funktionen"},
+                    {"id": 3, "title": "Quadratische Gleichungen", "main_topic": "Gleichungen"},
+                    {"id": 4, "title": "Lineare und quadratische Funktionen", "main_topic": "Funktionen"}]
+        rows = competencies.attach_sections([
+            {"statement": "Ich kann den Scheitelpunkt einer quadratischen Funktion bestimmen.", "group_path": []},
+            {"statement": "Ich kann die Steigung einer linearen Funktion bestimmen.", "group_path": []},
+            {"statement": "Ich kann Wahrscheinlichkeiten berechnen.", "group_path": []},
+            {"statement": "Ich kann Gleichungen und Funktionen unterscheiden.", "group_path": []},
+            {"statement": "Ich kann eine Parabel verschieben.", "group_path": ["Quadratische Funktionen"],
+             "section_title": "Lineare Funktionen"},     # a wrong hint loses against the headings
+        ], sections)
+        self.assertEqual([row["section_id"] for row in rows], [2, 1, None, None, 2])
+
+    def test_the_status_is_derived_and_mastery_is_never_inherited(self):
+        state, evidence = competencies.competency_state, competencies.CompetencyEvidence
+        self.assertEqual(state(evidence(1)), "identified")
+        self.assertEqual(state(evidence(1, decision="confirmed")), "identified", "no topic yet")
+        self.assertEqual(state(evidence(1, decision="removed", section_id=2)), competencies.REMOVED)
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2)), "not_started")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, taught_count=1)), "teaching")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, taught_count=1, answers=1,
+                                        correct_answers=1)), "practised")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, answers=3, correct_answers=1)),
+                         "needs_revision")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, answers=1, correct_answers=1,
+                                        section_reteach=True)), "needs_revision")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, section_state="mastered",
+                                        taught_count=2)), "teaching",
+                         "the topic is mastered, this competency has no answer of its own")
+        self.assertEqual(state(evidence(1, decision="confirmed", section_id=2, section_state="mastered",
+                                        answers=2, correct_answers=2)), "mastered")
+
+    def test_coverage_is_complete_only_when_every_competency_is_practised(self):
+        check = competencies.competency_check
+        self.assertIsNone(check([]), "no Kompetenzraster, no check")
+        self.assertFalse(check(["practised", "mastered", "teaching"])["ok"])
+        self.assertFalse(check(["practised", "identified"])["ok"])
+        self.assertTrue(check(["practised", "mastered", competencies.REMOVED])["ok"])
+        self.assertFalse(check(["practised"], missing_rows=3)["ok"], "a gap holds it open")
+        self.assertEqual(check(["practised"], missing_rows=3)["total"], 4)
+        self.assertFalse(check(["practised"], open_gaps=1)["ok"])
+
+    def test_a_due_review_shows_needs_revision_but_never_reopens_the_coverage(self):
+        state, evidence = competencies.competency_state, competencies.CompetencyEvidence
+        addressed = competencies.counts_as_addressed
+        mastered_due = evidence(1, decision="confirmed", section_id=2, section_state="mastered", answers=2,
+                                correct_answers=2, review_due=True)
+        self.assertEqual(state(mastered_due), "needs_revision", "the student sees the review is due")
+        self.assertTrue(addressed(mastered_due), "complete does not flicker with the review schedule")
+        weak_due = evidence(1, decision="confirmed", section_id=2, answers=3, correct_answers=1, review_due=True)
+        self.assertFalse(addressed(weak_due), "weak answers still hold the check open")
+        reteach = evidence(1, decision="confirmed", section_id=2, answers=1, correct_answers=1, section_reteach=True)
+        self.assertFalse(addressed(reteach))
+        self.assertFalse(addressed(evidence(1, decision="confirmed", section_id=2, taught_count=1)))
+
+    def test_a_lesson_on_one_topic_does_not_teach_the_similar_one(self):
+        rows = [{"id": 1, "statement": "Ich kann die Steigung einer linearen Funktion bestimmen."},
+                {"id": 2, "statement": "Ich kann den Scheitelpunkt einer quadratischen Funktion bestimmen."}]
+        lesson = ("Eine quadratische Funktion hat einen Scheitelpunkt. So bestimmen wir den Scheitelpunkt "
+                  "der Funktion f(x) = (x-2)^2 + 1.")
+        self.assertEqual(competencies.taught_competencies(lesson, rows), [2])
+        self.assertEqual(competencies.match_competency("Bestimme die Steigung der linearen Funktion f(x)=2x+1.",
+                                                       rows), 1)
+        self.assertIsNone(competencies.match_competency("Was ist eine Funktion?", rows), "a tie is no tag")
+
+
 class GradeTests(unittest.TestCase):
     def test_the_german_scale(self):
         self.assertEqual([grade.grade_for_percent(p) for p in (100, 92, 85, 70, 55, 35, 10)], [1, 1, 2, 3, 4, 5, 6])

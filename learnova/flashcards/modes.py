@@ -7,6 +7,8 @@ import random
 import re
 from typing import Any
 
+from learnova.flashcards.service import card_kind
+
 
 MODES = {"flashcards", "learn", "test", "match", "blast", "blocks"}
 WRITTEN_TYPES = {"written", "fill_blank", "front_to_back", "back_to_front"}
@@ -42,10 +44,22 @@ def own_words(card: Any) -> bool:
     return OWN_WORDS in card_tags(card) or card_variant(card) == _OWN_WORDS_VARIANT
 
 
+def content_kind(card: Any) -> str:
+    """The editor's card type as study sees it: "sentence", "other", or "" for a word.
+
+    A "word" tag, a "phrase" tag (the importer's fixed phrases) and no kind tag at all are
+    all words - legacy cards keep studying exactly as before (service.card_kind)."""
+
+    kind = card_kind(card_tags(card))
+    return kind if kind in {"sentence", "other"} else ""
+
+
 def _answer_kind(card: Any) -> str:
     variant = card_variant(card)
     if not variant:
-        return ""
+        # A student's own cards: options come from the same kind, so a sentence's options
+        # are sentences and never give a word card's answer away (or the reverse).
+        return content_kind(card)
     if variant == _FORMS_VARIANT:
         return "forms"
     return "term" if variant in _TERM_ANSWER_VARIANTS else "explanation"
@@ -119,11 +133,29 @@ def _forms(expected: str) -> list[str]:
     return parts
 
 
-def answer_is_correct(student: Any, expected: str, question_type: str) -> bool:
+# A whole sentence recalled from memory is right when its words are: the commas, quotes,
+# dashes and the Spanish ¿ ¡ inside it are not what is being learned. Letters, accents,
+# digits and apostrophes (l'homme, don't) still count, so spelling still matters.
+_SENTENCE_NOISE = re.compile(r"[^\w\s']")
+
+
+def _sentence_words(value: Any) -> str:
+    text = str(value or "").replace("’", "'").replace("‘", "'")
+    return " ".join(_SENTENCE_NOISE.sub(" ", text).casefold().split())
+
+
+def answer_is_correct(student: Any, expected: str, question_type: str, *, kind: str = "") -> bool:
+    """`kind` is the card's content_kind: a "sentence" card is graded on its words, every
+    other card (word, phrase, other, legacy) exactly as before - strict spelling."""
+
     strict = question_type in {"formula", "date", "technical"}
     if normalize_answer(student, punctuation_tolerant=not strict) == normalize_answer(
             expected, punctuation_tolerant=not strict):
         return True
+    if not strict and kind == "sentence":
+        typed = _sentence_words(student)
+        if typed and typed == _sentence_words(expected):
+            return True
     if strict or not _forms(expected):
         return False
     words = [normalize_answer(word) for word in _TYPED_SEPARATORS.split(str(expected)) if word]
@@ -174,11 +206,11 @@ def select_cards(cards: list[Any], objective: str, now, limit: int, *, mode: str
     elif objective == "new":
         selected = [card for card in selected if card.repetition_count == 0]
     elif objective == "words":
-        # Vocabulary cards carry their kind as a tag (see vocabulary.card_variants):
-        # "words" is everything that is not a sentence, so untagged cards count as words.
-        selected = [card for card in selected if "sentence" not in card_tags(card)]
+        # Cards carry their kind as a tag (vocabulary.card_variants, the editor's Type):
+        # words are word, phrase and untagged cards - never a sentence or an "other" card.
+        selected = [card for card in selected if content_kind(card) == ""]
     elif objective == "sentences":
-        selected = [card for card in selected if "sentence" in card_tags(card)]
+        selected = [card for card in selected if content_kind(card) == "sentence"]
     selected.sort(key=lambda card: (-float(card.weakness_score or 0), card.id))
     if mode in {"test", "match", "blast", "blocks"}:
         selected = [card for card in selected if not own_words(card)] or selected
@@ -224,11 +256,7 @@ def build_items(
         # Options are answers of the same kind: bare terms when the terms are asked for, and
         # front to back a project card's definition among definitions, never among terms.
         kind = _answer_kind(card)
-        if item_direction == "back_to_front":
-            all_answers = [reverse_side(candidate) for candidate in cards]
-        else:
-            same = [candidate.back for candidate in cards if _answer_kind(candidate) == kind]
-            all_answers = same if len(set(same) - {expected}) >= 3 else [candidate.back for candidate in cards]
+        all_answers = _answer_pool(card, cards, item_direction, expected)
         own_options = _own_options(card, expected) if item_direction == "front_to_back" else []
         if mode == "flashcards" or (mode == "learn" and own_words(card)):
             question_type, options = "self_grade", []
@@ -292,6 +320,29 @@ def _distinct_pairs(cards: list[Any]) -> list[Any]:
         return cards
     order = {id(card): index for index, card in enumerate(cards)}
     return sorted(kept, key=lambda card: order[id(card)])
+
+
+def _answer_pool(card: Any, cards: list[Any], direction: str, expected: str) -> list[str]:
+    """The answers a choice (or a true/false statement) for `card` is drawn from.
+
+    Front to back, answers of the card's own kind (_answer_kind); back to front, the fronts
+    of cards of the same content_kind. A project card needs three same-kind alternatives
+    before its pool narrows (as before); a student's sentence or "other" card narrows as
+    soon as there is one, because a word among sentences gives the answer away. With no
+    same-kind alternative at all, the whole set is used. Where no card has a Sentence or
+    Other type, the old rule (three alternatives) holds for every card, so a student's few
+    own cards in a project set still get the project's answers as options."""
+
+    if direction == "back_to_front":
+        side, group = reverse_side, content_kind
+    else:
+        side, group = (lambda candidate: candidate.back), _answer_kind
+    everything = [side(candidate) for candidate in cards]
+    kind = group(card)
+    same = [side(candidate) for candidate in cards if group(candidate) == kind]
+    typed = not card_variant(card) and any(content_kind(candidate) for candidate in cards)
+    needed = 1 if typed else 3
+    return same if len(set(same) - {expected}) >= needed else everything
 
 
 def _options(expected: str, answers: list[str], rng: random.Random) -> list[str]:

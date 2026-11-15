@@ -129,3 +129,36 @@ img, svg, video, canvas { max-width: 100%; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Popup menu items (the flashcard editor's row menu, the chat's conversation menu): one
+   style for every three-dot menu. Each item is a full-width row at least one tap target
+   tall, its icon a fixed slot that never squeezes or covers the label, and a long label
+   wraps between words inside its own row. Page stylesheets load before this file, so a
+   menu must not restyle its items with `.menu button` rules (0,1,1 beats 0,1,0); the
+   menu's own placement (absolute, fixed, flipping) stays with the menu. */
+.ln-menu-item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--ln-tap);
+  padding: .5rem .75rem;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ln-ink);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: pointer;
+}
+.ln-menu-item > [aria-hidden="true"] { flex: none; inline-size: 1.25em; text-align: center; }
+.ln-menu-item:hover { background: color-mix(in srgb, var(--ln-violet) 11%, transparent); }
+.ln-menu-item:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: -3px; }
+.ln-menu-item.danger { color: var(--ln-danger-text); }
+.ln-menu-item.danger:hover { background: color-mix(in srgb, var(--ln-danger) 12%, transparent); }

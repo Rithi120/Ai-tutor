@@ -27,11 +27,27 @@
 .card-row { border-color: var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface); box-shadow: var(--ln-shadow-sm); }
 .card-num { color: var(--ln-violet); }
 .drag-handle { color: var(--ln-subtle); }
-.card-row-tools button, .card-menu-trigger { color: var(--ln-muted); }
-.card-row-tools button:hover, .card-menu-trigger:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-violet-deep); }
+/* `>`: only the row's icon buttons. The menu items (.ln-menu-item) take their ink and
+   their red Delete from learnova-components.css; a descendant rule here greyed them out. */
+.card-row-tools > button, .card-menu-trigger { color: var(--ln-muted); }
+.card-row-tools > button:hover, .card-menu-trigger:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-violet-deep); }
 .card-menu-body { border-color: var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface-solid); box-shadow: var(--ln-shadow-md); }
-.card-menu-body button:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); }
-.card-menu-body button.danger:hover { background: color-mix(in srgb, var(--ln-danger) 12%, transparent); }
+/* The card's Type (Word / Sentence / Other) at the top of the row menu: three equal taps
+   in one row, the chosen one outlined. Tokens only, so dark theme needs no override. The
+   buttons are .card-kind-option, never styled by a descendant button rule on the menu. */
+.card-kind { padding: .3rem .4rem .35rem; }
+.card-kind-heading { display: block; margin-block-end: .3rem; color: var(--ln-muted); font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+/* min-inline-size widens the menu just enough for "Anderes" / "Palabra" on one line. */
+.card-kind-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem; min-inline-size: 14.5rem; }
+.card-kind-option { display: grid; place-items: center; min-inline-size: 0; min-block-size: var(--ln-tap); padding: .3rem .25rem; border: 1px solid var(--ln-line-strong); border-radius: 10px; background: none; color: var(--ln-ink); font: inherit; font-size: .84rem; font-weight: 650; line-height: 1.15; text-align: center; overflow-wrap: break-word; cursor: pointer; }
+.card-kind-option:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); }
+.card-kind-option[aria-pressed="true"] { border: 2px solid var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 16%, transparent); font-weight: 800; }
+.card-kind-option:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 1px; }
+.card-menu-sep { margin: .3rem .25rem; border: 0; border-block-start: 1px solid var(--ln-line); }
+.card-kind-badge { padding: .1rem .5rem; border: 1px solid var(--ln-line-strong); border-radius: 999px; color: var(--ln-muted); font-size: .74rem; font-weight: 700; white-space: nowrap; }
+/* Study: a sentence card says so above its prompt, so a whole sentence is what is typed. */
+.mode-kind { display: inline-block; margin-block-end: .4rem; padding: .1rem .55rem; border: 1px solid var(--ln-line-strong); border-radius: 999px; color: var(--ln-muted); font-size: .76rem; font-weight: 700; }
+.mode-kind.hidden { display: none; }
 .card-field textarea { border-bottom-color: var(--ln-line-strong); color: var(--ln-ink); }
 .card-field textarea:focus { border-bottom-color: var(--ln-violet); }
 .card-field-label { color: var(--ln-subtle); }
@@ -115,9 +131,8 @@
   /* HTML5 drag has no touch fallback, so the handle is an affordance that does nothing
      on a phone. Hidden rather than faked; the row menu still moves cards up and down. */
   .card-row-head .drag-handle { display: none; }
-  .card-row-tools button, .card-menu-trigger { width: 44px; height: 44px; }
+  .card-row-tools > button, .card-menu-trigger { width: 44px; height: 44px; }
   .card-menu-body { min-width: 210px; }
-  .card-menu-body button { min-height: 44px; }
   .suggest-chip { min-height: 44px; }
   .add-card-button { min-height: 56px; }
   .detail-review { position: static; }

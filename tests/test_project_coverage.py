@@ -147,6 +147,23 @@ class ProjectCoverageTests(unittest.TestCase):
                                             "mastered": 2})
         self.assertEqual(result["not_taught"], [])
 
+    def test_a_kompetenzraster_inventory_adds_one_check_that_holds_complete_open(self):
+        from learnova.exam_prep.competencies import competency_check
+
+        topics = self.topics("mastered", "understood", "mastered")
+        open_check = project_coverage(report(), topics, competency_check(["practised", "teaching"]))
+        self.assertEqual([check["code"] for check in open_check["checks"]], [*CHECK_CODES, "competencies_addressed"])
+        self.assertFalse(open_check["complete"], "every topic understood is not every competency practised")
+        self.assertLess(open_check["percent"], 100)
+        done = project_coverage(report(), topics, competency_check(["practised", "mastered"]))
+        self.assertTrue(done["complete"])
+        gap = project_coverage(report(), topics, competency_check(["practised", "mastered"], missing_rows=3, open_gaps=1))
+        self.assertFalse(gap["complete"])
+        self.assertEqual(gap["checks"][-1]["gaps"], 1)
+        # A project without a Kompetenzraster keeps exactly the six checks.
+        self.assertEqual([check["code"] for check in project_coverage(report(), topics, None)["checks"]],
+                         list(CHECK_CODES))
+
     def test_six_documents_one_unreadable_is_not_processed(self):
         result = project_coverage(report(("analysed", "analysed", "needs_ocr_review", "analysed", "unreadable",
                                           "partly_analysed")), self.topics("mastered"))

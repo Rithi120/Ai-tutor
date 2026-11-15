@@ -19,11 +19,16 @@ evidence points to.
 
 ## What is new – `learnova/exam_prep/`
 
-- **`competencies.py`** – the `competency_extraction` AI task reads "Ich kann …" statements
-  (topic, subtopic, level, importance, page references) and judges whether the notes cover
-  each one. The module enforces the vocabulary and **verifies every coverage quote against
-  the notes**: a "covered" whose quote is not in the notes is stored as *missing*. Rows are
-  attached to sections by word overlap; a requirement with no section stays visible.
+- **`competencies.py`** – the Kompetenzraster inventory (spec Phase 1.1, wired since
+  2026-11-13; see "Kompetenzraster inventory" in [PROJECT_MODE.md](PROJECT_MODE.md)). The
+  `competency_extraction:v2` task reads every "Ich kann …" row of a grid page (statement as
+  written, heading chain, level, importance, the topic it belongs to). The module grounds
+  every statement on its own page (a row the page does not say is never stored), dedupes by
+  the exact statement key only, counts the page's rows deterministically (`expected_rows`)
+  so a short answer is a visible gap, attaches each row to one topic (stemmed words; ties
+  stay unassigned) and derives each competency's status from evidence
+  (`competency_state`). The old notes-coverage fields (`coverage`, `evidence`) stay in the
+  table but are no longer asked for: covering the notes is the topics' job.
 - **`autopilot.py`** – `next_action()`: final days (last quarter, 2–3 days) → due reviews,
   then a mock exam if none in two days, then the weakest learned topic; otherwise spaced
   review when ≥3 reviews are due and the current topic has been started; otherwise the
@@ -37,22 +42,27 @@ evidence points to.
 
 ## App wiring
 
-- `ensure_exam_autopilot(project, exam_date)` – sections → competencies → StudyPlan
-  (30 min/day, every day, so the calendar and reminders work) → `ExamPrepState`. Runs from
-  `quick-start` when the upload carried an exam date, or from the one‑field form on the
-  project page (`POST /projects/<id>/autopilot`).
-- `exam_prep_card(project)` – topic state from the knowledge model per section (concepts
-  answered in that section's lessons), the action, the estimate; stores the estimate
-  history with its reasons when it moves.
-- `POST /projects/<id>/autopilot/next` – executes the action: resume the unfinished lesson,
-  teach the section, run a knowledge‑gated practice on its concepts, review what is due, or
-  generate a mock exam (count 4×sections+4, 2 min/question, mixed difficulty).
-- The card appears on the project page and on the Overview (soonest exam).
+- `ensure_exam_autopilot(project, exam_date)` – sections (`ensure_project_sections`, which
+  also reads the Kompetenzraster pages into the competency inventory) → the competencies
+  attached to a topic are confirmed → topics confirmed → the project's StudyPlan
+  (`refresh_project_plans`). Runs from the one-field form on the project page
+  (`POST /projects/<id>/autopilot`).
+- The workspace (`project_workspace_context`) shows the inventory under each topic and adds
+  the coverage check "Every competency of the Kompetenzraster practised" for a project with
+  a grid, so the project is never "complete" while a competency is open.
+- `POST /projects/<id>/autopilot/next` – the one Next action of the project (`project_next`).
+- **Not wired (honest):** there is no `exam_prep_card` and no `ExamPrepState` writer in
+  `app.py`; `autopilot.py` and `grade.py` are pure modules with tests only, and the
+  workspace deliberately shows no grade estimate (no documented grading scale). The
+  competency inventory does not change the plan's order yet: teacher-marked grid pages
+  raise the importance of the topics they cover, as before.
 
 ## Honest limits
 
-- Verified with the model patched (`tests/test_exam_autopilot_integration.py`), not on a
-  real Kompetenzraster scan yet; the extraction prompt will need tuning on real grids.
+- Verified with the model patched (`tests/test_exam_autopilot_integration.py`,
+  `tests/test_competency_inventory.py`), not on a real Kompetenzraster scan yet; the
+  extraction prompt will need tuning on real grids (multi-column level tables read by the
+  text layer or vision can split or join rows: the gap banner makes that visible).
 - Reminders are in‑app (planner widget); there is no push/e‑mail infrastructure to reuse.
 - The schedule still comes from `build_plan_schedule`; the autopilot's per‑day balance is
   the *action*, not a rewrite of the calendar.

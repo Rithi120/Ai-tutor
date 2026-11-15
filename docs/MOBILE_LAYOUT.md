@@ -128,7 +128,8 @@ It also creates a chat conversation with a reply (`ASSISTANT_THREAD`, its
 `/assistant/c/<id>` address), and attaches a photo in both chats (the home page `/` and
 `/assistant`, and the lesson tutor chat). On the chat pages up to 900 px it opens the
 conversation drawer and fails if the drawer is missing, does not fit the screen, or does
-not close on Escape. It covers every page the app renders, including the tutorial hub
+not close on Escape. On the pages in `MENU_STEPS` (the flashcard editor and `/assistant`) it
+also opens the first three-dot menu (see "Three-dot menus" below). It covers every page the app renders, including the tutorial hub
 (`/tutorial`, docs/TUTORIAL.md) and the admin and internal ones, for which the audit account is made an admin on the
 throwaway server. It renders each page in the installed Chrome or Edge and fails on any of
 these:
@@ -137,6 +138,7 @@ these:
 - a control is clipped;
 - header controls overlap;
 - the menu is missing or broken;
+- a three-dot menu's items overlap, or one is under 44 px, outside the screen or covered;
 - a JavaScript error: an uncaught exception or a console error (load failures of what the
   audit blocks on purpose are excluded);
 - an HTTP error, or a redirect somewhere other than the page asked for (the intentional
@@ -151,6 +153,40 @@ A page whose data could not be created is named as "not audited", never measured
 Web fonts and ads are blocked during audits, so pages render with the fallback font stack.
 That stack is also what a student on a slow connection sees first.
 
+## Three-dot menus
+
+There are two: the flashcard editor's row menu (a `<details class="card-menu">` built in
+`static/js/flashcards/create.js`: the card's Type — Word / Sentence / Other, three
+`.card-kind-option` buttons in one row, each at least `--ln-tap` tall, with the menu
+widened just enough that "Anderes" or "Palabra" never breaks — then Move up, Move down,
+Regenerate for AI sets, Duplicate, Delete) and the chat's conversation menu (`#asstItemMenu` in `templates/assistant.html`:
+Rename, Archive, Delete). The desktop nav dropdowns and the vocabulary review "More"
+disclosure are not popup item lists and were checked separately.
+
+- **One item style.** Both use `.ln-menu-item` (learnova-components.css): a full-width row,
+  at least `--ln-tap` (44 px) tall on every width, ink text, the icon in a fixed 1.25em
+  slot (`flex: none`) so it never squeezes or covers the label, and long labels wrapping
+  between words. Delete is `.ln-menu-item.danger`, coloured with `--ln-danger-text`
+  (learnova-tokens.css: the brand red darkened by a fifth in light, `--ln-danger` in dark),
+  so no learnova-dark.css override is needed. Page stylesheets load before
+  learnova-components.css, so a menu must not restyle its items with a `.menu button` rule:
+  that is 0,1,1 and beats the shared 0,1,0.
+- **Placement stays per menu.** The chat menu is `position: fixed` and placed by
+  `assistant.js` (clamped to the screen, flips above the row). The card menu is absolute
+  under its ⋯ button with `z-index: 60` (above the save bar's 50, below the app bar's 100);
+  `placeCardMenu` in create.js (a capturing `toggle` listener) adds `.opens-up` when the menu
+  does not fit between the row and the save bar or screen bottom but fits above, and
+  otherwise scrolls the page just enough to show it.
+- **Tests.** `MENU_JS` / `open_row_menu` in scripts/mobile_audit.py measure every item
+  (boxes, label text rectangles, icons, `elementFromPoint` at each centre, colours).
+  `tests/test_mobile_layout.py` opens both menus at 320, 375, 390, 430 and 1280 px in light
+  and dark, and opens a card menu on a row placed just above the save bar with unsaved
+  changes; `tests/test_creator_ux.py` forbids `.card-row-tools button`-style descendant rules
+  in any stylesheet. Only German labels (the audit account's language) are rendered; the
+  English ones are shorter. `MENU_JS` measures the `.ln-menu-item` rows only; the Type
+  buttons are measured by `tests/test_flashcard_kind_browser.py` (44 px, inside the
+  screen, not covered, side by side without overlap) at 390 px light and 320 px dark.
+
 ## Pitfalls that caused real bugs
 
 - **Gaps on phones.** The desktop bar's 30 px gaps pushed the menu button off-screen on
@@ -163,5 +199,13 @@ That stack is also what a student on a slow connection sees first.
   and widens the page. Give the scroller `position: relative`.
 - **Text-to-speech wrapping.** Code that wraps rendered content must move the existing nodes,
   not copy `textContent`. Copying flattened every tutor reply into plain text.
+- **Descendant selectors that reach into a menu.** `.card-row-tools button { width: 44px;
+  height: 44px }` (a phone rule for the row's icon buttons) also matched the menu items
+  inside `.card-row-tools`: every item became a 44x44 box, the labels ran letter by letter
+  into each other, and the same leak greyed out Delete. Use `>` for a component's own
+  buttons, and the menu its own item class.
+- **Measuring during the entrance animation.** While `.app-page`'s 420 ms entrance runs,
+  `<main>` has a transform, so the fixed save bar sits at the bottom of the page, not the
+  screen. Browser checks wait for `settle_page()` (scripts/mobile_audit.py) first.
 - **Unscoped mobile rules.** A rule like `.text-button { position: absolute }` inside a mobile
   media query moved every text button on every page. Scope mobile rules to their component.

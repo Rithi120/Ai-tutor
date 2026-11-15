@@ -7,7 +7,7 @@ being replaced by the solution.
 
 from __future__ import annotations
 
-from .base import ALL_MODES, NOT_SECURE, RETEACH_ONLY, LessonStep, SubjectStrategy
+from .base import ALL_MODES, ALTERNATIVE_STEP, NOT_SECURE, RETEACH_ONLY, LessonStep, SubjectStrategy
 
 MATHEMATICS = SubjectStrategy(
     key="mathematics",
@@ -34,12 +34,14 @@ MATHEMATICS = SubjectStrategy(
         LessonStep("explanation", "Explain the idea again with a different representation than the formula (a "
                    "sketch, a number line, a table or an everyday quantity) and link it to the method step by "
                    "step.", modes=RETEACH_ONLY),
-        LessonStep("rule", "State the formula or method precisely: what every symbol means and the conditions "
-                   "under which it may be used (special cases included)."),
+        LessonStep("rule", "State the formula or method precisely, in the notation of the notes: what every "
+                   "symbol means, the conditions under which it may be used (special cases included), how to "
+                   "rearrange it and how to check the result."),
         LessonStep("worked_example", "Solve one typical problem step by step in items (label = what you do, text = "
                    "the calculation), then give the result and a quick check."),
         LessonStep("example", "Give a simpler example with small, easy numbers and show every single step.",
                    modes=RETEACH_ONLY),
+        ALTERNATIVE_STEP,
         LessonStep("mistakes", "List the typical mistakes for this topic (sign errors, wrong order of steps, "
                    "forgotten conditions or special cases), each as a wrong line and the right line."),
         LessonStep("guided_exercise", "Give one similar problem with one hint per step in items and the full "
@@ -52,7 +54,8 @@ MATHEMATICS = SubjectStrategy(
     card_kinds=("term", "formula", "rule", "method", "theory"),
     rules=(
         "Never just reveal an answer; guide with hints and questions.",
-        "Teach the efficient method where appropriate and say when a shortcut is allowed.",
+        "Teach the method of the notes first; a more efficient method only as an additional tip, saying when "
+        "it is allowed.",
         "Increase difficulty gradually: one new difficulty per task.",
         "Show every transformation as its own step.",
         "Check a result by substituting it or estimating.",

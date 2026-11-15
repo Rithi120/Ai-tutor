@@ -255,3 +255,11 @@
   .hero-actions a { flex: 1 1 auto; text-align: center; }
   .scan-lookup { bottom: .5rem; }
 }
+
+/* Multi-page imports: the camera button and the page gallery under the dropzone, and the
+   page choice beside "Rescan page" (static/js/vocabulary.js, image-collection.js). */
+.vocabulary-file-extras { display: grid; gap: .75rem; margin-top: .75rem; min-width: 0; }
+.vocabulary-file-extras.hidden { display: none; }
+.upload-drop.has-file { min-height: 96px; }
+.rescan-page { max-width: 100%; }
+.rescan-page[hidden] { display: none; }

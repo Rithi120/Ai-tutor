@@ -1,9 +1,9 @@
 import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, SET_ID } from "./common.js";
 import { renderMath } from "../math.js";
-import { mergeGeneratedCards, needsMathPreview } from "./editor-rules.js";
+import { mergeGeneratedCards, needsMathPreview, splitKind, displayKind, tapKind, typedTags, KIND_CHOICES } from "./editor-rules.js";
 import * as suggest from "./suggest.js";
 
-let cards = [];          // [{id?, type, front, back, explanation, hint, tags[], options[], difficulty}]
+let cards = [];          // [{id?, type, kind, front, back, explanation, hint, tags[], options[], difficulty}]
 let genParams = null;    // last generation params (enables per-card regenerate)
 let dirty = false;
 let generating = false;
@@ -66,13 +66,16 @@ function restoreLocalDraft() {
 }
 
 function blankCard() {
-  return { type: "question_answer", front: "", back: "", explanation: "", hint: "", tags: [], options: [], difficulty: "medium" };
+  return { type: "question_answer", kind: "", front: "", back: "", explanation: "", hint: "", tags: [], options: [], difficulty: "medium" };
 }
 function normalize(card) {
+  // The Type (word / sentence / other) is kept apart from the student's own tags; the
+  // server stores it as the first tag again (collectBody sends `kind`).
+  const { kind, tags } = splitKind(card);
   return {
-    id: card.id, type: card.type || "question_answer", front: card.front || "", back: card.back || "",
+    id: card.id, type: card.type || "question_answer", kind, front: card.front || "", back: card.back || "",
     explanation: card.explanation || "", hint: card.hint || "",
-    tags: Array.isArray(card.tags) ? card.tags : [], options: Array.isArray(card.options) ? card.options : [],
+    tags, options: Array.isArray(card.options) ? card.options : [],
     difficulty: card.difficulty || "medium", source_reference: card.source_reference || "",
     vocabulary_entry_id: card.vocabulary_entry_id || "",
   };
@@ -86,23 +89,33 @@ function markDirty() {
 /* --------------------------- rendering --------------------------- */
 function rowHtml(card, index) {
   const label = (key) => escapeHtml(t(key));
+  const kind = displayKind(card.kind);
   // One number, one AI button, one menu. Everything else a card can do lives behind the
-  // menu or the disclosure, so a row at rest is two fields and nothing competing.
+  // menu or the disclosure, so a row at rest is two fields and nothing competing. A
+  // sentence or "other" card says so beside its number; a word (the default) does not.
   return `
-    <li class="card-row" data-index="${index}" draggable="true">
+    <li class="card-row" data-index="${index}" data-kind="${kind}" draggable="true">
       <div class="card-row-head">
         <span class="card-num">${index + 1}</span>
+        ${kind !== "word" ? `<span class="card-kind-badge">${label(`vocabularyKind_${kind}`)}</span>` : ""}
         <span class="drag-handle" aria-hidden="true" title="${escapeHtml(draftLabel("Drag to reorder", "Zum Sortieren ziehen"))}">⠿</span>
         <div class="card-row-tools">
           <button type="button" data-suggest class="suggest-trigger" title="${label("fcSuggestDefinition")}" aria-label="${label("fcSuggestDefinition")}">✨</button>
           <details class="card-menu">
             <summary class="card-menu-trigger" title="${label("fcCardActions")}" aria-label="${label("fcCardActions")}"><span aria-hidden="true">⋯</span></summary>
             <div class="card-menu-body">
-              <button type="button" data-up><span aria-hidden="true">↑</span> ${label("fcMoveUp")}</button>
-              <button type="button" data-down><span aria-hidden="true">↓</span> ${label("fcMoveDown")}</button>
-              ${genParams ? `<button type="button" data-regen><span aria-hidden="true">↻</span> ${label("fcRegenerate")}</button>` : ""}
-              <button type="button" data-dup><span aria-hidden="true">⧉</span> ${label("fcDuplicateCard")}</button>
-              <button type="button" data-del class="danger"><span aria-hidden="true">✕</span> ${label("fcDeleteCard")}</button>
+              <div class="card-kind" role="group" aria-label="${label("vocabularyType")}">
+                <span class="card-kind-heading" aria-hidden="true">${label("vocabularyType")}</span>
+                <div class="card-kind-options">
+                  ${KIND_CHOICES.map(choice => `<button type="button" class="card-kind-option" data-kind-choice="${choice}" aria-pressed="${choice === kind}">${label(`vocabularyKind_${choice}`)}</button>`).join("")}
+                </div>
+              </div>
+              <hr class="card-menu-sep">
+              <button type="button" class="ln-menu-item" data-up><span aria-hidden="true">↑</span> ${label("fcMoveUp")}</button>
+              <button type="button" class="ln-menu-item" data-down><span aria-hidden="true">↓</span> ${label("fcMoveDown")}</button>
+              ${genParams ? `<button type="button" class="ln-menu-item" data-regen><span aria-hidden="true">↻</span> ${label("fcRegenerate")}</button>` : ""}
+              <button type="button" class="ln-menu-item" data-dup><span aria-hidden="true">⧉</span> ${label("fcDuplicateCard")}</button>
+              <button type="button" class="ln-menu-item danger" data-del><span aria-hidden="true">✕</span> ${label("fcDeleteCard")}</button>
             </div>
           </details>
         </div>
@@ -229,6 +242,14 @@ function onListClick(event) {
   if (event.target.closest("[data-suggest-close]")) { suggest.closePanel(row); return; }
   if (event.target.closest("[data-suggest]")) { suggest.requestFor(row, { manual: true }); return; }
 
+  // One tap sets the Type; the row re-renders (closing the menu) with its badge.
+  const kindChoice = event.target.closest("[data-kind-choice]");
+  if (kindChoice) {
+    const next = tapKind(cards[index].kind, kindChoice.dataset.kindChoice);
+    if (next !== cards[index].kind) { cards[index].kind = next; markDirty(); }
+    renderCards();
+    return;
+  }
   // Reordering renumbers rows, so every remembered term is stale afterwards.
   if (event.target.closest("[data-del]")) { cards.splice(index, 1); suggest.reset(); markDirty(); renderCards(); }
   else if (event.target.closest("[data-dup]")) { cards.splice(index + 1, 0, normalize({ ...cards[index], id: undefined })); suggest.reset(); markDirty(); renderCards(); }
@@ -253,7 +274,7 @@ function onListInput(event) {
   const field = event.target.dataset.field;
   if (!row || !field) return;
   const index = Number(row.dataset.index);
-  cards[index][field] = field === "tags" ? event.target.value.split(",").map(s => s.trim()).filter(Boolean) : event.target.value;
+  cards[index][field] = field === "tags" ? typedTags(event.target.value) : event.target.value;
   autosize(event.target);
   if (field === "front" || field === "back") refreshMathPreview(event.target);
   if (field === "front") {
@@ -272,6 +293,32 @@ function ensureTrailingBlank() {
   const last = cards[cards.length - 1];
   if (last && (last.front.trim() || last.back.trim())) appendRows([blankCard()]);
 }
+/* A row menu opens below its row. Near the bottom of the screen that put it under the
+ * fixed save bar (it appears after any edit) or off the screen, so it opens upwards when
+ * it does not fit below but fits above, the way the chat's conversation menu flips. When
+ * neither side fits it takes the roomier one and the page scrolls just enough to show
+ * it. Measured in the toggle event, which runs after the menu is laid out. */
+function placeCardMenu(event) {
+  const menu = event.target;
+  if (!(menu instanceof HTMLDetailsElement) || !menu.classList.contains("card-menu")) return;
+  menu.classList.remove("opens-up");
+  const body = menu.querySelector(".card-menu-body");
+  if (!menu.open || !body) return;
+  const gap = 8;
+  const bar = document.querySelector("#saveBar:not(.hidden)");
+  const floor = Math.min(window.innerHeight, bar ? bar.getBoundingClientRect().top : Infinity) - gap;
+  const nav = document.querySelector(".app-nav");
+  const ceiling = Math.max(0, nav ? nav.getBoundingClientRect().bottom : 0) + gap;
+  const height = body.getBoundingClientRect().height;
+  const anchor = menu.getBoundingClientRect();
+  const below = floor - (anchor.bottom + 4);
+  const above = anchor.top - 4 - ceiling;
+  if (height > below && (height <= above || above > below)) menu.classList.add("opens-up");
+  const box = body.getBoundingClientRect();
+  const shift = box.bottom > floor ? box.bottom - floor : box.top < ceiling ? box.top - ceiling : 0;
+  if (shift) window.scrollBy({ top: shift, behavior: "instant" });
+}
+
 function onListKeydown(event) {
   if (event.key === "Escape") {
     const row = event.target.closest(".card-row");
@@ -361,7 +408,8 @@ async function regenerateCard(index) {
   if (!genParams) return;
   try {
     const data = await api("/api/flashcards/generate", { method: "POST", body: { ...genParams, count: 1 } });
-    if (data.cards && data.cards[0]) { cards[index] = normalize(data.cards[0]); markDirty(); renderCards(); toast(t("fcRegenerated"), "info"); }
+    // A new wording, the same Type: the student chose it, the model did not.
+    if (data.cards && data.cards[0]) { cards[index] = normalize({ ...data.cards[0], kind: cards[index].kind }); markDirty(); renderCards(); toast(t("fcRegenerated"), "info"); }
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -373,7 +421,8 @@ function collectBody() {
     difficulty: document.querySelector("#metaDifficulty").value,
     card_type: "mixed",
     vocabulary_list_id: vocabularyListId,
-    cards: cards.filter(c => c.front.trim() && c.back.trim()),
+    // Each card carries `kind` ("" = none): the server puts it back as the first tag.
+    cards: cards.filter(c => c.front.trim() && c.back.trim()).map(c => ({ ...c, kind: c.kind || "" })),
   };
 }
 
@@ -442,6 +491,8 @@ async function init() {
     });
   });
   const list = document.querySelector("#cardRows");
+  // "toggle" does not bubble, so the list listens in the capture phase.
+  list.addEventListener("toggle", placeCardMenu, true);
   list.addEventListener("click", onListClick);
   list.addEventListener("input", onListInput);
   list.addEventListener("keydown", onListKeydown);

@@ -9,6 +9,8 @@ for a lesson prompt is built by `learnova.lessons.lesson_plan`.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from ..subjects import canonical_subject, is_language_subject, subject_parts
 from .base import (
     ALL_MODES, EXPLANATION_KINDS, ITEM_KINDS, KNOWLEDGE_STATES, PART_KINDS, PLAN_MODES, QUESTION_TYPES,
@@ -22,7 +24,7 @@ from .languages import LANGUAGES, LATIN
 from .mathematics import MATHEMATICS
 from .other_subjects import ART, COMPUTER_SCIENCE, GENERAL, MUSIC, PHYSICAL_EDUCATION, TECHNOLOGY
 from .politics import POLITICS
-from .sciences import PHYSICS, SCIENCES
+from .sciences import FORMULA_STEPS, PHYSICS, SCIENCES
 
 __all__ = [
     "ALL_MODES", "EXPLANATION_KINDS", "ITEM_KINDS", "KNOWLEDGE_STATES", "PART_KINDS", "PLAN_MODES",
@@ -32,7 +34,9 @@ __all__ = [
 
 # NwT is taught as one subject but is both: experiments and principles from the sciences,
 # function, safety and application from technology.
-NWT = combine("nwt", "Science and Technology", SCIENCES, TECHNOLOGY)
+NWT = combine("nwt", "Science and Technology",
+              replace(SCIENCES, steps=tuple(step for step in SCIENCES.steps if step not in FORMULA_STEPS)),
+              TECHNOLOGY)
 
 REGISTRY: dict[str, SubjectStrategy] = {
     strategy.key: strategy

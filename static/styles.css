@@ -2927,3 +2927,8 @@ button.document-input-option { font: inherit; }
 .media-image img { max-width: 100%; height: auto; border-radius: 12px; display: block; }
 .media-image figcaption { font-size: .8rem; opacity: .75; margin-top: .4rem; line-height: 1.35; }
 .media-image figcaption a { font-weight: 600; text-decoration: none; }
+/* Search rows say what they are ("Search YouTube for ..."); the one-tap offer of checked videos. */
+.media-video-search .media-video-text span { font-weight: 600; }
+.media-video-offer { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+.media-video-status { margin: 0; font-size: .85rem; opacity: .8; }
+.media-video-status:empty { display: none; }

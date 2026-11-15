@@ -18,12 +18,38 @@ function formatRemaining(seconds) {
   return t("countdownMinutes", { minutes: Math.max(1, minutes) });
 }
 
+// The server closes a finished league week a couple of minutes after it ends
+// (LEAGUE_CLOSE_GRACE_SECONDS, 120 by default); the page reloads once after that.
+const WEEK_END_RELOAD_DELAY_MS = 150000;
+let reloadScheduled = false;
+
+function scheduleWeekEndReload(element, end) {
+  if (reloadScheduled || !("countdownReload" in element.dataset)) return;
+  reloadScheduled = true;
+  const key = `learnova.leagueReload.${element.dataset.countdown}`;
+  try {
+    // Once per week end, even if the server still shows the old week after the reload.
+    if (window.sessionStorage.getItem(key)) return;
+    window.sessionStorage.setItem(key, "1");
+  } catch (_) {
+    return; // no storage (private window, blocked): never risk a reload loop
+  }
+  window.setTimeout(() => window.location.reload(), Math.max(5000, end + WEEK_END_RELOAD_DELAY_MS - Date.now()));
+}
+
 function tickCountdowns() {
   document.querySelectorAll("[data-countdown]").forEach(element => {
     const end = Date.parse(element.dataset.countdown);
     if (Number.isNaN(end)) return;
+    const left = (end - Date.now()) / 1000;
+    if (left <= 0 && element.dataset.countdownEnded) {
+      // Not "1 min" forever: the week is over and the server is closing it.
+      element.textContent = element.dataset.countdownEnded;
+      scheduleWeekEndReload(element, end);
+      return;
+    }
     const label = element.dataset.countdownLabel || "{time}";
-    element.textContent = label.replace("{time}", formatRemaining((end - Date.now()) / 1000));
+    element.textContent = label.replace("{time}", formatRemaining(left));
   });
 }
 

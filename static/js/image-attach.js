@@ -18,7 +18,8 @@ const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || 
  * an iPhone HEIC photo becomes a JPEG wherever the browser can decode it. A small photo
  * already in a supported format is sent as it is. Any failure sends the original and
  * lets the server explain what is wrong with it. */
-export async function normalizeImage(file) {
+export async function normalizeImage(file, { maxEdge = MAX_EDGE, quality = JPEG_QUALITY, minBytes = 1_500_000,
+  keepEdge = 0 } = {}) {
   if (typeof createImageBitmap !== "function") return file;
   let bitmap;
   try {
@@ -27,9 +28,12 @@ export async function normalizeImage(file) {
     return file;
   }
   try {
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const longEdge = Math.max(bitmap.width, bitmap.height);
     const supported = /^image\/(jpeg|png|webp)$/.test(file.type);
-    if (scale === 1 && supported && file.size < 1_500_000) return file;
+    // keepEdge: a collection keeps a supported photo as it is until it passes both its size
+    // and its edge budget (image-collection.js: ~4 MB or 4096 px), then sends maxEdge.
+    if (supported && file.size < minBytes && longEdge <= (keepEdge || maxEdge)) return file;
+    const scale = Math.min(1, maxEdge / longEdge);
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -37,7 +41,7 @@ export async function normalizeImage(file) {
     context.fillStyle = "#ffffff";  // a transparent screenshot stays readable, not black
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
     if (!blob) return file;
     const name = `${String(file.name || "photo").replace(/\.[^.]+$/, "") || "photo"}.jpg`;
     return new File([blob], name, { type: "image/jpeg" });
@@ -58,35 +62,87 @@ export function uploadErrorText(status, data, responseUrl = "") {
   return t("imgUploadFailed");
 }
 
-/* One upload with real progress. fetch() has no upload progress, so this is XHR - which
- * also means the CSRF header core.js adds to fetch() is added here by hand. Resolves
- * {attachment, duplicate}: the server answers the same photo chosen twice with the
- * attachment it already has. */
-export function uploadImage(file, purpose, onProgress) {
+/* One POST of a FormData with real upload progress. fetch() has no upload progress, so
+ * this is XHR - which also means the CSRF header core.js adds to fetch() is added here by
+ * hand. Resolves {status, data, url} for any 2xx answer with a JSON body; rejects with an
+ * Error whose message is uploadErrorText(...) and which carries .status, .code and .data
+ * (the server's JSON, when there was one) for anything else. Accept: application/json
+ * asks routes that also serve forms (/projects, /pages/add) for JSON instead of a
+ * redirect, so a refused upload never navigates away from photos held in memory. */
+export function xhrUpload(url, formData, { onProgress, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open("POST", "/api/chat-attachments");
+    request.open("POST", url);
     if (csrfToken) request.setRequestHeader("X-CSRFToken", csrfToken);
+    request.setRequestHeader("Accept", "application/json");
+    for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value);
     request.responseType = "json";
     request.upload.addEventListener("progress", event => {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);
     });
+    const fail = (status, data, responseUrl) => {
+      const error = new Error(uploadErrorText(status, data, responseUrl));
+      error.status = status;
+      error.code = data?.code || "";
+      error.data = data;
+      reject(error);
+    };
     request.addEventListener("load", () => {
       // responseType "json" gives null for an HTML page (a login redirect, a proxy error).
       const data = request.response && typeof request.response === "object" ? request.response : null;
-      if (request.status >= 200 && request.status < 300 && data && data.ok !== false && data.attachment) {
-        resolve({ attachment: data.attachment, duplicate: Boolean(data.duplicate) });
+      if (request.status >= 200 && request.status < 300 && data && data.ok !== false) {
+        resolve({ status: request.status, data, url: request.responseURL });
       } else {
-        reject(new Error(uploadErrorText(request.status, data, request.responseURL)));
+        fail(request.status, data, request.responseURL);
       }
     });
-    request.addEventListener("error", () => reject(new Error(t("imgUploadFailed"))));
-    request.addEventListener("abort", () => reject(new Error(t("imgUploadFailed"))));
-    const form = new FormData();
-    form.append("file", file, file.name || "photo.jpg");
-    form.append("purpose", purpose);
-    request.send(form);
+    request.addEventListener("error", () => fail(0, null, ""));
+    request.addEventListener("abort", () => fail(0, null, ""));
+    request.send(formData);
   });
+}
+
+/* One chat photo with real progress. Resolves {attachment, duplicate}: the server answers
+ * the same photo chosen twice with the attachment it already has. */
+export async function uploadImage(file, purpose, onProgress) {
+  const form = new FormData();
+  form.append("file", file, file.name || "photo.jpg");
+  form.append("purpose", purpose);
+  const { status, data, url } = await xhrUpload("/api/chat-attachments", form, { onProgress });
+  if (!data.attachment) throw new Error(uploadErrorText(status, data, url));
+  return { attachment: data.attachment, duplicate: Boolean(data.duplicate) };
+}
+
+/* A small preview of a photo for a gallery: decoded straight to `edge` px where the browser
+ * can (createImageBitmap's resize options), upright, as a JPEG blob of a few kB - so forty
+ * thumbnails never hold forty full-size decoded photos in memory. Resolves null for a file
+ * the browser cannot decode (a HEIC photo in Chrome, a PDF): the caller shows a tile. */
+export async function makeThumbnail(file, edge = 320) {
+  if (typeof createImageBitmap !== "function" || !file) return null;
+  let bitmap = null;
+  try {
+    try {
+      // Decoded at the thumbnail width (the height follows the aspect ratio); a portrait
+      // photo is brought down to `edge` on its long side by the canvas below.
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image", resizeWidth: edge,
+        resizeQuality: "medium" });
+    } catch (_) {
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    }
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.8));
+  } catch (_) {
+    return null;
+  } finally {
+    bitmap?.close?.();
+  }
 }
 
 /* The row of thumbnails above a message box. Returns a small controller:

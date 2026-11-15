@@ -432,8 +432,22 @@ def _items_of(topic: Mapping[str, Any], kinds: Iterable[str]) -> list[dict[str, 
         detail = _clean(raw.get("detail"))
         if kind not in wanted or kind not in CARD_PROMPTS or not name or not detail:
             continue
-        items.append({"kind": kind, "name": name, "key": item_key(kind, name), "detail": detail,
-                      "pages": _page_ids(raw.get("page_id"), raw.get("page_ids") or []) or topic_pages})
+        entry = {"kind": kind, "name": name, "key": item_key(kind, name), "detail": detail,
+                 "pages": _page_ids(raw.get("page_id"), raw.get("page_ids") or []) or topic_pages}
+        if kind == "formula":
+            if raw.get("origin") == "added":
+                continue        # only its words are on the page: never a card "from your notes"
+            # The front shows the formula as the notes write it, typeset when its LaTeX checks
+            # (spec Phase 2); the card's identity stays item_key(kind, name), so a sync never
+            # duplicates a card made before.
+            from learnova.assistant.formatting import display_tex  # noqa: PLC0415 - import cycle
+
+            notation = _clean(raw.get("notation"))
+            entry["front_name"] = display_tex(notation or name, "" if notation else raw.get("latex"))
+            # Studied back to front, the answer is the formula as the notes write it (and it
+            # stays the text inside the front, which reverse_answer_after_edit relies on).
+            entry["reverse_name"] = notation or name
+        items.append(entry)
     return items
 
 
@@ -635,10 +649,11 @@ def build_cards(
             if item["key"] in term_keys:
                 continue
             card_type = "formula_explanation" if item["kind"] == "formula" else "question_answer"
-            deck.offer(item["kind"], item["key"], card_type, deck.text(CARD_PROMPTS[item["kind"]], name=item["name"]),
+            deck.offer(item["kind"], item["key"], card_type,
+                       deck.text(CARD_PROMPTS[item["kind"]], name=item.get("front_name") or item["name"]),
                        item["detail"], item["pages"],
                        explanation="" if notes.has(item["detail"], item["pages"]) else marker,
-                       reverse=item["name"])
+                       reverse=item.get("reverse_name") or item["name"])
 
         for term in terms:
             # Only a quote verified on the page becomes a gap text: it is the notes' own sentence.

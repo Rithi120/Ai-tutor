@@ -1,4 +1,4 @@
-import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, SET_ID, selectedLanguage } from "./common.js";
+import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, SET_ID, selectedLanguage, publicationBadge } from "./common.js";
 
 const STATUS_KEY = {
   draft: "fcStatusDraft", pending_moderation: "fcStatusPendingModeration",
@@ -22,8 +22,10 @@ async function loadState() {
     const state = await api(`/api/flashcards/sets/${SET_ID}/publication`);
     loading.hidden = true;
     if (state.published && state.status !== "unpublished") {
+      document.querySelector("#publishForm").classList.add("hidden");
       renderStatus(state);
     } else {
+      document.querySelector("#publishStatus").classList.add("hidden");
       await showForm();
     }
   } catch (error) {
@@ -68,11 +70,11 @@ async function submitForm(event) {
     confirm: true,
   };
   try {
-    const data = await api("/api/community/publish", { method: "POST", body });
+    await api("/api/community/publish", { method: "POST", body });
     document.querySelector("#publishForm").classList.add("hidden");
-    renderStatus({ published: true, public_id: data.id, status: data.status, review: data.review,
-                   moderation: data.moderation, quality_status: data.quality_status,
-                   changed_since_publish: false });
+    // Re-read the one source of truth rather than drawing a hand-built state, so the page
+    // after publishing says exactly what the set list and the overview say.
+    await loadState();
   } catch (error) {
     errorEl.textContent = error.message;
     errorEl.classList.remove("hidden");
@@ -135,8 +137,15 @@ async function onWarningAction(event) {
 function renderStatus(state) {
   const section = document.querySelector("#publishStatus");
   const badge = document.querySelector("#statusBadge");
-  badge.textContent = statusLabel(state.status, state.review);
-  badge.className = `review-status status-${escapeHtml(state.status)}`;
+  // Headline: who can see the set (server-derived). Detail: the check's own word, for
+  // the update when one is waiting behind the live version.
+  const view = publicationBadge(state);
+  badge.textContent = view.text;
+  badge.className = `review-status ${view.className}`;
+  badge.dataset.visibility = view.visibility;
+  const detailStatus = state.update_status || state.status;
+  const detail = detailStatus ? statusLabel(detailStatus, state.review) : "";
+  document.querySelector("#statusDetail").textContent = detail && detail !== view.text ? `(${detail})` : "";
   document.querySelector("#changedNote").classList.toggle("hidden", !state.changed_since_publish);
   document.querySelector("#changedNote").textContent = state.changed_since_publish ? t("fcChangedSincePublish") : "";
 
@@ -166,7 +175,7 @@ function renderStatus(state) {
   actions.push(`<a class="ghost-button" href="/flashcards/${SET_ID}/edit">${escapeHtml(t("fcEditPrivate"))}</a>`);
   if (state.changed_since_publish) actions.push(`<button type="button" class="primary-button" data-act="resubmit">${escapeHtml(t("fcPublishChanges"))}</button>`);
   else actions.push(`<button type="button" class="ghost-button" data-act="resubmit">${escapeHtml(t("fcResubmit"))}</button>`);
-  if (state.status === "approved") actions.push(`<a class="ghost-button" href="/community?set=${state.public_id}">${escapeHtml(t("fcViewPublic"))}</a>`);
+  if (state.is_public) actions.push(`<a class="ghost-button" href="/community?set=${state.public_id}">${escapeHtml(t("fcViewPublic"))}</a>`);
   actions.push(`<button type="button" class="ghost-button danger" data-act="unpublish">${escapeHtml(t("fcUnpublish"))}</button>`);
   const bar = document.querySelector("#statusActions");
   bar.dataset.publicId = state.public_id;
@@ -195,4 +204,6 @@ function init() {
   loadState();
 }
 
+// Restored from the back/forward cache: the state may have changed meanwhile.
+window.addEventListener("pageshow", event => { if (event.persisted) loadState(); });
 document.addEventListener("DOMContentLoaded", init);

@@ -1,5 +1,6 @@
 import { api, escapeHtml, t, toast } from "./flashcards/common.js";
 import { safeUUID } from "./dom.js";
+import { createImageCollection, uploadCollection, xhrUpload } from "./image-collection.js";
 
 const importForm = document.querySelector("#vocabularyImportForm");
 const reviewPage = document.querySelector("[data-vocabulary-review]");
@@ -80,11 +81,61 @@ if (importForm) {
   const uploadHint = dropzone?.querySelector("[data-upload-hint]");
   const idleTitle = uploadTitle?.textContent ?? "";
   const idleHint = uploadHint?.textContent ?? "";
+  const fileExtras = document.querySelector("#vocabularyFileExtras");
+  const imagesMount = document.querySelector("#vocabularyImages");
+  const retryButton = document.querySelector("#vocabularyRetryFailed");
+
+  // ---- Photo or PDF: several pages per import ------------------------------------------
+  // The pages gather in one ordered gallery (static/js/image-collection.js): picks add up,
+  // the camera has its own button, every page can be seen, moved, replaced or removed.
+  // The real file input is invisible inside the dropzone, so the zone itself has to say
+  // what was picked - otherwise a tap that worked looks identical to one that didn't.
+  const pages = imagesMount && fileInput ? createImageCollection({
+    root: imagesMount,
+    inputs: [fileInput],
+    cameraInputs: [document.querySelector("#vocabularyCameraInput")].filter(Boolean),
+    dropZone: dropzone,
+    max: Number(imagesMount.dataset.max) || 40,
+    maxFileBytes: Number(imagesMount.dataset.maxBytes) || 0,
+    accept: fileInput.getAttribute("accept") || "",
+    labels: true,
+    onChange: collection => {
+      const count = collection.count();
+      dropzone.classList.toggle("has-file", count > 0);
+      if (uploadTitle && uploadHint) {
+        uploadTitle.textContent = count ? t("vocabularyAddMorePages") : idleTitle;
+        uploadHint.textContent = count ? t("imgcolCount", { count, max: collection.max() }) : idleHint;
+      }
+      if (retryButton) retryButton.hidden = !(collection.failed() && !collection.busy());
+    },
+    onError: message => {
+      const error = document.querySelector("#vocabularyImportError");
+      error.textContent = message;
+      error.classList.remove("hidden");
+    },
+  }) : null;
+  window.__vocabularyPages = pages;
+  // One import per submit, kept across retries: a page that failed is sent to the same
+  // import again, never to a second one.
+  const upload = { importId: "", createKey: uuid(), pageIds: new Map(), positions: new Map(), read: new Set() };
+
+  // The place a page asks for: after every saved page before it, never before its place in
+  // the list. A saved page keeps its place, so removing a page that failed (which shifts
+  // the saved pages after it in the list) never makes a retry ask for a taken place.
+  function positionFor(key) {
+    if (upload.positions.has(key)) return upload.positions.get(key);
+    const keys = pages.keys();
+    const index = keys.indexOf(key);
+    const savedBefore = keys.slice(0, Math.max(0, index))
+      .reduce((highest, other) => Math.max(highest, upload.positions.get(other) || 0), 0);
+    return Math.max(index + 1, savedBefore + 1);
+  }
 
   // The fourth method is not an import at all: the word scanner takes the form's place.
   const scanSection = document.querySelector("#vocabularyScanSection");
   function showMethod(kind) {
     document.querySelector("#vocabularyFileField").classList.toggle("hidden", kind !== "file");
+    fileExtras?.classList.toggle("hidden", kind !== "file");
     document.querySelector("#vocabularyTextField").classList.toggle("hidden", kind !== "text");
     manualField?.classList.toggle("hidden", kind !== "manual");
     document.querySelectorAll(".import-only").forEach(part => part.classList.toggle("hidden", kind === "scan"));
@@ -97,26 +148,89 @@ if (importForm) {
   importForm.addEventListener("change", event => {
     if (event.target.name === "source_kind") {
       showMethod(event.target.value);
-      return;
-    }
-    // The real file input is invisible inside the dropzone, so the zone itself has to
-    // say what was picked - otherwise a tap that worked looks identical to one that didn't.
-    if (event.target === fileInput && uploadTitle && uploadHint) {
-      const chosen = fileInput.files?.[0];
-      dropzone.classList.toggle("has-file", Boolean(chosen));
-      uploadTitle.textContent = chosen ? chosen.name : idleTitle;
-      uploadHint.textContent = chosen ? t("vocabularyChangeFile") : idleHint;
     }
   });
-  // Dragging a file over the zone highlights it; the browser drops it into the input.
-  if (dropzone) {
-    for (const type of ["dragenter", "dragover"]) {
-      dropzone.addEventListener(type, () => dropzone.classList.add("is-dragover"));
-    }
-    for (const type of ["dragleave", "drop"]) {
-      dropzone.addEventListener(type, () => dropzone.classList.remove("is-dragover"));
+  // Dropped files join the gallery (image-collection.js handles the drop zone).
+
+  // Each page on its own request: the first creates the import, the others join it at
+  // the place the student gave them; then each is read on its own request (local OCR).
+  async function sendPage(entry, { onProgress }) {
+    const position = positionFor(entry.key);
+    const name = entry.file.name || `page-${position}.jpg`;
+    const created = !upload.importId;
+    const body = created ? new FormData(importForm) : new FormData();
+    body.delete("file");
+    body.append("file", entry.file, name);
+    body.set("position", String(position));
+    if (entry.item.label) body.set("label", entry.item.label);
+    try {
+      const { data } = await xhrUpload(
+        created ? "/api/vocabulary/imports" : `/api/vocabulary/imports/${upload.importId}/pages`, body,
+        { onProgress, headers: created ? { "Idempotency-Key": upload.createKey } : {} });
+      if (created) {
+        upload.importId = data.vocabulary_import.id;
+        const first = (data.vocabulary_import.pages || []).find(page => page.position === position)
+          || data.vocabulary_import.pages?.[0];
+        if (first) {
+          upload.pageIds.set(entry.key, first.id);
+          upload.positions.set(entry.key, first.position);
+        }
+      } else {
+        upload.pageIds.set(entry.key, data.page.id);
+        upload.positions.set(entry.key, data.page.position);
+      }
+      return { results: [{ index: 0, status: data.duplicate ? "duplicate" : "added" }] };
+    } catch (error) {
+      // The server refused this one file (type, size, a damaged picture): say why next to
+      // it and carry on with the others. Anything else (no connection, a limit) stops.
+      if (error.status === 400 || error.status === 409) {
+        return { results: [{ index: 0, status: "failed", message: error.message }] };
+      }
+      throw error;
     }
   }
+
+  async function readPages(status) {
+    const keys = pages.keys().filter(key => upload.pageIds.has(key));
+    for (const [index, key] of keys.entries()) {
+      if (upload.read.has(key)) continue;
+      status.textContent = t("vocabularyReadingPage", { current: index + 1, total: keys.length });
+      try {
+        await api(`/api/vocabulary/imports/${upload.importId}/pages/${upload.pageIds.get(key)}/extract`,
+          { method: "POST", body: {} });
+        upload.read.add(key);
+      } catch (error) {
+        pages.setStatus(key, "failed", { error: error.message });
+        throw error;
+      }
+    }
+  }
+
+  // Uploads and reads every page; resolves the import's id (null while one is busy).
+  async function submitPages(status) {
+    if (!pages?.count()) throw new Error(t("imgcolChooseFirst"));
+    if (pages.busy()) return null;
+    if (retryButton) retryButton.hidden = true;
+    const outcome = await uploadCollection(pages, {
+      batch: { maxFiles: 1, maxBytes: Number.MAX_SAFE_INTEGER },
+      send: ([entry], options) => sendPage(entry, options),
+      onStep: ({ from, total }) => { status.textContent = t("imgcolUploadingOne", { number: from, total }); },
+    });
+    if (!outcome.ok) {
+      if (retryButton) retryButton.hidden = false;
+      throw new Error([outcome.error?.message || "", t("imgcolFailedSummary", { count: outcome.failed })]
+        .filter(Boolean).join(" "));
+    }
+    try {
+      await readPages(status);
+    } catch (error) {
+      if (retryButton) retryButton.hidden = false;
+      throw error;
+    }
+    return upload.importId;
+  }
+
+  retryButton?.addEventListener("click", () => importForm.requestSubmit());
   importForm.addEventListener("submit", async event => {
     event.preventDefault();
     const status = document.querySelector("#vocabularyImportStatus");
@@ -136,13 +250,20 @@ if (importForm) {
         }
         manualPayload.value = JSON.stringify(collectManualRows());
       }
-      status.textContent = t("vocabularyUploading");
-      const created = await api("/api/vocabulary/imports", {
-        method: "POST", body: new FormData(importForm),
-      });
-      const id = created.vocabulary_import.id;
-      status.textContent = t("vocabularyExtracting");
-      await api(`/api/vocabulary/imports/${id}/extract`, { method: "POST", body: {} });
+      let id;
+      if (importForm.querySelector("[name=source_kind]:checked")?.value === "file" && pages) {
+        // Photos and PDFs: several pages, each uploaded and read on its own request.
+        id = await submitPages(status);
+        if (!id) return;
+      } else {
+        status.textContent = t("vocabularyUploading");
+        const created = await api("/api/vocabulary/imports", {
+          method: "POST", body: new FormData(importForm),
+        });
+        id = created.vocabulary_import.id;
+        status.textContent = t("vocabularyExtracting");
+        await api(`/api/vocabulary/imports/${id}/extract`, { method: "POST", body: {} });
+      }
       status.textContent = t("vocabularyValidating");
       await api(`/api/vocabulary/imports/${id}/validate`, { method: "POST", body: {} });
       // Students land directly in the card editor, where every pair is still visible
@@ -286,10 +407,28 @@ async function saveReview() {
     });
   }
 }
+// A multi-page import: which page the photo shows and a rescan replaces.
+let shownImport = null;
 function showPagePhoto(imported) {
+  shownImport = imported || shownImport;
+  const select = document.querySelector("#vocabularyRescanPage");
+  const pageList = shownImport?.pages || [];
+  if (select) {
+    const chosen = select.value;
+    select.hidden = pageList.length < 2;
+    select.replaceChildren(...pageList.map(page => {
+      const option = document.createElement("option");
+      option.value = page.id;
+      option.textContent = t("imgcolPage", { number: page.first_page_number })
+        + (page.label ? ` · ${page.label}` : page.filename ? ` · ${page.filename}` : "");
+      return option;
+    }));
+    if (pageList.some(page => page.id === chosen)) select.value = chosen;
+  }
+  const page = pageList.find(item => item.id === select?.value) || pageList[0];
   const photo = document.querySelector("#vocabularyPhoto");
   if (!photo) return;
-  const url = imported?.preview_url;
+  const url = page ? page.preview_url : shownImport?.preview_url;
   photo.hidden = !url;
   if (url) photo.querySelector("img").src = url;
 }
@@ -320,6 +459,8 @@ async function rescanPage(file) {
   status.textContent = t("vocabularyRescanning");
   const body = new FormData();
   body.append("file", file);
+  const pageChoice = document.querySelector("#vocabularyRescanPage");
+  if (pageChoice && !pageChoice.hidden && pageChoice.value) body.append("page_id", pageChoice.value);
   const result = await api(`/api/vocabulary/imports/${id}/rescan`, { method: "POST", body });
   showPagePhoto(result.vocabulary_import);
   adoptEntries(result.vocabulary_import.entries);
@@ -398,6 +539,7 @@ if (reviewPage) {
     showAllEntries = !showAllEntries;
     renderReview();
   });
+  document.querySelector("#vocabularyRescanPage")?.addEventListener("change", () => showPagePhoto(null));
   document.querySelector("#vocabularyRescanFile")?.addEventListener("change", async event => {
     const input = event.target;
     const file = input.files?.[0];

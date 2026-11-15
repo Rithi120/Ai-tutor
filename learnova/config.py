@@ -239,6 +239,40 @@ DEFAULT_COMMUNITY_ALERT_EMAIL = "contact.studylearnova@gmail.com"
 DEFAULT_PROJECT_MAX_PAGES = 40
 
 
+def _bounded_number(name: str, default: str, low: float, high: float) -> float:
+    try:
+        value = float(os.getenv(name, default))
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be a number") from error
+    return max(low, min(high, value))
+
+
+def _configure_learning_resources(app, feature_flag) -> None:
+    """Educational pictures and videos in the chat and in Short Lessons (docs/LEARNING_RESOURCES.md).
+
+    Pictures come from Wikipedia/Wikimedia Commons and need no key. Real video cards need a
+    YouTube Data API v3 key; without one, Short Lessons keep their honest "Search YouTube
+    for ..." links and the chat offers no videos. The key is read here and passed only to
+    learnova/youtube_videos.py, in a request header - never to a template, the page or a log.
+    """
+
+    app.config["FEATURE_LEARNING_RESOURCES"] = feature_flag("FEATURE_LEARNING_RESOURCES", True)
+    app.config["YOUTUBE_API_KEY"] = os.getenv("YOUTUBE_API_KEY", "").strip()
+    region = os.getenv("YOUTUBE_REGION_CODE", "DE").strip().upper()
+    app.config["YOUTUBE_REGION_CODE"] = region if len(region) == 2 and region.isalpha() else "DE"
+    # search.list costs 100 of the default 10,000 units a day; 80 searches leave room for the
+    # 1-unit availability checks. Every search is cached and shared by all students.
+    app.config["YOUTUBE_DAILY_SEARCH_LIMIT"] = int(_bounded_number("YOUTUBE_DAILY_SEARCH_LIMIT", "80", 0, 10000))
+    # One student's share of those new searches per day (cached answers do not count), so a
+    # single account cannot spend the whole day's searches for everyone.
+    app.config["YOUTUBE_SEARCHES_PER_STUDENT"] = int(_bounded_number("YOUTUBE_SEARCHES_PER_STUDENT", "20", 1, 10000))
+    # The YouTube API Services policies allow stored API data for at most 30 days.
+    app.config["YOUTUBE_CACHE_DAYS"] = int(_bounded_number("YOUTUBE_CACHE_DAYS", "7", 1, 30))
+    app.config["YOUTUBE_TIMEOUT_SECONDS"] = _bounded_number("YOUTUBE_TIMEOUT_SECONDS", "4", 1, 15)
+    # Optional channel ids (UC...) that rank first among relevant videos - a boost, never a filter.
+    app.config["YOUTUBE_TRUSTED_CHANNELS"] = os.getenv("YOUTUBE_TRUSTED_CHANNELS", "").strip()
+
+
 def _configure_assistant_chat(app) -> None:
     """Conversation persistence and per-account limits for the assistant chat (docs/ASSISTANT.md)."""
 
@@ -268,6 +302,8 @@ def _configure_assistant_chat(app) -> None:
     # than a lesson call with its fallback), and how many builds an account may start per hour.
     app.config["CONTINUE_LEARNING_PENDING_SECONDS"] = bounded("CONTINUE_LEARNING_PENDING_SECONDS", 180, 30, 1800)
     app.config["CONTINUE_LEARNING_PER_HOUR"] = bounded("CONTINUE_LEARNING_PER_HOUR", 10, 1, 1000)
+    # Projects made from the chat (spec 1.2) per account per hour, like the project form.
+    app.config["CHAT_PROJECTS_PER_HOUR"] = bounded("CHAT_PROJECTS_PER_HOUR", 10, 1, 1000)
     # What of the conversation a Continue Learning lesson request carries: the transcript
     # (estimated tokens) and the stored photo readings (characters). With the lesson
     # instructions and teaching method (~3.5k tokens) the defaults keep one request near
@@ -788,6 +824,11 @@ def configure_app(app, environment: str | None = None) -> str:
         "FLASHCARD_IMPORT_RETENTION_HOURS": 24,
         "FLASHCARD_EXTRACTION_TIMEOUT_SECONDS": 45,
         "MAX_FLASHCARD_IMPORTS_PER_HOUR": 10,
+        # Pages in one vocabulary import (a PDF counts each of its pages), added one per
+        # request (POST /api/vocabulary/imports/<id>/pages), and how many such page uploads
+        # an account may make per hour: forty pages plus retries.
+        "VOCABULARY_MAX_PAGES": 40,
+        "VOCABULARY_PAGE_UPLOADS_PER_HOUR": 60,
     }
     for name, default in import_limits.items():
         try:
@@ -803,6 +844,14 @@ def configure_app(app, environment: str | None = None) -> str:
             1, int(os.getenv("PROJECT_MAX_PAGES", str(DEFAULT_PROJECT_MAX_PAGES))))
     except ValueError as error:
         raise RuntimeError("PROJECT_MAX_PAGES must be a positive integer") from error
+    # Files in one project upload request (/projects, /projects/<id>/pages/add). The
+    # multi-image component sends batches of six (static/js/image-collection.js); a form
+    # posted without JavaScript may still send a whole project's worth in one request.
+    try:
+        app.config["PROJECT_MAX_FILES_PER_REQUEST"] = max(
+            1, int(os.getenv("PROJECT_MAX_FILES_PER_REQUEST", str(DEFAULT_PROJECT_MAX_PAGES))))
+    except ValueError as error:
+        raise RuntimeError("PROJECT_MAX_FILES_PER_REQUEST must be a positive integer") from error
 
     def _feature_flag(name: str, default: bool) -> bool:
         raw = os.getenv(name)
@@ -882,6 +931,10 @@ def configure_app(app, environment: str | None = None) -> str:
     app.config["FEATURE_ASSISTANT_CHAT"] = _feature_flag("FEATURE_ASSISTANT_CHAT", True)
     # "Continue learning": one click turns a chat into a lesson (counts as a free lesson).
     app.config["FEATURE_CONTINUE_LEARNING"] = _feature_flag("FEATURE_CONTINUE_LEARNING", True)
+    # Exam material in the chat (spec 1.2): separate Short Lessons per topic, Project Mode,
+    # or a choice between them, decided from the reply's hidden EXAM line; PDFs handed to
+    # project creation. Off: the chat keeps its single Continue Learning button.
+    app.config["FEATURE_CHAT_STUDY_FORMAT"] = _feature_flag("FEATURE_CHAT_STUDY_FORMAT", True)
     app.config["FEATURE_COMMUNITY_LIBRARY"] = _feature_flag(
         "FEATURE_COMMUNITY_LIBRARY", not is_production)
     # Publishing is available in development and testing so the full workflow can be
@@ -929,6 +982,9 @@ def configure_app(app, environment: str | None = None) -> str:
     # per group at the end of each week, and the most learners in one group.
     for name, default, low in (("LEAGUE_PROMOTE", "10", 0), ("LEAGUE_DEMOTE", "10", 0),
                                ("LEAGUE_GROUP_SIZE", "30", 2),
+                               # Seconds after a week ends before it is closed, so an award
+                               # committed just after midnight still counts for its week.
+                               ("LEAGUE_CLOSE_GRACE_SECONDS", "120", 0),
                                # Days between two username changes, and how long a released
                                # name stays unavailable to everyone else.
                                ("USERNAME_CHANGE_COOLDOWN_DAYS", "30", 0),
@@ -951,6 +1007,7 @@ def configure_app(app, environment: str | None = None) -> str:
     # default; a switch exists because it is the one feature that reaches a third
     # party on the request path.
     app.config["FEATURE_LESSON_MEDIA"] = _feature_flag("FEATURE_LESSON_MEDIA", True)
+    _configure_learning_resources(app, _feature_flag)
     # Baden-Württemberg Bildungsplan grounding (learnova/curriculum). On by default but a
     # no-op until documents are imported; the cleared-hosts list starts empty on purpose,
     # because confirming a source's usage terms is the operator's decision.

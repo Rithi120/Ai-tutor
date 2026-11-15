@@ -34,6 +34,10 @@ UNREADABLE_PDF_NOTHING_SAVED_MSGID = ("“{filename}” could not be read as a P
                                       "again or upload photos of its pages.")
 # The camera scanner's per-photo metadata that the first render applies (DR-08).
 UPLOAD_TRANSFORM_KEYS = ("rotation", "crop", "deskew", "autocrop", "mode")
+# The student's optional name for an uploaded image, carried in the transform under this
+# key by the web layer (materials_meta) and stored on each of the file's pages.
+UPLOAD_LABEL_KEY = "label"
+UPLOAD_LABEL_MAX = 80
 # Failures a retry of the same stored bytes can never fix: no "Try this file again" for them.
 NO_RETRY_CODES = frozenset({"too_large", "empty", "not_supported"})
 
@@ -131,6 +135,10 @@ class UploadResult:
     skipped_duplicates: list[str] = field(default_factory=list)
     # Files that could not be used (partial=True), in upload order.
     failed_files: list[FailedFile] = field(default_factory=list)
+    # One entry per upload, in the order given: {"index", "status": "added" | "duplicate" |
+    # "failed", "pages", and for a failure the FailedFile}. Lets a client that sent a batch
+    # mark each of its images without matching (sanitised, possibly repeated) file names.
+    outcomes: list[dict[str, Any]] = field(default_factory=list)
 
 
 def create_project_with_uploads(
@@ -228,7 +236,7 @@ def ingest_uploads(database, project, file_model, page_model, *, uploads,
                    if isinstance(entry, dict) and entry.get("sha256")}
     errors_changed = False
     filename = ""
-    for upload, source_kind, transform in uploads:
+    for index, (upload, source_kind, transform) in enumerate(uploads):
         data = upload.read()
         filename = secure_filename(upload.filename or "material")[:255] or "material"
         digest = hashlib.sha256(data).hexdigest()
@@ -237,6 +245,7 @@ def ingest_uploads(database, project, file_model, page_model, *, uploads,
             mime_type = validate_document_upload(data, filename, upload.mimetype)
             if digest in seen_hashes:
                 result.skipped_duplicates.append(filename)
+                result.outcomes.append({"index": index, "status": "duplicate", "pages": 0})
                 continue
             seen_hashes.add(digest)
             mime_type, pages = _prepare_file(data, filename, mime_type, transform, page_order=page_order,
@@ -244,10 +253,12 @@ def ingest_uploads(database, project, file_model, page_model, *, uploads,
             _store_file(database, project, file_model, page_model, filename=filename, mime_type=mime_type,
                         data=data, source_kind=source_kind, digest=digest, pages=pages, page_order=page_order)
             result.files_added += 1
+            result.outcomes.append({"index": index, "status": "added", "pages": len(pages)})
             page_order += len(pages)
             continue
         if digest in seen_hashes:
             result.skipped_duplicates.append(filename)
+            result.outcomes.append({"index": index, "status": "duplicate", "pages": 0})
             continue
         seen_hashes.add(digest)
         previous = failed_rows.get(digest)
@@ -274,10 +285,12 @@ def ingest_uploads(database, project, file_model, page_model, *, uploads,
                 file_errors[str(stored.id)] = _error_entry(failure, digest)
                 errors_changed = True
             result.failed_files.append(failure)
+            result.outcomes.append({"index": index, "status": "failed", "pages": 0, "failure": failure})
             continue
         _store_file(database, project, file_model, page_model, filename=filename, mime_type=mime_type,
                     data=data, source_kind=source_kind, digest=digest, pages=pages, page_order=page_order)
         result.files_added += 1
+        result.outcomes.append({"index": index, "status": "added", "pages": len(pages)})
         page_order += len(pages)
         if previous is not None:
             # Read this time: the failed row of the same bytes has done its job.
@@ -307,6 +320,26 @@ def _prepare_file(data: bytes, filename: str, mime_type: str, transform: dict[st
     DocumentUploadError (file-named, with a code), ProjectPageLimitError, or - only while
     rendering with `preprocess` - a ValueError from PIL or MuPDF."""
 
+    mime_type, pages = _prepare_pages(data, filename, mime_type, transform, page_order=page_order,
+                                      max_pages=max_pages, preprocess=preprocess, nothing_saved=nothing_saved)
+    label = upload_label(transform)
+    if label:
+        # Only set when there is one, so page models without the column keep working.
+        for page in pages:
+            page["label"] = label
+    return mime_type, pages
+
+
+def upload_label(transform: Any) -> str:
+    """The student's label of one uploaded image: one line, at most UPLOAD_LABEL_MAX characters."""
+
+    if not isinstance(transform, dict):
+        return ""
+    return " ".join(str(transform.get(UPLOAD_LABEL_KEY) or "").split())[:UPLOAD_LABEL_MAX]
+
+
+def _prepare_pages(data: bytes, filename: str, mime_type: str, transform: dict[str, Any], *, page_order: int,
+                   max_pages: int, preprocess: bool, nothing_saved: bool) -> tuple[str, list[dict[str, Any]]]:
     if mime_type != "application/pdf":
         if page_order > max_pages:
             raise ProjectPageLimitError(filename, max_pages)

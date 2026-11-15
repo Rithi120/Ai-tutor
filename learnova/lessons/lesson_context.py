@@ -228,6 +228,9 @@ def _entries(value: Any) -> list[Mapping[str, Any]]:
     return [entry for entry in value if isinstance(entry, Mapping)] if isinstance(value, list) else []
 
 
+FORMULA_GROUP_HEADING = "Formulas from the notes (teach these first, in exactly this notation):"
+
+
 def topic_map_block(topic_map: Mapping[str, Any] | None, *, goals: Sequence[Any] = (),
                     page_labels: Mapping[int, str] | None = None, limit: int = TOPIC_MAP_LIMIT) -> str:
     """The topic map as a prompt block of at most `limit` characters ("" when empty).
@@ -259,23 +262,43 @@ def topic_map_block(topic_map: Mapping[str, Any] | None, *, goals: Sequence[Any]
         text += f" | example: {example}" if example else ""
         term_lines.append(text)
     item_lines = []
+    formula_lines = []
     for item in items[:MAX_MAP_ITEMS]:
         name = _line(item.get("name"), 120)
         if not name:
             continue
-        where = "in the notes" if _truthy(item.get("in_notes")) else "added, not in the notes"
+        in_notes = _truthy(item.get("in_notes")) and item.get("origin") != "added"
         label = labels.get(_page(item.get("page_id")) or -1, "")
         detail = _line(item.get("detail"), 220)
+        if str(item.get("kind") or "") == "formula" and in_notes:
+            # Spec Phase 2: the notes' formulas first, as the page writes them (teach these first).
+            written = _line(item.get("notation"), 160) or name
+            latex = _line(item.get("latex"), 160)
+            where = ", ".join(part for part in (label, "teacher-marked" if _truthy(item.get("teacher_marked"))
+                                                else "") if part)
+            variables = "; ".join(
+                f"{_line(variable.get('symbol'), 24)}: {_line(variable.get('meaning'), 80)}"
+                + (f" ({_line(variable.get('unit'), 24)})" if variable.get("unit") else "")
+                for variable in _entries(item.get("variables")) if variable.get("in_notes", True))
+            text = f"- {written}" + (f" (LaTeX: {latex})" if latex and latex != written else "")
+            text += f" [{where}]" if where else ""
+            text += f": {detail}" if detail else ""
+            text += f" | variables: {variables}" if variables else ""
+            formula_lines.append(text)
+            continue
+        where = "in the notes" if in_notes else "added, not in the notes"
         item_lines.append(f"- {_line(item.get('kind'), 30) or 'item'}: {name} ({where}"
                           f"{', ' + label if label else ''}){': ' + detail if detail else ''}")
     goal_text = "; ".join(text for text in (_line(goal, 200) for goal in goals[:6]) if text)
     questions = [text for text in (_line(q, 200) for q in (topic_map.get("exam_questions") or [])[:6]
                                    if isinstance(topic_map.get("exam_questions"), list)) if text]
-    if not (summary or term_lines or item_lines or goal_text or questions):
+    if not (summary or term_lines or item_lines or formula_lines or goal_text or questions):
         return ""
     groups = [
+        (FORMULA_GROUP_HEADING, formula_lines, len(formula_lines)),
         ("Fachbegriffe (use them exactly as written in the notes):", term_lines, len(terms)),
-        ("Items (people, theories, examples, experiments, formulas ...):", item_lines, len(items)),
+        ("Items (people, theories, examples, experiments, formulas ...):", item_lines,
+         max(0, len(items) - len(formula_lines))),
     ]
     tail = []
     if goal_text:
@@ -668,6 +691,11 @@ def guard_parts(parts: Sequence[Mapping[str, Any]], *, item_kinds: Iterable[str]
             # allegory "theory" as often as "thought_experiment", and the label must not
             # cost the student the retelling of their own notes.
             continue
+        if kind == "alternative":
+            # An additional tip (another formula form or method) is never the notes' own,
+            # whatever the model said: the notes' method is taught in the parts before it.
+            part["from_notes"] = False
+            part["source_pages"] = []
         if kind == "experiment" and isinstance(part.get("items"), list):
             part["items"] = order_experiment_items(part["items"])
         if kind == "timeline" and isinstance(part.get("items"), list):
@@ -1193,7 +1221,8 @@ def taught_evidence(parts: Sequence[Mapping[str, Any]], topic_map: Mapping[str, 
     an item on it only counts when the parts name it."""
 
     topic_map = topic_map if isinstance(topic_map, Mapping) else {}
-    text = parts_text([part for part in parts if part.get("kind") != "flashcards"])
+    # An "alternative" part (an additional tip) teaches another form, not the notes' formula.
+    text = parts_text([part for part in parts if part.get("kind") not in ("flashcards", "alternative")])
     terms = [term for term in _entries(topic_map.get("terms")) if _truthy(term.get("in_notes"))]
     items = [item for item in _entries(topic_map.get("items")) if _truthy(item.get("in_notes"))]
     terms_taught = terms_mentioned(terms, text)

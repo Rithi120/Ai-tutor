@@ -109,6 +109,10 @@ services:
       # Tap-a-word scanner translations: optional. Without a key the free MyMemory API answers.
       - key: DEEPL_API_KEY
         sync: false
+      # Real video cards in chat and Short Lessons: optional. Without a key lessons keep their
+      # "Search YouTube for ..." links (docs/LEARNING_RESOURCES.md). Set it in the dashboard only.
+      - key: YOUTUBE_API_KEY
+        sync: false
       # Premium routing is off until these name a "provider:model" (see .env.example).
       - key: AI_PREMIUM_REASONING_MODEL
         sync: false

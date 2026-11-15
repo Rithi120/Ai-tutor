@@ -108,50 +108,113 @@ the profile timezone and the device clock play no part.
 
 ## Learnova Leagues
 
-Bronze, Silver, Gold, Sapphire, Ruby, Diamond, Legendary. Everyone starts in Bronze.
+Bronze, Silver, Gold, Sapphire, Ruby, Emerald, Diamond (tiers 1-7). Everyone starts in
+Bronze. Tiers are stored as integers (`league_membership.tier`, `league_entry.tier`), so the
+names live only in `learnova/gamification/leagues.py`, the CSS and the translations. Until
+2026-11 tier 6 was called "Diamond" and tier 7 "Legendary"; the owner renamed them to
+match the spec, with no migration. A learner who was in the old "Diamond" league (tier 6) now
+sees "Emerald". The top league's crest glows (`.league-diamond`).
 
 * **Joining a week.** A participating learner enters the week with their first XP of it,
   into a group of at most `LEAGUE_GROUP_SIZE` (30) in their league. Joining mid-week is
   normal; weekly XP counts the whole week. Someone with no activity takes no part that
-  week: they keep their league and cannot be demoted for being away.
-* **Weekly XP** is the sum of `XPTransaction` inside the week. Lifetime XP is never touched
-  by leagues. Farming is bounded by the existing daily XP budgets per activity group
-  (flashcards 200, practice 150, vocabulary 100, planning 50, measured on the server's day in
-  `APP_TIMEZONE`) plus once-per-period goal, challenge and badge XP - replaying the same set
-  all day cannot outscore a learner who studies normally for long.
+  week: they keep their league and cannot be demoted for being away. On PostgreSQL the
+  "count the group, then join it" step holds a transaction-scoped advisory lock per league
+  and week (`lock_league_group_assignment`), so two learners joining at the same moment
+  cannot make a group of 31. SQLite allows one writer at a time, so it needs no lock.
+* **Weekly XP** is the sum of `XPTransaction` inside the week. A new week therefore starts
+  at 0 by construction, and lifetime XP (`user_gamification_profile.total_xp`) is never
+  touched by leagues. Lifetime XP is increased with one SQL `UPDATE ... SET total_xp =
+  total_xp + n`, so two awards at the same moment both count.
+* **Farming** is bounded by the daily XP budgets per activity group (flashcards 200,
+  practice 150, vocabulary 100, planning 50, measured on the server's day in
+  `APP_TIMEZONE`) plus once-per-period goal, challenge and badge XP. A flashcard session
+  pays its completion XP (and a test's perfect-score bonus) only when at least
+  `min(5, items in the session)` items were answered
+  (`service.FLASHCARD_COMPLETION_MIN_ITEMS`, `session_completion_pays`). Shorter sessions
+  still pay their answers, count as activity and complete normally. Project final and
+  practice exams are still recorded as `test_completed` learning events (challenges,
+  badges and statistics are unchanged), but their XP is booked as
+  `project_exam_completed` and drawn from the **practice** budget, not the flashcard one
+  (`record_learning_event(..., xp_event=...)`).
 * **Ranking**: more weekly XP first, then whoever reached their total earlier, then the
   lower account id - the same order everywhere.
 * **End of week** (Monday 00:00, `APP_TIMEZONE`): in a group of at least
   `LEAGUE_PROMOTE + LEAGUE_DEMOTE` learners the top `LEAGUE_PROMOTE` (10) move up and the
   bottom `LEAGUE_DEMOTE` (10) move down. Smaller groups use a third each, so there is always
   a safe middle; with two or more learners at least one still promotes, and a learner alone
-  stays. Only learners with XP can be promoted. Legendary has no promotion, Bronze no
+  stays. Only learners with XP can be promoted. Diamond has no promotion, Bronze no
   demotion. Each learner gets exactly one outcome.
 * **Exactly once.** `process_due_league_weeks` claims a finished week with a conditional
   update (`open -> processing`) in the same transaction that writes the results, so a
-  crash rolls the claim back and a parallel run finds nothing to claim. Results (rank,
-  weekly XP, group size, outcome, league after) stay on `league_entry` as history. While a
-  finished week is unprocessed, no new entries are created, so nobody joins the new week
-  with last week's league. It runs when someone opens the leaderboard or their profile, in
-  the background after an XP award, and with `flask leagues process`.
-* **Opting out** (Settings): removes the learner from this week's ranking at once; no
-  promotion or demotion while out (someone who opts out after a week ended but before it was
-  processed is recorded as `withdrawn`, keeps their league and is left out of everyone's
-  zones); XP, levels, avatars, streaks and challenges are
-  unaffected; the public profile never shows league participation. **Opting back in**
-  sets `rejoin_from` to next Monday - never the current week, so leaving and returning can
-  neither dodge nor replay a result.
+  crash rolls the claim back and a parallel run finds nothing to claim. A week is closed
+  only `LEAGUE_CLOSE_GRACE_SECONDS` (120) after it ended, so an award stamped 23:59:59 whose
+  request commits just after midnight is still counted. Results (rank, weekly XP, group
+  size, outcome, league after) stay on `league_entry` as history. While a finished week is
+  unprocessed (including the grace period), no new entries are created, so nobody joins the
+  new week with last week's league. As soon as a week closes, learners who already earned XP
+  in the new week are entered, earliest first (`backfill_league_entries`).
+* **When it runs.** When someone opens the leaderboard or their profile, in the background
+  after an XP award, and with `flask leagues process`. On the request path a failure is
+  logged (`League week … could not be processed` with a traceback, then
+  `league.lazy_transition_failed`) and the page still renders; the week stays open and is
+  retried on the next visit. The CLI re-raises: it exits 1 and `leagues status --check`
+  flags the week once it is overdue.
+* **Opting out** (Settings) mid-week records this week's entry as `withdrawn` (owner
+  decision, 2026-11-13). The row is kept, it is hidden from every standing at once and the
+  transition never processes it again. Its rank, weekly XP and group size at that moment are
+  stored. If the learner was in the **demotion zone** when they left, they are demoted
+  (`tier_after` = one league down, membership updated); from anywhere else they keep their
+  league and are never promoted. Someone who opts out after a week ended but before it was
+  processed is treated the same way, at the final standings. A withdrawn learner **still
+  counts toward the group size** the zones are computed from (`zone_sizes(...,
+  withdrawn=, withdrawn_demoted=)`), so nobody else's zones shrink. A learner demoted on
+  leaving keeps the demotion place they took, so the rest's demotion zone is one smaller.
+  Promotion places are never taken by a leaver; they pass to the next learner. In the
+  reproduced case (12 in Silver, the last one leaves) the outcome for the other 11 is exactly
+  what it would have been had the leaver stayed: 4 promoted, 3 more demoted. XP, levels,
+  avatars, streaks and challenges are unaffected, and the public profile never shows league
+  participation. **Opting back in** sets `rejoin_from` to next Monday - never the current
+  week - so leaving and returning can neither dodge nor replay a result.
 
-The leaderboard (`/leaderboard`, `GET /api/leaderboard`) shows rank, avatar, username,
-Premium, weekly XP, the promotion and demotion zones, the time left, and the signed-in
-learner highlighted with "Promotion zone", "You're currently safe" or "Demotion zone". It
-lists only real accounts in the learner's group and exposes no email or account id.
+### The leaderboard
+
+`/leaderboard` and `GET /api/leaderboard` (same data) show:
+
+* the current league (crest, name, the ladder of all seven), and the time left, rendered on
+  the server (`time_left`, also readable without JavaScript) and kept ticking by
+  `static/js/profile.js`. When the week is over, the timer says "The week has ended. Results
+  in a moment." and reloads the page once, about 150 s after the end (after the close
+  grace). The reload is guarded per week end in `sessionStorage`; without storage it does
+  not reload at all, so it can never loop;
+* `results_pending` - a note while the learner's last week has ended but is not closed yet;
+* rank, avatar, username, Premium and weekly XP for everyone in the learner's group, the
+  promotion and demotion zones (with dividers), and the learner highlighted with
+  "Promotion zone", "You're currently safe" or "Demotion zone";
+* the gaps, computed on the server by `league_rules.xp_gaps`: `me.xp_to_next_rank` (XP to
+  pass the learner one place above; ties go to whoever got there first, so it is their XP -
+  yours + 1), `me.xp_to_promotion` and `me.xp_to_leave_demotion` (0 when already there or
+  not applicable);
+* `history`: the learner's last `LEAGUE_HISTORY_WEEKS` (8) finished weeks, newest first -
+  week, league, rank of group size, weekly XP, outcome (Promoted / Demoted / Stayed / Left
+  the leagues) and the league after. A mid-week withdrawal is listed as soon as it happens.
+  It is shown even when the learner is not taking part this week, because it is their own
+  record.
+
+It lists only real accounts in the learner's group and exposes no email or account id. The
+one-time "last week's result" card is unchanged.
 
 ## Security
 
 Every change is to the signed-in account only (no id is read from a request). XP, ranks,
 unlocks and Premium are all derived on the server; there is no endpoint that writes any of
-them. Usernames are rendered escaped everywhere (Jinja autoescape, `escapeHtml` in the
+them. No route reads an XP amount, an XP idempotency key, a rank,
+a tier or a league from the request: amounts come from `gamification.XP_VALUES` /
+`bounded_answer_xp`, keys from server ids (`tests/test_league_integrity.py` sends forged
+`xp`, `amount`, `idempotency_key`, `tier`, `weekly_xp` and `rank` fields and checks that
+nothing changes). A flashcard answer's client `request_id` is stored for tracing only, scoped
+to the item (`<item id>:<request id>`); a reused or foreign id used to fail the answer with
+a 500 because the column is unique. Usernames are rendered escaped everywhere (Jinja autoescape, `escapeHtml` in the
 community script). Avatar SVGs are served as static files and are checked by tests to
 contain no scripts, foreign objects, images, text or external references.
 
@@ -162,6 +225,7 @@ contain no scripts, foreign objects, images, text or external references.
 | `FEATURE_LEAGUES` | same as `FEATURE_GAMIFICATION` | leagues on/off for the whole site |
 | `LEAGUE_PROMOTE` / `LEAGUE_DEMOTE` | 10 / 10 | places per group that move up / down |
 | `LEAGUE_GROUP_SIZE` | 30 | most learners in one group |
+| `LEAGUE_CLOSE_GRACE_SECONDS` | 120 | how long after a week ends it is closed (late commits still count) |
 | `USERNAME_CHANGE_COOLDOWN_DAYS` | 30 | between two changes |
 | `USERNAME_HOLD_DAYS` | 90 | how long a released name stays unavailable to others |
 | `APP_TIMEZONE` | Europe/Berlin | days, weeks and resets |
@@ -243,3 +307,20 @@ validates the XML, the per-file id prefixes and the absence of scripts, images a
 3. "Without hints" is tracked on the server, but help from outside Learnova (a friend, a
    search engine) is of course invisible to it.
 4. Groups are filled in join order within a league, not by skill.
+5. The week transition runs synchronously on the first leaderboard or profile visit after
+   the close grace when no scheduler is installed, inside that request. With many learners
+   that first Monday visit is slow; install the systemd timer or cron job (above).
+   `render.yaml` defines no cron service.
+6. A week that cannot be processed keeps blocking new league entries until it is fixed
+   (pages still render). `leagues status --check` is the alarm.
+7. The group-size guarantee under concurrency relies on the PostgreSQL advisory lock. The
+   lock is held until the joining request commits; XP is awarded at the end of a request,
+   so this is milliseconds, and only learners joining the same league in the same week ever
+   wait.
+8. Farming is bounded, not prevented: self-graded flashcard answers still earn answer XP
+   (within the flashcard budget), and a one-card set's session needs only that one card for
+   its completion XP (`min(5, items)`).
+9. A withdrawn learner who left from the promotion zone does not move up, and their
+   promotion place passes to the next learner, so leaving can lift someone else. Zones
+   among the remaining learners never overlap; if many learners leave from the top of a
+   small group, promotion places are filled first.

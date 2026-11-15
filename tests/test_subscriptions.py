@@ -727,7 +727,8 @@ class ProjectQuotaRouteTests(AppTestCase):
 
     def test_lessons_and_tests_inside_a_project_are_unlimited(self):
         self.client.post("/projects", data={"subject": "Math", "title": "Typed",
-                                            "topics": "Brüche, Gleichungen, Prozente, Terme"},
+                                            # One topic per line (spec 1.1: commas stay inside a topic).
+                                            "topics": "Brüche\nGleichungen\nProzente\nTerme"},
                          content_type="multipart/form-data")
         project_id = self.latest_project()
         with application.app.app_context():

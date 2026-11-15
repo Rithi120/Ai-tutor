@@ -292,10 +292,12 @@ class TeachingFirstPropertyTests(unittest.TestCase):
                           "summary"],
             "latin": ["objective", "rule", "structure", "example", "mistakes", "terms", "source_analysis",
                       "guided_exercise", "summary"],
-            "mathematics": ["objective", "why", "explanation", "rule", "worked_example", "mistakes",
+            # Spec Phase 2: with a formula item, the notes' formulas get a "rule" step and an optional
+            # "alternative" (Additional tip) after the worked example.
+            "mathematics": ["objective", "why", "explanation", "rule", "worked_example", "alternative", "mistakes",
                             "guided_exercise", "summary"],
-            "sciences": ["objective", "terms", "explanation", "experiment", "process", "diagram", "worked_example",
-                         "mistakes", "guided_exercise", "summary"],
+            "sciences": ["objective", "terms", "explanation", "experiment", "process", "diagram", "rule",
+                         "worked_example", "alternative", "mistakes", "guided_exercise", "summary"],
             "ethics": ["objective", "terms", "thought_experiment", "theory", "argument", "perspectives", "example",
                        "mistakes", "guided_exercise", "summary"],
             "german": ["objective", "explanation", "terms", "structure", "rule", "model_analysis", "mistakes",

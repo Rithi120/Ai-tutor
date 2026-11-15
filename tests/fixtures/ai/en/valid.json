@@ -635,27 +635,29 @@
       "competencies": [
         {
           "statement": "I can solve quadratic equations with the quadratic formula.",
-          "topic": "Quadratic equations",
-          "subtopic": "Quadratic formula",
+          "group_path": [
+            "Quadratic equations",
+            "Quadratic formula"
+          ],
           "level": "intermediate",
           "importance": 3,
           "source_page_ids": [
             1
           ],
-          "coverage": "covered",
-          "evidence": "x = (-b ± √(b²-4ac)) / 2a"
+          "section_title": "Quadratic equations"
         },
         {
           "statement": "I can explain when a quadratic equation has no real solution.",
-          "topic": "Quadratic equations",
-          "subtopic": "Discriminant",
+          "group_path": [
+            "Quadratic equations",
+            "Discriminant"
+          ],
           "level": "advanced",
           "importance": 2,
           "source_page_ids": [
             1
           ],
-          "coverage": "missing",
-          "evidence": ""
+          "section_title": "Quadratic equations"
         }
       ]
     }
@@ -801,27 +803,27 @@
   },
   "_meta": {
     "prompt_versions": {
-      "lesson_generation": "lesson_generation:v9",
+      "lesson_generation": "lesson_generation:v10",
       "quiz_generation": "quiz_generation:v2",
       "answer_evaluation": "answer_evaluation:v8",
       "mistake_analysis": "mistake_analysis:v1",
       "answer_diagnosis": "answer_diagnosis:v4",
       "diagnosis_verification": "diagnosis_verification:v1",
-      "question_generation": "question_generation:v2",
+      "question_generation": "question_generation:v3",
       "tutor_chat": "tutor_chat:v6",
       "translation": "translation:v2",
       "ocr_document_recognition": "ocr_document_recognition:v2",
       "project_section_generation": "project_section_generation:v4",
       "adaptive_practice": "adaptive_practice:v4",
-      "final_exam_generation": "final_exam_generation:v3",
+      "final_exam_generation": "final_exam_generation:v4",
       "final_exam_evaluation": "final_exam_evaluation:v2",
       "flashcard_generation": "flashcard_generation:v1",
       "flashcard_review": "flashcard_review:v2",
       "content_moderation": "content_moderation:v2",
-      "assistant_chat": "assistant_chat:v5",
+      "assistant_chat": "assistant_chat:v6",
       "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
       "handwriting_region_review": "handwriting_region_review:v1",
-      "competency_extraction": "competency_extraction:v1",
+      "competency_extraction": "competency_extraction:v2",
       "vocabulary_page_extraction": "vocabulary_page_extraction:v1",
       "image_understanding": "image_understanding:v2",
       "report_review": "report_review:v1"

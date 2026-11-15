@@ -40,6 +40,7 @@ from learnova.ai_services import service as ai_service  # noqa: E402
 from learnova.ai_services.contracts import VALIDATORS  # noqa: E402
 from learnova.lessons import lesson_plan  # noqa: E402
 from learnova.lessons.strategies import REGISTRY  # noqa: E402
+from learnova.lessons.strategies.sciences import FORMULA_STEPS  # noqa: E402
 from learnova.projects.terms import term_key  # noqa: E402
 from learnova.quizzes import mastery_gate  # noqa: E402
 
@@ -435,7 +436,9 @@ class SubjectLessonTests(TeachingEngineCase):
         kinds = self.planned_kinds(self.prompt())
         combined = REGISTRY["nwt"]
         self.assertEqual(self.lesson(session_id)["strategy"]["key"], "nwt")
-        technology_only = set(REGISTRY["technology"].step_kinds()) - set(REGISTRY["sciences"].step_kinds())
+        # The sciences' formula steps (rule, alternative; spec Phase 2) are not part of NwT.
+        sciences_in_nwt = {step.kind for step in REGISTRY["sciences"].steps if step not in FORMULA_STEPS}
+        technology_only = set(REGISTRY["technology"].step_kinds()) - sciences_in_nwt
         self.assertTrue(technology_only & set(kinds), f"a technology part is planned: {kinds}")
         self.assertEqual(kinds, [step.kind for step in lesson_plan.plan_steps(combined, mode="learn", state="new",
                                                                               item_kinds=[])])

@@ -204,6 +204,46 @@ class CreatorDefaultViewTests(unittest.TestCase):
         self.assertIn("inset-inline-end", rule)
         self.assertNotIn("right:", rule)
 
+    # ---- the row menu on phones (spec Phase 5; the geometry is in test_mobile_layout) ----
+    @staticmethod
+    def _stylesheets_without_comments():
+        for path in sorted((ROOT / "static").rglob("*.css")):
+            yield path, re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
+
+    def test_row_icon_rules_do_not_reach_the_menu_items(self):
+        # `.card-row-tools button` also matched the menu items inside it: on phones every
+        # item became a 44x44 box with its label running letter by letter into the next.
+        for path, css in self._stylesheets_without_comments():
+            for pattern in (r"\.card-row-tools\s+button", r"\.card-row(?:-head)?\s+button",
+                            r"\.card-menu-body\s+button"):
+                self.assertIsNone(re.search(pattern, css), f"{path.name}: {pattern}")
+
+    def test_both_three_dot_menus_share_one_item_style_with_a_red_delete(self):
+        components = (ROOT / "static/css/learnova-components.css").read_text(encoding="utf-8")
+        item = components.split(".ln-menu-item {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-block-size: var(--ln-tap)", item)
+        self.assertIn("inline-size: 100%", item)
+        self.assertRegex(components, r"\.ln-menu-item\.danger \{ color: var\(--ln-danger-text\); \}")
+        self.assertRegex(components, r"\.ln-menu-item > \[aria-hidden=\"true\"\] \{ flex: none;")
+        tokens = (ROOT / "static/css/learnova-tokens.css").read_text(encoding="utf-8")
+        self.assertEqual(tokens.count("--ln-danger-text:"), 2)   # light and dark
+        menu = self.create_js.split("card-menu-body", 1)[1].split("</details>", 1)[0]
+        self.assertEqual(menu.count('class="ln-menu-item'), 5)
+        self.assertIn('class="ln-menu-item danger" data-del', menu)
+        assistant = (ROOT / "templates/assistant.html").read_text(encoding="utf-8")
+        items = assistant.split('id="asstItemMenu"', 1)[1].split("</div>", 1)[0]
+        self.assertEqual(items.count('class="ln-menu-item'), 3)
+        self.assertIn('class="ln-menu-item danger" id="asstDelete"', items)
+
+    def test_the_row_menu_opens_above_the_save_bar(self):
+        css = (ROOT / "static/css/flashcards.css").read_text(encoding="utf-8")
+        rule = css.split(".card-menu-body {", 1)[1].split("}", 1)[0]
+        save_bar = int(re.search(r"\.save-bar \{[^}]*z-index: (\d+)", css).group(1))
+        self.assertGreater(int(re.search(r"z-index: (\d+)", rule).group(1)), save_bar)
+        self.assertIn(".card-menu.opens-up .card-menu-body { top: auto; bottom:", css)
+        self.assertIn('addEventListener("toggle", placeCardMenu, true)', self.create_js)
+        self.assertIn('#saveBar:not(.hidden)', self.create_js.split("function placeCardMenu", 1)[1])
+
 
 if __name__ == "__main__":
     unittest.main()

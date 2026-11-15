@@ -27,9 +27,10 @@ import { renderMath } from "./math.js";
 import { highlightCode } from "./code-highlight.js";
 import { t } from "./i18n.js";
 import { createAttachmentTray, photoNotesNode, sentPhotosNode } from "./image-attach.js";
+import { imageFigureNode, videoCardNode } from "./resources.js";
 import {
-  continueView, failureKey, groupRows, isNearBottom, menuIndex, mergeRows, newestReply, prefillText,
-  retryAfterSeconds, sendOutcome, upsertRow,
+  continueView, examDateChoices, failureKey, formatView, groupRows, isNearBottom, menuIndex, mergeRows, newestReply,
+  prefillText, retryAfterSeconds, sendOutcome, upsertRow,
 } from "./assistant-rules.js";
 
 const SIDEBAR_KEY = "learnova:asst-sidebar";
@@ -47,6 +48,7 @@ const ICONS = {
   regenerate: '<path d="M20 11.5A8 8 0 1 1 17.7 6"/><path d="M20 4v4.5h-4.5"/>',
   book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5"/>',
   camera: '<path d="M14.5 4h-5L7.5 7H4.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3.5"/>',
+  play: '<rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path class="asst-icon-fill" d="M10 9.2v5.6l4.8-2.8Z"/>',
 };
 
 const page = document.querySelector(".assistant-page");
@@ -81,6 +83,9 @@ const state = {
   lessonBusy: new Set(),   // conversation ids with a Continue Learning request in flight
   lessonPolls: new Map(),
   lessonUi: new Map(),     // conversation id -> {picker, note: {text, error, link}}
+  formatUi: new Map(),     // conversation id -> the study-format card's taps in flight and choices
+  formatPolls: new Map(),  // conversation id -> timer while a topic lesson or project is built elsewhere
+  pdf: null,               // {file, examDate, busy} while a PDF waits to become a project
   waitingChecked: false,
   welcome: null,
   baseTitle: document.title,
@@ -281,6 +286,8 @@ function messageNode(message, { imageNotes = null } = {}) {
     meta.textContent = t("asstContextTrimmed").replace("{count}", message.context_dropped);
     article.appendChild(meta);
   }
+  const resources = message.role === "assistant" && !message.error ? resourcesNode(message) : null;
+  if (resources) article.appendChild(resources);
   if (message.role === "assistant" && !message.error && message.id !== "pending") {
     const actions = document.createElement("div");
     actions.className = "asst-actions";
@@ -293,6 +300,86 @@ function messageNode(message, { imageNotes = null } = {}) {
   if (notes) renderMath(notes);
   if (message.role !== "user") highlightCode(body);
   return article;
+}
+
+/* Learning resources under a reply (docs/LEARNING_RESOURCES.md). The server decided
+ * whether to offer any (the model's MEDIA line, then a deterministic veto); the page only
+ * shows what it is given. A picture appears by itself - it costs no quota and is fetched
+ * once, then stored with the reply. Videos wait for one tap ("Watch a video on this"),
+ * because each new search spends shared quota. Cards link out to YouTube; nothing is
+ * embedded. Results are kept on the message object, so a redraw asks nobody again. */
+function resourcesNode(message) {
+  const offer = message.resources;
+  if (!offer || typeof offer !== "object" || message.id === "pending") return null;
+  const box = document.createElement("section");
+  box.className = "asst-resources";
+  box.setAttribute("aria-label", t("resourcesLabel"));
+  const settle = () => {
+    if (!box.querySelector("figure, .resource-video, .asst-resources-video, .asst-resources-status")) box.remove();
+  };
+  const showImage = (image) => {
+    const figure = imageFigureNode(image, { className: "resource-image asst-resource-image", onGone: settle });
+    if (figure) box.prepend(figure);
+  };
+  if (offer.image) {
+    showImage(offer.image);
+  } else if (offer.image_pending) {
+    offer.imageRequest ||= api(`/api/assistant/messages/${encodeURIComponent(message.id)}/resources`)
+      .then((data) => { offer.image = data.image || null; })
+      .catch(() => { offer.image = null; })
+      .finally(() => { offer.image_pending = false; });
+    offer.imageRequest.then(() => {
+      if (offer.image) showImage(offer.image);
+      else settle();
+    });
+  }
+  if (offer.video) box.appendChild(videoOfferNode(message, offer, settle));
+  return box.childNodes.length || offer.image_pending ? box : null;
+}
+
+function videoOfferNode(message, offer, settle) {
+  const row = document.createElement("div");
+  row.className = "asst-resources-video";
+  const showCards = (items) => {
+    const cards = items.map((video) => videoCardNode(video, { onGone: settle })).filter(Boolean);
+    if (!cards.length) return false;
+    const list = document.createElement("div");
+    list.className = "resource-videos";
+    list.append(...cards);
+    row.replaceChildren(list);
+    return true;
+  };
+  const status = document.createElement("p");
+  status.className = "asst-resources-status";
+  status.setAttribute("role", "status");
+  if (Array.isArray(offer.videos)) {
+    if (!showCards(offer.videos)) {
+      status.textContent = t("resourcesNone");
+      row.appendChild(status);
+    }
+    return row;
+  }
+  const button = actionButton("play", t("resourcesShowVideo"), async () => {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    status.textContent = t("resourcesLoading");
+    try {
+      const data = await api(`/api/assistant/messages/${encodeURIComponent(message.id)}/resources?part=videos`);
+      offer.videos = Array.isArray(data.items) ? data.items : [];
+      if (!showCards(offer.videos)) {
+        status.textContent = t("resourcesNone");
+        button.remove();
+      }
+    } catch (_) {
+      status.textContent = t("resourcesFailed");
+      button.disabled = false;
+    } finally {
+      button.removeAttribute("aria-busy");
+    }
+  }, { text: true });
+  button.classList.add("asst-resources-button");
+  row.append(button, status);
+  return row;
 }
 
 function pendingNode(withPhotos = false) {
@@ -403,6 +490,11 @@ function decorate() {
       if (lesson.source_message_id === lessonState.source_message_id || !lesson.url) continue;
       const older = articleFor(lesson.source_message_id);
       if (older) older.insertBefore(lessonLinkNode(lesson.url, lesson.title), older.querySelector(".asst-actions"));
+    }
+    if (lessonState.format && page.dataset.studyFormat === "on") {
+      const anchor = articleFor(lessonState.format.source_message_id);
+      const card = anchor ? formatNode(conversation) : null;
+      if (card) anchor.insertBefore(card, anchor.querySelector(".asst-actions"));
     }
   }
 }
@@ -609,6 +701,478 @@ function pollLesson(id, { keepBusy = false } = {}) {
     state.lessonPolls.set(id, window.setTimeout(tick, LESSON_POLL_MS));
   };
   state.lessonPolls.set(id, window.setTimeout(tick, LESSON_POLL_MS));
+}
+
+
+/* ------------------------------------------------- Study format (spec 1.2) */
+
+/* The card under the reply that listed an exam's topics: one Short Lesson per topic, a
+ * project for the whole exam, or both with the recommended one first. Every control is
+ * one tap; each topic lesson is built on its own tap (the server keeps one row per topic,
+ * so a double tap is one lesson), and the project button is disabled while it runs. */
+function formatUi(id) {
+  if (!state.formatUi.has(id)) state.formatUi.set(id, { busy: new Set(), projectBusy: false, expanded: false,
+                                                      examDate: null, note: null, picker: null });
+  return state.formatUi.get(id);
+}
+
+function formatNode(conversation) {
+  const id = conversation.id;
+  const format = conversation.continue_learning?.format;
+  const ui = formatUi(id);
+  const view = formatView(format, { busyTopics: ui.busy, projectBusy: ui.projectBusy });
+  if (view.kind === "none") return null;
+  // Being built elsewhere (another tab, a reload, a 202): ask again until it is done.
+  if (serverPending(format, ui)) pollFormat(id);
+  const box = document.createElement("section");
+  box.className = "asst-format asst-deco";
+  box.dataset.tourTarget = "chat-format";
+  box.dataset.conversation = id;
+  box.setAttribute("aria-label", t("asstFormatLabel"));
+  const title = document.createElement("p");
+  title.className = "asst-format-title";
+  title.append(icon("book"), document.createTextNode(
+    view.kind === "lessons" ? t("asstFormatLessonsTitle", { count: view.count })
+      : view.kind === "project" ? t("asstFormatProjectTitle", { count: view.count })
+        : t("asstFormatChoiceTitle", { count: view.count })));
+  box.appendChild(title);
+  if (view.reasonKey) {
+    const reason = document.createElement("p");
+    reason.className = "asst-format-reason";
+    reason.textContent = t(view.reasonKey, { count: view.count });
+    box.appendChild(reason);
+  }
+  if (ui.note) {
+    const note = document.createElement("p");
+    note.className = `asst-continue-note${ui.note.error ? " is-error" : ""}`;
+    note.setAttribute("role", ui.note.error ? "alert" : "status");
+    note.textContent = ui.note.text;
+    box.appendChild(note);
+    if (ui.note.link) box.appendChild(premiumLink(ui.note.link));
+  }
+  if (ui.picker) {
+    box.appendChild(subjectPicker(ui.picker.subjects, (subject) => startTopicLesson(id, ui.picker.key, subject)));
+    return box;
+  }
+  view.options.forEach((option, index) => {
+    const recommended = view.kind === "choice" && index === 0;
+    const secondary = view.kind === "choice" && index > 0;
+    if (secondary && !ui.expanded) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "asst-format-more";
+      more.textContent = option === "project" ? t("asstFormatOrProject", { count: view.count })
+        : t("asstFormatOrLessons", { count: view.count });
+      more.addEventListener("click", () => {
+        ui.expanded = true;
+        redrawContinue(id);
+      });
+      box.appendChild(more);
+      return;
+    }
+    const part = document.createElement("div");
+    part.className = `asst-format-option${recommended ? " is-recommended" : ""}`;
+    if (recommended) {
+      const badge = document.createElement("span");
+      badge.className = "asst-format-badge";
+      badge.textContent = t("asstFormatRecommended");
+      part.appendChild(badge);
+    }
+    part.appendChild(option === "project" ? projectOption(id, view, ui) : lessonsOption(id, view));
+    box.appendChild(part);
+  });
+  return box;
+}
+
+function premiumLink(link) {
+  const anchor = document.createElement("a");
+  anchor.className = "asst-continue-premium";
+  anchor.href = link.href;
+  anchor.textContent = link.label;
+  return anchor;
+}
+
+function subjectPicker(subjects, onPick) {
+  const wrap = document.createElement("div");
+  const label = document.createElement("p");
+  label.className = "asst-continue-note";
+  label.textContent = t("asstPickSubject");
+  const chips = document.createElement("div");
+  chips.className = "asst-chips";
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-label", t("asstPickSubject"));
+  for (const subject of subjects || []) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "asst-chip";
+    chip.textContent = subject.label || subject.value;
+    chip.addEventListener("click", () => onPick(subject.value));
+    chips.appendChild(chip);
+  }
+  wrap.append(label, chips);
+  return wrap;
+}
+
+function lessonsOption(id, view) {
+  const wrap = document.createElement("div");
+  wrap.className = "asst-format-lessons";
+  const list = document.createElement("ol");
+  list.className = "asst-format-topics";
+  for (const topic of view.topics) {
+    const item = document.createElement("li");
+    item.className = `asst-format-topic is-${topic.state}`;
+    const label = t("asstFormatLesson", { number: topic.position, title: topic.title });
+    if (topic.url) {
+      const link = document.createElement("a");
+      link.className = "asst-format-open";
+      link.href = topic.url;
+      link.textContent = label;
+      item.appendChild(link);
+      const status = document.createElement("span");
+      status.className = "asst-format-status";
+      status.textContent = topic.state === "done" ? t("asstFormatDone") : t("asstFormatOpen");
+      item.appendChild(status);
+    } else {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "asst-format-start";
+      if (topic.state === "pending") {
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        const spinner = document.createElement("span");
+        spinner.className = "asst-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        button.append(spinner, document.createTextNode(label));
+      } else {
+        button.textContent = label;
+        button.disabled = topic.state === "locked";
+        button.addEventListener("click", () => startTopicLesson(id, topic.key));
+      }
+      item.appendChild(button);
+      if (topic.state === "locked" || topic.state === "retry") {
+        const status = document.createElement("span");
+        status.className = "asst-format-status";
+        status.textContent = topic.state === "locked" ? t("asstFormatLater") : t("asstLessonFailed");
+        item.appendChild(status);
+      }
+    }
+    list.appendChild(item);
+  }
+  wrap.appendChild(list);
+  if (view.count) {
+    const progress = document.createElement("p");
+    progress.className = "asst-format-progress";
+    progress.textContent = t("asstFormatProgress", { done: view.done, count: view.count });
+    wrap.appendChild(progress);
+  }
+  if (view.free && view.lessonLimit !== null) {
+    // Honest about the free plan: every topic lesson is one of the day's lessons.
+    const quota = document.createElement("p");
+    quota.className = "asst-format-quota";
+    quota.textContent = view.locked ? t("asstFormatQuotaLater", { limit: view.lessonLimit, count: view.locked })
+      : t("asstFormatQuota", { limit: view.lessonLimit, left: view.lessonsLeft ?? 0 });
+    wrap.appendChild(quota);
+    if (view.locked && view.upgradeUrl) wrap.appendChild(premiumLink({ href: view.upgradeUrl, label: t("asstSeePremium") }));
+  }
+  return wrap;
+}
+
+function projectOption(id, view, ui) {
+  const wrap = document.createElement("div");
+  wrap.className = "asst-format-project";
+  if (view.project.state === "ready") {
+    const link = document.createElement("a");
+    link.className = "asst-format-primary";
+    link.href = view.project.url;
+    link.textContent = t("asstFormatOpenProject");
+    wrap.appendChild(link);
+    return wrap;
+  }
+  const text = document.createElement("p");
+  text.className = "asst-format-text";
+  text.textContent = t("asstFormatProjectText", { count: view.count });
+  wrap.appendChild(text);
+  if (view.photos) {
+    const photos = document.createElement("p");
+    photos.className = "asst-format-note";
+    photos.textContent = view.photosKept ? t("asstFormatPhotosAlong", { count: view.photosKept })
+      : t("asstFormatPhotosGone");
+    wrap.appendChild(photos);
+  }
+  if (view.project.state === "locked") {
+    const note = document.createElement("p");
+    note.className = "asst-format-quota";
+    note.textContent = view.resetsAt
+      ? t("asstFormatProjectUsedUntil", { date: new Date(view.resetsAt).toLocaleDateString() })
+      : t("asstFormatProjectUsed");
+    wrap.appendChild(note);
+    if (view.upgradeUrl) wrap.appendChild(premiumLink({ href: view.upgradeUrl, label: t("asstSeePremium") }));
+    return wrap;
+  }
+  if (view.free) {
+    const counts = document.createElement("p");
+    counts.className = "asst-format-quota";
+    counts.textContent = t("asstFormatProjectCounts");
+    wrap.appendChild(counts);
+  }
+  if (ui.examDate === null) ui.examDate = view.examDate || "";
+  wrap.appendChild(dateChips(view.today, view.examDate, ui.examDate, (value) => {
+    ui.examDate = value;
+    redrawContinue(id);
+  }));
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "asst-format-primary";
+  if (view.project.state === "pending") {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    const spinner = document.createElement("span");
+    spinner.className = "asst-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    button.append(spinner, document.createTextNode(t("asstFormatCreating")));
+  } else {
+    button.textContent = t("asstFormatCreateProject", { count: view.count });
+    button.addEventListener("click", () => createChatProject(id));
+  }
+  wrap.appendChild(button);
+  return wrap;
+}
+
+/* Exam date in one tap: the date the chat named, in a week, in two weeks, none - or the
+ * phone's own date picker. */
+function dateChips(today, found, selected, onPick) {
+  const wrap = document.createElement("div");
+  wrap.className = "asst-chips asst-date-chips";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", t("asstExamDate"));
+  const choices = examDateChoices(today, found);
+  const known = choices.some((choice) => choice.value === selected);
+  for (const choice of choices) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "asst-chip";
+    const label = choice.value ? new Date(`${choice.value}T12:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+    chip.textContent = t(choice.key, { date: label });
+    chip.setAttribute("aria-pressed", String(choice.value === selected));
+    chip.addEventListener("click", () => onPick(choice.value));
+    wrap.appendChild(chip);
+  }
+  const pick = document.createElement("label");
+  pick.className = `asst-chip asst-date-pick${known ? "" : " is-picked"}`;
+  const input = document.createElement("input");
+  input.type = "date";
+  input.className = "asst-date-input";
+  if (today) input.min = today;
+  if (!known && selected) input.value = selected;
+  input.setAttribute("aria-label", t("asstExamPick"));
+  input.addEventListener("change", () => { if (input.value) onPick(input.value); });
+  pick.append(document.createTextNode(!known && selected
+    ? new Date(`${selected}T12:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+    : t("asstExamPick")), input);
+  wrap.appendChild(pick);
+  return wrap;
+}
+
+function setFormatTopic(id, key, patch) {
+  if (state.active?.id !== id) return;
+  const format = state.active.continue_learning?.format;
+  const topic = format?.topics?.find((item) => item.key === key);
+  if (topic) Object.assign(topic, patch);
+}
+
+async function refreshLessonState(id) {
+  try {
+    const data = await api(apiUrl(id, "/lesson"));
+    if (state.active?.id === id && data.continue_learning) state.active.continue_learning = data.continue_learning;
+  } catch (_) { /* the card keeps what it showed */ }
+  redrawContinue(id);
+}
+
+/* A topic lesson or the project the server reports as being built, not by this page's own
+ * request in flight. */
+function serverPending(format, ui) {
+  const topics = Array.isArray(format?.topics) ? format.topics : [];
+  return topics.some((item) => item?.status === "pending" && !ui.busy.has(item.key))
+    || (format?.project?.status === "pending" && !ui.projectBusy);
+}
+
+/* Ask again every few seconds until nothing is pending. The server turns a build that
+ * never finished into "failed" after CONTINUE_LEARNING_PENDING_SECONDS, so this ends; the
+ * limit only guards against a server that cannot be reached. Stops when the chat changes
+ * (the card starts it again when it is shown). */
+function pollFormat(id) {
+  if (state.formatPolls.has(id)) return;
+  const started = Date.now();
+  const tick = async () => {
+    if (state.active?.id !== id) {
+      state.formatPolls.delete(id);
+      return;
+    }
+    await refreshLessonState(id);
+    const format = state.active?.id === id ? state.active.continue_learning?.format : null;
+    if (!format || !serverPending(format, formatUi(id)) || Date.now() - started > LESSON_POLL_LIMIT_MS * 2) {
+      state.formatPolls.delete(id);
+      return;
+    }
+    state.formatPolls.set(id, window.setTimeout(tick, LESSON_POLL_MS));
+  };
+  state.formatPolls.set(id, window.setTimeout(tick, LESSON_POLL_MS));
+}
+
+async function startTopicLesson(id, key, subject = "") {
+  const ui = formatUi(id);
+  if (ui.busy.has(key)) return;
+  ui.busy.add(key);
+  ui.note = null;
+  ui.picker = null;
+  redrawContinue(id);
+  try {
+    const data = await api(apiUrl(id, "/lesson"), { method: "POST", body: subject ? { topic_key: key, subject } : { topic_key: key } });
+    if (data.httpStatus === 202 || data.status === "pending") {
+      // Built by another request: the card shows it as pending and asks until it is done.
+      ui.busy.delete(key);
+      setFormatTopic(id, key, { status: "pending" });
+      redrawContinue(id);
+      return;
+    }
+    ui.busy.delete(key);
+    setFormatTopic(id, key, { status: "ready", url: data.url });
+  } catch (error) {
+    ui.busy.delete(key);
+    if (error.code === "subject_needed") {
+      ui.picker = { key, subjects: error.details?.subject_choices || [] };
+    } else if (error.code === "conversation_busy") {
+      toast(t("asstStillAnswering"));
+    } else if (error.details?.upgrade_url) {
+      ui.note = { text: error.message, error: false, link: { href: error.details.upgrade_url, label: t("asstSeePremium") } };
+      refreshLessonState(id);
+      return;
+    } else if (error.login) {
+      showError(error);
+    } else {
+      setFormatTopic(id, key, { status: "failed" });
+      ui.note = { text: error.status === 422 || error.status === 404 ? error.message : t("asstLessonFailed"), error: true };
+    }
+  }
+  redrawContinue(id);
+}
+
+async function createChatProject(id) {
+  const ui = formatUi(id);
+  if (ui.projectBusy) return;
+  ui.projectBusy = true;
+  ui.note = null;
+  redrawContinue(id);
+  try {
+    const data = await api(apiUrl(id, "/project"), { method: "POST", body: { exam_date: ui.examDate || "" } });
+    if (data.httpStatus === 202 || data.status === "pending") {
+      ui.projectBusy = false;
+      const format = state.active?.id === id ? state.active.continue_learning?.format : null;
+      if (format) format.project = { ...(format.project || {}), status: "pending" };
+      redrawContinue(id);
+      return;
+    }
+    window.location.assign(data.url);
+    return;
+  } catch (error) {
+    ui.projectBusy = false;
+    if (error.code === "conversation_busy") {
+      toast(t("asstStillAnswering"));
+    } else if (error.details?.upgrade_url) {
+      ui.note = { text: error.message, error: false, link: { href: error.details.upgrade_url, label: t("asstSeePremium") } };
+    } else if (error.login) {
+      showError(error);
+    } else {
+      ui.note = { text: error.message || t("asstRequestFailed"), error: true };
+    }
+  }
+  redrawContinue(id);
+}
+
+/* A PDF of exam material: the chat's photo reader reads photos only, so the PDF goes to
+ * the one project creation path instead of ending in an error (owner decision). */
+const PDF_TYPES = new Set(["application/pdf", "application/x-pdf"]);
+
+function isPdf(file) {
+  return Boolean(file) && (PDF_TYPES.has(file.type) || /\.pdf$/i.test(file.name || ""));
+}
+
+function showPdfPanel(file) {
+  const panel = el("asstPdfPanel");
+  if (!panel || !file) return;
+  state.pdf = { file, examDate: "" };
+  el("asstPdfTitle").textContent = t("asstPdfTitle", { name: file.name || "PDF" });
+  drawPdfDates();
+  panel.hidden = false;
+  el("asstPdfCreate").focus();
+}
+
+function drawPdfDates() {
+  const box = el("asstPdfDates");
+  if (!box || !state.pdf) return;
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  box.replaceChildren(dateChips(iso, "", state.pdf.examDate, (value) => {
+    state.pdf.examDate = value;
+    drawPdfDates();
+  }));
+}
+
+function hidePdfPanel() {
+  const panel = el("asstPdfPanel");
+  if (panel) panel.hidden = true;
+  state.pdf = null;
+  const input = el("asstPdf");
+  if (input) input.value = "";
+}
+
+async function createPdfProject() {
+  const job = state.pdf;
+  if (!job || job.busy) return;
+  job.busy = true;
+  const button = el("asstPdfCreate");
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    let id = state.activeId;
+    if (!id) {
+      const created = await api("/api/assistant/conversations", { method: "POST", body: { preset: el("asstPreset").value } });
+      id = created.conversation.id;
+    }
+    const form = new FormData();
+    form.append("materials", job.file, job.file.name || "material.pdf");
+    form.append("exam_date", job.examDate || "");
+    let response;
+    try {
+      response = await fetch(apiUrl(id, "/project"), { method: "POST", body: form, credentials: "same-origin",
+                                                      headers: { Accept: "application/json" } });
+    } catch (_) {
+      throw Object.assign(new Error(t("asstOffline")), { network: true });
+    }
+    const data = (response.headers.get("Content-Type") || "").includes("json") ? await response.json() : null;
+    if (!response.ok || !data || data.ok === false) {
+      throw Object.assign(new Error(data?.error || t(failureKey({ status: response.status }))),
+                          { status: response.status, details: data?.details || {} });
+    }
+    hidePdfPanel();
+    window.location.assign(data.url);
+  } catch (error) {
+    job.busy = false;
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    showError(error);
+  }
+}
+
+function setupPdfHandoff() {
+  const input = el("asstPdf");
+  if (!input || page.dataset.studyFormat !== "on") return;
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (file) showPdfPanel(file);
+  });
+  el("asstPdfCancel").addEventListener("click", hidePdfPanel);
+  el("asstPdfCreate").addEventListener("click", createPdfProject);
 }
 
 /* -------------------------------------------------------------------- thread */
@@ -1577,7 +2141,10 @@ function setupDropAndPaste() {
     depth = 0;
     zone.hidden = true;
     const files = [...event.dataTransfer.files];
-    if (files.length) state.tray.add(files);
+    const pdf = files.find(isPdf);
+    if (pdf && el("asstPdfPanel")) showPdfPanel(pdf);
+    const photos = files.filter((file) => !isPdf(file) || !el("asstPdfPanel"));
+    if (photos.length) state.tray.add(photos);
   });
   el("asstInput").addEventListener("paste", (event) => {
     const files = [...(event.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
@@ -1629,6 +2196,7 @@ function init() {
     });
   }
   setupDropAndPaste();
+  setupPdfHandoff();
 
   el("asstNew").addEventListener("click", () => newChat());
   el("asstHeadNew").addEventListener("click", () => newChat());

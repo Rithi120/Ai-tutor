@@ -243,7 +243,10 @@ class ModerationWorkflowTests(unittest.TestCase):
 
     # ------------------------------------------------------------- re-moderation
 
-    def test_editing_after_approval_re_moderates_and_unpublishes_meanwhile(self):
+    def test_editing_after_approval_re_moderates_and_keeps_the_approved_version_public(self):
+        # Owner decision 2026-11-13 (was: unpublished meanwhile). The edit is re-moderated
+        # and rejected; the previously approved snapshot stays public and the rejected
+        # text is never served.
         set_id = self._create_set()
         public_id = self._publish(set_id).get_json()["id"]
         self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 1)
@@ -255,7 +258,12 @@ class ModerationWorkflowTests(unittest.TestCase):
             resubmitted = self.author.post(f"/api/community/sets/{public_id}/resubmit")
         self.assertEqual(resubmitted.status_code, 200)
         self.assertEqual(resubmitted.get_json()["moderation"]["decision"], "reject")
-        self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 0)
+        self.assertEqual(resubmitted.get_json()["update_state"], "action_needed")
+        self.assertEqual(len(self.author.get("/api/community/library").get_json()["sets"]), 1)
+        served = self._register("bob").get(f"/api/community/sets/{public_id}").get_json()["set"]
+        self.assertEqual([card["front"] for card in served["cards"]],
+                         [card["front"] for card in BIOLOGY_CARDS])
+        self.assertNotIn("worthless", json.dumps(served))
 
     def test_a_stored_decision_does_not_survive_a_content_change(self):
         set_id = self._create_set()

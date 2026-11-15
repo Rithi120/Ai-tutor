@@ -513,11 +513,15 @@ class LeagueTests(Base):
         client = self.client_for("alice")
         client.post("/settings/profile/preferences", data={"profile_public": "on"})   # leagues unticked
         db.session.expire_all()
-        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 0)
+        # Since 2026-11 (owner decision) the week's entry is kept as "withdrawn" - hidden
+        # from every ranking - instead of deleted, so leaving cannot dodge a result.
+        entries = application.LeagueEntry.query.filter_by(user_id=alice.id).all()
+        self.assertEqual([entry.outcome for entry in entries], ["withdrawn"])
         application.award_xp(alice.id, "test", 20, "x2")
         application.record_learning_event(alice.id, "practice_question_completed", "q", metadata={"correct": True}, xp=3)
         db.session.commit()
-        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 0)
+        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 1)
+        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id, outcome="").count(), 0)
         self.assertEqual(db.session.get(application.UserGamificationProfile, alice.id).total_xp, 543)
         self.assertEqual(client.get("/leaderboard").status_code, 200)
 

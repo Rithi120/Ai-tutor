@@ -11,7 +11,10 @@
     <div>
       <p class="eyebrow">{{ _('LEARNOVA LEAGUES') }}</p>
       <h1>{{ view.league.name }}</h1>
-      <p class="league-timer" data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"></p>
+      {# Server text first (works without JavaScript); profile.js keeps it ticking and, once the
+         week is over, says so and reloads once after the short close grace. #}
+      <p class="league-timer" data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"
+         data-countdown-ended="{{ _('The week has ended. Results in a moment.') }}" data-countdown-reload>{{ _('Week ends in {time}', time=view.time_left) }}</p>
     </div>
     <ol class="league-ladder" aria-label="{{ _('All leagues') }}" data-tour-target="league-ladder">
       {% for item in view.leagues %}<li class="{{ 'is-current' if item.current }}{{ ' is-passed' if item.tier < view.league.tier }}" style="--league: {{ item.colour }}; --league-dark: {{ item.colour_dark }}" title="{{ item.name }}"><span class="league-crest league-{{ item.key }}" aria-hidden="true"></span><span class="visually-hidden">{{ item.name }}{% if item.current %} ({{ _('your league') }}){% endif %}</span></li>{% endfor %}
@@ -25,6 +28,10 @@
        {% else %}{{ _('Last week you finished #{rank} with {xp} XP and stayed in the {league}.', rank=view.last_result.rank, xp=view.last_result.xp, league=view.last_result.league_after) }}{% endif %}</p>
     <button type="button" class="ghost-button" data-dismiss-result>{{ _('Got it') }}</button>
   </section>
+  {% endif %}
+
+  {% if view.results_pending %}
+  <p class="league-note" role="status">{{ _('Last week has ended. Your result is being calculated and will appear here shortly.') }}</p>
   {% endif %}
 
   {% if not view.participating %}
@@ -47,6 +54,14 @@
         {% elif view.me.zone == 'demotion' %}{{ _('A lesson or two this week can lift you out of it.') }}
         {% else %}{{ _('{xp} XP this week. Every bit of learning counts.', xp=view.me.weekly_xp) }}{% endif %}</small></div>
   </section>
+  {# Gaps are computed on the server (league_rules.xp_gaps); ties go to whoever got there first. #}
+  <ul class="league-gaps" aria-label="{{ _('Your week in numbers') }}">
+    <li><b>{{ view.me.weekly_xp }}</b> {{ _('XP this week') }}</li>
+    {% if view.me.rank == 1 %}<li class="league-gap-top">{{ _('You are in first place') }}</li>
+    {% elif view.me.xp_to_next_rank %}<li>{{ _('{xp} XP to pass #{rank}', xp=view.me.xp_to_next_rank, rank=view.me.rank - 1) }}</li>{% endif %}
+    {% if view.me.xp_to_promotion %}<li class="league-gap-up">{{ _('{xp} XP to reach the promotion zone', xp=view.me.xp_to_promotion) }}</li>{% endif %}
+    {% if view.me.xp_to_leave_demotion %}<li class="league-gap-down">{{ _('{xp} XP to leave the demotion zone', xp=view.me.xp_to_leave_demotion) }}</li>{% endif %}
+  </ul>
   <ol class="league-table" aria-label="{{ _('Ranking this week') }}">
     {% for row in view.standings %}
     {% if row.rank == view.promote + 1 and view.promote %}<li class="league-divider league-divider-up" aria-hidden="true"><span>{{ _('Promotion zone') }} ↑</span></li>{% endif %}
@@ -61,6 +76,26 @@
   </ol>
   {% endif %}
 
+  <section class="league-history" aria-labelledby="leagueHistoryTitle" data-league-history>
+    <h2 id="leagueHistoryTitle">{{ _('Your last weeks') }}</h2>
+    {% if view.history %}
+    <ol class="league-history-list">
+      {% for week in view.history %}
+      <li class="league-history-row league-move-{{ week.moved }}" style="--league: {{ week.league.colour }}; --league-dark: {{ week.league.colour_dark }}">
+        <span class="league-crest league-{{ week.league.key }}" aria-hidden="true"></span>
+        <span class="league-history-main"><b>{{ week.league.name }}</b><small>{{ week.week_label }}</small></span>
+        <span class="league-history-result">
+          <span>{% if week.rank and week.size %}{{ _('Rank {rank} of {size}', rank=week.rank, size=week.size) }} · {% endif %}{{ week.xp }} XP</span>
+          <span class="league-history-chip"><span aria-hidden="true">{{ '↑' if week.moved == 'up' else '↓' if week.moved == 'down' else '=' }}</span> {{ week.outcome_label }}{% if week.moved != 'same' %} · {{ week.league_after.name }}{% endif %}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="league-history-empty">{{ _('Your finished weeks will appear here: league, rank, XP and whether you moved up or down.') }}</p>
+    {% endif %}
+  </section>
+
   <section class="league-explainer" data-tour-target="league-rules">
     <h2>{{ _('How leagues work') }}</h2>
     <ul>
@@ -68,6 +103,7 @@
       <li>{{ _('When the week ends on Monday at midnight, the top places move up and the bottom places move down. Smaller groups have smaller zones.') }}</li>
       <li>{{ _('Weekly XP starts again from zero each week. Your level and total XP never reset.') }}</li>
       <li>{{ _('Not for you? You can turn leagues off in Settings at any time.') }}</li>
+      <li>{{ _('Leaving in the middle of a week does not avoid a demotion: if you are in the demotion zone when you leave, you move down a league.') }}</li>
     </ul>
   </section>
 </main>

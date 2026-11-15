@@ -393,6 +393,8 @@ stays quiet:
   up, move down, regenerate, duplicate and delete all live in that menu instead of a
   column of icons, and per-card explanation, hint, difficulty and tags stay in the
   existing "More options" disclosure.
+* **The card's Type** — *Word*, *Sentence* or *Other* — is the first group in the same
+  `⋯` menu: three buttons, one tap, shown for every set (see *Card type* below).
 * **The fields are underlines, not boxes**, and start one line tall, growing with what is
   written. A one-word term no longer occupies a fixed five-line box.
 * An empty card always waits at the bottom, so adding the next one is typing rather than
@@ -401,6 +403,44 @@ stays quiet:
 Nothing was removed except `#metaVisibility`, a `<select>` that offered exactly one
 choice. `tests/test_creator_ux.py` pins the arrangement: what is visible before anything
 is opened, and that every advanced control is still reachable one level down.
+
+### Card type: Word, Sentence, Other
+
+Every card has a Type, set with one tap in the editor's `⋯` row menu. Nothing guesses it:
+a new card, an AI-generated card and a card made before the Type existed have no type,
+show *Word* (the safe default) and are saved without one, so their data is never
+rewritten. The vocabulary import still labels its cards itself (word, phrase or sentence,
+from the column each row stood in); a *phrase* shows as *Word* and stays a phrase until
+another type is tapped.
+
+* **Storage.** The type is one reserved tag in `Flashcard.tags_json` — `word`, `phrase`,
+  `sentence` or `other` — the convention the vocabulary import already used, so there is
+  no migration. The API takes and returns `kind` (`""` for none):
+  `learnova/flashcards/service.py::normalize_card` puts the kind **first** and removes any
+  other kind tag, so the 8-tag cap can never drop it; without a `kind` key (AI generation,
+  project sync, community copies, the importer) the tags are kept exactly as given. The
+  editor keeps the kind apart from the student's own tags, so the Tags field can no longer
+  delete it, and a typed `sentence` or `other` there is not a tag. AI-generated cards have
+  `word`/`phrase`/`sentence`/`other` removed from their topic tags. Duplicating a set,
+  publishing it and saving a community copy keep the tag (they copy the tags).
+* **Study.** *Words only* covers word, phrase and untagged cards; *Sentences only* covers
+  sentences; *Other* cards are in neither (only in *All cards* and the other objectives).
+  Each scope is offered when it is a real part of the set. Multiple-choice and true/false
+  options come from cards of the same type (a sentence's options are sentences, a word's
+  are words, an Other card's are Other cards), as long as one alternative of that type
+  exists; otherwise the whole set is used. A set with no Sentence or Other card keeps the
+  old rule (three same-kind alternatives, else the whole set), so legacy and project sets
+  study exactly as before. A typed sentence is graded on its words —
+  commas, quotes, dashes and `¿`/`¡` do not count, letters, accents and apostrophes
+  still do — and the study screen marks a sentence card with a small
+  "Sentence" cue. Words keep today's strict spelling check; Other cards study exactly
+  like cards always did.
+* **Not changed.** `VocabularyEntry.entry_kind` (the old list-practice API, out of the
+  flow) is not updated from the editor and has no *other*.
+* **Tests.** `tests/test_flashcard_kind.py` (storage, API round trips through create,
+  edit, reload, duplicate, publish and save-copy, scopes, distractors, grading) and
+  `tests/test_flashcard_kind_browser.py` (the editor rules in a browser, and the menu at
+  390 and 320 px: tap, save, reload, same type selected).
 
 ### One-word card creation
 
@@ -518,7 +558,8 @@ each entry comes from the column it stood in, not from a heuristic: the word col
 words and phrases, the examples column gives sentences, and every translated example
 also becomes a sentence entry of its own, and the kind rides on each card as a tag, so a
 flashcard session on the set can be narrowed to *Words only* or *Sentences only* (the two
-objectives appear in the session settings once a set holds both kinds). Rows read
+objectives appear in the session settings once a set holds both kinds). The student can
+change a card's type later in the editor (*Card type: Word, Sentence, Other* above). Rows read
 confidently from the table (and sentences) are never sent for a second opinion; the
 opt-in second opinion for a doubtful row is the only AI call the import can make, and it
 runs after extraction, never on its critical path. On a server without the local engine
@@ -528,6 +569,10 @@ page — a new photo taken from the review page (`POST
 /api/vocabulary/imports/<id>/rescan`) replaces only the rows still open, keeps every
 settled or typed row in place, and adds what the first reading missed. The page photo is
 one tap away on the review page so a flagged word can be checked against the book.
+**Several pages per import** (up to `VOCABULARY_MAX_PAGES`, 40): photos and PDFs gather in
+one ordered gallery with a separate camera button, are uploaded and read one page per
+request, and keep their page order; a rescan replaces one page
+([docs/MULTI_IMAGE_UPLOADS.md](docs/MULTI_IMAGE_UPLOADS.md)).
 
 **One page, one home.** The vocabulary trainer is the import page (`/vocabulary/import`,
 with the scanner as its fourth method); a vocabulary list lives on its flashcard set — the
@@ -551,18 +596,18 @@ Limits and retention are configurable through the `MAX_FLASHCARD_*`, `FLASHCARD_
 ### Exam autopilot (scan → exam date → start)
 
 Give a project an exam date — on the upload form or the one-field form on the project
-page — and Learnova plans the preparation itself: it reads the **competencies** the exam
-requires from the Kompetenzraster (or derives them from the material), checks which ones
-the notes actually cover (every "covered" must quote the notes and the quote is verified),
-builds the day-by-day schedule, and from then on decides the **next optimal action**:
-teach the first topic that isn't known, practise it until the knowledge gate says it is,
-revisit older weak material when enough reviews are due, and in the final days switch to
-retrieval and a mock exam. The card on the project page and the Overview shows *Today*,
-*Progress*, *Estimated grade (1–6, a range that widens with thin evidence, with the
-reasons it moved)*, *Weakness*, *Next*, and one **Start** button. Two diagnosis types were
-added for the loop — wording/vocabulary and application/transfer — and after a mistake the
-confirming question must transfer the idea to a new situation. Details and limits:
-[docs/EXAM_AUTOPILOT.md](docs/EXAM_AUTOPILOT.md).
+page — and Learnova plans the preparation itself: the topics, the day-by-day schedule and
+one **Next** button that does the next planned thing. With a **Kompetenzraster** (uploaded
+on the create form, added later under Original materials, or an existing file marked with
+one tap "This file is my Kompetenzraster") every "Ich kann" row becomes its own tracked
+competency: grounded on its page (a row the page does not say is never stored), attached to
+one topic without being merged with a similar one, counted against the page ("raster.pdf
+p. 2 lists 15 “Ich kann” rows, Learnova found 12" with one-tap fixes), and shown under its
+topic with a status (found, not started, being taught, practised, needs revision, mastered,
+not in this exam). The project counts as complete only when every competency is practised
+or mastered. There is no grade estimate (no documented grading scale). Details and limits:
+[docs/EXAM_AUTOPILOT.md](docs/EXAM_AUTOPILOT.md) and "Kompetenzraster inventory" in
+[docs/PROJECT_MODE.md](docs/PROJECT_MODE.md).
 
 ### Knowledge-gated tests (3–15 questions, stop at 80% knowledge)
 

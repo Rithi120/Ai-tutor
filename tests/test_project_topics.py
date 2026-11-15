@@ -277,7 +277,9 @@ class TopicIdentityTests(unittest.TestCase):
             with self.subTest(order=order):
                 topics = [stub(title, [page]) for page, title in enumerate(order, start=1)]
                 merged = merge_topics(topics, page_order={1: 1, 2: 2, 3: 3})
-                self.assertEqual(len(merged), 2)
+                # Phase 1.1: a compound title ("Bentham und Mill") joins two topics and is
+                # never folded into either (it used to absorb the first to arrive): 3 topics.
+                self.assertEqual(len(merged), 3)
                 keys = [set(topic["source_page_ids"]) for topic in merged]
                 bentham_page, mill_page = order.index(bentham) + 1, order.index(mill) + 1
                 self.assertFalse(any({bentham_page, mill_page} <= pages for pages in keys))
@@ -805,6 +807,71 @@ class ReconcileReviewTests(unittest.TestCase):
         self.assertEqual([(item_id, topic["title"]) for item_id, topic in result.update],
                          [(1, "Utilitarismus nach Bentham")])
         self.assertEqual([topic["title"] for topic in result.create], ["Utilitarismus nach Mill"])
+
+
+class CompoundTitleTests(unittest.TestCase):
+    """Spec 1.1: a Kompetenzraster header that joins topics never absorbs one of them."""
+
+    HEADER, LINEAR, QUADRATIC = "Lineare und quadratische Funktionen", "Lineare Funktionen", "Quadratische Funktionen"
+    SYSTEMS = "Lineare Gleichungssysteme"
+
+    def topics(self, *titles):
+        return [present(normalize_topic({"title": title, "source_page_ids": [101]}, {101})) for title in titles]
+
+    def test_is_compound(self):
+        for title in (self.HEADER, "Utilitarismus: Bentham und Mill", "Prisma, Zylinder", "Ursache/Wirkung",
+                      "Kant vs. Mill", "Lineare Funktionen und Gleichungen"):
+            with self.subTest(title=title):
+                self.assertTrue(project_topics.is_compound(title))
+        for title in (self.LINEAR, "Satz des Pythagoras", "Grundlagen und Einführung", "1. Weltkrieg", ""):
+            with self.subTest(title=title):
+                self.assertFalse(project_topics.is_compound(title))
+
+    def test_the_header_never_absorbs_either_function_topic_in_any_order(self):
+        # The key rule alone still says "same" (the header adds one word): the merge refuses.
+        self.assertTrue(same_topic(topic_key(self.LINEAR), topic_key(self.HEADER)))
+        import itertools
+        for order in itertools.permutations((self.HEADER, self.LINEAR, self.QUADRATIC, self.SYSTEMS)):
+            with self.subTest(order=order):
+                merged = merge_topics(self.topics(*order), page_order={101: 1})
+                self.assertEqual(sorted(topic["title"] for topic in merged),
+                                 sorted((self.HEADER, self.LINEAR, self.QUADRATIC, self.SYSTEMS)))
+
+    def test_one_added_conjunction_keeps_a_topic_apart_but_equal_keys_still_merge(self):
+        merged = merge_topics(self.topics(self.LINEAR, "Lineare Funktionen und Gleichungen"), page_order={101: 1})
+        self.assertEqual(len(merged), 2)
+        merged = merge_topics(self.topics(self.HEADER, "Quadratische und lineare Funktionen"), page_order={101: 1})
+        self.assertEqual(len(merged), 1, "the same compound twice is one topic")
+        merged = merge_topics(self.topics("Kategorischer Imperativ", "Kants kategorischer Imperativ"), page_order={101: 1})
+        self.assertEqual(len(merged), 1, "the ordinary one-word rule is unchanged")
+
+    def test_the_compound_pair_is_still_offered_as_a_merge_suggestion(self):
+        merged = merge_topics(self.topics(self.HEADER, self.LINEAR), page_order={101: 1})
+        reasons = [suggestion["reasons"] for suggestion in overlap_suggestions(merged)]
+        self.assertTrue(any("contained_title" in item for item in reasons))
+
+    def test_reconcile_never_lets_a_compound_claim_a_stored_narrower_topic(self):
+        stored = [StoredTopic(1, topic_key(self.LINEAR), self.LINEAR, has_progress=True)]
+        result = reconcile(stored, self.topics(self.HEADER))
+        self.assertEqual(result.update, [])
+        self.assertEqual([topic["title"] for topic in result.create], [self.HEADER])
+        self.assertEqual(result.keep, [1])
+        stored = [StoredTopic(1, topic_key(self.HEADER), self.HEADER, has_progress=True)]
+        result = reconcile(stored, self.topics(self.QUADRATIC))
+        self.assertEqual(result.update, [], "a narrower topic never takes the stored compound either")
+
+    def test_a_math_kompetenzraster_keeps_its_distinct_topics_in_every_order(self):
+        rows = ["Lineare Funktionen", "Quadratische Funktionen", "Quadratische Gleichungen", "Lineare Gleichungssysteme",
+                "Lineare und quadratische Funktionen", "Potenzen", "Wurzeln", "Satz des Pythagoras"]
+        distinct = {"Lineare Funktionen", "Quadratische Funktionen", "Quadratische Gleichungen",
+                    "Lineare Gleichungssysteme", "Lineare und quadratische Funktionen"}
+        rng = random.Random(11)
+        for _ in range(60):
+            order = rows[:]
+            rng.shuffle(order)
+            with self.subTest(order=order):
+                titles = {topic["title"] for topic in merge_topics(self.topics(*order), page_order={101: 1})}
+                self.assertLessEqual(distinct, titles)
 
 
 class BatchPropertyTests(unittest.TestCase):

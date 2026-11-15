@@ -276,11 +276,16 @@ appends its own suffix:
 
 | Label | What it is |
 | --- | --- |
-| `assistant_chat:v5` | The chat assistant: tutoring layer, STUDENT CONTEXT, hidden CHIPS/TOPIC lines, one line per table row, decimal commas in formulas as `{,}` ([ASSISTANT.md](ASSISTANT.md)) |
+| `assistant_chat:v6` | The chat assistant: tutoring layer, STUDENT CONTEXT, hidden CHIPS/TOPIC/EXAM lines, one line per table row, decimal commas in formulas as `{,}` ([ASSISTANT.md](ASSISTANT.md)) |
 | `tutor_chat:v6` | The lesson tutor chat: `\( … \)` / `\[ … \]` with single backslashes, the lesson state as plain text, one line per table row, decimal commas as `{,}` |
 | `image_understanding:chat1+chat` | A chat photo's compact reading (no bbox, author or confidence; cut-off readings kept as partial) ([VISION.md](VISION.md)) |
 | `image_understanding:v2+lesson` / `+solution` | A photo reading for a New lesson, or for a photographed answer (the full reading) |
-| `lesson_generation:<version>+chat1` | A lesson built with Continue Learning, derived from the current `lesson_generation` version (today `lesson_generation:v9+chat1`) |
+| `lesson_generation:<version>+chat1` | A lesson built with Continue Learning, derived from the current `lesson_generation` version (today `lesson_generation:v10+chat1`) |
+| `lesson_generation:<version>+chat2` | One topic lesson of exam material in the chat (spec 1.2): series scope and the Short Lesson parts |
+| `lesson_generation:<version>+short1` | A Short Lesson from `/api/analyze` (spec 1.3) on the teaching engine |
+| `lesson_generation:v10` | Spec Phase 2: the notes' formulas taught first in their notation (`FORMULA_TEACHING_RULE`, only when the topic map has one), "rule" and optional "alternative" (Additional tip) steps for maths and the sciences ([PROJECT_MODE.md](PROJECT_MODE.md#teacher-specific-formulas-spec-phase-2-2026-11-13)) |
+| `question_generation:v3` | `FORMULA_PRACTICE_RULE`: `notes_formulas` and a rotating `formula_task` with a worked solution |
+| `final_exam_generation:v4` | Each section's notes formulas (`formulas`) and `EXAM_FORMULA_RULE` for calculation tasks |
 
 Ledger rows are buffered during a request and written on a separate connection after the
 request's own transaction ends, so a route cannot commit half‑built work by accident and

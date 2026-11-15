@@ -777,7 +777,7 @@ LEAGUES = Section(
     anchor='[data-tour-target="league-ladder"]', url="/leaderboard", requires=_LEAGUES,
     steps=(
         Step("leagues-ladder", "leaderboard", "Seven leagues",
-             "Climb from Bronze all the way up to Legendary. When the week ends, the top {league_up} move up a "
+             "Climb from Bronze all the way up to Diamond. When the week ends, the top {league_up} move up a "
              "league and the bottom {league_down} move down.",
              targets=('[data-tour-target="league-ladder"]',), icon="🪜"),
         Step("leagues-standing", "leaderboard", "This week's group",
