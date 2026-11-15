@@ -350,6 +350,16 @@ class KnowledgeGateIntegrationTests(unittest.TestCase):
         state = application.SESSIONS[session_id]
         self.assertEqual([item["concept"] for item in state["focus_concepts"]], ["Newton's second law"])
         self.assertEqual((state["min_questions"], state["max_questions"]), (3, 15))
+        # The exam's review lesson and this gap practice were made from the project: both
+        # carry it (Lesson.project_id), so deleting the project removes them too.
+        with application.app.app_context():
+            project_id = application.db.session.get(application.FinalExam, exam_id).project_id
+            review = application.db.session.scalar(application.db.select(application.Lesson).where(
+                application.Lesson.title.like("Exam review:%")))
+            gap = application.db.session.scalar(application.db.select(application.Lesson).where(
+                application.Lesson.session_id == session_id))
+            self.assertEqual((review.project_id, gap.project_id), (project_id, project_id))
+            self.assertEqual((review.section_id, gap.section_id), (None, None))
 
     def test_exam_diagnosis_is_bounded_and_skips_closed_questions(self):
         application.app.config.update(EXAM_DIAGNOSIS_LIMIT=1)

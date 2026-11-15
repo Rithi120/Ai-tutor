@@ -67,6 +67,27 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false
+      # Login & security (docs/AUTHENTICATION.md): set in the dashboard; empty = not offered.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: APPLE_CLIENT_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      - key: SMS_PROVIDER
+        sync: false
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_API_SECRET
+        sync: false
+      - key: SMS_SENDER
+        sync: false
       - key: GROQ_MODERATION_MODEL
         value: openai/gpt-oss-safeguard-20b
       - key: GROQ_MODERATION_ESCALATION_MODEL
@@ -108,6 +129,10 @@ services:
         sync: false
       # Tap-a-word scanner translations: optional. Without a key the free MyMemory API answers.
       - key: DEEPL_API_KEY
+        sync: false
+      # Real video cards in chat and Short Lessons: optional. Without a key lessons keep their
+      # "Search YouTube for ..." links (docs/LEARNING_RESOURCES.md). Set it in the dashboard only.
+      - key: YOUTUBE_API_KEY
         sync: false
       # Premium routing is off until these name a "provider:model" (see .env.example).
       - key: AI_PREMIUM_REASONING_MODEL

@@ -153,6 +153,21 @@
   background: color-mix(in srgb, var(--ln-amber) 16%, transparent);
   color: color-mix(in srgb, var(--ln-amber) 55%, var(--ln-ink));
 }
+/* Reliability V1: a calculation Learnova recomputed, and one it could not confirm. */
+.lp-origin-checked {
+  background: color-mix(in srgb, var(--ln-violet) 12%, transparent);
+  color: color-mix(in srgb, var(--ln-violet) 70%, var(--ln-ink));
+}
+.lp-math-check {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--ln-amber);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ln-amber) 12%, transparent);
+  color: var(--ln-ink);
+  font-size: .92rem;
+  overflow-wrap: anywhere;
+}
 .lp-page { background: var(--ln-canvas-deep); color: var(--ln-muted); font-weight: 600; }
 /* Page labels carry the file name ("Ethik-Arbeitsblatt-2.pdf p. 1"): wrap inside the pill. */
 .lp-page { max-width: 100%; overflow-wrap: anywhere; }
@@ -454,3 +469,7 @@ html[dir="rtl"] .lp-cause-arrow { transform: scaleX(-1); }
 @media (prefers-reduced-motion: reduce) {
   .lp-flip-inner { transition: none; }
 }
+
+/* The small icon in front of a lesson part's title (app.js PART_ICONS). */
+.lp-title-icon { display: inline-block; margin-inline-end: .4rem; font-size: .9em; line-height: 1; vertical-align: .05em; }
+.lp-title-icon:empty { display: none; }

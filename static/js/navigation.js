@@ -27,6 +27,18 @@ navigation?.querySelectorAll(".app-menu-trigger").forEach(trigger => {
   });
 });
 navigation?.querySelectorAll(".app-dropdown a").forEach(link => link.addEventListener("click", () => closeDesktopMenus()));
+// The grouped "More" (components/_nav_groups.html): a group row in the dropdown is a menu
+// item with a submenu, so it says whether it is open.
+navigation?.querySelectorAll("[data-nav-group]").forEach(group => group.addEventListener("toggle", () => {
+  const summary = group.querySelector(":scope > summary");
+  if (summary?.hasAttribute("aria-expanded")) summary.setAttribute("aria-expanded", String(group.open));
+}));
+
+// A menu item the arrow keys may move to: not inside a closed group (a group's own row is).
+function reachable(item) {
+  const group = item.tagName === "SUMMARY" ? item.parentElement?.parentElement?.closest("details") : item.closest("details");
+  return !group || group.open;
+}
 // The tutorial (static/js/tour.js) can light a link inside an open menu: its own card
 // taking focus or a click on Next must not close that menu under it.
 function heldByTour(node, scope) {
@@ -95,7 +107,7 @@ document.addEventListener("keydown", event => {
   }
   const openMenu = document.querySelector(".app-dropdown.is-open");
   if (openMenu && ["ArrowDown", "ArrowUp"].includes(event.key)) {
-    const items = [...openMenu.querySelectorAll("[role='menuitem']")];
+    const items = [...openMenu.querySelectorAll("[role='menuitem']")].filter(reachable);
     const current = items.indexOf(document.activeElement);
     const offset = event.key === "ArrowDown" ? 1 : -1;
     event.preventDefault();

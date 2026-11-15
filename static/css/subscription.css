@@ -70,3 +70,19 @@
 .admin-code-form :is(input, select) { max-width: 100%; min-width: 0; box-sizing: border-box; }
 .admin-code-form .sub-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 600; }
 .admin-code-form .sub-check input { flex: 0 0 auto; width: 22px; height: 22px; margin-top: 2px; }
+
+/* Bulk Premium vouchers (admin): one code per line, tables that scroll inside their card. */
+.voucher-codes { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--ln-line-strong); background: var(--ln-surface-solid); color: var(--ln-ink); font: 600 .82rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow-x: auto; overflow-wrap: normal; resize: vertical; }
+.voucher-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.voucher-actions button { min-height: 44px; }
+.voucher-quantity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; border: 1px solid var(--ln-line); border-radius: 12px; padding: 10px 12px; }
+.voucher-quantity legend { padding: 0 4px; font-weight: 700; }
+.voucher-quantity .sub-check { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
+.voucher-quantity label[for="voucher-custom"], .voucher-quantity #voucher-custom { flex-basis: 100%; }
+.voucher-quantity #voucher-custom { max-width: 10rem; min-height: 44px; }
+.voucher-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; margin-bottom: 12px; }
+.voucher-filter label { flex-basis: 100%; margin: 0; }
+.voucher-filter input, .voucher-filter select, .voucher-filter button { min-height: 44px; }
+.voucher-admin .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.voucher-admin .table-scroll table { min-width: 640px; }
+.voucher-admin th, .voucher-admin td { white-space: nowrap; }

@@ -24,6 +24,20 @@ ANONYMOUS_ROUTES = {
     '@app.route("/register", methods=["GET", "POST"])',
     '@app.route("/login", methods=["GET", "POST"])',
     '@app.post("/contact")',
+    # Provider and phone sign-in, onboarding before the account exists, email confirmation
+    # and password recovery (docs/AUTHENTICATION.md): there is no signed-in account yet.
+    '@app.get("/auth/<provider>/start")',
+    '@app.route("/auth/<provider>/callback", methods=["GET", "POST"])',
+    '@app.get("/auth/<provider>/finish")',
+    '@app.route("/auth/phone", methods=["GET", "POST"])',
+    '@app.route("/auth/phone/code", methods=["GET", "POST"])',
+    '@app.get("/auth/username-check")',
+    '@app.route("/auth/onboarding", methods=["GET", "POST"])',
+    '@app.get("/auth/verify-email/<token>")',
+    '@app.route("/auth/forgot", methods=["GET", "POST"])',
+    '@app.route("/auth/reset/<token>", methods=["GET", "POST"])',
+    # The public review list on /about (docs/REVIEWS.md), readable without an account.
+    '@app.get("/api/reviews")',
 }
 
 

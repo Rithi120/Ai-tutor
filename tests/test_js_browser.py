@@ -427,6 +427,21 @@ class NodeStyleTests(unittest.TestCase):
         # the feature chapters that start by themselves, since 2026-11-04).
         self.run_file("tour-rules.test.mjs", 32)
 
+    def test_the_image_collection_rule_suite(self):
+        # static/js/image-collection-rules.js: the multi-image upload's batches, order,
+        # limits, file checks and gestures (Project Mode and Vocabulary Mode, 2026-11-13).
+        self.run_file("image-collection-rules.test.mjs", 16)
+
+    def test_the_show_more_rule_suite(self):
+        # static/js/show-more-rules.js: how many items a long list shows, what each tap of
+        # "Show more" reveals and what the button says (dashboard and Settings, 2026-11-13).
+        self.run_file("show-more-rules.test.mjs", 7)
+
+    def test_the_answer_sections_suite(self):
+        # static/js/markdown-sections.js: labelled parts of a chat answer as sections, long
+        # answers folded except what the student must see (readability upgrade, 2026-11-14).
+        self.run_file("markdown-sections.test.mjs", 5)
+
 
 class RealKatexTests(_BrowserCase):
     """The gpt-oss shaped corpus through the real KaTeX 0.16.11 (opt-in, see the module doc)."""

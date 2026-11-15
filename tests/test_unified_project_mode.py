@@ -180,7 +180,9 @@ class CreationTests(Base):
         self.assertTrue(response.headers["Location"].endswith(f"/projects/{project.id}#topics"))
         with application.app.app_context():
             titles = [section.title for section in db.session.get(application.LearningProject, project.id).sections]
-        self.assertEqual(titles, ["Pythagoras", "Kreis", "Dreiecke"])
+        # Spec 1.1: one topic per line; a comma stays inside its topic ("Ableitung (Summen-,
+        # Produktregel)" used to be split into fragments).
+        self.assertEqual(titles, ["Pythagoras", "Kreis, Dreiecke"])
 
     def test_kompetenzraster_pages_count_as_teacher_marked(self):
         self.create(title="Bio", materials=[(io.BytesIO(page("white")), "notes.png", "image/png")],

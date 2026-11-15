@@ -732,29 +732,27 @@ def _project(data: Any, context: dict[str, Any]) -> None:
 
 
 def _competencies(data: Any, context: dict[str, Any]) -> None:
-    """competency_extraction: rows read from a Kompetenzraster, each pointing at pages.
+    """competency_extraction (v2): the rows of one Kompetenzraster page.
 
-    The vocabulary is fixed so the planner can rely on it; a covered/partial claim must
-    quote evidence (the app then checks the quote really appears in the notes).
+    Repaired, not rejected (like the lenient topic contract): only the list itself is
+    checked here - a dict with "competencies" (or "rows" / "kompetenzen") holding a list,
+    or a bare list. An empty list is a valid answer with `allow_empty` (a grid page with no
+    rows). Each row is cleaned by learnova/exam_prep/competencies.py: an unknown level or
+    importance falls back to the middle value, a row without a statement is dropped, and a
+    statement its page does not say is never stored as verified.
     """
 
-    rows = _list(_dict(data, "competencies").get("competencies"), "competencies", nonempty=True)
-    allowed = _ids(context, "source_page_ids")
-    for index, value in enumerate(rows):
-        row = _dict(value, f"competencies[{index}]")
-        _text(row.get("statement"), f"competencies[{index}].statement")
-        _text(row.get("topic"), f"competencies[{index}].topic")
-        if str(row.get("level") or "") not in {"basic", "intermediate", "advanced"}:
-            _fail(f"competencies[{index}].level is unsupported")
-        importance = row.get("importance")
-        if isinstance(importance, bool) or not isinstance(importance, int) or not 1 <= importance <= 3:
-            _fail(f"competencies[{index}].importance must be 1, 2 or 3")
-        coverage = str(row.get("coverage") or "")
-        if coverage not in {"covered", "partial", "missing"}:
-            _fail(f"competencies[{index}].coverage is unsupported")
-        _text(row.get("evidence"), f"competencies[{index}].evidence", allow_empty=coverage == "missing")
-        if allowed:
-            _validate_references(row.get("source_page_ids"), allowed, f"competencies[{index}].source_page_ids")
+    if isinstance(data, list):
+        rows = data
+    else:
+        root = _dict(data, "competencies")
+        value = next((root.get(name) for name in ("competencies", "rows", "kompetenzen")
+                      if isinstance(root.get(name), list)), None)
+        if value is None:
+            _fail("competencies must be a list")
+        rows = value
+    if not rows and not context.get("allow_empty"):
+        _fail("competencies must not be empty")
 
 
 def _vocabulary_page(data: Any, context: dict[str, Any]) -> None:

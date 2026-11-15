@@ -1,0 +1,83 @@
+{# Public reviews on the About page (app.py reviews_page_context). Only real, published
+   reviews are shown and counted; with none there is an empty state, never a 0.0 rating. #}
+{% set r = reviews %}
+{% set s = r.summary %}
+<section class="about-section reviews-section" id="reviews" aria-labelledby="about-reviews">
+  <h2 id="about-reviews">{{ _('What students think about Learnova') }}</h2>
+  {% if s.empty %}
+  <div class="reviews-empty">
+    <span class="reviews-empty-stars" aria-hidden="true">☆☆☆☆☆</span>
+    <p><b>{{ _('No reviews yet.') }}</b> {{ _('Learnova is new - the first reviews come from students who reach Level 3.') }}</p>
+  </div>
+  {% else %}
+  <div class="reviews-summary">
+    <div class="reviews-average">
+      <strong>{{ s.rounded_average|replace('.', ',') if current_language == 'de' else s.rounded_average }}</strong>
+      <span class="stars" role="img" aria-label="{{ _('{value} out of 5 stars', value=s.rounded_average) }}">{% for n in range(1, 6) %}<span class="{{ 'is-on' if n <= s.full_stars }}" aria-hidden="true">★</span>{% endfor %}</span>
+      <small>{{ _('1 published review') if s.total == 1 else _('{count} published reviews', count=s.total) }}</small>
+    </div>
+    <ul class="reviews-bars" aria-label="{{ _('Reviews per rating') }}">
+      {% for stars in (5, 4, 3, 2, 1) %}
+      <li><a href="{{ url_for('about', rating=stars, sort=r.sort) }}#reviews" class="{{ 'is-active' if r.rating == stars }}">
+        <span>{{ stars }} ★</span><span class="reviews-bar" aria-hidden="true"><i style="width: {{ s.percentages[stars] }}%"></i></span>
+        <span>{{ s.counts[stars] }} <small>({{ s.percentages[stars] }} %)</small></span></a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  <form class="reviews-filters" method="get" action="{{ url_for('about') }}#reviews" data-review-filters>
+    <label><span>{{ _('Show') }}</span>
+      <select name="rating">
+        <option value="all"{% if r.rating is none %} selected{% endif %}>{{ _('All reviews') }} ({{ s.total }})</option>
+        {% for stars in (5, 4, 3, 2, 1) %}<option value="{{ stars }}"{% if r.rating == stars %} selected{% endif %}>{{ _('{count} stars', count=stars) if stars > 1 else _('1 star') }} ({{ s.counts[stars] }})</option>{% endfor %}
+      </select></label>
+    <label><span>{{ _('Sort') }}</span>
+      <select name="sort">{% for key, label in r.sorts.items() %}<option value="{{ key }}"{% if r.sort == key %} selected{% endif %}>{{ _(label) }}</option>{% endfor %}</select></label>
+    <noscript><button class="secondary-button" type="submit">{{ _('Apply') }}</button></noscript>
+  </form>
+  <p class="reviews-note">{% if r.rating is none and r.sort == 'recommended' %}{{ _('Recommended order: highest ratings first, newest first within a rating. All {count} published reviews are included - choose a star filter to see each rating.', count=s.total) }}{% elif r.rating is none %}{{ _('All {count} published reviews.', count=s.total) }}{% else %}{{ _('{shown} of {count} published reviews have this rating.', shown=r.listing.total, count=s.total) }} <a href="{{ url_for('about', sort=r.sort) }}#reviews">{{ _('Show all reviews') }}</a>{% endif %}</p>
+  <div class="review-list" data-review-list aria-live="polite">{% with cards=r.listing.cards, reasons=r.reasons %}{% include "components/_review_cards.html" %}{% endwith %}</div>
+  {% if r.listing.has_more %}
+  <a class="secondary-button reviews-more" data-review-more href="{{ url_for('about', rating=r.rating or 'all', sort=r.sort, page=r.listing.page + 1) }}#reviews"
+     data-api="{{ url_for('reviews_api', rating=r.rating or 'all', sort=r.sort) }}" data-next-page="{{ r.listing.page + 1 }}">{{ _('Show more reviews') }}</a>
+  {% endif %}
+  {% endif %}
+
+  <div class="review-write" id="write-review">
+    {% if not current_user.is_authenticated %}
+    <p>{{ _('Learning with Learnova? Log in to write a review (from Level 3).') }} <a class="secondary-button" href="{{ url_for('login', next=url_for('about') ~ '#write-review') }}">{{ _('Log in') }}</a></p>
+    {% elif r.reason == 'level' %}
+    <p class="review-locked"><b>{{ _('You can submit a review starting at Level 3.') }}</b> {{ _('You are at Level {level}. Every lesson and practice brings you closer.', level=r.level) }}</p>
+    <a class="primary-button" href="{{ url_for('short_lesson') }}">{{ _('Keep learning') }}</a>
+    {% elif r.reason == 'blocked' %}
+    <p class="review-locked">{{ _('You cannot write reviews at the moment.') }}</p>
+    {% else %}
+    <h3>{{ _('Edit your review') if r.mine else _('Write your review') }}</h3>
+    {% if r.mine and r.mine.status != 'published' %}<p class="review-status">{{ _('Your review is waiting for a moderator.') if r.mine.status == 'pending' else _('Your review is not public at the moment. If you edit it, a moderator checks it again.') }}</p>{% endif %}
+    <form class="review-form" method="post" action="{{ url_for('submit_review') }}" data-review-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <fieldset class="star-picker">
+        <legend>{{ _('Your rating') }}</legend>
+        {% for n in range(1, 6) %}
+        <input type="radio" id="reviewStar{{ n }}" name="rating" value="{{ n }}" required{% if r.mine and r.mine.rating == n %} checked{% endif %}>
+        <label for="reviewStar{{ n }}" title="{{ _('{count} stars', count=n) if n > 1 else _('1 star') }}"><span aria-hidden="true">★</span><span class="sr-only">{{ _('{count} stars', count=n) if n > 1 else _('1 star') }}</span></label>
+        {% endfor %}
+      </fieldset>
+      <label class="review-text"><span>{{ _('Your experience (optional)') }}</span>
+        <textarea name="review_text" maxlength="{{ r.max_text }}" rows="4" data-review-text placeholder="{{ _('What helps you most? What could be better?') }}">{{ r.mine.review_text if r.mine else '' }}</textarea>
+        <small class="review-counter" data-review-counter aria-live="polite">{{ (r.mine.review_text|length) if r.mine else 0 }} / {{ r.max_text }}</small></label>
+      <div class="review-preview" data-review-preview hidden><span class="review-preview-label">{{ _('Preview') }}</span><div data-review-preview-body></div></div>
+      <p class="review-message" data-review-message role="status"></p>
+      <div class="review-actions">
+        <button class="primary-button" type="submit">{{ _('Save review') if r.mine else _('Publish review') }}</button>
+      </div>
+      <p class="reviews-note">{{ _('Your username, avatar, stars, text and date are shown publicly. Links and contact details are checked by a moderator first.') }}</p>
+    </form>
+    {% if r.mine %}
+    <form method="post" action="{{ url_for('delete_review') }}" class="review-delete" data-confirm="{{ _('Delete your review?') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="ghost-button" type="submit">{{ _('Delete my review') }}</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Create flashcards') }} — Learnova{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flashcards.css', v=static_version) }}">
 {% endblock %}
 {% block content %}
 <main class="cards-page creator-page" id="main-content">

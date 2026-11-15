@@ -19,6 +19,7 @@
  */
 import { escapeAttr, escapeHtml } from "./dom.js";
 import { FENCE, LITERAL_DOLLAR, MATH_TOKEN, protectMath } from "./math-protect.js";
+import { sectionize } from "./markdown-sections.js";
 
 const LINK_TOKEN = /(\d+)/g;
 const MAX_LIST_DEPTH = 3;
@@ -41,16 +42,23 @@ const UNSAFE_URL = /["'<>\\\s-]/;
 const MARKDOWN_LINK = /\[([^[\]\n]{1,300})\]\(((?:[^\s()]|\([^\s()]*\))+)\)/g;
 const BARE_URL = /\bhttps?:\/\/[^\s<>"'`\\-]+/g;
 
+// Video hosts a model-written link may never point at: the only videos a reply links to are
+// the cards the server found and checked (learnova/youtube_videos.py). A video link in a
+// reply - including one stored before the server started removing them - stays plain text.
+const VIDEO_HOST = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i;
+
 /** The URL when it may become a link: http(s) only (and mailto for an explicit link),
  *  with nothing in it that could leave the attribute. Anything else stays text. */
 function safeUrl(url, { mailto = false } = {}) {
   if (!url || UNSAFE_URL.test(url)) return null;
-  let protocol;
+  let parsed;
   try {
-    protocol = new URL(url).protocol;
+    parsed = new URL(url);
   } catch (_) {
     return null;
   }
+  const protocol = parsed.protocol;
+  if ((protocol === "http:" || protocol === "https:") && VIDEO_HOST.test(parsed.hostname)) return null;
   return protocol === "http:" || protocol === "https:" || (mailto && protocol === "mailto:") ? url : null;
 }
 
@@ -317,7 +325,9 @@ function renderBlocks(text, spans) {
     out.push(`<pre class="asst-code"><code>${escapeHtml(code.join("\n"))}</code></pre>`);
   }
   flushBlocks();
-  return out.join("\n");
+  // Labelled parts of an answer ("**Beispiel**", "### Formel") become sections; a plain
+  // answer is unchanged (markdown-sections.js).
+  return sectionize(out).join("\n");
 }
 
 /* ----------------------------------------------------------------- restore */

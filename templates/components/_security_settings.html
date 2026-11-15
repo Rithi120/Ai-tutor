@@ -1,0 +1,100 @@
+{# Settings → Login & Security (app.py security_context). Every change is a POST with CSRF;
+   without a recent sign-in the form asks for the password once (or a fresh sign-in when the
+   account has none). The only way left to sign in can never be removed. #}
+{% set s = security %}
+{% macro reauth() %}{% if not s.recent_auth and s.has_password %}<label class="security-reauth"><span>{{ _('Your password (to confirm it is you)') }}</span><input type="password" name="password" autocomplete="current-password" required></label>{% endif %}{% endmacro %}
+{% set can_change = s.recent_auth or s.has_password %}
+<section class="settings-profile settings-security" id="security" aria-labelledby="settings-security-title">
+  <h2 id="settings-security-title">{{ _('Login & Security') }}</h2>
+  <p>{{ _('Choose how you sign in. Your progress, XP and Premium stay with your account whichever way you use.') }}</p>
+  {% if not can_change %}<p class="security-note">{{ _('For your security, sign in again before changing these settings.') }}</p>{% endif %}
+  <ul class="security-methods">
+    <li class="security-method">
+      <span class="security-icon" aria-hidden="true">✉️</span>
+      <span class="security-text"><b>{{ _('Email') }}</b>
+        {% if s.has_real_email %}<small>{{ current_user.email }} · {{ _('Confirmed') if s.email_verified else _('Not confirmed yet') }}</small>
+        {% else %}<small>{{ _('No email address') }}</small>{% endif %}</span>
+      {% if s.has_real_email and not s.email_verified %}
+      <form method="post" action="{{ url_for('resend_verification') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">{{ _('Send confirmation link') }}</button></form>
+      {% endif %}
+    </li>
+    <li class="security-method">
+      <span class="security-icon" aria-hidden="true">🔑</span>
+      <span class="security-text"><b>{{ _('Password') }}</b><small>{{ _('Set') if s.has_password else _('Not set') }}</small></span>
+      {% if can_change %}
+      <details class="security-action"><summary class="secondary-button">{{ _('Change password') if s.has_password else _('Set a password') }}</summary>
+        <form method="post" action="{{ url_for('change_password') }}" class="security-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if s.has_password %}<label><span>{{ _('Current password') }}</span><input type="password" name="current_password" autocomplete="current-password" required></label>{% endif %}
+          <label><span>{{ _('New password') }}</span><input type="password" name="new_password" autocomplete="new-password" minlength="8" maxlength="256" required></label>
+          <button class="primary-button" type="submit">{{ _('Save password') }}</button>
+        </form>
+      </details>
+      {% endif %}
+    </li>
+    {% for provider, label, icon in (('google', 'Google', 'G'), ('apple', 'Apple', '')) %}
+    {% set linked = s.identities.get(provider) %}
+    {% if linked or auth_providers[provider] %}
+    <li class="security-method">
+      <span class="security-icon security-icon-{{ provider }}" aria-hidden="true">{% if provider == 'apple' %}<svg viewBox="0 0 384 512" width="16" height="18"><path fill="currentColor" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>{% else %}{{ icon }}{% endif %}</span>
+      <span class="security-text"><b>{{ label }}</b><small>{% if linked %}{{ _('Connected') }}{% if linked.provider_email %} · {{ linked.provider_email }}{% endif %}{% else %}{{ _('Not connected') }}{% endif %}</small></span>
+      {% if can_change %}
+      {% if linked %}
+      <details class="security-action"><summary class="ghost-button">{{ _('Disconnect') }}</summary>
+        <form method="post" action="{{ url_for('disconnect_provider', provider=provider) }}" class="security-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if s.login_methods|length <= 1 %}<p class="security-note">{{ _('This is your only way to sign in. Add a password or another method first.') }}</p>
+          {% else %}
+          <label class="security-confirm"><input type="checkbox" name="confirm" value="1" required> <span>{{ _('Yes, disconnect {provider} from my account.', provider=label) }}</span></label>
+          {{ reauth() }}
+          <button class="danger-button" type="submit">{{ _('Disconnect') }}</button>
+          {% endif %}
+        </form>
+      </details>
+      {% elif auth_providers[provider] %}
+      <form method="post" action="{{ url_for('connect_provider', provider=provider) }}" class="security-form security-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ reauth() }}
+        <button class="secondary-button" type="submit">{{ _('Connect {provider}', provider=label) }}</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </li>
+    {% endif %}
+    {% endfor %}
+    {% if s.identities.get('phone') or auth_providers.phone %}
+    <li class="security-method">
+      <span class="security-icon" aria-hidden="true">📱</span>
+      <span class="security-text"><b>{{ _('Phone number') }}</b><small>{% if s.phone_masked %}{{ s.phone_masked }} · {{ _('Verified') }}{% else %}{{ _('Not verified') }}{% endif %}</small></span>
+      {% if can_change %}
+      {% if auth_providers.phone %}
+      <details class="security-action"><summary class="secondary-button">{{ _('Change number') if s.phone_masked else _('Add phone number') }}</summary>
+        <form method="post" action="{{ url_for('add_phone_number') }}" class="security-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <span class="phone-row">
+            <label><span class="sr-only">{{ _('Country') }}</span><select name="region" autocomplete="tel-country-code">{% for region, code, name in s.countries %}<option value="{{ region }}"{% if region == 'DE' %} selected{% endif %}>{{ name }} ({{ code }})</option>{% endfor %}</select></label>
+            <label><span class="sr-only">{{ _('Mobile number') }}</span><input type="tel" name="phone" inputmode="tel" autocomplete="tel-national" placeholder="0151 23456789" required></label>
+          </span>
+          {{ reauth() }}
+          <button class="primary-button" type="submit">{{ _('Send code') }}</button>
+        </form>
+      </details>
+      {% endif %}
+      {% if s.phone_masked %}
+      <details class="security-action"><summary class="ghost-button">{{ _('Remove') }}</summary>
+        <form method="post" action="{{ url_for('disconnect_provider', provider='phone') }}" class="security-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if s.login_methods|length <= 1 %}<p class="security-note">{{ _('This is your only way to sign in. Add a password or another method first.') }}</p>
+          {% else %}
+          <label class="security-confirm"><input type="checkbox" name="confirm" value="1" required> <span>{{ _('Yes, remove this phone number from my account.') }}</span></label>
+          {{ reauth() }}
+          <button class="danger-button" type="submit">{{ _('Remove') }}</button>
+          {% endif %}
+        </form>
+      </details>
+      {% endif %}
+      {% endif %}
+    </li>
+    {% endif %}
+  </ul>
+</section>

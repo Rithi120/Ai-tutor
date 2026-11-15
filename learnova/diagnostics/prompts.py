@@ -247,6 +247,16 @@ def verification_user_prompt(bundle: dict[str, Any]) -> str:
     )
 
 
+# question_generation:v3 (spec Phase 2): practice in the notation of the student's notes.
+FORMULA_PRACTICE_RULE = (
+    "When CONTEXT has notes_formulas, those are the formulas of the student's notes: write every formula in exactly "
+    "that notation, in LaTeX inside \\( \\). formula_task says what to ask: substitution = put given values into a "
+    "formula; rearrangement = solve the formula for another quantity, each step on its own line; word_problem = a "
+    "short everyday text the student turns into the formula; application = the student picks the right formula "
+    "and uses it; transfer = the formula in a new context. Put the full worked solution (formula, substitution "
+    "with units, result with unit) in solution_steps and expected_answer.")
+
+
 def question_system_prompt(subject: str, language: str, grade: str = "") -> str:
     """Instructions for generating one question that satisfies a specification."""
 
@@ -275,6 +285,7 @@ def question_system_prompt(subject: str, language: str, grade: str = "") -> str:
         f"Write every student-facing string in {language}. Use only facts the supplied source material "
         "supports when source material is present.\n"
         f"{STUDENT_ADDRESS_RULE}\n"
+        f"{FORMULA_PRACTICE_RULE}\n"
         "Return ONLY one JSON object matching this schema exactly, with no markdown and no commentary:\n"
         f"{QUESTION_SCHEMA_SUMMARY}"
     )

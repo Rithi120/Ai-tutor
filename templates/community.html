@@ -20,33 +20,57 @@
       {% endif %}
     </header>
 
-    <form id="commFilters" class="cards-toolbar community-search" role="search">
-      <label class="visually-hidden" for="commSearch">{{ _('Search') }}</label>
-      <input type="search" id="commSearch" name="q" placeholder="{{ _('Search title, topic, keyword…') }}" autocomplete="off">
-      <label class="visually-hidden" for="commKind">{{ _('Set kind') }}</label>
-      <select id="commKind" name="kind"><option value="">{{ _('All sets') }}</option><option value="flashcards">{{ _('Flashcards only') }}</option><option value="vocabulary">{{ _('Vocabulary only') }}</option></select>
-      <label class="visually-hidden" for="commSubject">{{ _('Subject') }}</label>
-      <select id="commSubject" name="subject"><option value="">{{ _('All subjects') }}</option></select>
-      <label class="visually-hidden" for="commGrade">{{ _('Grade') }}</label>
-      <input type="text" id="commGrade" name="grade" placeholder="{{ _('Grade') }}" size="6">
-      <label class="visually-hidden" for="commDifficulty">{{ _('Difficulty') }}</label>
-      <select id="commDifficulty" name="difficulty"><option value="">{{ _('Any difficulty') }}</option><option value="easy">{{ _('Easy') }}</option><option value="medium">{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select>
-      <label class="visually-hidden" for="commLanguage">{{ _('Language') }}</label>
-      <select id="commLanguage" name="language"><option value="">{{ _('Any language') }}</option><option value="en">English</option><option value="de">Deutsch</option></select>
-      <label class="visually-hidden" for="commMinAi">{{ _('Minimum AI rating') }}</label>
-      <select id="commMinAi" name="min_ai"><option value="">{{ _('Any AI rating') }}</option><option value="4">🤖 ≥ 4</option><option value="3">🤖 ≥ 3</option></select>
-      <label class="visually-hidden" for="commMinStudent">{{ _('Minimum student rating') }}</label>
-      <select id="commMinStudent" name="min_student"><option value="">{{ _('Any student rating') }}</option><option value="4">⭐ ≥ 4</option><option value="3">⭐ ≥ 3</option></select>
-      <label class="visually-hidden" for="commSort">{{ _('Sort') }}</label>
-      <select id="commSort" name="sort">
-        <option value="ranking">{{ _('Best overall') }}</option>
-        <option value="ai">{{ _('Highest AI rating') }}</option>
-        <option value="student">{{ _('Highest student rating') }}</option>
-        <option value="studied">{{ _('Most studied') }}</option>
-        <option value="saved">{{ _('Most saved') }}</option>
-        <option value="newest">{{ _('Newest') }}</option>
-        <option value="trending">{{ _('Trending') }}</option>
-      </select>
+    <form id="commFilters" class="community-filters community-search" role="search" novalidate
+          data-count-one="{{ _('1 set') }}" data-count-many="{{ _('{count} sets') }}"
+          data-remove-label="{{ _('Remove filter: {name}') }}">
+      <div class="community-filter-bar">
+        <label class="visually-hidden" for="commSearch">{{ _('Search') }}</label>
+        <div class="comm-search-field">
+          <svg class="comm-search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="commSearch" name="q" maxlength="100" placeholder="{{ _('Search title, topic, keyword…') }}" autocomplete="off" enterkeyhint="search">
+        </div>
+        <label class="visually-hidden" for="commKind">{{ _('Set kind') }}</label>
+        <select id="commKind" name="kind"><option value="">{{ _('All sets') }}</option><option value="flashcards">{{ _('Flashcards only') }}</option><option value="vocabulary">{{ _('Vocabulary only') }}</option></select>
+        <label class="visually-hidden" for="commSubject">{{ _('Subject') }}</label>
+        <select id="commSubject" name="subject"><option value="">{{ _('All subjects') }}</option>{% for value in subject_choices %}<option value="{{ value }}">{{ _(value) }}</option>{% endfor %}</select>
+        <button type="button" id="commFilterToggle" class="comm-filter-toggle" aria-expanded="false" aria-controls="commMoreFilters">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>
+          <span>{{ _('Filter') }}</span><span class="comm-filter-badge" id="commFilterBadge" hidden></span>
+        </button>
+        <label class="visually-hidden" for="commSort">{{ _('Sort') }}</label>
+        <select id="commSort" name="sort">
+          <option value="ranking">{{ _('Best overall') }}</option>
+          <option value="ai">{{ _('Highest AI rating') }}</option>
+          <option value="student">{{ _('Highest student rating') }}</option>
+          <option value="studied">{{ _('Most studied') }}</option>
+          <option value="saved">{{ _('Most saved') }}</option>
+          <option value="newest">{{ _('Newest') }}</option>
+          <option value="trending">{{ _('Trending') }}</option>
+        </select>
+      </div>
+      <div id="commMoreFilters" class="community-more-filters" hidden>
+        <label>{{ _('Grade') }}
+          <select id="commGrade" name="grade"><option value="">{{ _('All') }}</option>{% for choice in grade_choices %}<option value="{{ choice.value }}">{{ _(choice.label) }}</option>{% endfor %}</select>
+        </label>
+        <label>{{ _('Difficulty') }}
+          <select id="commDifficulty" name="difficulty"><option value="">{{ _('All') }}</option><option value="easy">{{ _('Easy') }}</option><option value="medium">{{ _('Medium') }}</option><option value="hard">{{ _('Hard') }}</option></select>
+        </label>
+        <label>{{ _('Language') }}
+          <select id="commLanguage" name="language"><option value="">{{ _('All') }}</option><option value="en">English</option><option value="de">Deutsch</option></select>
+        </label>
+        <label>{{ _('Minimum AI rating') }}
+          <select id="commMinAi" name="min_ai"><option value="">{{ _('All') }}</option><option value="4">≥ 4</option><option value="3">≥ 3</option></select>
+        </label>
+        <label>{{ _('Minimum student rating') }}
+          <select id="commMinStudent" name="min_student"><option value="">{{ _('All') }}</option><option value="4">≥ 4</option><option value="3">≥ 3</option></select>
+        </label>
+      </div>
+      <div class="community-filter-status">
+        <div id="commActive" class="comm-active-chips" aria-live="polite"></div>
+        <button type="button" id="commReset" class="comm-reset" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>{{ _('Reset filters') }}
+        </button>
+      </div>
     </form>
 
     <section class="community-discovery" aria-label="{{ _('Community highlights') }}" data-tour-target="community-discover">
@@ -64,10 +88,11 @@
       </article>
     </section>
 
-    <div class="library-results-heading"><div><span class="eyebrow">{{ _('EXPLORE') }}</span><h2>{{ _('All community sets') }}</h2></div></div>
+    <div class="library-results-heading"><div><span class="eyebrow">{{ _('EXPLORE') }}</span><h2 id="commResultsTitle" data-all="{{ _('All community sets') }}" data-filtered="{{ _('Matching sets') }}">{{ _('All community sets') }}</h2></div><p id="commCount" class="comm-count" aria-live="polite"></p></div>
     <div id="commLoading" class="cards-skeleton hidden" aria-hidden="true"><i></i><i></i><i></i></div>
     <div id="commGrid" class="cards-grid" aria-live="polite"></div>
-    <div id="commEmpty" class="cards-empty hidden"><p>{{ _('No community sets match your search yet.') }}</p></div>
+    <div id="commEmpty" class="cards-empty hidden"><p>{{ _('No community sets match these filters.') }}</p><p>{{ _('Try fewer filters or another search.') }}</p><button type="button" class="secondary-button" data-reset-filters>{{ _('Reset filters') }}</button></div>
+    <div class="comm-more-wrap"><button type="button" id="commMore" class="secondary-button" hidden>{{ _('Load more') }}</button></div>
   </section>
 
   <section id="commDetail" class="cards-view hidden" aria-labelledby="detailTitle">

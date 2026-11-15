@@ -39,6 +39,7 @@ class RedeemResult:
     outcome: str
     expires_at: datetime | None = None
     retry_after_minutes: int = 0
+    months: int = 0          # calendar months this redemption added (0: days, or nothing)
 
     @property
     def ok(self) -> bool:
@@ -53,6 +54,18 @@ class IssuedCode:
     expires_at: datetime
 
 
+@dataclass(frozen=True)
+class IssuedBatch:
+    batch_id: int
+    public_id: str       # "B-20261114-7KQ2": what the admin page and the CSV call the batch
+    codes: tuple[str, ...]   # plaintext - shown once on the generation page, never stored
+    months: int
+    expires_at: datetime
+
+
+MAX_BATCH_SIZE = 500
+
+
 def _naive(moment: datetime) -> datetime:
     return aware(moment).astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -61,10 +74,18 @@ class ActivationService:
     def __init__(self, *, db: Any, user_model: Any, key_model: Any, entitlement_model: Any,
                  redemption_model: Any, audit_model: Any,
                  settings: Callable[[], SubscriptionSettings], secret: Callable[[], str],
-                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+                 pepper: Callable[[], str] = lambda: "", batch_model: Any = None):
         self.db, self.User, self.Key = db, user_model, key_model
         self.Entitlement, self.Redemption, self.Audit = entitlement_model, redemption_model, audit_model
         self.settings, self._secret, self.now = settings, secret, now
+        # PREMIUM_VOUCHER_PEPPER: with it, every new code is a voucher (HMAC-SHA256); without
+        # it, single codes stay v2 (SHA-256) and batches cannot be generated.
+        self._pepper, self.Batch = pepper, batch_model
+
+    def vouchers_enabled(self) -> bool:
+        pepper = self._pepper() or ""
+        return len(pepper) >= codes.MIN_PEPPER_LENGTH
 
     # ---- audit -------------------------------------------------------------------
 
@@ -132,7 +153,7 @@ class ActivationService:
             db.session.rollback()
             return RedeemResult(RATE_LIMITED, retry_after_minutes=wait)
 
-        hashes = codes.candidate_hashes(raw)
+        hashes = codes.candidate_hashes(raw, self._pepper() or "")
         key = None
         if hashes:
             key = db.session.scalar(db.select(Key).where(Key.key_hash.in_(hashes)).with_for_update())
@@ -199,7 +220,7 @@ class ActivationService:
                    days=0 if key.duration_months else int(key.duration_days or 30),
                    expires_at=new_expiry.isoformat())
         db.session.commit()
-        return RedeemResult(ACTIVATED, expires_at=new_expiry)
+        return RedeemResult(ACTIVATED, expires_at=new_expiry, months=int(key.duration_months or 0))
 
     # ---- administration ----------------------------------------------------------
 
@@ -209,11 +230,9 @@ class ActivationService:
         if not 1 <= months <= settings.code_max_duration_months:
             raise ValueError("months out of range")
         now = self.now()
-        code = codes.generate_code()
-        normalized = codes.normalize_code(code)
-        assert normalized is not None
+        code, key_hash, hint = self._new_code()
         key = self.Key(
-            key_hash=codes.code_hash(normalized), code_hint=codes.code_hint(normalized),
+            key_hash=key_hash, code_hint=hint,
             duration_months=months, duration_days=0, created_at=now,
             expires_at=now + timedelta(days=settings.code_validity_days), created_by_id=admin_id,
             payment_amount=f"{payment_amount:.2f}", payment_date=payment_date,
@@ -224,6 +243,84 @@ class ActivationService:
                    payment_amount=f"{payment_amount:.2f}", payment_date=payment_date.isoformat())
         self.db.session.commit()
         return IssuedCode(code=code, key_id=key.id, months=months, expires_at=aware(key.expires_at))
+
+    def _new_code(self) -> tuple[str, str, str]:
+        """(plaintext, stored hash, hint): a voucher when the pepper is set, else a v2 code."""
+
+        if self.vouchers_enabled():
+            code = codes.generate_voucher_code()
+            normalized = codes.normalize_voucher(code)
+            assert normalized is not None
+            return code, codes.voucher_hash(normalized, self._pepper()), codes.code_hint(normalized)
+        code = codes.generate_code()
+        normalized = codes.normalize_code(code)
+        assert normalized is not None
+        return code, codes.code_hash(normalized), codes.code_hint(normalized)
+
+    def issue_batch(self, admin_id: int, *, count: int, months: int = 1, validity_days: int | None = None,
+                    note: str = "") -> IssuedBatch:
+        """`count` vouchers of `months` each, in one transaction with their batch row.
+
+        Needs the pepper (a batch is never stored as plain SHA-256). The plaintext codes
+        are returned once and never stored; a hash that already exists - astronomically
+        unlikely at 140 bits - is drawn again, and the unique index on key_hash is the final
+        guard. Raises ValueError for a count or months out of range or without a pepper."""
+
+        settings = self.settings()
+        if self.Batch is None or not self.vouchers_enabled():
+            raise ValueError("vouchers_disabled")
+        if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= MAX_BATCH_SIZE:
+            raise ValueError("count out of range")
+        if not 1 <= months <= settings.code_max_duration_months:
+            raise ValueError("months out of range")
+        now = self.now()
+        days = validity_days if validity_days is not None else settings.code_validity_days
+        expires = now + timedelta(days=max(1, int(days)))
+        pepper = self._pepper()
+        public_id = f"B-{now.astimezone(timezone.utc):%Y%m%d}-{codes.generate_code()[-4:]}"
+        batch = self.Batch(public_id=public_id, created_at=now, created_by_id=admin_id, code_count=count,
+                           duration_months=months, expires_at=expires, note=(note or "")[:200])
+        self.db.session.add(batch)
+        self.db.session.flush()
+        plaintext: list[str] = []
+        hashes: set[str] = set()
+        while len(plaintext) < count:
+            code = codes.generate_voucher_code()
+            normalized = codes.normalize_voucher(code)
+            assert normalized is not None
+            digest = codes.voucher_hash(normalized, pepper)
+            if digest in hashes:
+                continue
+            hashes.add(digest)
+            plaintext.append(code)
+            self.db.session.add(self.Key(
+                key_hash=digest, code_hint=codes.code_hint(normalized), duration_months=months, duration_days=0,
+                created_at=now, expires_at=expires, created_by_id=admin_id, payment_amount="", payment_date=None,
+                payment_reference="", batch_id=batch.id))
+        existing = self.db.session.scalars(self.db.select(self.Key.key_hash).where(
+            self.Key.key_hash.in_(list(hashes)), self.Key.batch_id != batch.id)).all()
+        if existing:   # never in practice; the batch is refused rather than half-stored
+            self.db.session.rollback()
+            raise ValueError("hash_collision")
+        self.audit("voucher_batch_issued", actor_id=admin_id, batch=public_id, count=count, months=months,
+                   expires_at=aware(expires).isoformat())
+        self.db.session.commit()
+        return IssuedBatch(batch_id=batch.id, public_id=public_id, codes=tuple(plaintext), months=months,
+                           expires_at=aware(expires))
+
+    def revoke_unused_in_batch(self, admin_id: int, batch_id: int) -> int:
+        """Revoke every unused, unexpired voucher of a batch; redeemed ones are never touched.
+        Returns how many were revoked (one audit row for the batch)."""
+
+        Key, now = self.Key, self.now()
+        changed = self.db.session.execute(self.db.update(Key).where(
+            Key.batch_id == batch_id, Key.redeemed_at.is_(None), Key.revoked_at.is_(None),
+        ).values(revoked_at=now, revoked_by_id=admin_id).execution_options(synchronize_session=False))
+        count = int(changed.rowcount or 0)  # pyright: ignore[reportAttributeAccessIssue]
+        if count:
+            self.audit("voucher_batch_revoked", actor_id=admin_id, batch_id=batch_id, count=count)
+        self.db.session.commit()
+        return count
 
     def revoke(self, admin_id: int, key_id: int) -> bool:
         """Revoke an unused code. Redeemed codes stay redeemed: the student has paid."""

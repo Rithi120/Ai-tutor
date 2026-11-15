@@ -19,6 +19,9 @@
   --ln-lime: #8abd32;
   --ln-amber: #d9951b;
   --ln-danger: #d84d67;
+  /* Red text (Delete in a menu): the brand red darkened by a fifth, about 5.6:1 on white;
+     the brand red itself (4.1:1) is too light for text. */
+  --ln-danger-text: color-mix(in srgb, var(--ln-danger) 80%, var(--ln-ink));
   --ln-success: #12866f;
   --ln-focus: #2c6bed;
   /* Restrained single-hue accents (rainbow gradients removed for a calm, premium look). */
@@ -71,6 +74,7 @@
   --ln-lime: #a8d95d;
   --ln-amber: #f2b74e;
   --ln-danger: #ff7890;
+  --ln-danger-text: var(--ln-danger);
   --ln-success: #43d0ae;
   --ln-focus: #77a7ff;
   --ln-shadow-sm: 0 10px 30px rgba(0, 0, 0, .22);

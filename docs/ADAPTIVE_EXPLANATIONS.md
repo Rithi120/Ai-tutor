@@ -96,7 +96,19 @@ Answers the planner marks as not counting (for example a flawed question) move n
   chat context also carries the learning objective, the worked example (so "why?" can refer
   to its steps) and each graded answer's student-facing diagnosis note.
 - **`/api/answer`:** the evaluation feedback and correction use the plan.
-- **`/api/analyze`:** a new lesson has no concept yet, so the study goal is matched against
+- **`/api/analyze`** (Short Lesson, spec 1.3 since 2026-11-13): it runs on the teaching
+  engine like a project topic lesson - `strategy_for(subject)`, the knowledge state from the
+  matched ConceptMastery, `plan_steps` plus `lesson_plan.short_lesson_steps` (objective,
+  key terms, worked steps, typical mistakes, guided exercise, summary with an understanding
+  check, whatever the strategy leaves out for Project Mode), `lesson_prompt_block` at the
+  student's class, `LESSON_JSON_SHAPE`, `SHORT_LESSON_RULE` (the teacher's method from the
+  material first), the notes rule with photos / the no-notes rule without, and the media
+  keys. The parts are guarded (`ensure_teaching_first`, `guard_parts` against the photo
+  reading) and the session carries `strategy_key`, `teaching_first` and `knowledge_state`
+  (the subject's graded formats and first-wrong-answer retry). Labelled
+  `lesson_generation:<version>+short1`. A goal that lists a whole exam or photos with many
+  headings get a light "make a project" hint (`format_hint`) under the lesson.
+- **`/api/analyze` explanation level:** a new lesson has no concept yet, so the study goal is matched against
   the student's stored topics.
 
 The block is about 900 characters and goes before the subject notation rules, so the LaTeX

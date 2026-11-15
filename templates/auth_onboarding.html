@@ -1,0 +1,63 @@
+{% extends "auth_simple.html" %}
+{% from "components/_language_selector.html" import language_selector with context %}
+{% from "components/_grade_selector.html" import grade_selector with context %}
+{% block title %}{{ _('Set up your profile') }} — Learnova{% endblock %}
+{% block card_class %}onboarding-card{% endblock %}
+{% block back %}{% endblock %}
+{% block card %}
+{% set step = signup.step %}
+<ol class="onboarding-steps auth-reveal" aria-label="{{ _('Progress') }}">
+  {% for number, label in ((1, _('Profile')), (2, _('Class')), (3, _('Done'))) %}
+  <li class="{{ 'is-current' if number == step else ('is-done' if number < step else '') }}"{% if number == step %} aria-current="step"{% endif %}><b>{{ number }}</b><span>{{ label }}</span></li>
+  {% endfor %}
+</ol>
+{% include 'components/_alerts.html' %}
+{% if step == 1 %}
+<div class="auth-heading auth-reveal">
+  <h1>{{ _('Welcome to Learnova!') }}</h1>
+  <p>{{ _('Two quick questions, then you can start learning.') }}</p>
+</div>
+<form class="auth-form" method="post" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="step" value="1">
+  <label class="auth-field auth-reveal"><span>{{ _('What should we call you?') }}</span>
+    <input name="display_name" autocomplete="given-name" maxlength="60" value="{{ signup.display_name }}" placeholder="{{ _('First name or nickname') }}" required>
+    {% if problems.display_name %}<small class="field-error" role="alert">{{ problems.display_name }}</small>{% endif %}</label>
+  <label class="auth-field auth-reveal"><span>{{ _('Your Learnova username') }}</span>
+    <input name="username" autocomplete="username" minlength="3" maxlength="30" value="{{ signup.username }}" placeholder="mia.study" required
+           data-username-check="{{ url_for('username_check') }}" aria-describedby="usernameHint">
+    <small id="usernameHint" class="{{ 'field-error' if problems.username else 'field-hint' }}" data-username-hint aria-live="polite">{{ problems.username or _('3–30 letters, numbers, dots, hyphens or underscores. Others see it in leagues and the community.') }}</small></label>
+  <button class="auth-submit primary-button auth-reveal" type="submit"><span class="auth-submit-label">{{ _('Next') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+</form>
+{% elif step == 2 %}
+<div class="auth-heading auth-reveal">
+  <h1>{{ _('How do you learn?') }}</h1>
+  <p>{{ _('Learnova explains at your class level and in your language.') }}</p>
+</div>
+<form class="auth-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="step" value="2">
+  <label class="auth-field auth-reveal"><span>{{ _('Grade / level') }}</span>{{ grade_selector(selected=signup.grade, required=True) }}
+    {% if problems.grade %}<small class="field-error" role="alert">{{ problems.grade }}</small>{% endif %}</label>
+  <label class="auth-field auth-reveal"><span>{{ _('Language') }}</span>{{ language_selector(selected=signup.language or current_language) }}</label>
+  <fieldset class="auth-field interest-picker auth-reveal"><legend>{{ _('Favourite subjects (optional)') }}</legend>
+    <div class="interest-chips">{% for subject in subjects %}<label class="interest-chip"><input type="checkbox" name="interests" value="{{ subject }}"{% if subject in chosen_interests %} checked{% endif %}><span>{{ subject_name(subject) if subject_name is defined else _(subject) }}</span></label>{% endfor %}</div>
+  </fieldset>
+  <div class="onboarding-actions auth-reveal">
+    <button class="ghost-button" type="submit" name="step" value="back" formnovalidate>{{ _('Previous') }}</button>
+    <button class="auth-submit primary-button" type="submit"><span class="auth-submit-label">{{ _('Next') }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+  </div>
+</form>
+{% else %}
+<div class="auth-heading auth-reveal onboarding-welcome">
+  <div class="onboarding-wave" aria-hidden="true">🎉</div>
+  <h1>{{ _('Great, {name}!', name=signup.display_name) }}</h1>
+  <p>{{ _('Your username is {username}. Ask the chat anything, take a short lesson or plan your next test.', username='@' ~ signup.username) }}</p>
+</div>
+<form class="auth-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="step" value="3">
+  <div class="onboarding-actions auth-reveal">
+    <button class="ghost-button" type="submit" name="step" value="back">{{ _('Previous') }}</button>
+    <button class="auth-submit primary-button" type="submit"><span class="auth-submit-label">{{ _("Let's go") }}</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

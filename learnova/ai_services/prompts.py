@@ -13,6 +13,7 @@ from learnova.diagnostics.prompts import (
 from learnova.moderation.prompts import (
     MODERATION_SCHEMA_SUMMARY as _MODERATION_SCHEMA_SUMMARY,
 )
+from learnova import understanding
 
 
 PROMPT_VERSIONS = {
@@ -27,15 +28,24 @@ PROMPT_VERSIONS = {
     # TEACHING METHOD (the server rebuilds "explanation" from the guarded parts) (2026-11-02).
     # v9: a guided exercise's body is its task; Geography's map step retells a map the notes only
     # describe in words and never describes a chart they do not contain (PF_FIX2, 2026-11-03).
-    "lesson_generation": "lesson_generation:v9",
-    "quiz_generation": "quiz_generation:v2",
+    # v10: formulas of the notes taught first in their notation (FORMULA_TEACHING_RULE, sent only when the
+    # topic map has one), "rule" and "alternative" (Additional tip) steps for maths and the sciences
+    # (spec Phase 2, 2026-11-13).
+    # v11: CALCULATION_RULE - every calculation in full with units, round only at the end, ":"
+    # kept; the lesson's calculations are recomputed (Reliability V1, 2026-11-14). A lesson
+    # corrected after the check is labelled "<version>+mathfix1".
+    # v12: U1 (2026-11-15): the contract carries learnova/understanding's rule (keep the student's and the source's terms).
+    "lesson_generation": "lesson_generation:v12",
+    # v3: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "quiz_generation": "quiz_generation:v3",
     # v6: an optional "retry" (misunderstanding, reteach, simpler example) for the first
     # wrong answer of a teach-first lesson, when the correction stays hidden.
     # v7: an answer a sentence of uploaded_source supports is not wrong; retry texts and
     # tips speak to the student as "du" (2026-11-02).
     # v8: the misunderstanding names what the student thought, never the right alternative; the
     # next question's key is a written answer for text and every item id for ordering (PF_FIX2).
-    "answer_evaluation": "answer_evaluation:v8",
+    # v9: U1 (2026-11-15): the contract carries learnova/understanding's rule (an unfamiliar but valid word is not a mistake).
+    "answer_evaluation": "answer_evaluation:v9",
     "mistake_analysis": "mistake_analysis:v1",
     # v3: an answer the source material supports is never an error; the explanation
     # speaks to the student as "du" (2026-11-02).
@@ -43,30 +53,56 @@ PROMPT_VERSIONS = {
     "answer_diagnosis": "answer_diagnosis:v4",
     "diagnosis_verification": "diagnosis_verification:v1",
     # v2: the informal "du" (Ethics Q2 asked "Stellen Sie sich vor", live 2026-11-01).
-    "question_generation": "question_generation:v2",
+    # v3: notes_formulas and a rotating formula_task (substitution, rearrangement, word problem,
+    # application, transfer) with a worked solution, in the notes' notation (spec Phase 2).
+    # v4: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "question_generation": "question_generation:v4",
     # tutor_chat v5 / assistant_chat v3: chat notation \( … \) / \[ … \] with single
     # backslashes; the tutor chat's lesson state is plain text, not json.dumps (2026-11-01).
     # tutor_chat v6 / assistant_chat v5: a table row stays on one line (long formulas go
     # below the table) and a decimal comma inside a formula is written {,}; photo readings
     # cut off by their output limit are said to be partial (live check 2026-11-02).
-    "tutor_chat": "tutor_chat:v6",
-    "translation": "translation:v2",
+    # tutor_chat v7 / assistant_chat v8: U1 (2026-11-15): the contract carries learnova/understanding's rule (UNDERSTANDING THE QUESTION) and a per-turn
+    # QUESTION FOCUS block for word questions, checked after the reply (one retry at most).
+    "tutor_chat": "tutor_chat:v7",
+    # v3: U1 (2026-11-15): the contract carries learnova/understanding's rule (translate the meaning, never the look of a word).
+    "translation": "translation:v3",
     "ocr_document_recognition": "ocr_document_recognition:v2",
     "handwriting_region_review": "handwriting_region_review:v1",
+    # Deliberately still v4 (tests/test_lesson_prompts.py guards it: a bump re-reads every project's
+    # cached topic batches). Spec Phase 2 added, for formula subjects only, the request for a formula's
+    # page notation in "name", "latex" and "variables"; both answer shapes are normalised the same way
+    # (learnova/projects/formulas.py checks every formula by structure, cached answers included).
+    # Still v4 after U1 too: its contract now carries the source-terms rule, but a bump would re-read
+    # every cached topic batch, which stays valid (it was asked to copy terms from the pages already).
     "project_section_generation": "project_section_generation:v4",
-    "adaptive_practice": "adaptive_practice:v4",
-    "final_exam_generation": "final_exam_generation:v3",
-    "final_exam_evaluation": "final_exam_evaluation:v2",
-    "flashcard_generation": "flashcard_generation:v1",
-    "flashcard_back_suggestion": "flashcard_back_suggestion:v1",
+    # v5: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "adaptive_practice": "adaptive_practice:v5",
+    # v4: each section's notes formulas; calculations use their notation with worked solutions.
+    # v5: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "final_exam_generation": "final_exam_generation:v5",
+    # v3: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "final_exam_evaluation": "final_exam_evaluation:v3",
+    # v2: U1 (2026-11-15): the contract carries learnova/understanding's rule.
+    "flashcard_generation": "flashcard_generation:v2",
+    # v2: U1 (2026-11-15): the contract carries learnova/understanding's rule and a QUESTION FOCUS naming the card front.
+    "flashcard_back_suggestion": "flashcard_back_suggestion:v2",
     "flashcard_review": "flashcard_review:v2",
     "content_moderation": "content_moderation:v2",
     "report_review": "report_review:v1",
     # v4: the tutoring layer on every preset (answer first, one check only when useful,
     # hints before solutions), STUDENT CONTEXT after the transcript, hidden CHIPS/TOPIC
     # trailer lines cut off on the server (2026-11-01).
-    "assistant_chat": "assistant_chat:v5",
-    "competency_extraction": "competency_extraction:v1",
+    # v6: the optional hidden MEDIA line (a picture or video would teach more than words;
+    # vetoed server-side) and the honesty rule against model-written links (2026-11-13).
+    # v7: the hidden EXAM line - the separate topics of exam material, which decide between
+    # Short Lessons and Project Mode in the chat (spec 1.2, 2026-11-13). Both lines were
+    # built as v6 in separate lanes; v7 is the merged prompt that carries both.
+    "assistant_chat": "assistant_chat:v8",
+    "competency_extraction": "competency_extraction:v2",
+    # U1 added the reading rule to this contract and to image_understanding's and
+    # ocr_document_recognition's without a bump: it only restates their literal-copy rule for rare
+    # words, and their stored readings stay valid.
     "vocabulary_page_extraction": "vocabulary_page_extraction:v1",
     # v2: the reading prompt trimmed to fit the vision model's per-minute token limit
     # (bbox only where a close-up needs it, latex only on formula blocks) (2026-11-01).
@@ -133,7 +169,7 @@ SCHEMA_SUMMARIES = {
     # v4: the topic map (Fachbegriffe with page and quote, typed items, exam questions).
     "project_section_generation": '{"sections":list[{"title":str,"main_topic":str,"kind":"main|subtopic","summary":str,"simple_summary":str,"learning_goals":list[str],"source_page_ids":list[int],"terms":list[{"term":str,"definition":str,"simple_definition":str,"example":str,"page_id":int,"quote":str}],"items":list[{"kind":str,"name":str,"detail":str,"page_id":int}],"exam_questions":list[str],"related_topics":list[str],"prerequisites":list[str],"difficulty":"easy|medium|hard","importance":"low|medium|high","estimated_minutes":int}]}',
     "adaptive_practice": '{"question":question}',
-    "competency_extraction": '{"competencies":list[{"statement":str,"topic":str,"subtopic":str,"level":"basic|intermediate|advanced","importance":1..3,"source_page_ids":list[int],"coverage":"covered|partial|missing","evidence":str}]}',
+    "competency_extraction": '{"competencies":list[{"statement":str,"group_path":list[str],"level":"basic|intermediate|advanced","importance":1..3,"source_page_ids":list[int],"section_title":str}]}',
     "image_understanding": _VISUAL_READING_SUMMARY,
     "vocabulary_page_extraction": '{"rows":list[{"term":str,"phonetic":str,"translation":str,"examples":list[{"sentence":str,"translation":str}],"note":str,"confidence":0..1}],"source_language":str,"target_language":str}',
     "final_exam_generation": '{"questions":list[{"id":str,"section_id":int,"source_page_ids":list[int],"difficulty":"easy|medium|hard","question_type":enum,"prompt":str,"expected_answer":value}]}',
@@ -211,6 +247,13 @@ def output_contract(task_type: str, language: str, context: dict[str, Any] | Non
             "Use only the supplied source material. Do not invent facts, page references, section IDs, or quotations.",
             "Every source page reference and section ID must exist in the supplied allowed identifiers.",
         ])
+    # Understanding the question (learnova/understanding): keep the student's and the
+    # source's terms, read unfamiliar compounds instead of swapping them, translate by
+    # meaning, read rare words literally. Here, in the contract every request of the task
+    # carries, so no caller of these tasks can leave it out.
+    rule = understanding.contract_rule(task_type)
+    if rule:
+        lines.append(rule)
     count = context.get("question_count")
     if count is not None:
         lines.append(f"Return exactly {int(count)} questions; no more and no fewer.")

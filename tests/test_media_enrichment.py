@@ -17,7 +17,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 TEST_DATABASE = Path(tempfile.gettempdir()) / "learnova_media_test.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DATABASE.as_posix()}")
@@ -41,7 +41,31 @@ def page(title, *, thumb=None, width=800, disambiguation=False,
         result["categories"] = [{"title": f"Category:{name}"} for name in categories]
     if thumb:
         result["thumbnail"] = {"source": thumb, "width": width, "height": width}
+        # piprop=thumbnail|name: the file name the licence lookup needs.
+        result["pageimage"] = thumb.rsplit("/", 1)[-1]
     return result
+
+
+def file_info(licence="CC BY-SA 4.0", *, artist='<a href="//commons.wikimedia.org/wiki/User:Ann">Ann Example</a>',
+              licence_url="https://creativecommons.org/licenses/by-sa/4.0", required="true", non_free=None,
+              description_url="https://commons.wikimedia.org/wiki/File:Diagram.png"):
+    """One imageinfo entry as prop=imageinfo&iiprop=url|extmetadata returns it."""
+    metadata = {}
+    if licence is not None:
+        metadata["LicenseShortName"] = {"value": licence}
+    if artist is not None:
+        metadata["Artist"] = {"value": artist}
+    if licence_url is not None:
+        metadata["LicenseUrl"] = {"value": licence_url}
+    if required is not None:
+        metadata["AttributionRequired"] = {"value": required}
+    if non_free is not None:
+        metadata["NonFree"] = {"value": non_free}
+    return {"descriptionurl": description_url, "extmetadata": metadata}
+
+
+def file_payload(info):
+    return json.dumps({"query": {"pages": [{"title": "File:Diagram.png", "imageinfo": [info]}]}})
 
 
 def want(term, kind="diagram", alt=""):
@@ -128,6 +152,23 @@ class AcceptsTheRightPictureTests(unittest.TestCase):
         self.assertEqual(image["title"], "Mitochondrion")
         self.assertEqual(image["alt"], "Cut-away drawing of a mitochondrion")
         self.assertEqual(image["kind"], "anatomy")
+
+    def test_a_thumbnail_from_wikimedias_thumbnail_host_is_shown(self):
+        # Recorded live 2026-11-14 (de.wikipedia, "Satz des Pythagoras"): the API now gives
+        # scaled thumbnails on thumb.wikimedia.org, with tracking parameters. Refusing that
+        # host refused every lead image; the CSP allows it too (test below).
+        thumb = ("https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/01-Rechtwinkliges_Dreieck-Pythagoras.svg/"
+                 "960px-01-Rechtwinkliges_Dreieck-Pythagoras.svg.png?utm_source=de.wikipedia.org&utm_campaign=api"
+                 "&utm_content=thumbnail")
+        image = self.accepted(want("Satz des Pythagoras", kind="diagram"),
+                              page("Satz des Pythagoras", thumb=thumb), wiki="de")
+        self.assertEqual(image["url"], thumb)
+
+    def test_every_accepted_image_host_is_allowed_by_the_csp(self):
+        from learnova.web import security
+        img_src = dict(security._BASE)["img-src"].split()
+        for host in media.ALLOWED_IMAGE_HOSTS:
+            self.assertIn(f"https://{host}", img_src, host)
 
     def test_wikipedias_own_qualifier_still_counts_as_the_same_article(self):
         self.accepted(want("Cell (biology)", kind="structure"),
@@ -217,14 +258,18 @@ class LessonImagesTests(unittest.TestCase):
 
     def setUp(self):
         media._fetch_page.cache_clear()
+        media._fetch_file_info.cache_clear()
 
-    def stub(self, pages):
-        """Serve a recorded page per requested title."""
+    def stub(self, pages, info=None):
+        """Serve a recorded page per requested title, and a free licence for its file
+        (since the licence check, an image needs both lookups to be shown)."""
         def fetch(term, wiki):
             found = pages.get(term)
             body = {"query": {"pages": [found]}} if found else {"query": {"pages": []}}
             return json.dumps(body)
-        return patch.object(media, "_fetch_page", side_effect=fetch)
+        licence = file_payload(info or file_info())
+        return patch.multiple(media, _fetch_page=MagicMock(side_effect=fetch),
+                              _fetch_file_info=MagicMock(return_value=licence))
 
     def test_good_images_are_kept_and_bad_ones_reported(self):
         with self.stub({
@@ -306,6 +351,99 @@ class VideoLinkTests(unittest.TestCase):
     def test_the_model_can_never_supply_a_url(self):
         links = media.video_links([{"query": "https://evil.example/watch", "why": ""}])
         self.assertTrue(links[0]["youtube"].startswith("https://www.youtube.com/results?"))
+
+    def test_a_search_link_says_it_is_a_search(self):
+        # The page labels these "Search YouTube for ..." - never as a video title.
+        link = media.video_links([{"query": "Ohmsches Gesetz", "why": ""}], language="German")[0]
+        self.assertEqual((link["kind"], link["query"]), ("search", "Ohmsches Gesetz"))
+        self.assertIn("/results?search_query=", link["youtube"])
+
+
+class LicenceTests(unittest.TestCase):
+    """Attribution: CC BY / CC BY-SA need author, licence and a link; unknown means not shown."""
+
+    def test_the_lookup_pins_free_images_and_asks_for_the_file_name(self):
+        url = media._api_url("Ohmsches Gesetz", "de")
+        self.assertIn("piprop=thumbnail%7Cname", url)
+        self.assertIn("pilicense=free", url)
+        info = media._file_info_url("Diagram.png", "de")
+        for part in ("prop=imageinfo", "iiprop=url%7Cextmetadata", "LicenseShortName", "Artist", "titles=File%3ADiagram.png"):
+            self.assertIn(part, info)
+
+    def test_free_licences_are_accepted_with_their_credit(self):
+        for licence in ("CC BY-SA 4.0", "CC BY-SA 3.0", "CC BY 4.0", "CC BY 2.5", "CC0", "Public domain", "PD-self"):
+            with self.subTest(licence=licence):
+                ok, reason, credit = media.judge_licence(file_info(licence))
+                self.assertTrue(ok, reason)
+                self.assertEqual(credit["licence"], licence)
+                self.assertEqual(credit["file_url"], "https://commons.wikimedia.org/wiki/File:Diagram.png")
+                self.assertEqual(credit["author"], "Ann Example")
+
+    def test_unknown_and_non_free_licences_are_refused(self):
+        self.assertEqual(media.judge_licence(file_info(None))[:2], (False, "licence_unknown"))
+        self.assertEqual(media.judge_licence(None)[:2], (False, "licence_unknown"))
+        for licence in ("Fair use", "GFDL", "All rights reserved", "CC BY-NC 4.0", "CC BY-ND 4.0"):
+            with self.subTest(licence=licence):
+                self.assertEqual(media.judge_licence(file_info(licence))[:2], (False, "licence_not_free"))
+        self.assertEqual(media.judge_licence(file_info(non_free="true"))[:2], (False, "licence_not_free"))
+
+    def test_an_attribution_licence_without_an_author_is_refused(self):
+        self.assertEqual(media.judge_licence(file_info(artist=None))[:2], (False, "author_unknown"))
+        # Public domain needs no author.
+        self.assertTrue(media.judge_licence(file_info("Public domain", artist=None, licence_url=None))[0])
+
+    def test_the_author_is_plain_text_and_bounded(self):
+        ok, _reason, credit = media.judge_licence(file_info(
+            artist='<span><a href="x">Jos&eacute; <b>Example</b></a></span><script>x</script>' + "y" * 300))
+        self.assertTrue(ok)
+        self.assertTrue(credit["author"].startswith("José Example"))
+        self.assertNotIn("<", credit["author"])
+        self.assertLessEqual(len(credit["author"]), media.MAX_AUTHOR_LENGTH)
+
+    def test_links_go_only_to_the_file_page_and_the_licence_deed(self):
+        self.assertEqual(media.judge_licence(file_info(description_url="https://evil.example/File:x"))[:2],
+                         (False, "no_file_page"))
+        _ok, _reason, credit = media.judge_licence(file_info(licence_url="javascript:alert(1)"))
+        self.assertEqual(credit["licence_url"], "")
+        _ok, _reason, credit = media.judge_licence(file_info(description_url="//commons.wikimedia.org/wiki/File:D.png"))
+        self.assertEqual(credit["file_url"], "https://commons.wikimedia.org/wiki/File:D.png")
+
+
+class LicensedLessonImagesTests(unittest.TestCase):
+    def setUp(self):
+        media._fetch_page.cache_clear()
+        media._fetch_file_info.cache_clear()
+
+    def lookup(self, info_payload=None, info_error=None):
+        found = page("Ohmsches Gesetz", thumb=UPLOAD + "Ohm_Schaltung.svg.png")
+        fetch_page = MagicMock(return_value=json.dumps({"query": {"pages": [found]}}))
+        fetch_info = MagicMock(side_effect=info_error) if info_error else MagicMock(return_value=info_payload)
+        with patch.multiple(media, _fetch_page=fetch_page, _fetch_file_info=fetch_info):
+            result = media.lesson_images([{"term": "Ohmsches Gesetz", "kind": "diagram", "alt": "Schaltplan"}],
+                                         "German", limit=1)
+        return result, fetch_info
+
+    def test_an_accepted_image_carries_author_licence_and_file_page(self):
+        result, fetch_info = self.lookup(file_payload(file_info()))
+        fetch_info.assert_called_once_with("Ohm_Schaltung.svg.png", "de")
+        image = result.images[0]
+        self.assertEqual((image["author"], image["licence"]), ("Ann Example", "CC BY-SA 4.0"))
+        self.assertEqual(image["licence_url"], "https://creativecommons.org/licenses/by-sa/4.0")
+        self.assertEqual(image["file_url"], "https://commons.wikimedia.org/wiki/File:Diagram.png")
+        self.assertEqual(image["source"], "Wikimedia Commons")
+        self.assertNotIn("file_name", image)
+
+    def test_a_failed_licence_lookup_hides_the_image(self):
+        result, _ = self.lookup(info_error=OSError("offline"))
+        self.assertEqual(result.images, [])
+        self.assertEqual(result.rejected, [("Ohmsches Gesetz", "licence_lookup_failed")])
+
+    def test_a_non_free_file_is_not_shown(self):
+        result, _ = self.lookup(file_payload(file_info("Fair use")))
+        self.assertEqual(result.rejected, [("Ohmsches Gesetz", "licence_not_free")])
+
+    def test_the_licence_lookup_is_cached_like_the_page_lookup(self):
+        self.assertTrue(hasattr(media._fetch_file_info, "cache_clear"))
 
 
 if __name__ == "__main__":

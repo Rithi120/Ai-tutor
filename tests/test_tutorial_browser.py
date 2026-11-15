@@ -655,15 +655,33 @@ class AutoStartTests(TutorialBrowserCase):
     def test_finish_completes_it_and_the_next_chapter_comes_when_the_student_scrolls_to_it(self):
         page = self.auto_student(1280, 900, seed=False)
         page.goto(f"{self.base}/settings")
-        state = self.wait_mode(page, "spot", timeout=6000)
+        # Settings groups are closed rows: the chapter starts by asking to open the first one.
+        state = self.wait_mode(page, "opener", timeout=6000)
         self.assertEqual(state["section"], "settings")
+        # The gap is measured in the page, from the moment the tour switched off to the moment the
+        # next chapter showed. A clock started here after walk() returned started late (walk
+        # first polls until the tour has settled), so under load it read 2.98 s for a real gap
+        # of over 3 s. tour.js marks the end just before it switches the mode off, in the same
+        # task, so the allowance covers only the rest of that close step.
+        page.evaluate("""() => {
+          const root = document.getElementById('tourRoot');
+          window.__tourModes = [];
+          new MutationObserver(() => window.__tourModes.push([root.dataset.tourMode, performance.now()]))
+            .observe(root, {attributes: true, attributeFilter: ['data-tour-mode']});
+        }""")
         self.walk(page, "settings", phone=False, start=False)
-        to_plan = "document.querySelector('[data-tour-target=\"plan-status\"]').scrollIntoView({block: 'center'})"
-        ended = time.monotonic()
-        page.evaluate(to_plan)
+        # Its anchor is inside the closed Subscription row: opening the row brings it on screen.
+        page.locator("#subscription-group > summary").click()
+        page.evaluate("document.querySelector('[data-tour-target=\"plan-status\"]').scrollIntoView({block: 'center'})")
         state = self.wait_mode(page, "spot", timeout=9000)
-        self.assertEqual(state["section"], "settings-plan", "Your plan follows once the student scrolls to it")
-        self.assertGreaterEqual(time.monotonic() - ended, 3.0, "never right after the last one")
+        self.assertEqual(state["section"], "settings-plan", "Your plan follows once the student opens it")
+        gap = page.evaluate("""() => {
+          const modes = window.__tourModes;
+          const off = modes.findLastIndex(([mode]) => mode === 'off');
+          const shown = modes.findIndex(([mode], index) => index > off && mode === 'spot');
+          return off < 0 || shown < 0 ? -1 : modes[shown][1] - modes[off][1];
+        }""")
+        self.assertGreaterEqual(gap, 3000 - 50, "never right after the last one (FOLLOW_GAP_MS)")
         page.keyboard.press("Escape")
         self.assertEqual(self.settled(page)["mode"], "off")
         time.sleep(0.3)
@@ -770,6 +788,13 @@ class FollowUpTests(TutorialBrowserCase):
         page.reload()
         state = self.settled(page)
         self.assertEqual((state["step"], state["mode"]), ("overview-done", "opener"), "More is opened first")
+        page.locator("[data-tour-lit]").first.click()
+        state = self.settled(page, previous=self.key(state))
+        # The More menu folds into groups (components/_nav_groups.html): the tour opens the
+        # group the link sits in next ("Open this part first"), then lights the link.
+        self.assertEqual(state["mode"], "opener", "then the group the link sits in")
+        self.assertTrue(page.evaluate(
+            "() => document.querySelector('[data-tour-lit]').matches('#nav-more > summary')"))
         page.locator("[data-tour-lit]").first.click()
         state = self.settled(page, previous=self.key(state))
         self.assert_lit(page, "overview-done")
@@ -1051,6 +1076,13 @@ class EngineTests(TutorialBrowserCase):
             state = self.settled(page, previous=self.key(state))
         self.assertEqual((state["step"], state["mode"]), ("overview-flashcards", "opener"))
         self.assertIn("app-menu-trigger", state["lit"])
+        page.locator("[data-tour-lit]").first.click()
+        state = self.settled(page, previous=self.key(state))
+        # The More menu folds into groups (components/_nav_groups.html): the tour opens the
+        # group the link sits in next ("Open this part first"), then lights the link.
+        self.assertEqual(state["mode"], "opener", "then the group the link sits in")
+        self.assertTrue(page.evaluate(
+            "() => document.querySelector('[data-tour-lit]').matches('#nav-cards > summary')"))
         page.locator("[data-tour-lit]").first.click()
         state = self.settled(page, previous=self.key(state))
         self.assertEqual(state["mode"], "spot")

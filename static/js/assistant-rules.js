@@ -165,3 +165,87 @@ export function retryAfterSeconds(error, fallback = 5) {
   const value = Number.isFinite(own) && own > 0 ? own : Number(error?.retryAfter);
   return Number.isFinite(value) && value > 0 ? Math.min(value, 60) : fallback;
 }
+
+// The study-format card under the reply that listed an exam's topics (spec 1.2), from the
+// server's `continue_learning.format` (app.py study_format_state). Kinds: "none", "lessons"
+// (one Short Lesson per topic), "project" (Project Mode) and "choice" (both, the
+// recommended one first - `options` is the order to show them in). The server decides; the
+// page only arranges what it was told.
+export const FORMAT_REASONS = {
+  few_topics: "asstFormatWhyFew",
+  many_topics: "asstFormatWhyMany",
+  large_volume: "asstFormatWhyLarge",
+  exam_soon: "asstFormatWhySoon",
+  exam_far: "asstFormatWhyFar",
+  linked_topics: "asstFormatWhyLinked",
+  long: "asstFormatWhyLong",
+  short: "asstFormatWhyShort",
+};
+
+export function formatView(format, { busyTopics = new Set(), projectBusy = false } = {}) {
+  if (!format || !["lessons", "project", "choice"].includes(format.kind)) return { kind: "none" };
+  const topics = (Array.isArray(format.topics) ? format.topics : []).filter((item) => item && item.key)
+    .map((item, index) => {
+      const ready = item.status === "ready" && Boolean(item.url);
+      const pending = busyTopics.has(item.key) || item.status === "pending";
+      return {
+        key: String(item.key),
+        title: String(item.title || ""),
+        position: Number(item.position) || index + 1,
+        state: ready ? (item.completed ? "done" : "ready") : pending ? "pending"
+          : item.access === "later" ? "locked" : item.status === "failed" ? "retry" : "start",
+        url: ready ? item.url : null,
+      };
+    });
+  const recommended = format.recommended === "project" || format.recommended === "lessons"
+    ? format.recommended : (format.kind === "project" ? "project" : "lessons");
+  const options = format.kind === "choice"
+    ? (recommended === "project" ? ["project", "lessons"] : ["lessons", "project"])
+    : [format.kind];
+  const project = format.project || {};
+  const projectState = project.status === "ready" && project.url ? "ready"
+    : projectBusy || project.status === "pending" ? "pending"
+      : format.project_allowed === false ? "locked" : project.status === "failed" ? "retry" : "start";
+  const reason = (format.reasons || []).find((item) => FORMAT_REASONS[item]);
+  return {
+    kind: format.kind,
+    recommended,
+    options,
+    topics,
+    count: topics.length,
+    done: topics.filter((item) => item.state === "done").length,
+    locked: topics.filter((item) => item.state === "locked").length,
+    lessonsLeft: Number.isInteger(format.lessons_left) ? format.lessons_left : null,
+    lessonLimit: Number.isInteger(format.lesson_limit) ? format.lesson_limit : null,
+    free: format.plan === "free",
+    reasonKey: reason ? FORMAT_REASONS[reason] : "",
+    project: { state: projectState, url: projectState === "ready" ? project.url : null },
+    resetsAt: format.project_resets_at || null,
+    examDate: format.exam_date || "",
+    today: format.today || "",
+    photos: Number(format.photos) || 0,
+    photosKept: Number(format.photos_kept) || 0,
+    upgradeUrl: format.upgrade_url || "",
+  };
+}
+
+// The exam-date chips of the project option: the date found in the chat (if any), in one
+// week, in two weeks, and no date ("Pick a date" is the native date field next to them).
+// Dates are ISO strings counted from `today` (the server's local day), so the chips never
+// depend on the phone's clock or time zone.
+export function examDateChoices(today, examDate = "") {
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(String(today || "")) ? new Date(`${today}T12:00:00Z`) : null;
+  const plus = (days) => {
+    if (!base) return "";
+    const day = new Date(base.getTime() + days * 86400000);
+    return day.toISOString().slice(0, 10);
+  };
+  const choices = [];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(examDate || ""))) choices.push({ value: examDate, key: "asstExamOn", found: true });
+  for (const [days, key] of [[7, "asstExamInWeek"], [14, "asstExamInTwoWeeks"]]) {
+    const value = plus(days);
+    if (value && !choices.some((item) => item.value === value)) choices.push({ value, key });
+  }
+  choices.push({ value: "", key: "asstExamNoDate" });
+  return choices;
+}

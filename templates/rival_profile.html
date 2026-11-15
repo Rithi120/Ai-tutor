@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "components/_identity.html" import avatar_frame with context %}
+{% block title %}{{ rival.username }} — {{ _('Simulated rival') }} — Learnova{% endblock %}
+{% block head %}
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css', v=static_version) }}">
+{% endblock %}
+{% block content %}
+{# A simulated league rival (learnova/gamification/rivals.py): same design as a learner's
+   public profile, always marked as simulated. Deleted with its week. #}
+<main class="profile-page public-profile rival-profile" id="main-content">
+  <section class="profile-hero" style="--avatar-accent: {{ avatar.accent }}">
+    <div class="profile-hero-art">
+      {{ avatar_frame(avatar.url, avatar.accent, "xl", avatar.name) }}
+      <span class="rarity-chip rarity-{{ avatar.rarity }}">{{ avatar.rarity_label }}</span>
+    </div>
+    <div class="profile-hero-info">
+      <p class="eyebrow">{{ _('LEARNOVA LEAGUES') }}</p>
+      <h1 class="profile-name"><span>{{ rival.display_name }}</span></h1>
+      <p class="profile-avatar-name">@{{ rival.username }}</p>
+      <p class="rival-marker"><span class="rival-chip">{{ _('Simulated rival') }}</span>
+        <small>{{ _('Simulated rivals fill the free places in a league group. They are not real learners and leave when the week ends.') }}</small></p>
+      <div class="profile-level">
+        <span class="level-badge"><small>{{ _('Level') }}</small><b>{{ rival.level }}</b></span>
+        <div class="level-track">
+          <div class="level-bar"><i style="width: {{ (100 * progress.current_level_xp / progress.next_level_xp)|round|int }}%"></i></div>
+          <p>{{ progress.total_xp }} {{ _('XP') }}</p>
+        </div>
+      </div>
+      <ul class="profile-highlights">
+        <li style="--league: {{ league.colour }}; --league-dark: {{ league.colour_dark }}"><span class="league-crest league-{{ league.key }}" aria-hidden="true"></span><b>{{ league.name }}</b><small>{{ _('this week') }}</small></li>
+        <li><span aria-hidden="true">📊</span><b>{% if rank %}#{{ rank }}{% else %}–{% endif %}</b><small>{{ _('of {size}', size=size) }}</small></li>
+        <li><span aria-hidden="true">⚡</span><b>{{ weekly_xp }}</b><small>{{ _('XP this week') }}</small></li>
+      </ul>
+    </div>
+  </section>
+  <section class="profile-grid">
+    <article class="profile-panel">
+      <h2>{{ _('Recent achievements') }}</h2>
+      {% if badges %}
+      <ul class="achievement-list">{% for badge in badges %}<li><span aria-hidden="true">🏅</span><div><b>{{ _(badge.name) }}</b><small>{{ _(badge.description) }}</small></div></li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ _('No badges yet.') }}</p>{% endif %}
+    </article>
+    <article class="profile-panel">
+      <h2>{{ _('Activity this week') }}</h2>
+      {% if activity %}
+      <ul class="rival-activity">{% for item in activity %}<li><span>{{ item.label }}</span><small>{{ item.when }}</small><b>+{{ item.xp }} XP</b></li>{% endfor %}</ul>
+      {% else %}<p class="muted">{{ _('No activity yet this week.') }}</p>{% endif %}
+    </article>
+  </section>
+  <p class="rival-back"><a class="secondary-button" href="{{ url_for('leaderboard_page') }}">← {{ _('Back to the league') }}</a></p>
+</main>
+{% endblock %}

@@ -55,3 +55,30 @@ export function toast(message, kind = "info") {
 export function optionsHtml(values, selected) {
   return values.map(v => `<option value="${escapeHtml(v)}"${v === selected ? " selected" : ""}>${escapeHtml(v)}</option>`).join("");
 }
+
+// Who can see a set, as the SERVER derived it (publication_summary in app.py, the same rule
+// every public read uses). Pages render only this; they never guess from a raw status.
+export const VISIBILITY_KEY = {
+  private: "fcStatusPrivate",
+  published: "fcStatusPublished",
+  pending: "fcStatusPendingModeration",
+  action_needed: "fcStatusChangesRequested",
+  hidden: "fcStatusHidden",
+};
+// A newer version waiting behind a live deck: the approved one stays public meanwhile.
+export const UPDATE_KEY = {
+  pending: "fcStatusPublishedUpdatePending",
+  action_needed: "fcStatusPublishedUpdateDeclined",
+};
+
+export function publicationBadge(publication) {
+  const visibility = (publication && VISIBILITY_KEY[publication.visibility]) ? publication.visibility : "private";
+  const update = visibility === "published" && publication.update_state && UPDATE_KEY[publication.update_state]
+    ? publication.update_state : "";
+  const key = update ? UPDATE_KEY[update] : VISIBILITY_KEY[visibility];
+  return {
+    visibility,
+    text: t(key),
+    className: `visibility-${visibility}${update ? ` visibility-update-${update}` : ""}`,
+  };
+}

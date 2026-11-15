@@ -118,8 +118,9 @@ call site, including ones that do not use the reader:
   that page and none of the other 21 (docs/PROJECT_MODE.md, "Reading honesty").
 - **A busy vision model is asked once per Project Mode run (review B B-1).** While the only
   vision model cools down after a 429, `ocr_document_recognition` fails at once without a
-  call (`COOLDOWN_FAIL_FAST_TASKS`) and the page is read offline; the reading loops stop at
-  the first page read offline because the AI was busy. Chat photos (`image_understanding`
+  call (`COOLDOWN_FAIL_FAST_TASKS`) and the page is read offline; after the first page read
+  offline because the AI was busy, the rest of the run is read offline without asking the AI
+  (`offline`, docs/PROJECT_MODE.md - it used to stop there and leave the later pages unread). Chat photos (`image_understanding`
   and their close-up second look) still ask the model as before.
 - **"Try reading again" is a real re-read (PF3 D3).** Page readings are cached
   (`DETERMINISTIC_TASKS`), so a retry used to return the same reading for free. The retry
@@ -144,6 +145,7 @@ call site, including ones that do not use the reader:
 | **New lesson with photos** (`/api/analyze`) | Shared intake, then a reading, then the normal tutor model writes the lesson from it, with quality options; it no longer sees the images. Unreadable photos get a clear 422 and the lesson is not counted. The reading becomes the lesson's `source_context`, so the tutor chat and the grading know what the photos said. Unclear parts are shown in one line above the lesson. |
 | **Project Mode pages** | The existing pipeline is kept: native PDF text, three preprocessing variants, the close-up second look, the review page and topic confirmation. Since the teaching-engine rebuild a provider-wide error stops the image modes at once, a page waits instead of failing while the provider or the hourly allowance is out, blank PDF pages are skipped without a call, and the text layer and then the offline OCR are the fallback (`text_source`, see `docs/PROJECT_MODE.md`). Each page goes to the provider sized (`provider_image_url`), and the page prompt shares the confusable-characters and maths rules. The scanner still captures lossless full-resolution PNG (an earlier handwriting decision); only the copy sent to a provider is sized. When the live camera is refused or missing, it offers the phone's own camera app, with specific advice for a refused permission. Exam preparation reads the same Project pages. |
 | **Flashcard image import, vocabulary textbook pages** | Sent sized. Their prompts and flows are unchanged. |
+| **Many images at once** (Project Mode create / add pages, Vocabulary Mode import) | One gallery component (`static/js/image-collection.js`, on the primitives of `image-attach.js`): thumbnails made two at a time at 320 px, gallery photos over ~4 MB / 4096 px re-encoded to 2560 px JPEG q0.9 on the device, camera scans kept lossless, batches under the request limit. The server still reads one page per request with a provider-sized copy. [MULTI_IMAGE_UPLOADS.md](MULTI_IMAGE_UPLOADS.md). |
 | **Vocabulary tap-a-word scanner** | Unchanged and still LLM-free, by earlier decision. |
 
 ## Privacy, retention, cost

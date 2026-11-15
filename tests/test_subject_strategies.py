@@ -292,10 +292,12 @@ class TeachingFirstPropertyTests(unittest.TestCase):
                           "summary"],
             "latin": ["objective", "rule", "structure", "example", "mistakes", "terms", "source_analysis",
                       "guided_exercise", "summary"],
-            "mathematics": ["objective", "why", "explanation", "rule", "worked_example", "mistakes",
+            # Spec Phase 2: with a formula item, the notes' formulas get a "rule" step and an optional
+            # "alternative" (Additional tip) after the worked example.
+            "mathematics": ["objective", "why", "explanation", "rule", "worked_example", "alternative", "mistakes",
                             "guided_exercise", "summary"],
-            "sciences": ["objective", "terms", "explanation", "experiment", "process", "diagram", "worked_example",
-                         "mistakes", "guided_exercise", "summary"],
+            "sciences": ["objective", "terms", "explanation", "experiment", "process", "diagram", "rule",
+                         "worked_example", "alternative", "mistakes", "guided_exercise", "summary"],
             "ethics": ["objective", "terms", "thought_experiment", "theory", "argument", "perspectives", "example",
                        "mistakes", "guided_exercise", "summary"],
             "german": ["objective", "explanation", "terms", "structure", "rule", "model_analysis", "mistakes",
@@ -1114,6 +1116,9 @@ class PartPagesTests(unittest.TestCase):
         self.assertEqual(out[1]["source_labels"], ["A.pdf p. 1 / B.pdf p. 1"])
         self.assertEqual((out[2]["source_page_ids"], out[2]["source_labels"]), ([], []),
                          "a page the lesson does not have is not shown")
+        # static/app.js shows the bare numbers when there are no labels: they must go too.
+        self.assertEqual(out[2]["source_pages"], [], "nor its bare number (the page's fallback)")
+        self.assertEqual(out[0]["source_pages"], [1, 2])
         self.assertNotIn("source_labels", out[3])
 
 

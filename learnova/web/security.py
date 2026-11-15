@@ -35,7 +35,7 @@ _BASE = (
     ("form-action", "'self'"),
     ("frame-ancestors", "'none'"),
     ("object-src", "'none'"),
-    ("img-src", "'self' data: blob: https://upload.wikimedia.org"),
+    ("img-src", "'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org"),
     ("font-src", "'self' https://fonts.gstatic.com https://cdn.jsdelivr.net"),
     ("style-src", "'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net"),
     ("script-src", "'nonce-{nonce}' 'strict-dynamic' 'self' https://cdn.jsdelivr.net"),

@@ -2,7 +2,7 @@
    route that changes only the signed-in account. #}
 {% from "components/_identity.html" import avatar_frame with context %}
 <section id="profile" class="settings-profile" aria-labelledby="profileSettingsTitle">
-  <h2 id="profileSettingsTitle">{{ _('Profile') }}</h2>
+  <h2 id="profileSettingsTitle"><span aria-hidden="true">👤</span> {{ _('Profile') }}</h2>
   <div class="settings-profile-head">
     {% if nav_avatar %}{{ avatar_frame(nav_avatar.url, nav_avatar.accent, "md") }}{% endif %}
     <div>
@@ -37,7 +37,7 @@
         <small>{{ _('Leagues rank learners by the XP they earn each week; the top places move up a league, the bottom ones move down.') }}</small></span>
     </label>
     <div class="settings-explainer">
-      <p><b>{{ _('If you turn leagues off:') }}</b> {{ _('you leave this week’s ranking straight away and are never promoted or demoted. Your XP, level, avatars, streak and challenges keep working exactly as before, and nobody else can see that you turned it off.') }}</p>
+      <p><b>{{ _('If you turn leagues off:') }}</b> {{ _('you leave this week’s ranking straight away and are not promoted. If you are in the demotion zone at that moment, you move down a league, just as you would have at the end of the week. Your XP, level, avatars, streak and challenges keep working exactly as before, and nobody else can see that you turned it off.') }}</p>
       <p><b>{{ _('If you turn them on again:') }}</b> {{ _('you join from the start of next week, in the league you were in. Nothing is awarded or taken away for the weeks you missed.') }}</p>
     </div>
     {% endif %}

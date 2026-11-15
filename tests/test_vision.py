@@ -738,7 +738,8 @@ class LessonFromPhotoTests(RouteTestCase):
         self.assertEqual(ai.tasks(), ["image_understanding", "lesson_generation"])
         self.assertEqual(len(image_parts(ai.calls[0]["input"])), 2)
         lesson_call = ai.calls[1]
-        self.assertEqual(lesson_call["model"], application.TUTOR_MODEL)
+        # Reliability V1: the lesson is written by AI_LESSON_MODEL (the stronger model).
+        self.assertEqual(lesson_call["model"], application.app.config["AI_LESSON_MODEL"])
         self.assertEqual(image_parts(lesson_call["input"]), [], "the lesson model is no longer the image reader")
         self.assertIn("3x + 5 = [?20]", json.dumps(lesson_call["input"], ensure_ascii=False))
         data = response.get_json()

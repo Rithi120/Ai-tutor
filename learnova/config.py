@@ -239,6 +239,40 @@ DEFAULT_COMMUNITY_ALERT_EMAIL = "contact.studylearnova@gmail.com"
 DEFAULT_PROJECT_MAX_PAGES = 40
 
 
+def _bounded_number(name: str, default: str, low: float, high: float) -> float:
+    try:
+        value = float(os.getenv(name, default))
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be a number") from error
+    return max(low, min(high, value))
+
+
+def _configure_learning_resources(app, feature_flag) -> None:
+    """Educational pictures and videos in the chat and in Short Lessons (docs/LEARNING_RESOURCES.md).
+
+    Pictures come from Wikipedia/Wikimedia Commons and need no key. Real video cards need a
+    YouTube Data API v3 key; without one, Short Lessons keep their honest "Search YouTube
+    for ..." links and the chat offers no videos. The key is read here and passed only to
+    learnova/youtube_videos.py, in a request header - never to a template, the page or a log.
+    """
+
+    app.config["FEATURE_LEARNING_RESOURCES"] = feature_flag("FEATURE_LEARNING_RESOURCES", True)
+    app.config["YOUTUBE_API_KEY"] = os.getenv("YOUTUBE_API_KEY", "").strip()
+    region = os.getenv("YOUTUBE_REGION_CODE", "DE").strip().upper()
+    app.config["YOUTUBE_REGION_CODE"] = region if len(region) == 2 and region.isalpha() else "DE"
+    # search.list costs 100 of the default 10,000 units a day; 80 searches leave room for the
+    # 1-unit availability checks. Every search is cached and shared by all students.
+    app.config["YOUTUBE_DAILY_SEARCH_LIMIT"] = int(_bounded_number("YOUTUBE_DAILY_SEARCH_LIMIT", "80", 0, 10000))
+    # One student's share of those new searches per day (cached answers do not count), so a
+    # single account cannot spend the whole day's searches for everyone.
+    app.config["YOUTUBE_SEARCHES_PER_STUDENT"] = int(_bounded_number("YOUTUBE_SEARCHES_PER_STUDENT", "20", 1, 10000))
+    # The YouTube API Services policies allow stored API data for at most 30 days.
+    app.config["YOUTUBE_CACHE_DAYS"] = int(_bounded_number("YOUTUBE_CACHE_DAYS", "7", 1, 30))
+    app.config["YOUTUBE_TIMEOUT_SECONDS"] = _bounded_number("YOUTUBE_TIMEOUT_SECONDS", "4", 1, 15)
+    # Optional channel ids (UC...) that rank first among relevant videos - a boost, never a filter.
+    app.config["YOUTUBE_TRUSTED_CHANNELS"] = os.getenv("YOUTUBE_TRUSTED_CHANNELS", "").strip()
+
+
 def _configure_assistant_chat(app) -> None:
     """Conversation persistence and per-account limits for the assistant chat (docs/ASSISTANT.md)."""
 
@@ -268,6 +302,8 @@ def _configure_assistant_chat(app) -> None:
     # than a lesson call with its fallback), and how many builds an account may start per hour.
     app.config["CONTINUE_LEARNING_PENDING_SECONDS"] = bounded("CONTINUE_LEARNING_PENDING_SECONDS", 180, 30, 1800)
     app.config["CONTINUE_LEARNING_PER_HOUR"] = bounded("CONTINUE_LEARNING_PER_HOUR", 10, 1, 1000)
+    # Projects made from the chat (spec 1.2) per account per hour, like the project form.
+    app.config["CHAT_PROJECTS_PER_HOUR"] = bounded("CHAT_PROJECTS_PER_HOUR", 10, 1, 1000)
     # What of the conversation a Continue Learning lesson request carries: the transcript
     # (estimated tokens) and the stored photo readings (characters). With the lesson
     # instructions and teaching method (~3.5k tokens) the defaults keep one request near
@@ -297,6 +333,29 @@ def _configure_community_alerts(app, selected: str) -> None:
     # Links in alert emails need an absolute address, and a background thread has no
     # request to take one from. Without it the email names the set id and the page path.
     app.config["PUBLIC_BASE_URL"] = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    # ---- Login & security (learnova/authentication, docs/AUTHENTICATION.md) ----
+    # A provider is offered only when all its settings are present; nothing is faked.
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID",
+                 "SMS_API_KEY", "SMS_SENDER"):
+        app.config[name] = os.getenv(name, "").strip()
+    # Secrets are never stripped of inner content (a PEM key spans lines; "\n" escapes are accepted).
+    app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    app.config["APPLE_PRIVATE_KEY"] = os.getenv("APPLE_PRIVATE_KEY", "")
+    app.config["SMS_API_SECRET"] = os.getenv("SMS_API_SECRET", "")
+    app.config["SMS_PROVIDER"] = os.getenv("SMS_PROVIDER", "").strip().lower()
+    for name, default, minimum in (("AUTH_OTP_EXPIRY_SECONDS", "300", 60), ("AUTH_OTP_RESEND_COOLDOWN", "60", 10),
+                                   ("AUTH_OTP_MAX_ATTEMPTS", "5", 1), ("AUTH_OTP_MAX_PER_NUMBER_HOUR", "5", 1),
+                                   ("AUTH_OTP_MAX_PER_NUMBER_DAY", "10", 1), ("AUTH_OTP_MAX_PER_IP_HOUR", "20", 1),
+                                   ("AUTH_REAUTH_MINUTES", "15", 1), ("AUTH_PENDING_SIGNUP_DAYS", "7", 1),
+                                   ("AUTH_SECURITY_EMAILS_PER_HOUR", "6", 1)):
+        try:
+            app.config[name] = max(minimum, int(os.getenv(name, default)))
+        except ValueError as error:
+            raise RuntimeError(f"{name} must be a whole number") from error
+    app.config["AUTH_WELCOME_SMS"] = os.getenv("AUTH_WELCOME_SMS", "").strip().lower() in {"1", "true", "yes", "on"}
+    app.config["AUTH_NEW_DEVICE_ALERTS"] = os.getenv("AUTH_NEW_DEVICE_ALERTS", "true").strip().lower() in {
+        "1", "true", "yes", "on"}
+    app.config["AUTH_SECURITY_SMS"] = os.getenv("AUTH_SECURITY_SMS", "true").strip().lower() in {"1", "true", "yes", "on"}
     for name, default in (("MAIL_TIMEOUT_SECONDS", "10"),):
         try:
             app.config[name] = max(1.0, float(os.getenv(name, default)))
@@ -459,6 +518,18 @@ def configure_app(app, environment: str | None = None) -> str:
     # the fast model behind it, so a rate limit degrades instead of failing.
     app.config["AI_TUTOR_CHAT_MODEL"] = os.getenv(
         "AI_TUTOR_CHAT_MODEL", app.config["GROQ_ANALYSIS_MODEL"]).strip()
+    # Reliability V1: lessons (Short Lessons, project topics, Continue Learning, practice
+    # lessons) are written by the stronger model - the live audit found calculation and
+    # logic errors in lessons written by the 20b model. Routing keeps the standard model
+    # behind it, so a rate limit still gives a lesson (marked as degraded), and every
+    # lesson's calculations are checked by learnova/lessons/math_check.py either way.
+    app.config["AI_LESSON_MODEL"] = os.getenv(
+        "AI_LESSON_MODEL", app.config["GROQ_ANALYSIS_MODEL"]).strip() or app.config["GROQ_ANALYSIS_MODEL"]
+    # The model that corrects a lesson whose calculations failed the check. It never falls
+    # back to a weaker model (signal strict_model): if it is unavailable, the lesson keeps
+    # its flagged calculation instead of a second guess from a smaller model.
+    app.config["AI_MATH_VERIFY_MODEL"] = os.getenv(
+        "AI_MATH_VERIFY_MODEL", app.config["AI_LESSON_MODEL"]).strip() or app.config["AI_LESSON_MODEL"]
     # Community moderation runs the cheapest capable model on every submission and
     # re-runs the strongest one only when the deterministic pass or the first
     # classification says the case is genuinely hard. Both are named here so a
@@ -622,7 +693,10 @@ def configure_app(app, environment: str | None = None) -> str:
         "IMAGE_UNDERSTANDING": 10000,
         "ADAPTIVE_PRACTICE": 6000,
         "FINAL_EXAM_EVALUATION": 8000, "FLASHCARD_GENERATION": 10000,
-        "FLASHCARD_BACK_SUGGESTION": 800,
+        # 2600, not 800: the request is the shared tutor rules (~900-1200 tokens by subject),
+        # the card prompt and the output contract - 800 refused every call before it reached a
+        # model ("material too large"; found 2026-11-15, the mocked tests could not see it).
+        "FLASHCARD_BACK_SUGGESTION": 2600,
         "FLASHCARD_REVIEW": 12000, "CONTENT_MODERATION": 12000,
         "ASSISTANT_CHAT": 12000,
     }
@@ -788,6 +862,11 @@ def configure_app(app, environment: str | None = None) -> str:
         "FLASHCARD_IMPORT_RETENTION_HOURS": 24,
         "FLASHCARD_EXTRACTION_TIMEOUT_SECONDS": 45,
         "MAX_FLASHCARD_IMPORTS_PER_HOUR": 10,
+        # Pages in one vocabulary import (a PDF counts each of its pages), added one per
+        # request (POST /api/vocabulary/imports/<id>/pages), and how many such page uploads
+        # an account may make per hour: forty pages plus retries.
+        "VOCABULARY_MAX_PAGES": 40,
+        "VOCABULARY_PAGE_UPLOADS_PER_HOUR": 60,
     }
     for name, default in import_limits.items():
         try:
@@ -803,6 +882,14 @@ def configure_app(app, environment: str | None = None) -> str:
             1, int(os.getenv("PROJECT_MAX_PAGES", str(DEFAULT_PROJECT_MAX_PAGES))))
     except ValueError as error:
         raise RuntimeError("PROJECT_MAX_PAGES must be a positive integer") from error
+    # Files in one project upload request (/projects, /projects/<id>/pages/add). The
+    # multi-image component sends batches of six (static/js/image-collection.js); a form
+    # posted without JavaScript may still send a whole project's worth in one request.
+    try:
+        app.config["PROJECT_MAX_FILES_PER_REQUEST"] = max(
+            1, int(os.getenv("PROJECT_MAX_FILES_PER_REQUEST", str(DEFAULT_PROJECT_MAX_PAGES))))
+    except ValueError as error:
+        raise RuntimeError("PROJECT_MAX_FILES_PER_REQUEST must be a positive integer") from error
 
     def _feature_flag(name: str, default: bool) -> bool:
         raw = os.getenv(name)
@@ -815,6 +902,14 @@ def configure_app(app, environment: str | None = None) -> str:
     # 40 phone photos 96 s, in one request); each page's picture is made when it is first
     # read or shown. true restores rendering at upload: the rollback switch.
     app.config["PROJECT_PREPROCESS_ON_UPLOAD"] = _feature_flag("PROJECT_PREPROCESS_ON_UPLOAD", False)
+    # Reliability V1: the calculation check of every generated lesson, and at most this many
+    # correction calls per lesson (0 = check and flag only, never ask the model again).
+    app.config["FEATURE_LESSON_MATH_CHECK"] = _feature_flag("FEATURE_LESSON_MATH_CHECK", True)
+    try:
+        attempts = int(os.getenv("AI_MATH_CORRECTION_ATTEMPTS", "1"))
+    except ValueError:
+        attempts = 1
+    app.config["AI_MATH_CORRECTION_ATTEMPTS"] = max(0, min(2, attempts))
     # Share of a PDF page covered by raster images (0..1) from which its text layer counts
     # as partial: the page is read by vision, not stored from the text layer alone (a pasted
     # photo of a handwritten note, a scanner app's OCR layer over a photo).
@@ -882,6 +977,10 @@ def configure_app(app, environment: str | None = None) -> str:
     app.config["FEATURE_ASSISTANT_CHAT"] = _feature_flag("FEATURE_ASSISTANT_CHAT", True)
     # "Continue learning": one click turns a chat into a lesson (counts as a free lesson).
     app.config["FEATURE_CONTINUE_LEARNING"] = _feature_flag("FEATURE_CONTINUE_LEARNING", True)
+    # Exam material in the chat (spec 1.2): separate Short Lessons per topic, Project Mode,
+    # or a choice between them, decided from the reply's hidden EXAM line; PDFs handed to
+    # project creation. Off: the chat keeps its single Continue Learning button.
+    app.config["FEATURE_CHAT_STUDY_FORMAT"] = _feature_flag("FEATURE_CHAT_STUDY_FORMAT", True)
     app.config["FEATURE_COMMUNITY_LIBRARY"] = _feature_flag(
         "FEATURE_COMMUNITY_LIBRARY", not is_production)
     # Publishing is available in development and testing so the full workflow can be
@@ -929,6 +1028,16 @@ def configure_app(app, environment: str | None = None) -> str:
     # per group at the end of each week, and the most learners in one group.
     for name, default, low in (("LEAGUE_PROMOTE", "10", 0), ("LEAGUE_DEMOTE", "10", 0),
                                ("LEAGUE_GROUP_SIZE", "30", 2),
+                               # Seconds after a week ends before it is closed, so an award
+                               # committed just after midnight still counts for its week.
+                               ("LEAGUE_CLOSE_GRACE_SECONDS", "120", 0),
+                               # Simulated rivals (learnova/gamification/rivals.py): the weekly XP
+                               # they are calibrated on without enough history (Bronze; higher
+                               # leagues scale it), the real results needed to use last week's
+                               # median instead, its bounds, and the most a rival earns.
+                               ("LEAGUE_RIVAL_BASELINE_XP", "60", 1), ("LEAGUE_RIVAL_MIN_SAMPLES", "5", 1),
+                               ("LEAGUE_RIVAL_MIN_BASELINE_XP", "20", 1), ("LEAGUE_RIVAL_MAX_BASELINE_XP", "400", 1),
+                               ("LEAGUE_RIVAL_MAX_DAILY_XP", "150", 10), ("LEAGUE_RIVAL_MAX_WEEKLY_XP", "600", 10),
                                # Days between two username changes, and how long a released
                                # name stays unavailable to everyone else.
                                ("USERNAME_CHANGE_COOLDOWN_DAYS", "30", 0),
@@ -937,6 +1046,10 @@ def configure_app(app, environment: str | None = None) -> str:
             app.config[name] = max(low, int(os.getenv(name, default)))
         except ValueError as error:
             raise RuntimeError(f"{name} must be an integer") from error
+    # Simulated rivals fill a weekly group of fewer than 27 real learners up to 30, and earn
+    # XP from scheduled simulated learning (learnova/gamification/rivals.py). Off: groups of
+    # real learners only, with zones shrunk to the group's size.
+    app.config["LEAGUE_RIVALS"] = _feature_flag("LEAGUE_RIVALS", True)
     app.config["FEATURE_FLASHCARD_GAMES"] = all(app.config[name] for name in (
         "FEATURE_FLASHCARD_MATCH_GAME", "FEATURE_FLASHCARD_BLAST_GAME",
         "FEATURE_FLASHCARD_BLOCKS_GAME",
@@ -951,6 +1064,7 @@ def configure_app(app, environment: str | None = None) -> str:
     # default; a switch exists because it is the one feature that reaches a third
     # party on the request path.
     app.config["FEATURE_LESSON_MEDIA"] = _feature_flag("FEATURE_LESSON_MEDIA", True)
+    _configure_learning_resources(app, _feature_flag)
     # Baden-Württemberg Bildungsplan grounding (learnova/curriculum). On by default but a
     # no-op until documents are imported; the cleared-hosts list starts empty on purpose,
     # because confirming a source's usage terms is the operator's decision.
@@ -975,6 +1089,21 @@ def configure_app(app, environment: str | None = None) -> str:
         for item in os.getenv("PREMIUM_ADMIN_IDENTIFIERS", "").split(",")
         if item.strip()
     }
+    # Bulk Premium vouchers (PREMIUM_VOUCHER_IMPLEMENTATION.md). The pepper keys the
+    # HMAC-SHA256 every voucher is stored as; it is a secret like SECRET_KEY: never shown,
+    # never logged, never in a response. Without it no batch can be generated and single
+    # codes stay the older SHA-256 kind. A pepper that is set but short stops the deploy.
+    pepper = os.getenv("PREMIUM_VOUCHER_PEPPER", "").strip()
+    if pepper and len(pepper) < 32:
+        raise RuntimeError("PREMIUM_VOUCHER_PEPPER must be at least 32 characters (use: openssl rand -hex 32)")
+    app.config["PREMIUM_VOUCHER_PEPPER"] = pepper
+    try:
+        voucher_days = int(os.getenv("PREMIUM_VOUCHER_VALIDITY_DAYS", "365"))
+    except ValueError as error:
+        raise RuntimeError("PREMIUM_VOUCHER_VALIDITY_DAYS must be a whole number of days") from error
+    if not 1 <= voucher_days <= 730:
+        raise RuntimeError("PREMIUM_VOUCHER_VALIDITY_DAYS must be between 1 and 730")
+    app.config["PREMIUM_VOUCHER_VALIDITY_DAYS"] = voucher_days
     # Plans, prices, free allowances and activation-code policy (learnova/subscriptions,
     # docs/SUBSCRIPTIONS.md). Validated here so a bad value stops the deploy.
     from learnova.subscriptions.plans import load_settings

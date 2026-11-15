@@ -37,6 +37,36 @@ def _text(value: Any, limit: int) -> str:
     return str(value or "").strip()[:limit]
 
 
+# A card's kind (spec Phase 4: the editor's Word / Sentence / Other) is stored as one bare
+# reserved tag in Flashcard.tags_json - the convention vocabulary.card_variants already
+# writes ("word", "phrase", "sentence") and modes.select_cards already reads. "phrase" is
+# what the importer calls a fixed phrase; the editor shows it as Word. A card with no kind
+# tag (every card made before the selector) is studied as a word and is never rewritten.
+# The editor's kind is NOT mirrored into VocabularyEntry.entry_kind: the flashcard set is
+# the only study surface, and that column has no "other".
+CARD_KINDS = ("word", "phrase", "sentence", "other")
+KIND_TAGS = frozenset(CARD_KINDS)
+
+
+def card_kind(tags: Any) -> str:
+    """The kind tag among a card's tags ("word", "phrase", "sentence", "other"), or ""."""
+
+    if not isinstance(tags, list):
+        return ""
+    return next((str(tag) for tag in tags if str(tag) in KIND_TAGS), "")
+
+
+def without_kind(tags: list[str]) -> list[str]:
+    return [tag for tag in tags if tag not in KIND_TAGS]
+
+
+def with_kind(tags: list[str], kind: str) -> list[str]:
+    """`kind` first, then the other tags: the 8-tag cap can never drop it, and a card holds
+    exactly one kind tag. An unknown kind leaves only the other tags."""
+
+    return [kind, *without_kind(tags)] if kind in KIND_TAGS else without_kind(tags)
+
+
 def normalize_card(raw: Any) -> dict[str, Any]:
     """Validate/normalize one AI card into the stored shape. Raise ValueError if unusable."""
 
@@ -54,7 +84,17 @@ def normalize_card(raw: Any) -> dict[str, Any]:
         difficulty = "medium"
     tags = []
     if isinstance(raw.get("tags"), list):
-        tags = [tag for tag in (_text(item, 40) for item in raw["tags"]) if tag][:8]
+        tags = [tag for tag in (_text(item, 40) for item in raw["tags"]) if tag]
+    # The editor sends `kind` (word / phrase / sentence / other, or "" for a card without
+    # one). Without the key - AI generation, project sync, community copies, the vocabulary
+    # importer - the tags are kept exactly as given. An unknown kind is ignored.
+    if "kind" in raw:
+        kind = str(raw.get("kind") or "").strip().casefold()
+        if kind in KIND_TAGS:
+            tags = with_kind(tags, kind)
+        elif not kind:
+            tags = without_kind(tags)
+    tags = tags[:8]
     options = []
     if card_type == "multiple_choice" and isinstance(raw.get("options"), list):
         options = [opt for opt in (_text(item, 300) for item in raw["options"]) if opt][:6]

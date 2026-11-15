@@ -298,6 +298,13 @@ def plan_route(
 
     # 2. What the call site asked for (usually the tier's own Groq model).
     requested = context.requested_model or policy.tier_models.get(tier, "")
+    if context.signals.get("strict_model") and requested:
+        # Accuracy-critical (Reliability V1: correcting a lesson whose calculations failed
+        # the check): only the model asked for. A failure is reported, never answered by a
+        # weaker model in its place.
+        return RoutePlan(tier=tier, candidates=(Candidate(model=requested, provider=split_model(requested)[0],
+                                                          reason="strict"),),
+                         max_calls=policy.max_calls)
     tier_model = policy.tier_models.get(tier, "")
     # A previous failure on the same model says: lead with the stronger Groq model.
     fallback_tier = GROQ_FALLBACK_TIER.get(tier)

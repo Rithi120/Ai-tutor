@@ -2,7 +2,6 @@ import { escapeHtml } from "./dom.js";
 import { withRetryHint } from "./ai-limit-rules.js";
 import { renderMath } from "./math.js";
 
-const SUBJECTS = ["Mathematics", "English", "German", "History", "Biology", "Chemistry", "Physics", "Other"];
 const MODERATION_ENABLED =
   document.querySelector("#main-content")?.dataset.moderationEnabled === "true";
 // A subset of learnova.moderation.taxonomy.REPORT_REASONS. The server validates against
@@ -27,8 +26,8 @@ const tx = (en, de) => window.LEARNOVA_LANGUAGE === "de" ? de : en;
 
 
 
-async function api(url, { method = "GET", body } = {}) {
-  const options = { method, headers: {} };
+async function api(url, { method = "GET", body, signal } = {}) {
+  const options = { method, headers: {}, signal };
   if (body !== undefined) { options.headers["Content-Type"] = "application/json"; options.body = JSON.stringify(body); }
   const response = await fetch(url, options);
   let data = {};
@@ -66,23 +65,192 @@ function studentRatingHtml(student) {
 }
 
 /* ------------------------- library ------------------------- */
-async function loadLibrary() {
-  const params = new URLSearchParams();
-  new FormData(document.querySelector("#commFilters")).forEach((value, key) => { if (value) params.set(key, value); });
+/* Filters (COMMUNITY_FLASHCARD_FILTER_FIX.md). The server filters the whole library and
+ * pages it; this keeps the form, the URL and the shown results in step:
+ *  - every load cancels the one before it (AbortController) and a late answer of an older
+ *    request is dropped (sequence), so the results always belong to the current filters;
+ *  - typing is debounced, a select applies at once;
+ *  - the filters live in the URL (?subject=English&grade=9), so a reload, a shared link and
+ *    the browser's Back/Forward show the same results;
+ *  - while any filter is active the highlight shelves (unfiltered by design) step aside, so
+ *    the matching sets are right under the filter bar. */
+const FILTER_FIELDS = ["q", "kind", "subject", "grade", "difficulty", "language", "min_ai", "min_student", "sort"];
+const PANEL_FIELDS = ["grade", "difficulty", "language", "min_ai", "min_student"];
+const DEFAULT_SORT = "ranking";
+const PAGE_SIZE = 30;
+const library = { offset: 0, controller: null, sequence: 0, typing: null };
+
+const filterForm = () => document.querySelector("#commFilters");
+
+function currentFilters() {
+  const values = {};
+  new FormData(filterForm()).forEach((value, key) => {
+    const text = String(value).replace(/\s+/g, " ").trim();
+    if (text) values[key] = text;
+  });
+  if (values.sort === DEFAULT_SORT) delete values.sort;
+  return values;
+}
+
+const filtersActive = values => Object.keys(values).some(key => key !== "sort");
+
+function libraryUrl(values) {
+  const query = new URLSearchParams(values).toString();
+  return `/community${query ? `?${query}` : ""}`;
+}
+
+function syncUrl(values, push) {
+  if (location.pathname !== "/community") return;      // a set's own page keeps its address
+  const url = libraryUrl(values);
+  if (location.pathname + location.search === url) return;
+  history[push ? "pushState" : "replaceState"]({ communityFilters: true }, "", url);
+}
+
+function applyUrlToForm() {
+  const params = new URLSearchParams(location.search);
+  const form = filterForm();
+  FILTER_FIELDS.forEach(name => {
+    const field = form.elements.namedItem(name);
+    if (!field) return;
+    const wanted = params.get(name) || (name === "sort" ? DEFAULT_SORT : "");
+    const known = field.tagName !== "SELECT" || [...field.options].some(option => option.value === wanted);
+    field.value = known ? wanted : (name === "sort" ? DEFAULT_SORT : "");
+  });
+  if (PANEL_FIELDS.some(name => params.get(name))) togglePanel(true);
+}
+
+function fieldLabel(name, value) {
+  const field = filterForm().elements.namedItem(name);
+  if (name === "q") return `„${value}“`;
+  if (field && field.tagName === "SELECT") {
+    const option = [...field.options].find(item => item.value === value);
+    const label = field.closest("label")?.firstChild?.textContent?.trim();
+    const text = option ? option.textContent.trim() : value;
+    // "Schwierigkeit: Leicht", but "Klasse 9", not "Klasse: Klasse 9".
+    return label && PANEL_FIELDS.includes(name) && !text.toLowerCase().includes(label.toLowerCase())
+      ? `${label}: ${text}` : text;
+  }
+  return value;
+}
+
+function togglePanel(open) {
+  const panel = document.querySelector("#commMoreFilters");
+  const toggle = document.querySelector("#commFilterToggle");
+  const show = open ?? panel.hidden;
+  panel.hidden = !show;
+  toggle.setAttribute("aria-expanded", String(show));
+  toggle.classList.toggle("is-open", show);
+}
+
+function renderFilterState(values) {
+  const form = filterForm();
+  const panelCount = PANEL_FIELDS.filter(name => values[name]).length;
+  const badge = document.querySelector("#commFilterBadge");
+  badge.textContent = String(panelCount);
+  badge.hidden = panelCount === 0;
+  document.querySelector("#commFilterToggle").classList.toggle("has-filters", panelCount > 0);
+  const chips = document.querySelector("#commActive");
+  chips.innerHTML = "";
+  FILTER_FIELDS.filter(name => name !== "sort" && values[name]).forEach(name => {
+    const label = fieldLabel(name, values[name]);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "comm-chip";
+    chip.dataset.field = name;
+    chip.setAttribute("aria-label", (form.dataset.removeLabel || "Remove filter: {name}").replace("{name}", label));
+    chip.append(label, Object.assign(document.createElement("span"), { textContent: "×", ariaHidden: "true" }));
+    chips.appendChild(chip);
+  });
+  const active = filtersActive(values) || Boolean(values.sort);
+  document.querySelector("#commReset").hidden = !active;
+  document.querySelector(".community-discovery")?.toggleAttribute("hidden", active);
+  const title = document.querySelector("#commResultsTitle");
+  if (title) title.textContent = filtersActive(values) ? title.dataset.filtered : title.dataset.all;
+}
+
+function countText(total) {
+  const form = filterForm();
+  return total === 1 ? (form.dataset.countOne || "1 set") : (form.dataset.countMany || "{count} sets").replace("{count}", String(total));
+}
+
+async function loadLibrary({ append = false, push = false } = {}) {
+  const values = currentFilters();
+  renderFilterState(values);
+  syncUrl(values, push);
+  if (!append) library.offset = 0;
+  library.controller?.abort();
+  const controller = new AbortController();
+  library.controller = controller;
+  const sequence = ++library.sequence;
+  const params = new URLSearchParams(values);
+  params.set("limit", String(PAGE_SIZE));
+  params.set("offset", String(library.offset));
   const grid = document.querySelector("#commGrid");
   const loading = document.querySelector("#commLoading");
   const empty = document.querySelector("#commEmpty");
-  loading.classList.remove("hidden"); grid.innerHTML = ""; empty.classList.add("hidden");
+  const more = document.querySelector("#commMore");
+  more.hidden = true;
+  if (!append) { loading.classList.remove("hidden"); grid.innerHTML = ""; empty.classList.add("hidden"); }
+  grid.setAttribute("aria-busy", "true");
   try {
-    const data = await api(`/api/community/library?${params.toString()}`);
+    const data = await api(`/api/community/library?${params.toString()}`, { signal: controller.signal });
+    if (sequence !== library.sequence) return;          // an older answer: the filters moved on
     loading.classList.add("hidden");
     const sets = data.sets || [];
-    if (!sets.length) { empty.classList.remove("hidden"); return; }
-    grid.innerHTML = sets.map(cardHtml).join("");
+    grid.insertAdjacentHTML("beforeend", sets.map(cardHtml).join(""));
+    library.offset += sets.length;
+    const total = Number(data.total ?? sets.length);
+    document.querySelector("#commCount").textContent = countText(total);
+    empty.classList.toggle("hidden", total > 0);
+    more.hidden = !data.has_more;
   } catch (error) {
+    if (error.name === "AbortError" || sequence !== library.sequence) return;
     loading.classList.add("hidden");
     toast(error.message, "error");
+  } finally {
+    if (sequence === library.sequence) grid.removeAttribute("aria-busy");
   }
+}
+
+function resetFilters() {
+  const form = filterForm();
+  form.reset();
+  form.elements.namedItem("sort").value = DEFAULT_SORT;
+  togglePanel(false);
+  loadLibrary({ push: true });
+  document.querySelector("#commSearch").focus();
+}
+
+function wireFilters() {
+  const form = filterForm();
+  form.addEventListener("input", event => {
+    if (event.target.id !== "commSearch") return;
+    window.clearTimeout(library.typing);
+    library.typing = window.setTimeout(() => loadLibrary(), 300);
+  });
+  form.addEventListener("change", event => {
+    if (event.target.id === "commSearch") return;
+    loadLibrary({ push: true });
+  });
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    window.clearTimeout(library.typing);
+    loadLibrary({ push: true });
+  });
+  document.querySelector("#commFilterToggle").addEventListener("click", () => togglePanel());
+  document.querySelector("#commMoreFilters").addEventListener("keydown", event => {
+    if (event.key === "Escape") { togglePanel(false); document.querySelector("#commFilterToggle").focus(); }
+  });
+  document.querySelector("#commActive").addEventListener("click", event => {
+    const chip = event.target.closest("[data-field]");
+    if (!chip) return;
+    const field = form.elements.namedItem(chip.dataset.field);
+    if (field) field.value = "";
+    loadLibrary({ push: true });
+  });
+  document.querySelector("#commReset").addEventListener("click", resetFilters);
+  document.querySelectorAll("[data-reset-filters]").forEach(button => button.addEventListener("click", resetFilters));
+  document.querySelector("#commMore").addEventListener("click", () => loadLibrary({ append: true }));
 }
 
 async function loadShelf(targetId, sort) {
@@ -355,10 +523,10 @@ async function submitRating(setId, stars) {
 
 /* ------------------------- init ------------------------- */
 function init() {
-  document.querySelector("#commSubject").insertAdjacentHTML("beforeend",
-    SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join(""));
-  document.querySelector("#commFilters").addEventListener("input", () => loadLibrary());
-  document.querySelector("#commFilters").addEventListener("submit", e => { e.preventDefault(); loadLibrary(); });
+  // Subjects come from the page (the app's subject list, translated); the filter keeps
+  // what is in the address, so a reload or a shared link shows the same results.
+  wireFilters();
+  applyUrlToForm();
   document.querySelector("#commGrid").addEventListener("click", e => {
     const card = e.target.closest("[data-open]"); if (card) openDetail(card.dataset.open);
   });
@@ -375,18 +543,22 @@ function init() {
       }
     });
   });
+  // "View all": the shelf's order over every set that matches the active filters.
   document.querySelectorAll("[data-apply-sort]").forEach(button => button.addEventListener("click", () => {
     document.querySelector("#commSort").value = button.dataset.applySort;
-    loadLibrary();
+    loadLibrary({ push: true });
     document.querySelector(".library-results-heading")?.scrollIntoView({ behavior: "smooth" });
   }));
   document.querySelector("[data-action='back-to-community']").addEventListener("click", () => {
     showView("commLibrary");
-    history.pushState({}, "", "/community");
+    history.pushState({}, "", libraryUrl(currentFilters()));
   });
   window.addEventListener("popstate", () => {
     const match = location.pathname.match(/^\/community\/sets\/(\d+)$/);
-    if (match) openDetail(match[1], false); else showView("commLibrary");
+    if (match) { openDetail(match[1], false); return; }
+    showView("commLibrary");
+    applyUrlToForm();          // Back/Forward between filter states shows those results
+    loadLibrary();
   });
 
   const deepLink = window.LEARNOVA_COMMUNITY_SET_ID || new URLSearchParams(window.location.search).get("set");

@@ -31,6 +31,10 @@ class Base(unittest.TestCase):
             FEATURE_COMMUNITY_LIBRARY=True, FEATURE_COMMUNITY_PUBLISHING=True,
             FEATURE_COMMUNITY_MODERATION=False, FEATURE_PRIVATE_FLASHCARDS=True,
             LEAGUE_PROMOTE=10, LEAGUE_DEMOTE=10, LEAGUE_GROUP_SIZE=30,
+            # These tests pin the rules for groups of real learners (zones shrink in a small
+            # group). Simulated rivals, which fill groups up to 30, are tested in
+            # tests/test_league_rivals.py, including that these rules stay unchanged with them.
+            LEAGUE_RIVALS=False,
             USERNAME_CHANGE_COOLDOWN_DAYS=30, USERNAME_HOLD_DAYS=90,
             COMMUNITY_MODERATORS={"mod.anna"}, PREMIUM_ADMIN_IDENTIFIERS=set(), AI_DIAGNOSTICS_ADMINS=set())
         application.SESSIONS.clear()
@@ -513,11 +517,15 @@ class LeagueTests(Base):
         client = self.client_for("alice")
         client.post("/settings/profile/preferences", data={"profile_public": "on"})   # leagues unticked
         db.session.expire_all()
-        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 0)
+        # Since 2026-11 (owner decision) the week's entry is kept as "withdrawn" - hidden
+        # from every ranking - instead of deleted, so leaving cannot dodge a result.
+        entries = application.LeagueEntry.query.filter_by(user_id=alice.id).all()
+        self.assertEqual([entry.outcome for entry in entries], ["withdrawn"])
         application.award_xp(alice.id, "test", 20, "x2")
         application.record_learning_event(alice.id, "practice_question_completed", "q", metadata={"correct": True}, xp=3)
         db.session.commit()
-        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 0)
+        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id).count(), 1)
+        self.assertEqual(application.LeagueEntry.query.filter_by(user_id=alice.id, outcome="").count(), 0)
         self.assertEqual(db.session.get(application.UserGamificationProfile, alice.id).total_xp, 543)
         self.assertEqual(client.get("/leaderboard").status_code, 200)
 

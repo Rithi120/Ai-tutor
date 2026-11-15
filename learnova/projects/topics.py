@@ -34,6 +34,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from learnova.projects import formulas
 from learnova.vocabulary.service import headword
 
 MAX_BATCH_CHARS = 9_000           # ~2.5k tokens of page text: the answer for it fits the output budget
@@ -61,7 +62,7 @@ ITEM_KINDS = ("term", "example", "experiment", "theory", "person", "argument", "
 PART_KINDS = ("objective", "why", "explanation", "terms", "rule", "structure", "example",
               "worked_example", "experiment", "thought_experiment", "theory", "argument",
               "perspectives", "timeline", "cause_effect", "process", "diagram", "source_analysis",
-              "model_analysis", "mistakes", "guided_exercise", "summary")
+              "model_analysis", "mistakes", "guided_exercise", "summary", "alternative")
 SERVER_PART_KINDS = ("flashcards",)   # inserted by the server, never requested from the model
 KNOWLEDGE_STATES = ("new", "developing", "secure")
 TOPIC_KINDS = ("main", "subtopic")
@@ -224,6 +225,26 @@ def term_key(term: Any) -> str:
     if key and key != "topic":
         return key[:120]
     return "-".join(re.findall(r"\w+", head.casefold().translate(_FOLD)))[:120] or "term"
+
+
+# "Lineare und quadratische Funktionen", "Prisma, Zylinder", "Ursache/Wirkung", "Kant vs. Mill":
+# a title that joins two topics. Its key is a superset of each part's key plus one word, so
+# `same_topic` would let it absorb "Lineare Funktionen" (or the other way round), depending
+# on which arrived first. `merge_topics` and `reconcile` never merge such a title with
+# another one by `same_topic`; equal keys still merge, and `overlap_suggestions` still
+# offers the pair to the student.
+_COMPOUND_JOIN = re.compile(r"\s(?:und|and|sowie|oder|or|&|\+|vs\.?|versus)\s|\s*[,/;]\s*", re.IGNORECASE)
+
+
+def is_compound(title: Any) -> bool:
+    """The title joins two or more topics: both sides of a conjunction, comma or slash hold
+    a content word ("Lineare und quadratische Funktionen", "Bentham und Mill"). The notes'
+    numbering is ignored, and a title such as "Grundlagen und Einführung" (only stop words
+    on one side) is not compound."""
+
+    text = _strip_enumeration(title)
+    parts = [part for part in _COMPOUND_JOIN.split(text) if part is not None]
+    return sum(1 for part in parts if _words(part) or _script_words(part, stop=True)) >= 2
 
 
 def same_topic(a_key: str, b_key: str) -> bool:
@@ -533,6 +554,17 @@ def _mentions(page: _Page, text: str, *, strict: bool) -> bool:
     return len(words & page.words) / len(words) >= 0.8
 
 
+def text_on_page(text: Any, page_text: Any) -> bool:
+    """Does this page say `text`? The grounding `normalize_topic` applies to items: every
+    content word on the page, or 80% of a text of three or more content words. Used for
+    Kompetenzraster rows (learnova/exam_prep/competencies.py): a row is only "verified"
+    when its page says it."""
+
+    source = _LATEX_COMMAND.sub(" ", str(page_text or ""))
+    page = _Page(0, frozenset(_content(source)), _compact(source), _quote_form(source))
+    return _mentions(page, str(text or ""), strict=False)
+
+
 _TERM_SOURCES = ("terms", "fachbegriffe", "key_terms", "begriffe", "glossary", "definitions", "vocabulary")
 _TERM_NAMES = ("term", "begriff", "fachbegriff", "name", "word", "wort", "headword", "title", "titel")
 _TERM_DEFINITIONS = ("definition", "bedeutung", "erklaerung", "meaning", "explanation", "beschreibung",
@@ -762,13 +794,62 @@ def _raw_item(entry: Any, kind: str | None) -> dict[str, Any] | None:
             name = " ".join(detail.split()[:8])[:200]
         folded = {_field_name(key): value for key, value in entry.items()}
         page_id = next((_page_ref(folded[field]) for field in _PAGES if folded.get(field) is not None), None)
-        return {"kind": resolved, "name": name, "detail": detail, "page_id": page_id} if name else None
+        if not name:
+            return None
+        record = {"kind": resolved, "name": name, "detail": detail, "page_id": page_id}
+        if resolved == "formula":
+            # Spec Phase 2 (formula subjects): the page's notation in "name", the same formula
+            # in LaTeX in "latex", and the variables with the meanings and units the page gives.
+            record["latex"] = _text(folded.get("latex") or folded.get("tex"), formulas.MAX_LATEX)
+            variables = folded.get("variables") or folded.get("variablen") or folded.get("symbols")
+            record["variables"] = variables[:formulas.MAX_VARIABLES] if isinstance(variables, list) else []
+        return record
     else:
         return None
     return {"kind": resolved, "name": name[:1200], "detail": detail[:1200], "page_id": None} if name else None
 
 
-def _normalize_items(raw: dict[str, Any], pages: list[int], evidence: list[_Page] | None) -> list[dict[str, Any]]:
+def _formula_item(record: dict[str, Any], pages: list[int], evidence: list[_Page] | None,
+                  page_text: dict[int, str] | None, teacher_pages: frozenset[int]) -> dict[str, Any] | None:
+    """A formula item checked by its structure (learnova/projects/formulas.py), or None.
+
+    Found on a page as written (LaTeX or plain, any spelling of the same symbols): from the
+    notes, with the page's own notation. Only its words on the page ("U = \frac{R}{I}" on a
+    page that says "U = R · I"): a rearrangement or another form, kept as added (never a
+    flashcard, never "in the notes"). Neither: dropped, as an invented formula. A formula
+    named without symbols ("Satz des Pythagoras") is checked by its name, as before."""
+
+    name, latex = record["name"], record.get("latex") or ""
+    item = {"kind": "formula", "name": name, "detail": record["detail"], "page_id": None, "in_notes": False,
+            "latex": latex, "variables": record.get("variables") or []}
+    wanted = record["page_id"]
+    if evidence is None:
+        item["page_id"] = wanted if wanted in pages else None
+        return formulas.enrich_formula({**item, "match": "words"}, {}, teacher_pages=teacher_pages)
+    texts = {page_id: (page_text or {}).get(page_id) or "" for page_id in pages}
+    if formulas.is_symbolic(name, latex):
+        found = formulas.find_on_pages(name, latex, texts, prefer=wanted if wanted in pages else None)
+        if found.page_id is not None:
+            item.update(in_notes=True, page_id=found.page_id, match="exact", notation=found.notation)
+        else:
+            worded = [page.id for page in evidence if _mentions(page, name, strict=len(_content(name)) <= 3)]
+            if not worded:
+                return None
+            item.update(page_id=wanted if wanted in worded else worded[0], match="words", notation="")
+    else:
+        found_pages = [page.id for page in evidence
+                       if _mentions(page, name, strict=len(_content(name)) <= 3)
+                       or (len(_content(record["detail"])) >= 3 and _mentions(page, record["detail"], strict=False))]
+        if not found_pages:
+            return None
+        item.update(in_notes=True, page_id=wanted if wanted in found_pages else found_pages[0], match="name",
+                    notation="")
+    return formulas.enrich_formula(item, texts, teacher_pages=teacher_pages)
+
+
+def _normalize_items(raw: dict[str, Any], pages: list[int], evidence: list[_Page] | None, *,
+                     page_text: dict[int, str] | None = None,
+                     teacher_pages: frozenset[int] = frozenset()) -> list[dict[str, Any]]:
     sources: list[tuple[Any, str | None]] = []
     listed = raw.get("items")
     if isinstance(listed, dict):              # {"theories": [...], "people": [...]}
@@ -781,6 +862,20 @@ def _normalize_items(raw: dict[str, Any], pages: list[int], evidence: list[_Page
         for entry in entries if isinstance(entries, list) else []:
             record = _raw_item(entry, kind)
             if record is None:
+                continue
+            if record["kind"] == "formula":
+                formula = _formula_item(record, pages, evidence, page_text, teacher_pages)
+                if formula is None:
+                    continue
+                # One formula in two spellings ("2H_2 + O_2 \rightarrow 2H_2O", "2H2 + O2 -> 2H2O")
+                # is one item; the spelling the page uses wins.
+                key = (formulas.match_key(formula.get("notation") or formula["name"])
+                       or formulas.match_key(formula.get("latex")) or " ".join(_tokens(formula["name"])))
+                marker = ("formula", key)
+                if marker in items:
+                    _merge_formula(items[marker], formula)
+                elif len(items) < MAX_ITEMS:
+                    items[marker] = formula
                 continue
             wanted = record["page_id"]
             if evidence is None:
@@ -801,6 +896,27 @@ def _normalize_items(raw: dict[str, Any], pages: list[int], evidence: list[_Page
             elif len(items) < MAX_ITEMS:
                 items[marker] = item
     return list(items.values())
+
+
+def _merge_formula(into: dict[str, Any], other: dict[str, Any]) -> None:
+    """Two items of one formula: the one from the notes wins, and its name is the page's
+    spelling when one of them wrote it so."""
+
+    if other.get("in_notes") and not into.get("in_notes"):
+        detail = into.get("detail") or ""
+        into.clear()
+        into.update(other)
+        if len(detail) > len(into.get("detail") or ""):
+            into["detail"] = detail
+        return
+    notation = into.get("notation") or ""
+    if notation and other.get("name") == notation and into.get("name") != notation:
+        into["name"] = other["name"]
+    for field in ("latex", "variables"):
+        if not into.get(field) and other.get(field):
+            into[field] = other[field]
+    into["teacher_marked"] = bool(into.get("teacher_marked") or other.get("teacher_marked"))
+    _merge_item(into, other)
 
 
 def _merge_item(into: dict[str, Any], other: dict[str, Any]) -> None:
@@ -879,7 +995,8 @@ def repair_page_refs(raw: Any, batch_page_ids: Sequence[int],
 
 
 def normalize_topic(raw: Any, valid_page_ids: set[int], *, page_text: dict[int, str] | None = None,
-                    recall_prompt: str = DEFAULT_RECALL_PROMPT) -> dict[str, Any] | None:
+                    recall_prompt: str = DEFAULT_RECALL_PROMPT,
+                    teacher_page_ids: Iterable[int] = ()) -> dict[str, Any] | None:
     """One model topic, made safe; None when it cites no real page or has no title.
 
     Accepts the v4 topic-map shape (summary, terms, items, exam_questions, ...) and the
@@ -922,7 +1039,8 @@ def normalize_topic(raw: Any, valid_page_ids: set[int], *, page_text: dict[int, 
     topic["estimated_minutes"] = max(5, min(45, int(minutes or 15)))
     evidence = _evidence(pages, page_text)
     terms = _normalize_terms(raw, pages, evidence)
-    items = _normalize_items(raw, pages, evidence)
+    items = _normalize_items(raw, pages, evidence, page_text=page_text,
+                             teacher_pages=frozenset(teacher_page_ids or ()))
     topic["terms"], topic["items"] = terms, items
     topic["exam_questions"] = _strings(
         [*_records(raw.get("exam_questions")), *_records(raw.get("likely_exam_questions"))],
@@ -940,8 +1058,11 @@ def normalize_topic(raw: Any, valid_page_ids: set[int], *, page_text: dict[int, 
                                          ][:LIST_LIMITS["important_facts"]]
     topic["definitions"] = [_entry(term["term"], term["definition"]) for term in terms
                             if term["definition"]][:LIST_LIMITS["definitions"]]
-    topic["formulas"] = [_entry(item["name"], item["detail"]) for item in items
-                         if item["kind"] == "formula"][:LIST_LIMITS["formulas"]]
+    # The old Notes page prints this list with no marker: a formula Learnova only found by its
+    # words (a rearrangement the notes do not write) stays out of it.
+    topic["formulas"] = [_entry(item.get("notation") or item["name"], item["detail"]) for item in items
+                         if item["kind"] == "formula" and (item["in_notes"] or evidence is None)
+                         ][:LIST_LIMITS["formulas"]]
     # The old Notes page prints this list with no marker, so an example Learnova added
     # (checked, and not in the notes) stays out of it; `items` keeps it, marked in_notes False.
     topic["examples"] = [_entry(item["name"], item["detail"]) for item in items
@@ -1076,9 +1197,14 @@ def merge_topics(topics: Iterable[dict[str, Any]], *, page_order: dict[int, int]
 
     merged: list[dict[str, Any]] = []
     for arrival, topic in enumerate(topics):
-        topic = {**topic, "_order": page_order, "_arrival": arrival, "_keys": [topic["key"]]}
+        compound = is_compound(topic.get("title") or "")
+        topic = {**topic, "_order": page_order, "_arrival": arrival, "_keys": [topic["key"]],
+                 "_compound": compound}
+        # A compound title ("Lineare und quadratische Funktionen") is never folded into, or
+        # folds, a narrower topic by `same_topic` - in any arrival order. Equal keys still merge.
         match = next((group for group in merged if topic["key"] in group["_keys"]), None) or next(
-            (group for group in merged if all(same_topic(key, topic["key"]) for key in group["_keys"])), None)
+            (group for group in merged if not compound and not group["_compound"]
+             and all(same_topic(key, topic["key"]) for key in group["_keys"])), None)
         if match:
             _absorb(match, topic)
             if topic["key"] not in match["_keys"]:
@@ -1093,7 +1219,7 @@ def merge_topics(topics: Iterable[dict[str, Any]], *, page_order: dict[int, int]
         topic["prerequisites"] = _resolve(topic["prerequisites"], merged, topic["key"], 6)
     resolve_related(merged)
     for topic in merged:
-        for name in ("_order", "_arrival", "_keys"):
+        for name in ("_order", "_arrival", "_keys", "_compound"):
             topic.pop(name, None)
     return merged
 
@@ -1239,7 +1365,10 @@ def reconcile(stored: Iterable[StoredTopic], extracted: Iterable[dict[str, Any]]
         lambda item, topic: title_key(item) == topic["key"],
         lambda item, topic: not title_key(item)
         and item.key == _legacy_key(topic["title"], topic.get("main_topic") or ""),
-        lambda item, topic: same_topic(live_key(item), topic["key"]) or same_topic(title_key(item), topic["key"]),
+        # Never between a compound title and another one ("Lineare und quadratische
+        # Funktionen" must not claim the stored "Lineare Funktionen", nor the other way round).
+        lambda item, topic: not is_compound(item.title) and not is_compound(topic.get("title") or "")
+        and (same_topic(live_key(item), topic["key"]) or same_topic(title_key(item), topic["key"])),
     ]
     for matches in passes:
         for index, topic in enumerate(extracted):

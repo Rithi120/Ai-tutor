@@ -15,6 +15,9 @@ download). For every page and viewport it reports:
 * whether the mobile menu button is visible and the menu opens, fits and closes;
 * on the chat pages up to 900px, whether the conversation drawer opens inside the screen
   and closes on Escape;
+* on the pages in MENU_STEPS (flashcard editor, chat), whether the three-dot menu's items
+  are separate and readable: no overlapping items, labels or icons, each item 44 px tall,
+  inside the screen and not covered at its centre, and Delete coloured as dangerous;
 * tap targets smaller than 44 px (buttons, links styled as buttons, inputs);
 * body text below 14 px.
 
@@ -65,10 +68,20 @@ PHOTO_STEPS = {
     "/assistant": ("#asstGallery", "#asstSend", ".asst-msg-assistant:not(.asst-pending)"),
 }
 PHOTO_STEPS["/"] = PHOTO_STEPS["/assistant"]   # the chat is the home page
+# The multi-image galleries (static/js/image-collection.js): one photo in each, so a page
+# card with its buttons, label box and status is measured at every width and theme.
+PHOTO_STEPS["/projects"] = ("#imageUploadInput", None, None)
+PHOTO_STEPS["/vocabulary/import"] = ("#vocabularyFileField input[name=file]", None, None)
 # The chat pages, whose conversation list is an off-canvas drawer up to 900px: it must open
 # inside the screen and close on Escape (audit_page(drawer=True)).
 CHAT_PAGES = {"/", "/assistant", "ASSISTANT_THREAD"}
 DRAWER_MAX_WIDTH = 900
+# The three-dot menus: (button that opens it, the open menu, its items). audit_page opens
+# the first one on these pages and measures every item with MENU_JS (open_row_menu).
+MENU_STEPS = {
+    "FLASHCARD_EDIT": (".card-row .card-menu-trigger", ".card-menu[open] .card-menu-body", ".ln-menu-item"),
+    "/assistant": (".asst-row-menu", "#asstItemMenu", "[role=menuitem]"),
+}
 PHOTO_PATH: Path | None = None
 # --ignore-console REGEX: console errors matching it are reported but do not fail a page.
 IGNORED_CONSOLE: "re.Pattern[str] | None" = None
@@ -233,6 +246,65 @@ AUDIT_JS = r"""
 }
 """
 
+# An open three-dot menu, item by item: its box, the rectangles of its label text (one per
+# line), its icon (an aria-hidden child). Problems are what a student would see: an item
+# under one tap target tall, a label running outside its own row or into the next item,
+# an icon over its label, a label broken into letter columns, an item off the screen or
+# covered by something else at its centre (the save bar), the page scrolling sideways, and
+# a Delete item painted the same colour as the harmless ones.
+MENU_JS = r"""(sel) => {
+  const menu = document.querySelector(sel.menu);
+  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  const out = {vw, vh, items: [], problems: []};
+  if (!menu) { out.problems.push(`menu ${sel.menu} not found`); return out; }
+  const mb = menu.getBoundingClientRect();
+  const round = (b) => b && ({x: Math.round(b.left), y: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom)});
+  out.menu = round(mb);
+  if (getComputedStyle(menu).display === 'none' || mb.width === 0) { out.problems.push('menu is not visible'); return out; }
+  const union = (rects) => rects.length ? round(rects.reduce((a, b) => ({left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom)}))) : null;
+  const range = document.createRange();
+  const textRects = (node) => { range.selectNodeContents(node); return [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0); };
+  for (const el of menu.querySelectorAll(sel.items)) {
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    const text = [], icon = [];
+    for (const node of el.childNodes) {
+      if (node.nodeType === 3 && node.textContent.trim()) text.push(...textRects(node));
+      else if (node.nodeType === 1 && (node.getAttribute('aria-hidden') === 'true' || node.tagName.toLowerCase() === 'svg')) icon.push(node.getBoundingClientRect());
+      else if (node.nodeType === 1) text.push(...textRects(node));
+    }
+    const lines = new Set(text.map((r) => Math.round(r.top))).size;
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+    const hit = cx >= 0 && cx < vw && cy >= 0 && cy < vh ? document.elementFromPoint(cx, cy) : null;
+    out.items.push({label: el.textContent.trim().replace(/\s+/g, ' '), box: round(box), height: Math.round(box.height),
+      text: union(text), icon: union(icon), lines, danger: el.classList.contains('danger'), colour: getComputedStyle(el).color,
+      hit: !hit ? 'outside the screen' : el.contains(hit) ? 'ok'
+        : (hit.closest('#saveBar') ? 'the save bar' : (hit.id ? '#' + hit.id : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')))});
+  }
+  const p = out.problems;
+  const overlap = (a, b) => a && b && a.x < b.r - 1 && b.x < a.r - 1 && a.y < b.b - 1 && b.y < a.b - 1;
+  if (!out.items.length) p.push('menu has no visible items');
+  out.items.forEach((it, n) => {
+    const name = `'${it.label}'`;
+    if (sel.minTap && it.height < 44) p.push(`${name} is ${it.height}px tall (< 44)`);
+    if (it.text && (it.text.x < it.box.x - 1 || it.text.r > it.box.r + 1 || it.text.y < it.box.y - 1 || it.text.b > it.box.b + 1)) p.push(`${name} label runs outside its item`);
+    if (overlap(it.text, it.icon)) p.push(`${name} icon covers its label`);
+    if (it.lines > 2) p.push(`${name} label broken over ${it.lines} lines`);
+    if (it.box.x < 0 || it.box.r > vw || it.box.y < 0 || it.box.b > vh) p.push(`${name} outside the screen ${JSON.stringify(it.box)}`);
+    else if (it.hit !== 'ok') p.push(`${name} covered by ${it.hit}`);
+    out.items.forEach((other, m) => {
+      if (m <= n) return;
+      if (overlap(it.box, other.box)) p.push(`${name} and '${other.label}' overlap`);
+      else if (overlap(it.text, other.text) || overlap(it.text, other.icon) || overlap(it.icon, other.text)) p.push(`${name} and '${other.label}' labels overlap`);
+    });
+  });
+  const plain = new Set(out.items.filter((it) => !it.danger).map((it) => it.colour));
+  out.items.filter((it) => it.danger && plain.has(it.colour)).forEach((it) => p.push(`'${it.label}' is not marked as dangerous (${it.colour})`));
+  if (document.documentElement.scrollWidth > vw + 1) p.push(`page scrolls sideways (${document.documentElement.scrollWidth} > ${vw})`);
+  return out;
+}"""
+
 
 def _prepare_environment() -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="learnova-mobile-audit-"))
@@ -350,6 +422,15 @@ def _data_pages(page, base: str, project_id: int) -> dict:
             concept = application.get_or_create_mastery(user.id, "Physics", "Gleichförmige Bewegung")
             session.commit()
             urls["CONCEPT"] = f"/concepts/{concept.id}"
+            # Long lists (owner request 2026-11-13): saved lessons with mistakes and used
+            # Premium codes, so /dashboard and /settings are measured with their "Show more"
+            # buttons and the delete controls (tests/dashboard_seed.py).
+            from tests import dashboard_seed
+            for number in range(7):
+                dashboard_seed.short_lesson(application, user.id, mistakes=1, created_offset=60 + number,
+                                            title=f"Lektion mit einem ziemlich langen Titel Nummer {number}")
+            dashboard_seed.premium_codes(application, user.id, 5)
+            session.commit()
             # Real rival accounts so the league table, Premium badge and a public profile
             # render with content: long names, a Premium member, and the audit account.
             application.award_xp(user.id, "audit", 60, "audit:xp:self")
@@ -520,9 +601,60 @@ def login_and_create_lesson(context, base: str) -> dict:
             urls["EXAM_SETUP"] = f"/projects/{project_id}/exam/new"
             learned_project = int(project_id)
         urls[key] = f"/projects/{project_id}"
+    _kompetenzraster([int(urls[key].rsplit("/", 1)[1]) for key in ("PROJECT_REVIEW", "PROJECT")])
     urls.update(_data_pages(page, base, learned_project))
     page.close()
     return urls
+
+
+AUDIT_COMPETENCIES = [
+    "Ich kann die Durchschnittsgeschwindigkeit einer gleichförmigen Bewegung aus Weg und Zeit berechnen.",
+    "Ich kann Energieerhaltungssatzanwendungsaufgaben mit mehreren Energieformen lösen.",
+    "Ich kann den freien Fall beschreiben.",
+    "Ich kann Kraft und Gegenkraft unterscheiden und an Beispielen aus dem Alltag erklären.",
+    "Ich kann ein Weg-Zeit-Diagramm zeichnen.",
+    "Ich kann die Beschleunigung aus einem Geschwindigkeit-Zeit-Diagramm ablesen.",
+]
+
+
+def _kompetenzraster(project_ids) -> None:
+    """A Kompetenzraster inventory on both audited projects (spec 1.1): long German rows
+    under the topics in every status, one row without a topic and a gap banner, so the
+    inventory, its chips and its one-tap buttons are measured at every width and theme.
+    Written straight into the app's database (same process); the page hash is the real
+    one, so no visit asks the patched AI about the grid again."""
+
+    import app as application
+
+    with application.app.app_context():
+        session = application.db.session
+        for project_id in project_ids:
+            project = session.get(application.LearningProject, project_id)
+            if project is None or not project.files or not project.files[0].pages or not project.sections:
+                continue
+            file = project.files[0]
+            grid_page = file.pages[0]
+            file.source_kind = application.GRID_SOURCE_KIND
+            sections = sorted(project.sections, key=lambda item: (item.position, item.id))
+            for index, statement in enumerate(AUDIT_COMPETENCIES):
+                loose = index == len(AUDIT_COMPETENCIES) - 1
+                session.add(application.Competency(
+                    project_id=project.id, statement=statement, statement_key=f"audit-{index}",
+                    source_file_id=file.id, source_page_ids_json=json.dumps([grid_page.id]),
+                    group_path="Kompetenzraster Physik Klasse 9 > Mechanik und Energieerhaltung",
+                    verified=True, state="identified" if index in (0, len(AUDIT_COMPETENCIES) - 1) else
+                    ("removed" if index == 4 else "confirmed"),
+                    section_id=None if loose else sections[index % len(sections)].id, position=index,
+                    taught_count=1 if index >= 2 else 0, answers=index % 3, correct_answers=1 if index == 3 else 0,
+                    coverage="missing", evidence=""))
+            analysis = json.loads(project.analysis_json or "{}")
+            text = application._competency_page_text(grid_page)
+            analysis["competency_pages"] = {str(grid_page.id): {
+                "hash": application._competency_text_hash(text), "state": "done", "source": "ai",
+                "expected": len(AUDIT_COMPETENCIES) + 3, "found": len(AUDIT_COMPETENCIES), "rejected": 1,
+                "dropped": 0}}
+            project.analysis_json = json.dumps(analysis, ensure_ascii=False)
+        session.commit()
 
 
 def attach_photo(page, step) -> None:
@@ -532,7 +664,7 @@ def attach_photo(page, step) -> None:
     if PHOTO_PATH is None or not page.locator(selector).count():
         return
     page.set_input_files(selector, str(PHOTO_PATH))
-    page.wait_for_selector(".attach-item.is-ready", timeout=8000)
+    page.wait_for_selector(".attach-item.is-ready, .imgcol-item .imgcol-thumb img:not([hidden])", timeout=8000)
     if send:
         page.fill("#asstInput", "Ist mein Rechenweg richtig?", timeout=4000)
         page.click(send, timeout=4000)
@@ -568,8 +700,45 @@ def check_drawer(page, result: dict, screenshot: Path | None) -> dict:
     return state
 
 
+def settle_page(page) -> None:
+    """Wait for the page's entrance animation (motion.css .app-page, 420 ms) to end: while
+    it runs, <main> has a transform, which pins every position:fixed child (the save bar)
+    to the page instead of the screen, so positions measured then are wrong."""
+
+    page.wait_for_function("""() => document.getAnimations().every((animation) =>
+        animation.playState !== 'running' || !isFinite(animation.effect?.getComputedTiming().endTime))""",
+                           timeout=5000)
+
+
+def open_row_menu(page, step, *, nth: int = 0, click: bool = True) -> dict:
+    """Open the nth three-dot menu of a MENU_STEPS entry and measure it (MENU_JS).
+
+    On the chat pages the conversation list is a drawer below 900px, so it is opened first.
+    click=False opens the menu with element.click() where it already is: a Playwright tap
+    scrolls the button into view first, which would hide a menu that opens under the save
+    bar."""
+
+    trigger, menu, items = step
+    settle_page(page)
+    drawer = page.locator("#asstDrawerToggle")
+    if trigger.startswith(".asst") and drawer.count() and drawer.is_visible() \
+            and drawer.get_attribute("aria-expanded") != "true":
+        drawer.click(timeout=4000)
+        page.wait_for_timeout(400)
+    button = page.locator(trigger).nth(nth)
+    button.wait_for(state="attached", timeout=8000)
+    if click:
+        button.click(timeout=4000)
+    else:
+        button.evaluate("(el) => el.click()")
+    page.wait_for_selector(menu, state="visible", timeout=4000)
+    page.wait_for_timeout(300)   # the toggle event places the card menu after layout
+    return page.evaluate(MENU_JS, {"menu": menu, "items": items, "minTap": True})
+
+
 def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screenshot: Path | None,
-               full_page: bool = True, photo_step=None, start_test: bool = False, drawer: bool = False) -> dict:
+               full_page: bool = True, photo_step=None, start_test: bool = False, drawer: bool = False,
+               menu_step=None) -> dict:
     page = context.new_page()
     # JavaScript errors are layout faults too: a script that throws leaves a control dead.
     # Load failures of what block_external aborts on purpose (ads, web fonts) are not.
@@ -657,6 +826,15 @@ def audit_page(context, url: str, *, mobile_menu: bool, open_chat: bool, screens
     if screenshot:
         screenshot.parent.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot), full_page=full_page)
+    result["row_menu"] = None
+    if menu_step:
+        # Last, because it leaves the chat's drawer open on phones.
+        try:
+            result["row_menu"] = open_row_menu(page, menu_step)
+            if screenshot:
+                page.screenshot(path=str(screenshot.with_name(screenshot.stem + "-rowmenu.png")))
+        except Exception as error:  # reported as a fault, never a crash of the audit
+            result["row_menu"] = {"problems": ["could not open: " + str(error).splitlines()[0][:160]]}
     page.close()
     return result
 
@@ -701,6 +879,9 @@ def blocking(result: dict, width: int, *, logged_in: bool) -> list[str]:
             problems.append("menu button missing or off-screen")
         elif not (menu.get("opens") and menu.get("fits") and menu.get("closes_on_escape")):
             problems.append(f"menu broken: {menu}")
+    row_menu = result.get("row_menu")
+    if row_menu and row_menu.get("problems"):
+        problems.append("three-dot menu: " + "; ".join(row_menu["problems"][:4]))
     return problems
 
 
@@ -767,7 +948,8 @@ def main() -> int:
                                 result = audit_page(context, url, mobile_menu=width < 1024, open_chat=path == "LESSON", screenshot=shot,
                                                     full_page=not args.fold, photo_step=PHOTO_STEPS.get(path),
                                                     start_test=path in START_TEST_PAGES,
-                                                    drawer=path in CHAT_PAGES and width <= DRAWER_MAX_WIDTH)
+                                                    drawer=path in CHAT_PAGES and width <= DRAWER_MAX_WIDTH,
+                                                    menu_step=MENU_STEPS.get(path))
                             except Exception as error:  # keep auditing the other pages
                                 result = {"error": str(error)[:200], "vw": width, "scrollWidth": 0, "offscreen": [], "smallTargets": [], "smallText": 0}
                             problems = blocking(result, width, logged_in=logged_in) if "error" not in result else [f"error: {result['error']}"]

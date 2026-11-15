@@ -27,6 +27,12 @@ function renderItem() {
   state.locked = false;
   $("#modeFeedback").classList.add("hidden");
   $("#modePrompt").textContent = item.prompt;
+  // A sentence card (the editor's Type) is recalled as a whole sentence: say so.
+  const kindCue = $("#modeKind");
+  if (kindCue) {
+    kindCue.textContent = item.kind === "sentence" ? t("vocabularyKind_sentence") : "";
+    kindCue.classList.toggle("hidden", item.kind !== "sentence");
+  }
   state.flipped = false;
   $("#modeAnswer").textContent = "";
   $("#modeAnswer").classList.add("hidden");
@@ -232,7 +238,8 @@ async function loadResult() {
   state.session = data.session; $("#modeConfig").classList.add("hidden"); showSummary();
 }
 async function offerVocabularyScopes() {
-  // Words only / sentences only make sense when the set has both; cards carry their kind as a tag.
+  // Words only / sentences only, each offered when it is a real part of the set: a card's
+  // kind is the editor's Type ("" = a word; "other" cards are in neither scope).
   try {
     const data = await api(`/api/flashcards/sets/${SET_ID}`);
     const cards = data.set?.cards || [];
@@ -242,10 +249,12 @@ async function offerVocabularyScopes() {
       total.textContent = t("fcSetTotal", { count: cards.length });
       total.classList.remove("hidden");
     }
-    const sentences = cards.filter(card => (card.tags || []).includes("sentence")).length;
-    if (sentences > 0 && sentences < cards.length) {
-      document.querySelectorAll("#modeObjective [data-vocabulary-only]").forEach(option => { option.hidden = false; });
-    }
+    const sentences = cards.filter(card => card.kind === "sentence").length;
+    const words = cards.filter(card => card.kind !== "sentence" && card.kind !== "other").length;
+    const offered = { words: words > 0 && words < cards.length, sentences: sentences > 0 && sentences < cards.length };
+    document.querySelectorAll("#modeObjective [data-vocabulary-only]").forEach(option => {
+      if (offered[option.value]) option.hidden = false;
+    });
   } catch (e) { /* the ordinary objectives still work */ }
 }
 function init() {

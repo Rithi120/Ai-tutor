@@ -296,6 +296,8 @@
     </div>
   </section>
 
+  {% include "components/_reviews_section.html" %}
+
   <section class="about-section about-founder" aria-labelledby="about-founder">
     <h2 id="about-founder">{{ _('Meet the founder') }}</h2>
     <article class="about-founder-card">
@@ -355,3 +357,4 @@
 
 </main>
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/reviews.js') }}"></script>{% endblock %}

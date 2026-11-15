@@ -381,8 +381,12 @@ class SessionScopeTests(unittest.TestCase):
         self.assertEqual(values, ["words", "sentences"])
 
     def test_they_appear_only_for_a_set_that_has_both_kinds(self):
-        self.assertIn('(card.tags || []).includes("sentence")', self.engine)
-        self.assertIn("sentences > 0 && sentences < cards.length", self.engine)
+        # The API's `kind` (the editor's Type) replaced the raw tag test; an "other" card
+        # is neither a word nor a sentence (tests/test_flashcard_kind.py).
+        self.assertIn('cards.filter(card => card.kind === "sentence")', self.engine)
+        self.assertIn('card.kind !== "sentence" && card.kind !== "other"', self.engine)
+        self.assertIn("sentences: sentences > 0 && sentences < cards.length", self.engine)
+        self.assertIn("words: words > 0 && words < cards.length", self.engine)
 
     def test_cards_carry_their_kind_as_a_tag(self):
         cards = service.card_variants(
@@ -436,7 +440,7 @@ class ReviewPageTests(unittest.TestCase):
 
 class TranslationTests(unittest.TestCase):
     NEW_KEYS = ("vocabularyType", "vocabularyKind_word", "vocabularyKind_phrase",
-                "vocabularyKind_sentence", "vocabularyNothingInScope")
+                "vocabularyKind_sentence", "vocabularyKind_other", "vocabularyNothingInScope")
 
     def test_every_language_is_still_enabled(self):
         from learnova.translations import catalog

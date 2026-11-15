@@ -27,6 +27,7 @@
 {%- elif name == 'sparkle' %}<path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5 10.2 15A2 2 0 0 0 9 13.8L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/>
 {%- elif name == 'stop' %}<rect x="7" y="7" width="10" height="10" rx="2" class="asst-icon-fill"/>
 {%- elif name == 'down' %}<path d="M12 5v14M5.5 12.5 12 19l6.5-6.5"/>
+{%- elif name == 'pdf' %}<path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4M9 13h6M9 17h4"/>
 {%- endif -%}
 </svg>
 {%- endmacro %}
@@ -34,7 +35,8 @@
 <main class="assistant-page" id="main-content" data-sidebar="open"
       data-home-path="{{ home_path|default('/assistant') }}"
       data-initial-conversation="{{ initial_conversation_id|default('') }}"
-      data-continue-learning="{{ 'on' if continue_learning else 'off' }}">
+      data-continue-learning="{{ 'on' if continue_learning else 'off' }}"
+      data-study-format="{{ 'on' if study_format else 'off' }}">
   <div id="asstToast" class="toast hidden" role="status" aria-live="polite"></div>
   {# A reply arriving is said here in one sentence; the thread itself is not a live region. #}
   <p id="asstAnnounce" class="visually-hidden" role="status"></p>
@@ -114,6 +116,18 @@
     {% if chat_images %}<div id="asstDropZone" class="asst-dropzone" hidden>{{ icon('image') }}<span>{{ _('Drop photos here') }}</span></div>{% endif %}
 
     <form id="asstComposer" class="asst-composer">
+      {% if study_format %}
+      {# A PDF of exam material becomes a project (spec 1.2): the chat's photo reader stays photo-only. #}
+      <div id="asstPdfPanel" class="asst-pdf-panel" hidden role="group" aria-labelledby="asstPdfTitle">
+        <p class="asst-pdf-title" id="asstPdfTitle"></p>
+        <p class="asst-pdf-text">{{ _('PDFs become an exam project: Learnova reads every page, finds all topics and plans them up to your exam.') }}</p>
+        <div class="asst-pdf-dates" id="asstPdfDates"></div>
+        <div class="asst-pdf-actions">
+          <button type="button" class="secondary-button" id="asstPdfCancel">{{ _('Cancel') }}</button>
+          <button type="button" class="primary-button" id="asstPdfCreate">{{ _('Create exam project') }}</button>
+        </div>
+      </div>
+      {% endif %}
       <div class="asst-composer-shell">
         {% if chat_images %}<div id="asstAttachTray" class="attach-tray hidden" data-max-photos="{{ photo_limit or 2 }}" role="group" aria-label="{{ _('Attached photos') }}"></div>{% endif %}
         <div class="asst-composer-row">
@@ -127,6 +141,12 @@
               <input id="asstGallery" class="attach-input" type="file" accept="image/*" multiple>
               {{ icon('image') }}<span class="visually-hidden">{{ _('Add photos') }}</span>
             </label>
+            {% if study_format %}
+            <label class="attach-button asst-pdf-button" title="{{ _('Add a PDF for an exam project') }}" data-tour-target="chat-pdf">
+              <input id="asstPdf" class="attach-input" type="file" accept="application/pdf,.pdf">
+              {{ icon('pdf') }}<span class="visually-hidden">{{ _('Add a PDF for an exam project') }}</span>
+            </label>
+            {% endif %}
           </span>
           {% endif %}
           <label class="visually-hidden" for="asstInput">{{ _('Your message') }}</label>
@@ -151,9 +171,9 @@
 
   {# One menu for every conversation row (static/js/assistant.js moves it under the row's ⋯ button). #}
   <div id="asstItemMenu" class="asst-item-menu" role="menu" hidden aria-label="{{ _('More options') }}">
-    <button type="button" role="menuitem" tabindex="-1" id="asstRename">{{ _('Rename') }}</button>
-    <button type="button" role="menuitem" tabindex="-1" id="asstArchive">{{ _('Archive') }}</button>
-    <button type="button" role="menuitem" tabindex="-1" class="danger" id="asstDelete">{{ _('Delete') }}</button>
+    <button type="button" role="menuitem" tabindex="-1" class="ln-menu-item" id="asstRename">{{ _('Rename') }}</button>
+    <button type="button" role="menuitem" tabindex="-1" class="ln-menu-item" id="asstArchive">{{ _('Archive') }}</button>
+    <button type="button" role="menuitem" tabindex="-1" class="ln-menu-item danger" id="asstDelete">{{ _('Delete') }}</button>
   </div>
 
   <dialog id="asstRenameDialog" class="asst-dialog" aria-labelledby="asstRenameTitle">

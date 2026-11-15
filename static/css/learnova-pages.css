@@ -3,7 +3,8 @@
 .app-brand, .app-nav-link:hover, .app-menu-trigger:hover { color: var(--ln-ink); }
 .app-nav-link, .app-menu-trigger { color: var(--ln-muted); }
 .app-nav-link.is-active, .app-menu-trigger.is-active { background: color-mix(in srgb, var(--ln-violet) 12%, transparent); color: var(--ln-violet); }
-.app-dropdown, .mobile-app-menu { border-color: var(--ln-line); background: var(--ln-surface-raised); box-shadow: var(--ln-shadow-md); }
+/* Solid, not --ln-surface-raised (94 %): headings behind the open menu showed through its links. */
+.app-dropdown, .mobile-app-menu { border-color: var(--ln-line); background: var(--ln-surface-solid); box-shadow: var(--ln-shadow-md); }
 .app-dropdown a, .app-dropdown .nav-logout, .mobile-app-menu a, .mobile-app-menu .nav-logout { color: var(--ln-ink); }
 .app-dropdown a:hover, .app-dropdown a:focus-visible, .app-dropdown .nav-logout:hover, .mobile-app-menu a:hover { background: color-mix(in srgb, var(--ln-violet) 11%, transparent); color: var(--ln-violet); }
 .profile-avatar { background: color-mix(in srgb, var(--ln-violet) 15%, transparent); color: var(--ln-violet); }
@@ -27,11 +28,27 @@
 .card-row { border-color: var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface); box-shadow: var(--ln-shadow-sm); }
 .card-num { color: var(--ln-violet); }
 .drag-handle { color: var(--ln-subtle); }
-.card-row-tools button, .card-menu-trigger { color: var(--ln-muted); }
-.card-row-tools button:hover, .card-menu-trigger:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-violet-deep); }
+/* `>`: only the row's icon buttons. The menu items (.ln-menu-item) take their ink and
+   their red Delete from learnova-components.css; a descendant rule here greyed them out. */
+.card-row-tools > button, .card-menu-trigger { color: var(--ln-muted); }
+.card-row-tools > button:hover, .card-menu-trigger:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); color: var(--ln-violet-deep); }
 .card-menu-body { border-color: var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface-solid); box-shadow: var(--ln-shadow-md); }
-.card-menu-body button:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); }
-.card-menu-body button.danger:hover { background: color-mix(in srgb, var(--ln-danger) 12%, transparent); }
+/* The card's Type (Word / Sentence / Other) at the top of the row menu: three equal taps
+   in one row, the chosen one outlined. Tokens only, so dark theme needs no override. The
+   buttons are .card-kind-option, never styled by a descendant button rule on the menu. */
+.card-kind { padding: .3rem .4rem .35rem; }
+.card-kind-heading { display: block; margin-block-end: .3rem; color: var(--ln-muted); font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+/* min-inline-size widens the menu just enough for "Anderes" / "Palabra" on one line. */
+.card-kind-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem; min-inline-size: 14.5rem; }
+.card-kind-option { display: grid; place-items: center; min-inline-size: 0; min-block-size: var(--ln-tap); padding: .3rem .25rem; border: 1px solid var(--ln-line-strong); border-radius: 10px; background: none; color: var(--ln-ink); font: inherit; font-size: .84rem; font-weight: 650; line-height: 1.15; text-align: center; overflow-wrap: break-word; cursor: pointer; }
+.card-kind-option:hover { background: color-mix(in srgb, var(--ln-violet) 10%, transparent); }
+.card-kind-option[aria-pressed="true"] { border: 2px solid var(--ln-violet); background: color-mix(in srgb, var(--ln-violet) 16%, transparent); font-weight: 800; }
+.card-kind-option:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: 1px; }
+.card-menu-sep { margin: .3rem .25rem; border: 0; border-block-start: 1px solid var(--ln-line); }
+.card-kind-badge { padding: .1rem .5rem; border: 1px solid var(--ln-line-strong); border-radius: 999px; color: var(--ln-muted); font-size: .74rem; font-weight: 700; white-space: nowrap; }
+/* Study: a sentence card says so above its prompt, so a whole sentence is what is typed. */
+.mode-kind { display: inline-block; margin-block-end: .4rem; padding: .1rem .55rem; border: 1px solid var(--ln-line-strong); border-radius: 999px; color: var(--ln-muted); font-size: .76rem; font-weight: 700; }
+.mode-kind.hidden { display: none; }
 .card-field textarea { border-bottom-color: var(--ln-line-strong); color: var(--ln-ink); }
 .card-field textarea:focus { border-bottom-color: var(--ln-violet); }
 .card-field-label { color: var(--ln-subtle); }
@@ -52,9 +69,6 @@
 .community-page { max-width: 1260px; }
 .community-page .cards-header { padding: clamp(22px, 4vw, 42px); border: 1px solid var(--ln-line); border-radius: var(--ln-radius-xl); background: linear-gradient(125deg, color-mix(in srgb, var(--ln-violet) 12%, var(--ln-surface-solid)), color-mix(in srgb, var(--ln-cyan) 8%, var(--ln-surface))); box-shadow: var(--ln-shadow-glow); }
 .community-page .cards-header h1 { max-width: 780px; }
-.community-search { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(260px, 2.4fr) repeat(7, minmax(100px, 1fr)); gap: 8px; margin: -16px 18px 34px; padding: 12px; }
-.community-search > * { min-width: 0; }
-.community-search #commSearch { min-height: 56px; padding-left: 46px; background-image: linear-gradient(45deg, transparent 45%, var(--ln-muted) 46% 54%, transparent 55%); }
 .community-discovery { display: grid; gap: 34px; }
 .community-shelf { min-width: 0; }
 .shelf-heading, .library-results-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
@@ -102,11 +116,8 @@
 .vocabulary-table article > *, .review-row > * { min-width: 0; }
 
 @media (max-width: 1120px) {
-  .community-search { grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr)); }
 }
 @media (max-width: 720px) {
-  .community-search { grid-template-columns: 1fr 1fr; margin: -12px 8px 28px; }
-  .community-search #commSearch { grid-column: 1 / -1; }
   /* Phone creator: term above definition, one full-width field per line. The student
      types a term, taps a suggested definition, and the next card is already waiting -
      so nothing here may compete for horizontal space. */
@@ -115,16 +126,13 @@
   /* HTML5 drag has no touch fallback, so the handle is an affordance that does nothing
      on a phone. Hidden rather than faked; the row menu still moves cards up and down. */
   .card-row-head .drag-handle { display: none; }
-  .card-row-tools button, .card-menu-trigger { width: 44px; height: 44px; }
+  .card-row-tools > button, .card-menu-trigger { width: 44px; height: 44px; }
   .card-menu-body { min-width: 210px; }
-  .card-menu-body button { min-height: 44px; }
   .suggest-chip { min-height: 44px; }
   .add-card-button { min-height: 56px; }
   .detail-review { position: static; }
 }
 @media (max-width: 480px) {
-  .community-search { grid-template-columns: 1fr; }
-  .community-search #commSearch { grid-column: auto; }
   .community-rail { grid-auto-columns: minmax(255px, 88vw); }
   .creator-meta { padding: 14px; }
   .card-more-row { grid-template-columns: 1fr; }
@@ -221,3 +229,66 @@
 .finish-test { margin-right: 10px; padding: 4px 10px; border: 1px solid var(--ln-line-strong); border-radius: 999px; background: transparent; color: var(--ln-muted); font: 600 12px var(--ln-font-body); cursor: pointer; }
 .finish-test:hover, .finish-test:focus-visible { border-color: var(--ln-violet); color: var(--ln-violet-deep); }
 .finish-test[hidden] { display: none; }
+
+/* Community filters (COMMUNITY_FLASHCARD_FILTER_FIX.md): one compact bar - search, set type,
+   subject, Filter, sort - and the rarer filters in a panel the Filter button opens. Tokens
+   only, so dark mode follows (learnova-dark.css redefines them). */
+.community-filters { position: relative; z-index: 2; display: grid; gap: 8px; margin: -16px 18px 26px; padding: 10px; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md); background: var(--ln-surface-solid); box-shadow: var(--ln-shadow-sm); }
+.community-filter-bar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(120px, 160px) minmax(140px, 210px) auto minmax(160px, 220px); gap: 8px; align-items: center; }
+.community-filters select, .community-filters input[type="search"], .comm-filter-toggle, .comm-reset { box-sizing: border-box; min-height: 44px; border: 1px solid var(--ln-line-strong); border-radius: 10px; background-color: var(--ln-surface-solid); color: var(--ln-ink); font: inherit; font-size: .95rem; }
+.community-filters select { width: 100%; min-width: 0; padding: 0 2rem 0 .75rem; text-overflow: ellipsis; }
+.community-filters select:hover, .comm-filter-toggle:hover, .comm-reset:hover { border-color: var(--ln-violet); }
+.community-filters select:focus-visible, .community-filters input:focus-visible, .comm-filter-toggle:focus-visible, .comm-reset:focus-visible, .comm-chip:focus-visible { outline: 3px solid color-mix(in srgb, var(--ln-violet) 55%, transparent); outline-offset: 2px; }
+.comm-search-field { position: relative; min-width: 0; }
+.comm-search-field input[type="search"] { width: 100%; padding: 0 .75rem 0 2.4rem; }
+.comm-search-icon { position: absolute; left: .8rem; top: 50%; transform: translateY(-50%); color: var(--ln-muted); pointer-events: none; }
+.comm-filter-toggle { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; padding: 0 .9rem; cursor: pointer; font-weight: 700; white-space: nowrap; }
+.comm-filter-toggle.is-open, .comm-filter-toggle.has-filters { border-color: var(--ln-violet); color: var(--ln-violet-deep); background-color: color-mix(in srgb, var(--ln-violet) 9%, var(--ln-surface-solid)); }
+.comm-filter-badge { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; padding: 0 .3rem; border-radius: 999px; background: var(--ln-violet); color: #fff; font-size: .75rem; font-weight: 800; }
+.comm-filter-badge[hidden] { display: none; }
+.community-more-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 10px; padding: 10px 2px 2px; border-top: 1px solid var(--ln-line); }
+.community-more-filters[hidden] { display: none; }
+.community-more-filters label { display: grid; gap: 4px; margin: 0; color: var(--ln-muted); font-size: .8rem; font-weight: 700; }
+.community-more-filters select { font-weight: 500; font-size: .95rem; }
+.community-filter-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.community-filter-status:has(.comm-active-chips:empty):has(.comm-reset[hidden]) { display: none; }
+.comm-active-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.comm-chip { display: inline-flex; align-items: center; gap: .35rem; min-height: 32px; max-width: 100%; padding: 0 .4rem 0 .7rem; border: 1px solid color-mix(in srgb, var(--ln-violet) 40%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--ln-violet) 10%, var(--ln-surface-solid)); color: var(--ln-ink); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+.comm-chip span { display: inline-grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 999px; color: var(--ln-muted); font-size: 1.05rem; line-height: 1; }
+.comm-chip:hover span { background: color-mix(in srgb, var(--ln-violet) 18%, transparent); color: var(--ln-ink); }
+.comm-reset { display: inline-flex; align-items: center; gap: .4rem; min-height: 36px; padding: 0 .75rem; margin-left: auto; cursor: pointer; font-weight: 700; color: var(--ln-violet-deep); }
+.comm-reset[hidden] { display: none; }
+.comm-count { margin: 0; color: var(--ln-muted); font-weight: 700; }
+.comm-more-wrap { display: flex; justify-content: center; margin-top: 18px; }
+.comm-more-wrap button[hidden] { display: none; }
+.community-discovery[hidden] { display: none; }
+@media (max-width: 1120px) {
+  .community-filter-bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .community-filter-bar .comm-search-field { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .community-filters { margin: -12px 4px 22px; padding: 8px; }
+  /* Flex, not grid: the Filter button takes its own width and the sort the rest of its row
+     (a grid shares one column width between the rows and cut "Beste insgesamt" off). */
+  .community-filter-bar { display: flex; flex-wrap: wrap; }
+  .community-filter-bar .comm-search-field { flex: 1 1 100%; }
+  .community-filter-bar #commKind { flex: 1 1 38%; }
+  .community-filter-bar #commSubject { flex: 1 1 52%; }
+  .community-filter-bar .comm-filter-toggle { flex: 0 0 auto; }
+  .community-filter-bar #commSort { flex: 1 1 0; }
+  /* Two columns of about 160 px: a smaller font and a tighter arrow gap keep "Beste insgesamt"
+     and "Alle Sets" whole. */
+  .community-filters select, .comm-filter-toggle { font-size: .9rem; }
+  .community-filters select { padding: 0 1.55rem 0 .6rem; }
+  .comm-filter-toggle { padding: 0 .6rem; }
+  .community-filter-bar .comm-search-field { grid-column: 1 / -1; }
+  .community-more-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .comm-reset { margin-left: 0; }
+}
+@media (max-width: 380px) {
+  .community-more-filters { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .community-more-filters:not([hidden]) { animation: comm-panel-in .16s ease-out; }
+  @keyframes comm-panel-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+}

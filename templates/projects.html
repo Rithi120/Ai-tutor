@@ -19,6 +19,9 @@
           <button id="openScanner" class="document-input-option" type="button"><span class="input-icon">▣</span><b>{{ _('Scan with Camera') }}</b><small>{{ _('Phone or laptop camera') }}</small></button>
           <small class="field-hint upload-limits">{{ _('Up to {pages} pages per project, {size} MB per file.', pages=upload_limits.pages, size=upload_limits.size) }}</small>
         </fieldset>
+        {# The photos, PDFs and camera scans chosen so far, in the order they will be read
+           (static/js/project-create.js). Without JavaScript the input above posts as before. #}
+        <div id="projectImages" class="project-images" data-max="{{ upload_limits.pages }}" data-max-bytes="{{ upload_limits.size * 1024 * 1024 }}"></div>
         <details class="project-more-options" data-tour-target="project-topics-only">
           <summary>{{ _('Kompetenzraster and own topics') }} <small>({{ _('optional') }})</small></summary>
           <label class="document-input-option compact"><input id="competencyGridInput" name="competency_grid" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple><span class="input-icon">✓</span><b>{{ _('Kompetenzraster') }}</b><small>{{ _('What your teacher will test. Not required.') }}</small></label>
@@ -29,6 +32,9 @@
         <div id="selectedMaterial" class="selected-material" aria-live="polite">{{ _('No pages selected yet.') }}</div>
         <button id="createProjectButton" class="primary-button" type="submit">{{ _('Create learning project') }} <b>→</b></button>
         <div id="uploadProgress" class="upload-progress hidden" aria-live="polite"><i></i><span>{{ _('Uploading pages securely…') }}</span></div>
+        <p id="projectUploadStatus" class="imgcol-progress" role="status" aria-live="polite"></p>
+        <button id="projectRetryFailed" class="secondary-button imgcol-retry" type="button" hidden>{{ _('Retry the pages that failed') }}</button>
+        <a id="projectContinue" class="ghost-button imgcol-retry" href="#" hidden>{{ _('Continue with the saved pages') }} →</a>
         <p class="privacy">🔒 {{ _('Your files stay private to your account. Camera video is never recorded; only pages you capture are uploaded.') }}</p>
       </form>
     </section>
@@ -56,4 +62,5 @@
     </div>
   </div>
 {% endblock %}
-{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='scanner.js') }}"></script>{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='scanner.js') }}"></script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/project-create.js') }}"></script>{% endblock %}

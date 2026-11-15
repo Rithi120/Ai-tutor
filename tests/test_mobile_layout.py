@@ -149,6 +149,75 @@ class MobileLayoutTests(unittest.TestCase):
         self.assertGreaterEqual(box["x"], 0)
         self.assertLessEqual(box["x"] + box["width"], 320)
 
+    # ------------------------------------------------ three-dot menus (spec Phase 5)
+    MENU_WIDTHS = ((320, 568), (375, 667), (390, 844), (430, 932), (1280, 800))
+
+    def test_row_menus_have_separate_readable_items(self):
+        # On phones the card menu's items were squeezed into 44x44 boxes: "Duplizieren" and
+        # "Löschen" ran letter by letter into each other, and Delete was as grey as the rest.
+        # MENU_JS fails on overlapping items, labels or icons, an item under 44px, outside
+        # the screen or covered at its centre, and a Delete coloured like the others.
+        steps = {"FLASHCARD_EDIT": self.urls["FLASHCARD_EDIT"], "/assistant": "/assistant"}
+        for key, path in steps.items():
+            for theme in ("light", "dark"):
+                for width, height in self.MENU_WIDTHS:
+                    with self.subTest(menu=key, theme=theme, width=width):
+                        page = self.context(width, height, logged_in=True, theme=theme).new_page()
+                        errors = []
+                        page.on("pageerror", lambda error, errors=errors: errors.append(str(error)))
+                        page.goto(self.base + path, wait_until="load")
+                        measured = self.audit.open_row_menu(page, self.audit.MENU_STEPS[key])
+                        self.assertEqual(measured["problems"], [], measured["items"])
+                        self.assertGreaterEqual(len(measured["items"]), 3)
+                        self.assertEqual(sum(item["danger"] for item in measured["items"]), 1)
+                        self.assertEqual(errors, [])
+
+    def test_card_menu_stays_above_the_save_bar(self):
+        # After any edit the unsaved-changes bar is fixed at the bottom (z-index 50, about
+        # 180px tall on a phone). A menu opened on a row just above it opened downwards
+        # with z-index 5, so every item was under the bar. Now it opens upwards there.
+        place = """() => {
+            const bar = document.querySelector('#saveBar:not(.hidden)');
+            if (!bar) return {error: 'no save bar'};
+            const floor = bar.getBoundingClientRect().top;
+            const max = document.documentElement.scrollHeight - window.innerHeight;
+            const triggers = [...document.querySelectorAll('.card-row .card-menu-trigger')];
+            // The row whose button can be brought closest to 20px above the bar (a short
+            // page cannot scroll every row there); the menu needs about 240px below it.
+            let best = null;
+            for (const [index, trigger] of triggers.entries()) {
+              const want = window.scrollY + trigger.getBoundingClientRect().bottom - (floor - 20);
+              const target = Math.max(0, Math.min(max, want));
+              const miss = Math.abs(want - target);
+              if (!best || miss < best.miss) best = {index, target, miss};
+            }
+            if (!best) return {error: 'no card rows'};
+            window.scrollTo({top: best.target, behavior: 'instant'});
+            const box = triggers[best.index].getBoundingClientRect();
+            return {index: best.index, bottom: box.bottom, floor: bar.getBoundingClientRect().top};
+        }"""
+        # Unsaved changes, made without leaving a card field (that asks the AI for a definition).
+        edit = """() => { const title = document.querySelector('#setTitle');
+            title.value += ' neu'; title.dispatchEvent(new Event('input', {bubbles: true})); }"""
+        for theme in ("light", "dark"):
+            for width, height in self.MENU_WIDTHS:
+                with self.subTest(theme=theme, width=width):
+                    page = self.context(width, height, logged_in=True, theme=theme).new_page()
+                    page.goto(self.base + self.urls["FLASHCARD_EDIT"], wait_until="load")
+                    page.wait_for_selector(".card-row .card-menu-trigger", timeout=8000)
+                    page.evaluate(edit)
+                    page.wait_for_selector("#saveBar:not(.hidden)", timeout=4000)
+                    self.audit.settle_page(page)
+                    where = page.evaluate(place)
+                    self.assertNotIn("error", where, where)
+                    self.assertLess(where["bottom"], where["floor"], where)
+                    # Close enough to the bar that the menu (about 190px) cannot open downwards.
+                    self.assertGreater(where["bottom"], where["floor"] - 120, where)
+                    measured = self.audit.open_row_menu(page, self.audit.MENU_STEPS["FLASHCARD_EDIT"],
+                                                        nth=where["index"], click=False)
+                    self.assertEqual(measured["problems"], [], measured["items"])
+                    self.assertTrue(all(item["hit"] == "ok" for item in measured["items"]), measured["items"])
+
     def test_settings_form(self):
         self.check("/settings", logged_in=True)
 

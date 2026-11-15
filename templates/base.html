@@ -65,6 +65,9 @@
   <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/motion.js') }}"></script>
   <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/study-planner.js') }}"></script>
+  {# Long lists fold behind "Show more" (data-show-more); delete forms ask once (data-confirm-delete). #}
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/show-more.js', v=static_version) }}"></script>
+  <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/confirm-delete.js', v=static_version) }}"></script>
   <!-- One formula renderer for every page. KaTeX itself is fetched lazily, only once a
        page turns out to contain a formula, so pages without mathematics pay nothing. -->
   <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/math.js') }}"></script>

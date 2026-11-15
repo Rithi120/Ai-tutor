@@ -179,9 +179,18 @@ released**:
   - A free account with no lessons left gets 429 `free_lessons_used` with the See Premium
     link.
   - Its AI calls are labelled `lesson_generation:<version>+chat1` (today
-    `lesson_generation:v7+chat1`) in the usage ledger, so they can be told apart from
+    `lesson_generation:v10+chat1`; a topic lesson of exam material `+chat2`, a Short
+    Lesson from `/api/analyze` `+short1`) in the usage ledger, so they can be told apart from
     Short Lesson in `/internal/ai-diagnostics`. See
     [ASSISTANT.md](ASSISTANT.md#continue-learning).
+
+  **Exam material in the chat (spec 1.2, owner decision 2026-11-13):** every topic lesson
+  of a multi-topic exam is one normal lesson (free: 2 a day; Premium: no daily limit). The
+  chat card says which topic lessons can start now and which unlock tomorrow or with
+  Premium; nothing is built ahead. A project made from the chat (or from a PDF handed over
+  in the chat) is a project like any other: it counts as the week's free project when it
+  is created (it starts with typed topics), and the card says so - or says when the next
+  free one comes - before the tap.
 
   Lessons and tests inside a project (topic lessons, section tests, mixed practice and
   exam-gap practice; `project_work=True`) are unlimited. The project is the counted unit.

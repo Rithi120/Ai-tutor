@@ -232,7 +232,10 @@ class LeagueFairnessTests(Base):
                 idempotency_key=f"x:{account.id}", created_at=application.as_utc(week.starts_at) + timedelta(hours=2)))
         db.session.commit()
 
-    def test_leaving_before_processing_means_no_move_and_no_zone(self):
+    def test_leaving_before_processing_cannot_dodge_the_demotion(self):
+        # Until 2026-11 leaving after the week ended kept the league and left the learner
+        # out of the zones. Owner decision: a withdrawal from the demotion zone demotes,
+        # and the leaver still counts toward the group's size.
         week = self.past_week()
         accounts = [self.user(f"p{index}") for index in range(3)]
         for index, account in enumerate(accounts):
@@ -242,8 +245,9 @@ class LeagueFairnessTests(Base):
         application.process_due_league_weeks()
         entries = {row.user_id: row for row in application.LeagueEntry.query.all()}
         self.assertEqual(entries[accounts[0].id].outcome, "withdrawn")
-        self.assertEqual(db.session.get(application.LeagueMembership, accounts[0].id).tier, 3)
-        # Two remaining learners: one promotion, no demotion.
+        self.assertEqual(entries[accounts[0].id].tier_after, 2)
+        self.assertEqual(db.session.get(application.LeagueMembership, accounts[0].id).tier, 2)
+        # Group of three (the leaver counted): one promotion; the demotion place was the leaver's.
         self.assertEqual(entries[accounts[2].id].outcome, "promoted")
         self.assertEqual(entries[accounts[1].id].outcome, "stayed")
 

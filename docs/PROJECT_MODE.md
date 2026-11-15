@@ -34,12 +34,33 @@ changed.
 **Creating a project** ("Neues Lernprojekt erstellen", button **Create learning
 project**): name, subject, class, optional exam date, notes (photos, PDFs, camera), and -
 under "Kompetenzraster and own topics" - an optional Kompetenzraster upload and topics
-typed in one per line. Any one of notes, Kompetenzraster or typed topics is enough; a
-project of typed topics only goes straight to the topic list. Kompetenzraster pages are
-stored as teacher-marked pages, which raises the importance of the topics they cover. A
+typed in one per line (a comma stays inside its topic; more than 40 typed topics keep the
+first 40 and say so). Any one of notes, Kompetenzraster or typed topics is enough; a
+project of typed topics only goes straight to the topic list. Kompetenzraster files are
+stored with `source_kind = "grid"` and their pages as teacher-marked pages, which raises
+the importance of the topics they cover; their rows become the competency inventory
+(see "Kompetenzraster inventory" at the end). A
 topic with no notes behind it is taught from standard school content and marked as an
 addition. Submitting the same project twice within two minutes (same title, subject and
 files, or the same typed topics) opens the first one instead of making a copy.
+
+**One creation path** (spec 1.2, 2026-11-13): the form handler `projects()` and the chat
+both call `create_learning_project(title, subject, grade, exam_date, uploads, grid_uploads,
+topics, analysis)` - duplicate check, the `project` allowance (checked first; held and
+counted at once with typed topics), ingest, typed topics, one transaction, rollback and
+release on any error. The chat's exam card (`POST /api/assistant/conversations/<id>/project`,
+[ASSISTANT.md](ASSISTANT.md#exam-material-short-lessons-or-project-mode-spec-12-2026-11-13))
+makes a project whose typed topics are the chat's exam topics (same titles and topic
+keys), whose pages are the chat's kept photos (read again here, at Project quality) or the
+PDF the student handed over, with the exam date from the chat or a date chip, and
+`analysis_json.origin = {kind: "assistant", conversation_id, source_message_id}`. It then
+works like any other project: topic list → "Start learning" → the scheduler's plan up to
+the exam date, lessons, exercises, flashcards, revision and the mock exam.
+
+**Shared competency data:** while a section has no attempts of its own,
+`section_knowledge_state` reads the student's shared ConceptMastery for the topic (exact
+concept, then the title's words), so a topic already learned in a chat topic lesson or a
+Short Lesson starts as developing or secure, not as new.
 
 **Subject**: whatever the student picks or types ("Ethik", "Mathe", "Bio LK") is folded
 to one of the 23 canonical subjects in `learnova/lessons/subjects.py` (`SUBJECT_CHOICES`)
@@ -164,12 +185,18 @@ and adds their topics (`project_pages_to_analyse`).
 - **A busy provider is asked once per run, not once per photo (review B B-1, spec §2C).**
   A provisional offline reading counts as read, so every reading loop went on to the next
   photo and collected another refusal. Now a page read offline because the AI was busy
-  (`page_read_while_busy`: the busy `vision_pending` note) stops the loops like a waiting
-  page: the per-page route answers 200 with its real state plus `paused` and
-  `pause_message` ("The AI is busy right now. Learnova read this page offline for now and
-  paused reading the other pages – …"), and project-start.js stops sending pages;
-  Continue reading, quick-start and `/reanalyze` break there; quick-start does not read
-  again within `WAITING_RETRY_AFTER` of such a page (`page_recently_busy`). In the gateway,
+  (`page_read_while_busy`: the busy `vision_pending` note) switches the rest of the run to
+  offline reading: the per-page route answers 200 with its real state plus `paused` and
+  `pause_message` ("The AI is busy right now, so Learnova read your pages offline for now.
+  …"), project-start.js sends the next pages with `{"offline": true}`, and Continue reading,
+  quick-start and `/reanalyze` pass `offline=True` to `recognize_single_project_page`, which
+  then asks the AI nothing and stores the same provisional offline reading (text layer, else
+  the offline OCR; vision reads it again later, D4). A waiting page still ends the run;
+  quick-start does not read again within `WAITING_RETRY_AFTER` of such a page
+  (`page_recently_busy`). Until the real-world audit (2026-11-14) the loops stopped at the
+  busy page instead: on a key whose vision output limit refuses every page reading, the
+  Kompetenzraster uploaded after the first photo was never read and the project was planned
+  without it (REAL_WORLD_ACCEPTANCE_AUDIT.md, A-1). In the gateway,
   `ocr_document_recognition` fails at once, without a call, while its only model is cooling
   down after a 429 (`COOLDOWN_FAIL_FAST_TASKS`; the error keeps the cooldown's category and
   remaining seconds); every other task - chat photos and their close-up second look
@@ -188,7 +215,12 @@ and adds their topics (`project_pages_to_analyse`).
 
 **Uploads** (`learnova/uploads/service.py`): every file and every PDF page becomes a
 `ProjectPage`, up to `PROJECT_MAX_PAGES` (40) per project across all files and later
-additions. A file whose bytes match a file already in the project is skipped and named
+additions. Since 2026-11-13 the create form and "Add more pages" collect photos, PDFs and
+camera scans in one ordered gallery and send them in batches with `materials_meta`
+(JSON answers per file, a JSON 413, an optional label per page in `project_page.label`,
+migration 045); the workspace shows every page as a thumbnail (the cached `thumb` image
+variant) to open, move, retake or - before topics exist - delete. See
+[MULTI_IMAGE_UPLOADS.md](MULTI_IMAGE_UPLOADS.md). A file whose bytes match a file already in the project is skipped and named
 ("“x.pdf” was uploaded twice; Learnova kept one copy"), never dropped silently.
 
 - **One damaged file never costs the others** (`ingest_uploads(partial=True)`, used by
@@ -675,6 +707,7 @@ All the logic modules below are pure (no database, no AI) and unit-tested.
 | Material report | `learnova/projects/document_analysis.py` | Page and document states, completeness, duplicates, overlaps. |
 | Topic extraction | `learnova/projects/topics.py` | Batches, normalisation, merge, cap, overlap suggestions, reconcile. |
 | Fachbegriff cards | `learnova/projects/terms.py` | `build_cards`, `plan_sync`, term and item keys. |
+| Formulas | `learnova/projects/formulas.py` | Structural formula matching (`match_key`, `find_on_pages`), enrichment, the notes' formula inventory and prompt lines (spec Phase 2). |
 | Coverage | `learnova/projects/coverage.py` | Topic states, next activity, project checks. |
 | Scheduler | `learnova/projects/scheduler.py` | See below. |
 | Recall grading | `learnova/projects/planning.recall_answer_score` | Deterministic: word sets, umlaut folding, spelling slips; numbers must match. |
@@ -816,6 +849,7 @@ reviews come first. "I missed this day" also blocks that date for every project.
 | Setting | Default | Where | Meaning |
 |---|---|---|---|
 | `PROJECT_MAX_PAGES` | 40 | env, `learnova/config.py` | Pages per project across every file and later additions. Twenty was exceeded by six four-page worksheets, and the whole upload was refused. |
+| `PROJECT_MAX_FILES_PER_REQUEST` | 40 | env, `learnova/config.py` | Files in one upload request (`/projects`, `/pages/add`); more is a 400 `too_many_files`. The multi-image form sends six at a time ([MULTI_IMAGE_UPLOADS.md](MULTI_IMAGE_UPLOADS.md)). |
 | `PROJECT_PREPROCESS_ON_UPLOAD` | false | env, `learnova/config.py` | true renders and preprocesses every page inside the upload request again (the rollback switch for lazy rendering). |
 | `PDF_TEXT_SHORTCUT_MAX_IMAGE_SHARE` | 0.10 | env, `learnova/config.py` | Raster share (0..1) of a PDF page from which its text layer counts as partial and vision reads the page. |
 | `ANALYSIS_STEP_CALLS` | 2 | env, `learnova/config.py` | Extraction calls one `POST /analysis/step` request may make (1..6). See docs/OPERATIONS.md. |
@@ -921,7 +955,7 @@ Project Mode in particular:
   `lesson_generation:v8`, `answer_evaluation:v7` and `answer_diagnosis:v3` and found the
   defects PF_FIX2 addresses (F1-F9, fixed offline and replayed from its stored outputs in
   `tests/test_live_final_limits.py` and `tests/test_live_final_lessons.py`); the new prompt
-  versions (`lesson_generation:v9`, `answer_evaluation:v8`, `answer_diagnosis:v4`) and the
+  versions (`lesson_generation:v9`, since spec Phase 2 `v10`, `answer_evaluation:v8`, `answer_diagnosis:v4`) and the
   output allowance are untested against the real model. Lessons were scored by the
   tester (10-15 of 20 per subject), not by a teacher; German, Biology, Religion, Music,
   Physics and Chemistry were not run live at all.
@@ -979,8 +1013,10 @@ Project Mode in particular:
 - **Typed topics** the analysis never matches to a page are taught as standard school
   content. Old projects analysed before the v4 page lists, whose topics cite every page,
   look covered until their next analysis.
-- **Kompetenzraster:** read like any page. Its "Ich kann" rows are not yet separate
-  teacher objectives, though teacher-marked pages raise topic importance.
+- **Kompetenzraster:** its "Ich kann" rows are separate, tracked competencies since
+  2026-11-13 (see "Kompetenzraster inventory"). Grids uploaded before that are stored as
+  notes (`source_kind = "upload"`): they become a Kompetenzraster only when the student
+  taps "This file is my Kompetenzraster" or uploads the grid again.
 - **No grade estimate.** There is no documented grading scale for a practice exam, so the
   workspace shows scores and topic states instead.
 - **Frontend JavaScript.** The start page's loop (`project-start.js`) runs in six
@@ -990,3 +1026,227 @@ Project Mode in particular:
 - **Not checked on the production host:** a real PostgreSQL migration run, the gunicorn
   command and proxy timeouts, real handwriting and a real iPhone. OPERATIONS.md ("What was
   verified, and where") lists what only the owner can confirm.
+
+## Kompetenzraster inventory (spec Phase 1.1, 2026-11-13)
+
+Before this, a Kompetenzraster was ingested like notes and only raised the importance of
+the topics citing it; the `Competency` table, `learnova/exam_prep/competencies.py` and the
+`competency_extraction` task existed but nothing wrote a row, and a compound header such as
+"Lineare und quadratische Funktionen" could absorb "Lineare Funktionen" (or "Quadratische
+Funktionen", depending on arrival order) while every completeness check stayed green.
+
+**Topics.** `topics.is_compound` marks a title that joins topics (und / and / sowie / oder /
+& / vs. / a comma or slash between content words). `merge_topics` and `reconcile` never
+merge a compound title with another one through `same_topic` - in any arrival order; equal
+keys still merge, and `overlap_suggestions` still offers the pair as a one-tap merge.
+`topic_key` is unchanged, so no stored key or cache changed. Re-analysing an old project
+may therefore add "Lineare Funktionen" as a new topic next to the old compound one (nothing
+is deleted). The topic prompt no longer tells the model to fold small headings into one
+topic when they name different ideas, and grid pages carry `"source_role":
+"kompetenzraster"` with a rule to keep every row and topic (only grid pages' batch keys
+change; `project_section_generation` stays v4).
+
+**Grid files.** `source_kind = "grid"` (`GRID_SOURCE_KIND`) for the create form's
+Kompetenzraster, "Add a Kompetenzraster" under Original materials (`POST
+/projects/<id>/pages/add` with `competency_grid`), or one tap on an existing file (`POST
+/projects/<id>/files/<file_id>/grid`, a toggle: unmarking removes the rows read from it).
+A Kompetenzraster added under Original materials that is already in the project as notes
+(same file) is skipped as a duplicate as always, and that existing file is marked instead.
+
+**Extraction** (`sync_competency_inventory`): one more polled step after the topics, in
+`POST /analysis/step` (within what is left of the step's `ANALYSIS_STEP_CALLS`; the round
+is not "finished" until the grid pages are read), in `ensure_project_sections`
+(quick-start, Next, autopilot) and after marking a file (within one step's
+`ANALYSIS_STEP_CALLS`, so a long grid never runs into the worker timeout). One `competency_extraction:v2`
+call per grid page (or page part over 9000 characters), cached in
+`analysis_json["competency_batches"]` by the hash of prompt version, subject and page;
+`analysis_json["competency_pages"]` records each page's state (`done`, `fallback`,
+`waiting`), the deterministic row count, rows found, rows rejected and rows over the cap.
+Under the analysis lease, and `vision_budget_low` stops before a call. A provider stop parks
+the page as **waiting** (retried after `WAITING_RETRY_AFTER`), and its rows are stored from
+the deterministic parser meanwhile; a broken answer uses the parser's rows (`fallback`).
+The contract repairs, never rejects: a list (or `rows`/`kompetenzen`) is enough, an empty
+list is valid, unknown levels or importance fall back to the middle value.
+
+**Grounding and gaps.** `ground_page` keeps a row only when its page says it
+(`topics.text_on_page`, the same check terms and items get) - an invented statement is
+counted as rejected, never stored. `expected_rows` counts "Ich kann / Du kannst / I can /
+Ich kenne / Ich weiß" rows (bullets, numbers, checkboxes, column breaks, wrapped rows). A
+page whose stored verified rows are fewer than its count, with rejected rows, or with rows
+over the cap (60 per page, 150 per project) shows a banner ("raster.pdf p. 2 lists 15 “Ich
+kann” rows, Learnova found 12") with **Read again** (only that page, its cache entry
+dropped), **Add the missing rows** (the counted rows as the page writes them, no AI call),
+**The list is complete** (the student's word) and **Add a missing one** (one field).
+A grid page not read for its current text yet (left for a later step, or its text changed)
+shows "raster.pdf p. 2 is not read yet" with **Read again** and, when the parser counts
+rows, **Add the missing rows**; it holds the coverage check open, because its rows are not
+in the inventory. The inventory's "Not in this exam" button inside the topic review's
+"Start learning" form posts with `formaction` (a nested form would start learning).
+
+**Topics for competencies.** `attach_sections` (stemmed, folded words; the model's
+`section_title` only when no topic matches better; a tie between a compound topic and one
+narrower topic goes to the narrower one; any other tie or no overlap stays unassigned with
+one-tap **Make it a topic**). A competency is never merged with another. Deleting a topic
+sets its competencies' `section_id` to NULL (relationship without delete cascade, safe
+with PostgreSQL's foreign key); merging topics moves them; leaving a topic out of the plan
+does not exempt its competencies ("Its topic is not in your plan" until the student taps
+**Not in this exam**).
+
+**Status** (`competency_state`, derived, never stored): `identified` (not confirmed, or no
+topic) → `not_started` → `teaching` (a lesson's parts said ≥ 75% of the statement's content
+words) → `practised` (an answer to a question about it) → `needs_revision` (fewer than half
+of 2+ answers right, or answered and the topic is flagged for reteaching or its review is
+due) → `mastered` (the topic is mastered **and** 2+ correct answers tagged to this
+competency). `Competency.state` only stores the student's decision (identified / confirmed /
+removed = "Not in this exam"); "Start learning" and the autopilot confirm the rows attached
+to a topic, and "These competencies are right" confirms all. Evidence: lessons call
+`record_competencies_taught` (once per lesson id); `/api/answer` calls
+`record_competency_answer` with the server-held question - its competency is the
+question's own `competency_id` only when it belongs to that topic, otherwise the statement
+its words match (`match_competency`, ties tag nothing); never from the request, once per
+attempt id. The section lesson prompt names the topic's competencies ("teach and practise
+each one on its own").
+
+**Coverage.** A project with a grid gets the seventh check `competencies_addressed`
+("Every competency of the Kompetenzraster practised", weight 2): complete only when every
+competency not marked "Not in this exam" is practised or mastered and no grid page has an
+open gap (a grid page not read yet counts as one). A competency shown as "needs revision" only
+because its topic's spaced review is due still counts (`counts_as_addressed`): the topic
+checks do not drop on a due review either, so "complete" never flickers with the schedule;
+weak answers or a reteach flag do hold it open. Projects without a grid keep exactly the six checks.
+
+**Migration 043_competency_inventory**: additive columns on `competency` (position,
+statement_key, source_file_id, group_path, verified, state, taught_count, answers,
+correct_answers, last_evidence_at, evidence_json), all with defaults; no backfill (the table
+was empty everywhere). `source_file_id` is added without a REFERENCES clause on existing
+databases (SQLite cannot add one); fresh databases get the foreign key.
+
+**Limits (honest).** Tested with the model patched only, never on a real grid scan; level
+columns read as one line are split at three or more spaces, tabs or "|", which a real text
+layer may not produce. Questions are tagged by word match, not by the model, so a question
+that names none of a competency's words counts for none (the topic's own evidence is
+unchanged). The status does not reorder the study plan yet. "Quadratische Funktionen:
+Scheitelpunktform" still merges into "Quadratische Funktionen" when it adds one word (the
+subtitle rule was left for the owner); its "Ich kann" row is tracked on its own either way.
+
+## Teacher-specific formulas (spec Phase 2, 2026-11-13)
+
+Before this, a formula was one more topic-map item checked like any other: as a bag of words.
+So "y = m \cdot x + b" was dropped on a worksheet that says "y = mx + b" (different words),
+while a wrong rearrangement "U = \frac{R}{I}" passed on a page that says "U = R · I" (the same
+letters), was listed as "in the notes" and became a project flashcard. Broken LaTeX was stored
+as the model wrote it, one reaction written two ways was two items, `canonical_math` read
+`\rightarrow` as "arrow", practice and exams never saw the formulas, and the AI-written tips
+card was labelled "TEACHER NOTES / Teacher tips" ("TIPPS DER LEHRKRAFT").
+
+**Structural matching** (`learnova/projects/formulas.py`, pure). `match_key` folds a formula into
+one linear spelling: LaTeX and Unicode for the same symbols (`\frac{a}{b}` = `a/b` = `a : b`,
+`x^{2}` = `x²`, `\cdot` / `·` / implicit multiplication, `x_1` = `x₁` = `x1`, `\rightarrow` =
+`→` = `->`, `\ce{…}` unwrapped, nested `\frac`/`\sqrt` folded from the inside out), case and
+spacing ignored. Everything else counts, so a rearrangement is a different formula. A page line
+is cut into its formula runs (`page_formulas`: pieces joined where an operator connects them,
+a label such as "Ohmsches Gesetz:" trimmed off, a word equation such as "Arbeit = Kraft · Weg"
+kept, a coefficient written apart from its chemical formula joined to it: "2 H₂ + O₂ → 2 H₂O";
+"½" reads as 1/2, so "s = ½ a t²" is "s = rac{1}{2} a t^2"). `find_on_pages` returns the page and the formula **as the page writes it**; a link of a
+chain ("v = s/t" on "v = s/t = 10 m/s") counts.
+
+**A formula item** in `topic_map_json["items"]` now carries, besides kind, name, detail, page_id
+and in_notes (all optional, no migration):
+
+| Field | Meaning |
+| --- | --- |
+| `notation` | The formula exactly as the page writes it ("" when no page does) |
+| `latex` | The model's LaTeX, only when `formatting.latex_problems` finds nothing wrong |
+| `match` | `exact` (found by structure), `name` (a formula named without symbols, "Satz des Pythagoras", found by its name), `words` (only its words are on the page) |
+| `origin` | `notes` for exact/name, else `added`; `in_notes` is true only for `notes` |
+| `teacher_marked` | Its page, or another page of the topic that writes the same formula, is a Kompetenzraster page (`source_kind='grid'`) or teacher-highlighted (block marks once the page is confirmed): a worksheet formula the Kompetenzraster also lists is marked, whichever page the model cited. A page the student only marked important does not count. |
+| `variables` | At most six `{symbol, meaning, unit, in_notes}`: only symbols that occur in the formula; `in_notes` when a page of the topic gives the meaning or the unit |
+
+`topics.normalize_topic` (with `teacher_page_ids`) keeps a formula found by structure as from
+the notes, keeps one whose words only are on the page as added (`match: words`: never "in the
+notes", never a flashcard, not in the legacy `formulas_json` list), and drops one the page does
+not mention at all. Items of one formula in two spellings merge; the page's spelling wins.
+
+**Extraction prompt.** For subjects whose strategy looks for formulas (maths, physics, the
+sciences, NwT, ...), `project_extraction_focus` adds `PROJECT_FORMULA_FOCUS`: "name" exactly as
+the page writes it, the same formula in LaTeX in "latex", "variables" only with the meanings and
+units the page gives, a chemical equation is a formula, a rearranged form not on the page is no
+formula item. `PROJECT_TOPIC_PROMPT` says the JSON is data (the answer notation rule does not
+apply to "name"). **The prompt version stays `project_section_generation:v4` on purpose**
+(`tests/test_lesson_prompts.py` guards it): a bump would re-run every project's cached topic
+batches. Cached answers without the new fields are normalised by the same structural check.
+
+**Old maps** are enriched at read time (`formulas.needs_enrichment` / `enrich_map` in
+`section_topic_map`, `section_notes_context` and `project_section_formula_lines`), in memory
+only; nothing is written back until the next analysis stores enriched items itself. An old
+formula that only matched by words is shown and prompted as added from then on; cards already
+made from it stay (sync is add-only).
+
+**Lessons** (`lesson_generation:v10`). `lesson_context.topic_map_block` lists "Formulas from the
+notes (teach these first, in exactly this notation)" before the Fachbegriffe, each with its
+notation, LaTeX, page label, "teacher-marked" and variables; added formulas stay in the item list
+as "(added, not in the notes)". When the topic has a formula of the notes, the lesson prompt also
+carries `FORMULA_TEACHING_RULE`: teach those formulas first in their notation (meaning, every
+symbol with quantity and unit, when it applies, substituting, rearranging step by step, checking
+units and the estimate); another formula, a rearranged form the notes do not show or another
+method only in one "alternative" part, only when it really helps; never call anything the
+teacher's or teacher-approved (a teacher-marked formula may be called "marked by your teacher");
+say "general approach" when the notes give no method. Strategies: maths' `rule` step now says
+"in the notation of the notes; how to rearrange it and check the result", its rule "Teach the
+method of the notes first; a more efficient method only as an additional tip"; physics and
+sciences get a `rule` step before the worked example; maths, physics and sciences get an
+optional `alternative` step after it (both only with a formula item). NwT keeps its plan (it
+is at `MAX_PLAN_STEPS`) and relies on the prompt rule. Every strategy's teaching block stays
+under `PROMPT_BLOCK_LIMIT` (tested for every state, mode and item combination).
+
+**The `alternative` part** (`PART_KINDS`; aliases additional_tip, zusatztipp, alternative_method,
+...; a bare "tip" is not one, since a tip may retell the notes) is shown as "Additional tip" / "Zusatztipp" with the "Added by
+Learnova" badge: `guard_parts` forces `from_notes` false and no source pages, and
+`taught_evidence` never counts it as teaching a notes formula.
+
+**LaTeX validity, repair not reject** (`learnova/assistant/formatting.py`). `latex_problems`
+(unbalanced braces, `\left`/`\right`, `\begin`/`\end` nesting, `\frac` without two arguments,
+empty `\sqrt`, a doubled backslash, empty), `math_problems` (walks the formulas exactly as
+`math-rules.js` splits them: a price "$5 and $10" is prose; plus `bare_command` outside any
+formula), `repair_math` (missing braces added only where exactly one place makes the formula
+valid, e.g. `\sqrt{b^2-4ac}{2a}` → `\sqrt{b^2-4ac}}{2a}`; unmatched `\left`/`\right` dropped;
+anything else becomes readable plain text without delimiters; a bare command run, with the maths
+tokens around it, is wrapped in `\( \)`; idempotent). Applied in `repair_lesson` (parts, the
+explanation, the worked example, tips; every generated lesson), `repair_question_fields` and
+`generate_targeted_question` (prompt, hint, option labels, keys, explanation, solution steps) and
+`normalize_exam_question` (never the supporting excerpt). Repairs are logged as
+`lesson.math_repaired` / `question.math_repaired`. `display_tex` shows a formula's checked LaTeX
+in `\( \)`, else its notation as written.
+
+**Practice and exams.** `start_section_lesson` stores the notes' formulas
+(`formulas.inventory` + `prompt_lines`, at most 700 characters) in the session as
+`notes_formulas`. `generate_targeted_question` adds them to CONTEXT, and for a written question
+(`text`, `short_answer`, `calculation`, `explanation`) a `formula_task` that rotates
+substitution → rearrangement → word problem → application → transfer by question number;
+`question_generation:v3` (`FORMULA_PRACTICE_RULE`) asks for that notation and a worked solution
+(formula, substitution with units, result with unit). Choice questions keep the old behaviour.
+`generate_final_exam` (`final_exam_generation:v4`) adds each section's `formulas` and
+`EXAM_FORMULA_RULE`; mixed project practice adds the formula lines to its prompt and session.
+
+**Notes page and cards.** `section_learning.html` shows a formula as `display` (typeset by
+`math.js` when it has checked LaTeX, else the page's notation), its symbols, and "Marked by your
+teacher" / "From your notes" / "Added explanation". A formula card's front uses the same
+display; its identity (`terms.item_key`, part of every origin key) is unchanged on purpose, so
+`plan_sync` never duplicates a card. A new formula card's `reverse_answer` is the page's notation
+(it stays inside the front, which `reverse_answer_after_edit` needs); whether to stop asking
+students to type a formula back to front is left to the owner.
+
+**Honest labels.** The AI-written tips card is now "TIPS / Learnova tips" ("TIPPS / Tipps von
+Learnova"), and the model's tip in answer feedback is "Tip" ("Tipp"), no longer "Teacher tip"
+("Lehrertipp"); nothing the model writes is attributed to the teacher.
+
+**Limits (honest).** Tested with the model patched only, never against a live model or a real
+worksheet scan. A commuted form ("U = I · R" for "U = R · I") or a formula broken over two lines
+is not matched by structure and is shown as added; multi-letter implicit products are ambiguous
+("mx" is m·x, a symbol named "mx" would be read the same). Rearrangements are never checked
+algebraically (no sympy): they are taught live as labelled additions and never stored as
+checked. Whether the "alternative" part appears is the model's choice under the "only if it really
+helps" instruction, not enforced. The LaTeX check is structural (an unknown command is not
+reported, KaTeX may still refuse something it passes; the browser then shows the source as
+before). Ordinary pages carry no author, so only Kompetenzraster and teacher-highlighted pages
+can say "Marked by your teacher".

@@ -6,17 +6,32 @@
 {% endblock %}
 {% block content %}
 <main class="league-page" id="main-content" style="--league: {{ view.league.colour }}; --league-dark: {{ view.league.colour_dark }}">
+  {# The ladder first, the league's name and the time left under it: one glance says where
+     you are and how long the week still runs. Leagues above are dimmed and locked. #}
   <section class="league-hero">
-    <span class="league-crest league-crest-lg league-{{ view.league.key }}" aria-hidden="true"></span>
-    <div>
-      <p class="eyebrow">{{ _('LEARNOVA LEAGUES') }}</p>
-      <h1>{{ view.league.name }}</h1>
-      <p class="league-timer" data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"></p>
-    </div>
     <ol class="league-ladder" aria-label="{{ _('All leagues') }}" data-tour-target="league-ladder">
-      {% for item in view.leagues %}<li class="{{ 'is-current' if item.current }}{{ ' is-passed' if item.tier < view.league.tier }}" style="--league: {{ item.colour }}; --league-dark: {{ item.colour_dark }}" title="{{ item.name }}"><span class="league-crest league-{{ item.key }}" aria-hidden="true"></span><span class="visually-hidden">{{ item.name }}{% if item.current %} ({{ _('your league') }}){% endif %}</span></li>{% endfor %}
+      {% for item in view.leagues %}<li class="{{ 'is-current' if item.current }}{{ ' is-passed' if item.tier < view.league.tier }}{{ ' is-locked' if item.tier > view.league.tier }}" style="--league: {{ item.colour }}; --league-dark: {{ item.colour_dark }}" title="{{ item.name }}"><span class="league-crest league-{{ item.key }}" aria-hidden="true"></span><span class="visually-hidden">{{ item.name }}{% if item.current %} ({{ _('your league') }}){% endif %}</span></li>{% endfor %}
     </ol>
+    <div class="league-hero-title">
+      <h1>{{ view.league.name }}</h1>
+      {# Server text first (works without JavaScript); profile.js keeps it ticking and, once the
+         week is over, says so and reloads once after the short close grace. #}
+      <p class="league-timer"><span aria-hidden="true">⏱</span> <span data-countdown="{{ view.ends_at }}" data-countdown-label="{{ _('Week ends in {time}') }}"
+         data-countdown-ended="{{ _('The week has ended. Results in a moment.') }}" data-countdown-reload>{{ _('Week ends in {time}', time=view.time_left) }}</span></p>
+    </div>
   </section>
+
+  {% if not league_intro_seen and view.participating %}
+  {# Shown until the learner taps OK (a cookie, so it is gone on every later visit). #}
+  <section class="league-intro" data-league-intro>
+    <p>{{ _('Earn XP by learning this week. The top places move up a league, the bottom places move down.') }}
+       {% if view.size and view.standings|selectattr('rival')|list %}{{ _('Free places in your group are filled with simulated rivals.') }}{% endif %}</p>
+    <form method="post" action="{{ url_for('league_intro_seen') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="primary-button">{{ _('OK') }}</button>
+    </form>
+  </section>
+  {% endif %}
 
   {% if view.last_result %}
   <section class="league-result league-result-{{ view.last_result.outcome }}" data-league-result>
@@ -25,6 +40,10 @@
        {% else %}{{ _('Last week you finished #{rank} with {xp} XP and stayed in the {league}.', rank=view.last_result.rank, xp=view.last_result.xp, league=view.last_result.league_after) }}{% endif %}</p>
     <button type="button" class="ghost-button" data-dismiss-result>{{ _('Got it') }}</button>
   </section>
+  {% endif %}
+
+  {% if view.results_pending %}
+  <p class="league-note" role="status">{{ _('Last week has ended. Your result is being calculated and will appear here shortly.') }}</p>
   {% endif %}
 
   {% if not view.participating %}
@@ -36,40 +55,73 @@
   {% elif not view.joined %}
   <section class="league-empty" data-tour-target="league-standing">
     <h2>{% if view.rejoin_from %}{{ _('You will join the leagues next week') }}{% else %}{{ _('Earn XP to join this week’s league') }}{% endif %}</h2>
-    <p>{{ _('Your first XP of the week puts you into a group in the {league}. Every lesson, flashcard and test counts.', league=view.league.name) }}</p>
     <a class="primary-button" href="{{ url_for('short_lesson') }}">{{ _('Start a lesson') }}</a>
   </section>
   {% else %}
+  {# One line: your place, your XP and the next goal. Gaps come from the server
+     (league_rules.xp_gaps); ties go to whoever got there first. #}
   <section class="league-status league-status-{{ view.me.zone }}" role="status" data-tour-target="league-standing">
     <span class="league-status-rank">#{{ view.me.rank }}</span>
-    <div><b>{{ view.me.message }}</b>
-      <small>{% if view.me.zone == 'promotion' %}{{ _('Keep it up — stay in the promotion zone until the week ends to move up a league.') }}
-        {% elif view.me.zone == 'demotion' %}{{ _('A lesson or two this week can lift you out of it.') }}
-        {% else %}{{ _('{xp} XP this week. Every bit of learning counts.', xp=view.me.weekly_xp) }}{% endif %}</small></div>
+    <div class="league-status-main">
+      <b>{{ view.me.message }}</b>
+      <ul class="league-gaps" aria-label="{{ _('Your week in numbers') }}">
+        <li><b>{{ view.me.weekly_xp }}</b> {{ _('XP this week') }}</li>
+        {% if view.me.rank == 1 %}<li class="league-gap-top">{{ _('You are in first place') }}</li>
+        {% elif view.me.xp_to_next_rank %}<li>{{ _('{xp} XP to pass #{rank}', xp=view.me.xp_to_next_rank, rank=view.me.rank - 1) }}</li>{% endif %}
+        {% if view.me.xp_to_promotion %}<li class="league-gap-up">{{ _('{xp} XP to reach the promotion zone', xp=view.me.xp_to_promotion) }}</li>{% endif %}
+        {% if view.me.xp_to_leave_demotion %}<li class="league-gap-down">{{ _('{xp} XP to leave the demotion zone', xp=view.me.xp_to_leave_demotion) }}</li>{% endif %}
+      </ul>
+    </div>
   </section>
   <ol class="league-table" aria-label="{{ _('Ranking this week') }}">
     {% for row in view.standings %}
-    {% if row.rank == view.promote + 1 and view.promote %}<li class="league-divider league-divider-up" aria-hidden="true"><span>{{ _('Promotion zone') }} ↑</span></li>{% endif %}
-    {% if view.demote and row.rank == view.size - view.demote + 1 %}<li class="league-divider league-divider-down" aria-hidden="true"><span>{{ _('Demotion zone') }} ↓</span></li>{% endif %}
-    <li class="league-row zone-{{ row.zone }}{{ ' is-me' if row.me }}" {% if row.me %}aria-current="true"{% endif %}>
-      <span class="league-rank">{{ row.rank }}</span>
+    {% if row.rank == view.promote + 1 and view.promote %}<li class="league-divider league-divider-up" aria-hidden="true"><span>▲ {{ _('Promotion zone') }} ▲</span></li>{% endif %}
+    {% if view.demote and row.rank == view.size - view.demote + 1 %}<li class="league-divider league-divider-down" aria-hidden="true"><span>▼ {{ _('Demotion zone') }} ▼</span></li>{% endif %}
+    <li class="league-row zone-{{ row.zone }}{{ ' is-me' if row.me }}{{ ' is-rival' if row.rival }}" {% if row.me %}aria-current="true"{% endif %}>
+      <span class="league-rank{% if row.rank <= 3 %} league-rank-top league-rank-{{ row.rank }}{% endif %}">{{ row.rank }}</span>
       <span class="avatar-frame avatar-sm" style="--avatar-accent: {{ row.accent }}"><img src="{{ row.avatar_url }}" alt="" width="256" height="256" loading="lazy" decoding="async"></span>
-      <span class="league-name"><span class="league-name-text">{% if row.profile_url and not row.me %}<a href="{{ row.profile_url }}" data-tour-target="league-profile-link">{{ row.username }}</a>{% else %}{{ row.username }}{% endif %}{% if row.me %} <small>({{ _('you') }})</small>{% endif %}</span>{% if row.premium %}{{ premium_badge(compact=True) }}{% endif %}</span>
+      <span class="league-name">
+        <span class="league-name-line"><span class="league-name-text">{% if row.profile_url and not row.me %}<a href="{{ row.profile_url }}"{% if not row.rival %} data-tour-target="league-profile-link"{% endif %}>{{ row.username }}</a>{% else %}{{ row.username }}{% endif %}{% if row.me %} <small>({{ _('you') }})</small>{% endif %}</span>{% if row.premium %}{{ premium_badge(compact=True) }}{% endif %}</span>
+        <span class="league-name-meta">{% if row.level %}<span>{{ _('Level') }} {{ row.level }}</span>{% endif %}{% if row.rival %}<span class="league-rival-chip" title="{{ _('Simulated rival') }}">{{ _('Rival') }}</span>{% endif %}</span>
+      </span>
       <span class="league-xp">{{ row.weekly_xp }} <small>XP</small></span>
     </li>
     {% endfor %}
   </ol>
   {% endif %}
 
-  <section class="league-explainer" data-tour-target="league-rules">
-    <h2>{{ _('How leagues work') }}</h2>
+  {# Folded away: one line each until opened. #}
+  <details class="league-history league-fold" aria-labelledby="leagueHistoryTitle" data-league-history>
+    <summary><h2 id="leagueHistoryTitle">{{ _('Your last weeks') }}</h2>{% if view.history %}<span class="league-fold-count">{{ view.history|length }}</span>{% endif %}</summary>
+    {% if view.history %}
+    <ol class="league-history-list">
+      {% for week in view.history %}
+      <li class="league-history-row league-move-{{ week.moved }}" style="--league: {{ week.league.colour }}; --league-dark: {{ week.league.colour_dark }}">
+        <span class="league-crest league-{{ week.league.key }}" aria-hidden="true"></span>
+        <span class="league-history-main"><b>{{ week.league.name }}</b><small>{{ week.week_label }}</small></span>
+        <span class="league-history-result">
+          <span>{% if week.rank and week.size %}{{ _('Rank {rank} of {size}', rank=week.rank, size=week.size) }} · {% endif %}{{ week.xp }} XP</span>
+          <span class="league-history-chip"><span aria-hidden="true">{{ '↑' if week.moved == 'up' else '↓' if week.moved == 'down' else '=' }}</span> {{ week.outcome_label }}{% if week.moved != 'same' %} · {{ week.league_after.name }}{% endif %}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="league-history-empty">{{ _('Your finished weeks will appear here: league, rank, XP and whether you moved up or down.') }}</p>
+    {% endif %}
+  </details>
+
+  <details class="league-explainer league-fold" data-tour-target="league-rules">
+    <summary><h2>{{ _('How leagues work') }}</h2></summary>
     <ul>
       <li>{{ _('Each week you compete with up to {size} learners in your league, using only the XP you earn by learning.', size=config.LEAGUE_GROUP_SIZE) }}</li>
       <li>{{ _('When the week ends on Monday at midnight, the top places move up and the bottom places move down. Smaller groups have smaller zones.') }}</li>
+      {% if config.LEAGUE_RIVALS %}<li>{{ _('A group with fewer than 27 learners is filled up to 30 with simulated rivals, marked “Rival”. They learn on their own schedule and leave when the week ends.') }}</li>{% endif %}
       <li>{{ _('Weekly XP starts again from zero each week. Your level and total XP never reset.') }}</li>
       <li>{{ _('Not for you? You can turn leagues off in Settings at any time.') }}</li>
+      <li>{{ _('Leaving in the middle of a week does not avoid a demotion: if you are in the demotion zone when you leave, you move down a league.') }}</li>
     </ul>
-  </section>
+  </details>
 </main>
 {% endblock %}
 {% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/profile.js', v=static_version) }}"></script>{% endblock %}

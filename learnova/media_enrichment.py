@@ -17,15 +17,22 @@ sent "cell", "root" and "power" wherever the search ranker happened to point.
 
 Everything that decides whether a picture is usable is a pure function of a recorded API
 response, so the judgement can be tested without a network (see tests/test_media_enrichment.py).
+
+Licences (docs/LEARNING_RESOURCES.md): a picture that passed the relevance checks is shown
+only when its file carries a free licence the code can name (CC0, public domain, CC BY,
+CC BY-SA) and, where the licence asks for it, an author. The caption then credits author
+and licence with a link to the file page - the attribution CC BY and CC BY-SA require.
 """
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import unicodedata
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
@@ -38,10 +45,15 @@ _USER_AGENT = "LearnovaTutor/1.0 (educational study app; contact via app)"
 # looked up in English - which is what happened to fr/es/it/pt/nl/ar before.
 WIKI_LANGUAGES = frozenset({"en", "de", "fr", "es", "it", "pt", "nl", "ar"})
 
-# The only image host the CSP allows (learnova/web/security.py). The previous check
+# The only image hosts the CSP allows (learnova/web/security.py). The previous check
 # accepted any *.wikimedia.org, so an image from another Wikimedia host passed the server
 # and was then blocked by the browser - a broken picture under a confident caption.
-ALLOWED_IMAGE_HOST = "upload.wikimedia.org"
+# Wikipedia's API serves scaled thumbnails from thumb.wikimedia.org (live 2026-11-14: every
+# lead image of "Satz des Pythagoras", "Mitose", "Baden-Württemberg" came from there, so
+# with upload.wikimedia.org alone no chat or lesson picture was ever shown); an unscaled
+# original still comes from upload.wikimedia.org.
+ALLOWED_IMAGE_HOSTS = frozenset({"upload.wikimedia.org", "thumb.wikimedia.org"})
+ALLOWED_IMAGE_HOST = "upload.wikimedia.org"   # the original files' host (kept for callers)
 
 # What a teaching picture can be. A term that does not claim one of these is not shown:
 # this is what makes "only when the thing is visual" a rule the app enforces rather than
@@ -49,6 +61,18 @@ ALLOWED_IMAGE_HOST = "upload.wikimedia.org"
 IMAGE_KINDS = frozenset({
     "diagram", "map", "anatomy", "apparatus", "artwork", "artifact", "graph", "structure",
 })
+
+# Free licences whose terms are met by a credit line (author, licence, link). Anything
+# else - GFDL-only, "fair use" local files, unknown - is not shown. Matched against the
+# file's LicenseShortName, which Commons fills from the licence template.
+FREE_LICENCE = re.compile(
+    r"^(?:cc0(?:\s*1\.0)?|cc[ -]zero|public\s+domain|pd(?:[ -].*)?|no\s+restrictions"
+    r"|cc[ -]by(?:[ -]sa)?(?:[ -]\d(?:\.\d)?)?(?:[ -][a-z]{2,3})?)$", re.IGNORECASE)
+PUBLIC_DOMAIN = re.compile(r"^(?:cc0|cc[ -]zero|public\s+domain|pd\b|no\s+restrictions)", re.IGNORECASE)
+# Where a credit line may link to: the file page and the licence deed, nothing else.
+FILE_PAGE_HOSTS = ("commons.wikimedia.org", "wikipedia.org")
+LICENCE_URL_HOSTS = ("creativecommons.org",)
+MAX_AUTHOR_LENGTH = 120
 
 MIN_THUMBNAIL_WIDTH = 200          # below this it is an icon, not an illustration
 MAX_TERM_LENGTH = 120
@@ -169,7 +193,11 @@ def video_links(items: Any, limit: int = 3, *, subject: str = "", grade: str = "
     links: list[dict[str, str]] = []
     for query, why in _video_entries(items, limit):
         phrase = search_phrase(query, subject, grade)
-        entry = {"title": query, "why": why, "youtube": youtube_search_url(phrase)}
+        # A search, not a video: "kind" and "query" let the page say "Search YouTube for ..."
+        # instead of showing the phrase as if it were a video title. "title" stays for
+        # lessons stored before this and for the API video lookup (learnova/youtube_videos.py).
+        entry = {"kind": "search", "query": query, "title": query, "why": why,
+                 "youtube": youtube_search_url(phrase)}
         if german:
             entry["studyflix"] = studyflix_search_url(phrase)
         links.append(entry)
@@ -286,7 +314,7 @@ def judge_page(request: ImageRequest, page: Any, wiki: str = "en") -> ImageDecis
         host = urllib.parse.urlsplit(source).hostname or ""
     except ValueError:
         return no("no_image")
-    if host != ALLOWED_IMAGE_HOST:
+    if host not in ALLOWED_IMAGE_HOSTS:
         return no("host_not_allowed")
     try:
         width = int(thumbnail.get("width") or 0)
@@ -298,6 +326,7 @@ def judge_page(request: ImageRequest, page: Any, wiki: str = "en") -> ImageDecis
         return no("not_a_teaching_image")
 
     title = str(page.get("title"))
+    file_name = str(page.get("pageimage") or "").strip()
     return ImageDecision(term=request.term, accepted=True, reason="ok", image={
         "url": source,
         "title": title,
@@ -307,7 +336,74 @@ def judge_page(request: ImageRequest, page: Any, wiki: str = "en") -> ImageDecis
         "kind": request.kind,
         "page_url": str(page.get("fullurl") or f"https://{wiki}.wikipedia.org/wiki/{urllib.parse.quote(title)}"),
         "source": f"Wikipedia · {title}",
+        **({"file_name": file_name[:240]} if file_name else {}),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Licences
+# --------------------------------------------------------------------------- #
+
+def _meta_value(metadata: Any, name: str) -> str:
+    entry = metadata.get(name) if isinstance(metadata, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else entry
+    return str(value).strip() if isinstance(value, (str, int, float)) else ""
+
+
+def plain_author(markup: str) -> str:
+    """The Artist field is HTML (links, spans); the credit line needs the words only."""
+
+    text = re.sub(r"<[^>]*>", " ", str(markup or ""))
+    text = " ".join(html.unescape(text).split())
+    return text[:MAX_AUTHOR_LENGTH].rstrip()
+
+
+def _https_url(value: str, hosts: tuple[str, ...]) -> str:
+    """`value` when it is an https URL on one of `hosts` (or a subdomain of one), else ""."""
+
+    url = str(value or "").strip()
+    if url.startswith("//"):
+        url = "https:" + url
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").casefold()
+    if parts.scheme != "https" or not any(host == item or host.endswith("." + item) for item in hosts):
+        return ""
+    return url
+
+
+def judge_licence(info: Any) -> tuple[bool, str, dict[str, str]]:
+    """Whether a file may be shown, and the credit it must carry. Pure, no network.
+
+    `info` is one `imageinfo` entry (prop=imageinfo&iiprop=url|extmetadata). Returns
+    (ok, reason, credit) with credit = {author, licence, licence_url, file_url}.
+    """
+
+    if not isinstance(info, dict):
+        return False, "licence_unknown", {}
+    raw_metadata = info.get("extmetadata")
+    metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
+    licence = " ".join(_meta_value(metadata, "LicenseShortName").split())[:60]
+    if not licence:
+        return False, "licence_unknown", {}
+    if _meta_value(metadata, "NonFree").casefold() in {"true", "1", "yes"}:
+        return False, "licence_not_free", {}
+    if not FREE_LICENCE.match(licence):
+        return False, "licence_not_free", {}
+    file_url = _https_url(str(info.get("descriptionurl") or ""), FILE_PAGE_HOSTS)
+    if not file_url:
+        return False, "no_file_page", {}
+    author = plain_author(_meta_value(metadata, "Artist"))
+    required = _meta_value(metadata, "AttributionRequired").casefold()
+    public_domain = bool(PUBLIC_DOMAIN.match(licence))
+    if not author and not public_domain and required != "false":
+        # CC BY and CC BY-SA require the author's name; without it the terms cannot be met.
+        return False, "author_unknown", {}
+    licence_url = "" if public_domain else _https_url(_meta_value(metadata, "LicenseUrl"), LICENCE_URL_HOSTS)
+    return True, "ok", {"author": author, "licence": licence, "licence_url": licence_url,
+                        "file_url": file_url}
 
 
 def _api_url(term: str, wiki: str) -> str:
@@ -317,7 +413,9 @@ def _api_url(term: str, wiki: str) -> str:
         "action": "query", "format": "json", "formatversion": "2",
         "titles": term, "redirects": "1",
         "prop": "pageimages|info|pageprops|categories",
-        "piprop": "thumbnail", "pithumbsize": "800",
+        # The file name is needed for the licence lookup; pilicense=free pins what
+        # PageImages already defaults to, so a non-free local file is never even offered.
+        "piprop": "thumbnail|name", "pithumbsize": "800", "pilicense": "free",
         "inprop": "url", "ppprop": "disambiguation",
         "cllimit": "60", "clshow": "!hidden",
     })
@@ -326,11 +424,40 @@ def _api_url(term: str, wiki: str) -> str:
 
 @lru_cache(maxsize=512)
 def _fetch_page(term: str, wiki: str) -> str:
-    """The only network call in this module. Cached: a term is looked up once."""
+    """The page lookup (the licence lookup is the other network call). Cached: a term is looked up once."""
 
     request = urllib.request.Request(_api_url(term, wiki), headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(request, timeout=_WIKI_TIMEOUT) as response:
         return response.read().decode("utf-8")
+
+
+def _file_info_url(file_name: str, wiki: str) -> str:
+    """The licence, author and file page of one file (Commons files resolve through any wiki)."""
+
+    params = urllib.parse.urlencode({
+        "action": "query", "format": "json", "formatversion": "2",
+        "titles": f"File:{file_name}", "prop": "imageinfo", "iiprop": "url|extmetadata",
+        "iiextmetadatafilter": "LicenseShortName|LicenseUrl|Artist|AttributionRequired|NonFree",
+        "iiextmetadatalanguage": wiki,
+    })
+    return f"https://{wiki}.wikipedia.org/w/api.php?{params}"
+
+
+@lru_cache(maxsize=512)
+def _fetch_file_info(file_name: str, wiki: str) -> str:
+    """The second network call: the file's licence. Cached like the page lookup."""
+
+    request = urllib.request.Request(_file_info_url(file_name, wiki), headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(request, timeout=_WIKI_TIMEOUT) as response:
+        return response.read().decode("utf-8")
+
+
+def first_imageinfo(payload: Any) -> dict[str, Any] | None:
+    """The one imageinfo entry of a File: lookup."""
+
+    page = first_page(payload)
+    infos = page.get("imageinfo") if isinstance(page, dict) else None
+    return infos[0] if isinstance(infos, list) and infos and isinstance(infos[0], dict) else None
 
 
 def first_page(payload: Any) -> dict[str, Any] | None:
@@ -354,7 +481,24 @@ def lookup_image(request: ImageRequest, wiki: str) -> ImageDecision:
         # A lookup that could not happen is not the same as an article that failed the
         # checks, and the call site logs the difference.
         return ImageDecision(term=request.term, accepted=False, reason="lookup_failed")
-    return judge_page(request, first_page(payload), wiki)
+    decision = judge_page(request, first_page(payload), wiki)
+    if not decision.accepted or not decision.image:
+        return decision
+    # Relevant is not enough: the file must carry a licence whose terms a caption can meet.
+    image = dict(decision.image)
+    file_name = image.pop("file_name", "")
+    if not file_name:
+        return ImageDecision(term=request.term, accepted=False, reason="licence_unknown")
+    try:
+        info = first_imageinfo(json.loads(_fetch_file_info(file_name, wiki)))
+    except Exception:
+        return ImageDecision(term=request.term, accepted=False, reason="licence_lookup_failed")
+    ok, reason, credit = judge_licence(info)
+    if not ok:
+        return ImageDecision(term=request.term, accepted=False, reason=reason)
+    image.update(credit)
+    image["source"] = "Wikimedia Commons" if "commons.wikimedia.org" in credit["file_url"] else "Wikipedia"
+    return ImageDecision(term=request.term, accepted=True, reason="ok", image=image)
 
 
 def lesson_images(terms: Any, language: str, limit: int = 2) -> MediaResult:
@@ -369,8 +513,14 @@ def lesson_images(terms: Any, language: str, limit: int = 2) -> MediaResult:
     images: list[dict[str, str]] = []
     seen: set[str] = set()
     wiki = wiki_language(language)
-    for request in requests:
-        decision = lookup_image(request, wiki)
+    # At most two pictures, each two lookups with a 4 s timeout: in parallel, the request
+    # path waits for the slowest picture, not for all of them in a row.
+    if len(requests) > 1:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            decisions = list(pool.map(lambda item: lookup_image(item, wiki), requests))
+    else:
+        decisions = [lookup_image(item, wiki) for item in requests]
+    for request, decision in zip(requests, decisions):
         if not decision.accepted or not decision.image:
             rejected.append((request.term, decision.reason))
             continue

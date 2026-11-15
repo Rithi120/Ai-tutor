@@ -24,8 +24,8 @@ XP_VALUES = {
 # rewarded while making an endless replay loop pointless. Goal, mission and badge XP
 # are not listed: they are already once-per-period by construction.
 DAILY_XP_CAPS = {
-    "flashcards": 200,   # answers, mastery, session/test/game completions
-    "practice": 150,     # lesson questions, quizzes, recall, corrected mistakes
+    "flashcards": 200,   # answers, mastery, flashcard session/test/game completions
+    "practice": 150,     # lesson questions, quizzes, recall, corrected mistakes, project exams
     "vocabulary": 100,   # vocabulary answers, sessions, created lists
     "planning": 50,      # study-plan tasks
 }
@@ -38,10 +38,25 @@ _CAP_GROUPS = {
     "blocks_completed": "flashcards",
     "practice_question_completed": "practice", "quiz_completed": "practice",
     "mistake_corrected": "practice",
+    # A project's final or practice exam: logged as test_completed, paid from practice.
+    "project_exam_completed": "practice",
     "vocabulary_reviewed": "vocabulary", "vocabulary_session_completed": "vocabulary",
     "vocabulary_list_created": "vocabulary",
     "study_plan_task_completed": "planning",
 }
+
+
+# A flashcard session pays its completion XP (and a test's perfect-score bonus) only
+# after real effort: at least this many answered items, or the whole session when it is
+# shorter. Answer XP is paid per answer as before. Without it, a one-card session paid
+# about 17 XP for a single tap, and the daily budget could be collected in a minute.
+FLASHCARD_COMPLETION_MIN_ITEMS = 5
+
+
+def session_completion_pays(answered_items: int, total_items: int) -> bool:
+    """Whether a finished flashcard session has earned its completion XP."""
+    needed = min(FLASHCARD_COMPLETION_MIN_ITEMS, max(1, int(total_items or 0)))
+    return int(answered_items or 0) >= needed
 
 
 def xp_cap_group(event_type: str) -> str | None:

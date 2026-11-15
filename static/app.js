@@ -7,6 +7,7 @@ import {bindDiagnosisDetails, diagnosisMarkup} from "./js/diagnosis.js";
 import {selectedLanguage, t} from "./js/i18n.js";
 import {answerSymbols} from "./js/symbols.js";
 import {createAttachmentTray, normalizeImage, photoNotesNode, sentPhotosNode, uploadImage} from "./js/image-attach.js";
+import {imageFigureNode, isCreditedImage, videoCardNode} from "./js/resources.js";
 
 const uploadView = document.querySelector("#uploadView");
 const lessonView = document.querySelector("#lessonView");
@@ -314,35 +315,84 @@ function collectAnswer() {
   return document.querySelector("#writtenAnswer").value.trim();
 }
 
-function renderMedia(lesson) {
+/* Lesson media (docs/LEARNING_RESOURCES.md). Pictures appear only with their licence
+ * credit; a picture stored before the licence check had none and is not shown. Video rows
+ * without an API key are what they are - YouTube/Studyflix *searches*, labelled "Search
+ * YouTube for ...", never shown as if the phrase were a video title. With a key, one tap
+ * ("Show matching videos") asks the server for checked videos of this lesson; it sends only
+ * the lesson id, never search text. Everything here is supplementary to the explanation. */
+function renderMedia(lesson, videosAvailable = false) {
   const card = document.querySelector("#mediaCard");
   if (!card) return;
   const videos = Array.isArray(lesson.video_links) ? lesson.video_links : [];
-  const images = Array.isArray(lesson.image_media) ? lesson.image_media : [];
+  const images = (Array.isArray(lesson.image_media) ? lesson.image_media : []).filter(isCreditedImage);
+  const videoBox = document.querySelector("#lessonVideos");
+  const imageBox = document.querySelector("#lessonImages");
+  const hideWhenEmpty = () => {
+    if (!imageBox.querySelector("figure") && !videoBox.querySelector(".media-video, .resource-video, .media-video-offer")) {
+      card.classList.add("hidden");
+    }
+  };
   // Studyflix is a German site, so the server only sends that link for German content.
-  document.querySelector("#lessonVideos").innerHTML = videos.map(video =>
-    `<div class="media-video"><div class="media-video-text"><b>${escapeHtml(video.title)}</b>${video.why ? `<small>${escapeHtml(video.why)}</small>` : ""}</div><span class="media-links"><a href="${escapeHtml(video.youtube)}" target="_blank" rel="noopener noreferrer">▶ YouTube</a>${video.studyflix ? `<a href="${escapeHtml(video.studyflix)}" target="_blank" rel="noopener noreferrer">Studyflix</a>` : ""}</span></div>`
+  videoBox.innerHTML = videos.map(video =>
+    `<div class="media-video media-video-search"><div class="media-video-text"><span>${escapeHtml(t("videoSearchFor", { query: video.query || video.title || "" }))}</span>${video.why ? `<small>${escapeHtml(video.why)}</small>` : ""}</div><span class="media-links"><a href="${escapeHtml(video.youtube)}" target="_blank" rel="noopener noreferrer">▶ YouTube</a>${video.studyflix ? `<a href="${escapeHtml(video.studyflix)}" target="_blank" rel="noopener noreferrer">Studyflix</a>` : ""}</span></div>`
   ).join("");
-  // alt describes the picture; the caption says which article it came from. Both used to
-  // be the article title, and the caption claimed a licence nobody had checked.
-  document.querySelector("#lessonImages").innerHTML = images.map(image =>
-    `<figure class="media-image"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || image.title)}" loading="lazy" data-media-image><figcaption>${escapeHtml(image.title)}${image.page_url ? ` — <a href="${escapeHtml(image.page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(image.source || "Wikipedia")}</a>` : ""}</figcaption></figure>`
-  ).join("");
+  if (videosAvailable && videos.length && sessionId) videoBox.prepend(lessonVideoButton(videoBox, hideWhenEmpty));
   // A picture that cannot load leaves a broken icon under a confident caption, which
-  // reads as "here is your illustration" when there is none. Drop the whole figure.
-  document.querySelectorAll("#lessonImages [data-media-image]").forEach(img => {
-    img.addEventListener("error", () => {
-      img.closest("figure")?.remove();
-      const left = document.querySelectorAll("#lessonImages figure").length;
-      if (!left && !videos.length) card.classList.add("hidden");
-    }, { once: true });
-  });
+  // reads as "here is your illustration" when there is none: imageFigureNode drops it.
+  imageBox.replaceChildren(...images
+    .map(image => imageFigureNode(image, { className: "media-image", onGone: hideWhenEmpty }))
+    .filter(Boolean));
   const hasMedia = videos.length > 0 || images.length > 0;
   card.classList.toggle("hidden", !hasMedia);
   if (hasMedia) {
-    document.querySelector("#mediaKicker").textContent = t("exploreMore");
+    document.querySelector("#mediaKicker").textContent = t("resourcesSupplementary");
     document.querySelector("#mediaHeading").textContent = t("watchAndSee");
   }
+}
+
+/* One tap: checked videos replace the search rows; when none fit, the searches stay. */
+function lessonVideoButton(videoBox, hideWhenEmpty) {
+  const wrap = document.createElement("div");
+  wrap.className = "media-video-offer";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-button media-video-button";
+  button.textContent = t("resourcesShowLessonVideos");
+  const status = document.createElement("p");
+  status.className = "media-video-status";
+  status.setAttribute("role", "status");
+  wrap.append(button, status);
+  const forSession = sessionId;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    status.textContent = t("resourcesLoading");
+    try {
+      const response = await fetch(`/api/lessons/${encodeURIComponent(forSession)}/videos`,
+        { headers: { Accept: "application/json" }, credentials: "same-origin" });
+      const data = await response.json().catch(() => ({}));
+      if (forSession !== sessionId) return;
+      if (!response.ok) throw new Error(data.error || "");
+      const cards = (Array.isArray(data.items) ? data.items : [])
+        .map(video => videoCardNode(video, { onGone: hideWhenEmpty })).filter(Boolean);
+      if (!cards.length) {
+        status.textContent = t("resourcesNone");
+        button.remove();
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "resource-videos";
+      list.append(...cards);
+      videoBox.replaceChildren(list);
+    } catch (error) {
+      status.textContent = t("resourcesFailed");
+      button.disabled = false;
+    } finally {
+      button.removeAttribute("aria-busy");
+    }
+  });
+  return wrap;
 }
 
 /* lesson-parts:start
@@ -376,6 +426,17 @@ const PART_LABEL_KEYS = {
   guided_exercise: "lpKind_guided_exercise",
   summary: "lpKind_summary",
   flashcards: "lpKind_flashcards",
+  alternative: "lpKind_alternative",
+};
+// One small icon per kind of lesson part, so a student scrolling a long lesson sees at a
+// glance where the rule, the example, the mistakes and the exercise are (readability
+// upgrade, 2026-11-14). Decorative only: the title text is unchanged for screen readers.
+const PART_ICONS = {
+  objective: "🎯", why: "🎯", explanation: "🧠", terms: "📚", rule: "⚡", structure: "🧩",
+  example: "💡", worked_example: "💡", experiment: "🧪", thought_experiment: "💭", theory: "🧠",
+  argument: "💬", perspectives: "👀", timeline: "🕰️", cause_effect: "🔗", process: "🔁",
+  diagram: "📈", source_analysis: "📜", model_analysis: "🧩", mistakes: "⚠️",
+  guided_exercise: "📝", summary: "✅", flashcards: "🃏", alternative: "🔄",
 };
 // Items of these kinds are a sequence (steps of a process or a worked solution), so they
 // are numbered; every other kind lists its items as "label — text".
@@ -487,6 +548,22 @@ function itemList(items, { ordered = false, className = "lp-items" } = {}) {
 function originBadge(fromNotes) {
   return el("span", `lp-origin ${fromNotes ? "lp-origin-notes" : "lp-origin-added"}`,
     fromNotes ? t("lpFromNotes") : t("lpAddedByLearnova"));
+}
+
+// Reliability V1: a part whose calculations Learnova recomputed says so quietly; one it could
+// not confirm asks the student to work it out. Parts without a checked calculation show nothing.
+function mathBadge(part) {
+  if (part.math === "verified" || part.math === "corrected") {
+    return el("span", "lp-origin lp-origin-checked", `✓ ${t("lpMathVerified")}`);
+  }
+  return null;
+}
+
+function mathNote(part) {
+  if (part.math !== "needs_check") return null;
+  const note = el("p", "lp-math-check", t("lpMathCheck"));
+  note.setAttribute("role", "note");
+  return note;
 }
 
 function sourcePages(part) {
@@ -717,10 +794,18 @@ function partCard(part, number) {
   const meta = el("div", "lp-meta");
   if (title) meta.appendChild(el("span", "card-kicker lp-kicker", label));
   meta.appendChild(originBadge(part.from_notes === true));
+  const checked = mathBadge(part);
+  if (checked) meta.appendChild(checked);
   meta.append(...sourcePages(part));
-  main.append(meta, el("h2", "lp-title", title || label));
+  const heading = el("h2", "lp-title");
+  const icon = el("span", "lp-title-icon", PART_ICONS[kind] || "");
+  icon.setAttribute("aria-hidden", "true");
+  heading.append(icon, document.createTextNode(title || label));
+  main.append(meta, heading);
   const render = PART_RENDERERS[kind] || genericContent;
   main.appendChild(render(part, partItems(part), kind));
+  const unconfirmed = mathNote(part);
+  if (unconfirmed) main.appendChild(unconfirmed);
   const figures = partFigures(part);
   if (figures) main.appendChild(figures);
   card.append(badge, main);
@@ -858,7 +943,7 @@ function renderLesson(data) {
   document.querySelector("#questionCard").classList.add("hidden");
   document.querySelector("#testProgress").classList.add("hidden");
   document.querySelector("#testSummary").classList.add("hidden");
-  renderMedia(lesson);
+  renderMedia(lesson, Boolean(data.videos_available));
   if (hasParts) numberCardsAfterParts(partCount);
   renderFormulas(lessonView);
 }
@@ -894,6 +979,7 @@ uploadForm.addEventListener("submit", async event => {
     sessionId = data.session_id;
     renderLesson(data);
     showMaterialNotes(data.material_notes);
+    showFormatHint(data.format_hint);
     document.querySelector("#loading").classList.add("hidden");
     document.querySelector("#lessonContent").classList.remove("hidden");
   } catch (error) {
@@ -904,6 +990,23 @@ uploadForm.addEventListener("submit", async event => {
     uploadForm.querySelector("button").disabled = false;
   }
 });
+
+/* Material that looks like a whole exam (many topics, a lot of text): one light line with a
+ * link to Project Mode under the lesson - the lesson itself is never held back (spec 1.2). */
+function showFormatHint(hint) {
+  const target = document.querySelector("#formatHint");
+  if (!target) return;
+  target.replaceChildren();
+  const show = Boolean(hint && hint.kind === "project" && hint.url);
+  if (show) {
+    target.append(document.createTextNode(`${t("lessonProjectHint", { count: hint.topics || "" })} `));
+    const link = document.createElement("a");
+    link.href = hint.url;
+    link.textContent = t("lessonProjectHintLink");
+    target.appendChild(link);
+  }
+  target.classList.toggle("hidden", !show);
+}
 
 /* What could not be read from the lesson's photos: one calm line, not a warning box. */
 function showMaterialNotes(notes) {

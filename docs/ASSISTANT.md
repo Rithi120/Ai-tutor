@@ -108,7 +108,8 @@ columns, and the marker is recorded once.
 | | `teaching_json` | Per-topic explanation-level state |
 | `conversation_message` | `chips_json` | Tap answers offered under a reply |
 | | `client_message_id` | The browser's id for a message (idempotent re-send) |
-| `conversation_lesson` (new, from `create_all`) | | One row per (conversation, source reply), unique `uq_conversation_lesson_source`: `status` pending/ready/failed, `attempts`, `error_category`, `lesson_id`, `session_id`, `title`, `subject`, `topic`. It has no foreign key to the lesson, because lessons outlive chats |
+| | `study_json` | The reply's hidden EXAM topics (`{"exam_topics": [...]}`, migration 044); `{}` without |
+| `conversation_lesson` (new, from `create_all`) | | One row per (conversation, source reply, `topic_key`), unique `uq_conversation_lesson_topic` (migration 044 widened it from `uq_conversation_lesson_source`): `status` pending/ready/failed, `attempts`, `error_category`, `lesson_id`, `session_id`, `title`, `subject`, `topic`, `topic_key` (`""` = the plain Continue Learning lesson), `position`, `kind` (`lesson`/`project`), `project_id`. It has no foreign key to the lesson or project, because they outlive chats |
 
 ## API
 
@@ -133,7 +134,8 @@ Errors use the usual envelope: `{"ok": false, "error": <translated>, "code": …
 | `POST /api/assistant/conversations/<id>/messages` | `{message, deep?, attachments?, client_message_id?}` | 201 `{conversation, message, reply, image_notes}`; 200 `{replayed: true, …}` | 409 `conversation_busy` / `conversation_full`, 400 `message_required` / `attachments_invalid`, photo errors | `ASSISTANT_MESSAGES_PER_HOUR`, one bucket shared with regenerate |
 | `POST /api/assistant/conversations/<id>/regenerate` | `{message_id, deep?}` | 201 `{conversation, reply, replaced_id}` | 409 `not_latest` / `conversation_busy` / `image_unreadable`; the AI failure (503, 504, 429, 502 `empty_response`) when a good reply is kept | the same bucket as sending |
 | `GET /api/assistant/conversations/<id>/lesson` | | 200 `{continue_learning}` | 404 | `ASSISTANT_SEARCH_PER_MINUTE` |
-| `POST /api/assistant/conversations/<id>/lesson` | `{subject?}` | 201 / 200 `{status: "ready", url, lesson_id, title}`; 202 `{status: "pending"}` | 409, 422, 429, AI errors | `CONTINUE_LEARNING_PER_HOUR` |
+| `POST /api/assistant/conversations/<id>/project` | `{exam_date?}` or multipart `materials` (PDF) | 201 / 200 `{status: "ready", url, project_id, title}`; 202 | 404, 409, 422, 429 | `CHAT_PROJECTS_PER_HOUR` |
+| `POST /api/assistant/conversations/<id>/lesson` | `{subject?, topic_key?}` | 201 / 200 `{status: "ready", url, lesson_id, title}`; 202 `{status: "pending"}` | 409, 422, 429, AI errors | `CONTINUE_LEARNING_PER_HOUR` |
 | `GET /api/chat-attachments?waiting=1[&purpose=chat\|answer]` | | 200 `{attachments}` | 400 `invalid_request` without `waiting=1` | `ASSISTANT_SEARCH_PER_MINUTE` |
 | `POST /api/chat-attachments` | multipart photo | 201 | 409 `too_many_waiting` (`details.waiting`), 413 | `CHAT_ATTACHMENT_UPLOADS_PER_HOUR` |
 
@@ -440,9 +442,15 @@ taken from the transcript's room. Building it never fails a reply.
 **Trailers.** The model ends a reply with hidden lines, which
 `formatting.split_reply_trailers` cuts off before anything is stored or shown:
 - `TOPIC: <subject in English> | <topic>` (or `TOPIC: none`);
-- optionally `CHIPS: a | b | c`.
+- optionally `CHIPS: a | b | c`;
+- rarely `MEDIA: diagram|map|video | <reply-language Wikipedia title>` (since `assistant_chat:v6`): a picture
+  or video would teach more than words. `formatting.reply_trailers` returns it with the
+  others; `resources.media_offer` vetoes it deterministically (no school subject, a reply
+  under 350 characters, any picture in a language subject, ...) and a surviving offer is
+  stored in `resources_json`. See `docs/LEARNING_RESOURCES.md`. Any YouTube link the model
+  writes is removed from the stored reply (`resources.strip_video_links`).
 
-Only the last two lines count, in either order, and the keyword must be upper case. Then:
+Only the final trailer lines count, in any order, and the keyword must be upper case. Then:
 - **Chips:** at most 3, each at most 40 characters, become tap answers under the newest
   reply (`chips_json`). A tap sends the chip as the student's message.
 - **Subject:** stored only when it is a canonical school subject (not "Other").
@@ -569,6 +577,139 @@ regenerate. Its fields:
 - A 429 shows the server text as a neutral note (not an error) and a **See Premium** button.
 - A conversation with too little to build from shows the `guidance` sentence.
 - A failure offers "Try again".
+
+## Exam material: Short Lessons or Project Mode (spec 1.2, 2026-11-13)
+
+**The signal.** `TUTORING_LAYER` asks for one more hidden line when the student shares
+material for a test or exam, or asks to prepare for one (built as `assistant_chat:v6` beside
+the MEDIA line's v6, merged as `assistant_chat:v7`; the line costs 22 estimated tokens and
+the layer with both lines is at about 415 of its 420):
+`EXAM: topic | topic | ...`. `formatting.reply_trailers` cuts it off with CHIPS, TOPIC and MEDIA
+(`split_reply_trailers` keeps its three values); `study_format.parse_exam_topics` trims
+each topic to 120 characters, keeps bracketed subtopics ("Brüche (kürzen, erweitern)"),
+drops "none", dedupes by `learnova.projects.topics.topic_key` and keeps at most 20. The
+reply stores them in `conversation_message.study_json` (`{"exam_topics": [{title, key,
+subtopics}]}`, migration `044_chat_study_format`).
+
+**When the model leaves the line out** (`app.reply_trailer_backstop`, real-world audit
+2026-11-14). Live on `gpt-oss-20b` no reply to six exam requests had an EXAM line and none
+to three explicit picture requests had a MEDIA line, while all nine had their TOPIC line -
+so the card and the pictures never appeared. A reworded OUTPUT block made the model write
+EXAM and MEDIA lines for plain questions too (and copy the MEDIA placeholder), so the prompt
+stays as it is and the student's words decide: a message that names a test or exam
+(`study_format._EXAM_WORDS`) takes the topics its reply's TOPIC line lists when there are
+two or more (`study_format.exam_topics_from_topic`; one topic stays the single Continue
+Learning lesson); a message that asks for a picture in so many words
+(`resources.asks_for_picture`: Bild, Skizze, Diagramm, picture, …) offers a diagram of the
+reply's topic, bracketed subtopic removed, through `media_offer`'s veto and the exact-title
+lookup. A line the model did write always wins. `reply_trailers` also takes a bare keyword
+heading with its value on the next line ("**MEDIA**" / "Diagramm: …") as one hidden line;
+the student saw both before.
+
+**The decision** (`learnova/assistant/study_format.py`, pure, thresholds are named
+constants and parameters):
+
+| Rule (in order) | Result |
+| --- | --- |
+| no topics | none: the single Continue Learning button as before |
+| ≥ `LARGE_MIN_TOPICS` (10) topics | **project** (`many_topics`) |
+| a large volume: > 6 chat photos, > 12 000 characters read, or > 180 estimated minutes | **project** (`large_volume`) |
+| one topic | none (the plain lesson is that lesson) |
+| ≤ `SMALL_MAX_TOPICS` (3) topics | **lessons**, one per topic (`few_topics`) |
+| 4–9 topics, exam ≤ 2 days away and ≤ 6 topics | **choice**, lessons recommended (`exam_soon`) |
+| 4–9 topics, exam ≥ 7 days away and ≥ 6 topics | **choice**, project recommended (`exam_far`) |
+| 4–9 topics, most topics share a content word (they build on each other) | **choice**, project recommended (`linked_topics`) |
+| 4–9 topics, > 90 estimated minutes | **choice**, project recommended (`long`) |
+| otherwise | **choice**, lessons recommended (`short`) |
+
+Estimated time per topic: 20 min new, 15 developing, 8 secure (from the student's own
+ConceptMastery, read once for all topics), plus 5 per subtopic beyond the second. The exam
+date is read deterministically from the student's messages (`exam_date_from_text`: ISO,
+`1.12.`, `1.12.2026`, morgen/tomorrow, übermorgen, in N Tagen/days, in N Wochen/weeks,
+nächste Woche), only from a message that names a test or an exam (German compounds such as
+"Deutscharbeit" or "Mathetest" count, "Hausarbeit"/"Gruppenarbeit" do not) and only today to
+180 days ahead (a historical date in the material never counts). Section numbers are no date
+("Kapitel 3.4. und 5.2.", "Aufgabe 2.3.", "1.2.3."), nor is the greeting "Guten Morgen" or
+"heute/am Morgen". A relative date counts from the day the message was written ("Arbeit
+morgen" sent last week is over, so the chat has no exam date); the newest stated date wins.
+
+**The card.** `continue_learning.format` (in every conversation payload and in
+`GET …/lesson`) is the card of the newest successful reply that listed topics: kind,
+recommended option, reasons, topics with `{key, title, position, status, url, completed,
+access}`, `lessons_left`/`lesson_limit`/`plan`, `project` `{status, url}`,
+`project_allowed`, `project_resets_at`, `photos`, `photos_kept`, `exam_date`, `today`.
+When it belongs to the newest reply, the plain button is not offered beside it
+(`available` false). static/js/assistant.js draws it under that reply
+(`formatView` in assistant-rules.js arranges it; tap-only):
+
+- **Lessons:** one row per topic, "Lesson n: <title>". A tap builds that lesson (others
+  stay untouched); the row becomes a link, with ✓ Done once the lesson was finished.
+  "n of N lessons done" below. On the free plan: "Free plan: 2 lessons a day, and each
+  topic lesson counts as one. 1 left today." – rows past the allowance are disabled with
+  "Unlocks tomorrow or with Premium" and a **See Premium** button.
+- **Project:** what it contains, whether the chat's photos go along ("read again page by
+  page") or were already deleted (retention), "This counts as your free project of the
+  week" on the free plan, exam-date chips (the date found in the chat, in 1 week, in 2
+  weeks, no date, or the phone's own date picker) and **Create the project (N topics)**. A
+  used weekly project says when the next one is free, with **See Premium**.
+- **Choice:** the recommended option first with a "Recommended" badge, the other one
+  behind one "Or …" tap. Never both side by side when one is clearly better.
+
+A topic lesson or project the server reports as `pending` (built by another tab, or the page
+was reloaded during the build, or a 202) is asked for again every 3 s until it is ready or
+failed (`pollFormat`; the server turns a build older than `CONTINUE_LEARNING_PENDING_SECONDS`
+into failed, so this ends). The card follows `FEATURE_CHAT_STUDY_FORMAT` alone; only the
+PDF button, which sits in the photo controls, also needs `FEATURE_CHAT_IMAGES`.
+
+**Topic lessons** – `POST /api/assistant/conversations/<id>/lesson {"topic_key"}`: the
+Continue Learning pipeline (`start_saved_practice`, same guards) with one
+`conversation_lesson` row per (conversation, source reply, topic key), so a double tap is
+one lesson and each topic is built on its own tap (never N AI calls in one request: the
+Groq free tier admits about one lesson request per minute). The prompt adds the series line
+("teach ONLY <topic>, completely … the other topics (…) have their own lessons"), the
+subtopics, `lesson_plan.SHORT_LESSON_RULE` and the Short Lesson steps (below); the chat's
+photo readings are narrowed to the passages about this topic
+(`lesson_context.relevant_excerpt`). Labelled `lesson_generation:<version>+chat2`. 422
+`topic_unknown` for a key the newest EXAM reply does not list. Each one counts as a normal
+lesson (owner decision 2026-11-13). Completion: the lasting `quiz-complete:<session>`
+LearningEvent the lesson's last answer records - shown on the card, on the dashboard's
+saved lessons and on the lesson's history page.
+
+**Project** – `POST /api/assistant/conversations/<id>/project` (`CHAT_PROJECTS_PER_HOUR`,
+10): `create_learning_project`, the project form's own path, extracted from `projects()`.
+Every exam topic becomes a typed project topic (same title, same `topic_key`); the
+conversation's sent photos whose picture is still kept go along as uploads and are read
+again by Project recognition on the start page (never seeded from the compact chat
+reading); `analysis_json.origin` names the conversation. The `__project__` row makes a
+double tap one project. 201 `{status, url, project_id}` - `url` is
+`/projects/<id>/start?auto=1` with pages, else the topic list. The student confirms the
+topics with one tap ("Start learning"); the one scheduler then plans up to the exam date
+(Exam Autopilot's plan). `ensure_exam_autopilot` is deliberately not called: it would skip
+that confirmation. Counts as the week's project (429 with `upgrade_url` when used).
+`exam_date` is the card's choice: `""` ("No date yet") means no date; only a request without
+the key falls back to the date the chat named.
+
+**PDF hand-off.** The chat's photo intake stays photo-only (`pdf_not_image`). The composer
+has a PDF button; a picked (or dropped) PDF opens a small panel ("PDFs become an exam
+project …", date chips, **Create exam project**) that posts it as multipart `materials` to
+the same `/project` route - idempotent per file digest (`__pdf__:<digest>` row), titled
+after the file. The chat's photos are added only when the chat has an EXAM line.
+
+**Shared competency data.** Chat topics become the project's topics with the same keys, a
+topic lesson's concepts land in the shared ConceptMastery, and `section_knowledge_state`
+falls back to that ConceptMastery (exact concept, then the title's words) while a project
+section has no attempts of its own - a topic learned in the chat starts as developing or
+secure in the project, not as new.
+
+**Limits (honest).** The model may write an EXAM line for ordinary homework; one topic
+changes nothing, and the rate on live transcripts is not measured yet (turn
+`FEATURE_CHAT_STUDY_FORMAT` off to fall back). Subtopics, difficulty and "taught
+independently" are approximations (bracketed subtopics, stored mastery, shared content
+words); the model is not asked for them, to keep the layer within budget. The PDF button
+appears only where chat photos are enabled (`FEATURE_CHAT_IMAGES`). Topic lessons of one
+card may be tapped one after another while the first is still being built; each is its own
+AI call, so on the Groq free tier a second build started within the same minute can hit
+the provider's rate limit and shows Retry.
 
 ## Model choice
 
@@ -754,6 +895,7 @@ All values are optional and validated at start-up. The photo settings are in
 |---|---|---|
 | `FEATURE_ASSISTANT_CHAT` | `true` | The chat: the home page, `/assistant`, the API |
 | `FEATURE_CONTINUE_LEARNING` | `true` | The Continue Learning button and endpoints |
+| `FEATURE_CHAT_STUDY_FORMAT` | `true` | Exam material: topic lessons, chat projects, the PDF hand-off (needs Continue Learning) |
 | `ASSISTANT_MODEL` | tutor model (`openai/gpt-oss-20b`) | Default chat model; accepts `provider:model` |
 | `ASSISTANT_DEEP_MODEL` | analysis model (`openai/gpt-oss-120b`) | The "Think harder" model |
 | `ASSISTANT_MODEL_<PRESET>` / `ASSISTANT_DEEP_MODEL_<PRESET>` | unset | Per-style override |
@@ -772,6 +914,7 @@ All values are optional and validated at start-up. The photo settings are in
 | `ASSISTANT_LIST_PAGE_SIZE` | `50` | Default page size (max 100) |
 | `CONTINUE_LEARNING_PENDING_SECONDS` | `180` | A build older than this may be retried |
 | `CONTINUE_LEARNING_PER_HOUR` | `10` | Builds per account per hour |
+| `CHAT_PROJECTS_PER_HOUR` | `10` | Projects made from the chat per account per hour |
 | `CONTINUE_LEARNING_TRANSCRIPT_TOKENS` | `3000` | Transcript sent to the lesson request |
 | `CONTINUE_LEARNING_PHOTO_CHARACTERS` | `4000` | Photo readings sent to the lesson request (0 = none) |
 | `PROXY_FIX_X_FOR` | `0` | Trusted proxies in front of the app (Werkzeug `ProxyFix` `x_for`/`x_proto`); 0 = off |

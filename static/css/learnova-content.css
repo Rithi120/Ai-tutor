@@ -255,3 +255,90 @@
   .question-photo img { max-height: 38vh; }
   .ordering-photos img { max-width: 104px; max-height: 76px; }
 }
+
+/* Learning resources (static/js/resources.js, docs/LEARNING_RESOURCES.md): checked video
+   cards that link out to YouTube, and pictures with their licence credit. Tokens only, so
+   both themes work without an override. The white behind a picture is deliberate: many
+   Wikimedia diagrams are transparent PNGs drawn for a white page. */
+.resource-videos { display: grid; gap: .6rem; min-width: 0; }
+.resource-video {
+  display: grid; grid-template-columns: minmax(96px, 160px) minmax(0, 1fr); gap: .75rem; align-items: start;
+  min-width: 0; padding: .55rem; border: 1px solid var(--ln-line); border-radius: var(--ln-radius-md);
+  background: var(--ln-surface-solid); color: var(--ln-ink); text-decoration: none;
+}
+.resource-video:hover { border-color: var(--ln-line-strong); }
+.resource-video:focus-visible { outline: 2px solid var(--ln-focus); outline-offset: 2px; }
+.resource-video-thumb {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover;
+  border-radius: var(--ln-radius-sm); background: var(--ln-surface);
+}
+.resource-video-text { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.resource-video-title {
+  font-weight: 700; line-height: 1.3; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.resource-video-meta { font-size: .85rem; color: var(--ln-muted); overflow-wrap: anywhere; }
+.resource-video-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; font-size: .78rem; color: var(--ln-muted); }
+.resource-badge { padding: .1rem .5rem; border: 1px solid var(--ln-line-strong); border-radius: 999px; color: var(--ln-ink); font-weight: 600; }
+.resource-image { margin: 0; max-width: min(100%, 360px); }
+.resource-image img { display: block; max-width: 100%; height: auto; border-radius: var(--ln-radius-md); background: #fff; }
+.resource-image figcaption { margin-top: .35rem; font-size: .8rem; line-height: 1.4; color: var(--ln-muted); overflow-wrap: anywhere; }
+.resource-credit a { color: inherit; text-decoration: underline; }
+@media (max-width: 520px) {
+  .resource-video { grid-template-columns: 112px minmax(0, 1fr); gap: .6rem; }
+}
+
+/* Readable answers (markdown-sections.js): an answer's labelled parts ("Antwort",
+   "Beispiel", "Typische Fehler" …) as light cards with an icon. Tokens only, so dark mode
+   follows; a long answer's later parts are <details> the student can open. */
+.md-section {
+  margin: .7rem 0;
+  padding: .65rem .85rem .7rem;
+  border: 1px solid var(--ln-line);
+  border-left: 3px solid var(--md-accent, var(--ln-violet));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-accent, var(--ln-violet)) 6%, transparent);
+}
+.md-section > :last-child { margin-bottom: 0; }
+.md-section-title {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  margin: 0 0 .35rem;
+  color: var(--ln-ink);
+  font-weight: 750;
+  font-size: .98rem;
+  line-height: 1.3;
+}
+.md-section-icon { flex: 0 0 auto; font-size: 1.05rem; line-height: 1; }
+.md-section-label { min-width: 0; overflow-wrap: anywhere; }
+.md-kind-example, .md-kind-tip { --md-accent: var(--ln-amber); }
+.md-kind-result, .md-kind-remember { --md-accent: var(--ln-success); }
+.md-kind-warning { --md-accent: var(--ln-danger); }
+.md-kind-exercise, .md-kind-check, .md-kind-exam { --md-accent: var(--ln-violet-deep, var(--ln-violet)); }
+.md-kind-plain { --md-accent: var(--ln-line-strong); }
+details.md-section > summary.md-section-title {
+  margin: 0;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+details.md-section > summary.md-section-title::-webkit-details-marker { display: none; }
+details.md-section > summary.md-section-title::after {
+  content: "";
+  width: .5rem;
+  height: .5rem;
+  margin-left: auto;
+  border-right: 2px solid var(--ln-muted);
+  border-bottom: 2px solid var(--ln-muted);
+  transform: rotate(45deg);
+}
+details.md-section[open] > summary.md-section-title { margin-bottom: .35rem; }
+details.md-section[open] > summary.md-section-title::after { transform: rotate(-135deg); }
+details.md-section > summary.md-section-title:focus-visible { outline: 2px solid var(--ln-focus); outline-offset: 3px; border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  details.md-section > summary.md-section-title::after { transition: transform .18s ease; }
+}
+
+/* A small icon in front of a card heading (dashboard; decorative, aria-hidden). */
+.heading-icon { display: inline-block; margin-inline-end: .2rem; font-size: .9em; line-height: 1; }

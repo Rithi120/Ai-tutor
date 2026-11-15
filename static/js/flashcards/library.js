@@ -1,10 +1,9 @@
-import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, selectedLanguage, FLAGS } from "./common.js";
+import { api, toast, escapeHtml, t, optionsHtml, SUBJECTS, selectedLanguage, FLAGS, publicationBadge } from "./common.js";
 
 const isDe = selectedLanguage === "German";
 const LABEL = {
   study: isDe ? "Lernen" : "Study",
   edit: isDe ? "Bearbeiten" : "Edit",
-  private: isDe ? "Privat" : "Private",
 };
 let allSets = [];
 
@@ -16,8 +15,9 @@ async function load() {
     const data = await api("/api/flashcards/sets");
     allSets = data.sets || [];
     loading.hidden = true;
-    if (!allSets.length) { empty.classList.remove("hidden"); return; }
-    grid.hidden = false;
+    empty.classList.toggle("hidden", allSets.length > 0);
+    grid.hidden = !allSets.length;
+    if (!allSets.length) return;
     render();
   } catch (error) {
     loading.hidden = true;
@@ -41,10 +41,13 @@ function render() {
     title: (a, b) => a.title.localeCompare(b.title),
   };
   sets.sort(sorters[sort] || sorters.newest);
-  grid.innerHTML = sets.map(set => `
-    <article class="set-card" data-subject="${escapeHtml(set.subject.toLowerCase())}">
+  grid.innerHTML = sets.map(set => {
+    // The badge says what the server says about the real publication - never a constant.
+    const badge = publicationBadge(set.publication);
+    return `
+    <article class="set-card" data-subject="${escapeHtml(set.subject.toLowerCase())}" data-visibility="${escapeHtml(badge.visibility)}">
       <a class="set-card-link" href="/flashcards/${set.id}">
-        <span class="ln-status">${escapeHtml(LABEL.private)}</span>
+        <span class="ln-status ${escapeHtml(badge.className)}">${escapeHtml(badge.text)}</span>
         <h3>${escapeHtml(set.title)}</h3>
         <p class="set-meta">${escapeHtml(set.subject)} · ${escapeHtml(t(set.difficulty) || set.difficulty)}</p>
         <p class="set-stats">${set.total} ${set.total === 1 ? t("fcCard") : t("fcCards")}${set.due ? ` · <b>${set.due} ${t("fcDue")}</b>` : ""}${set.mastered ? ` · ${set.mastered} ${t("fcMastered")}` : ""}</p>
@@ -54,7 +57,8 @@ function render() {
         <a class="ghost-button" href="/flashcards/${set.id}/edit">${escapeHtml(LABEL.edit)}</a>
         ${FLAGS.community_publishing ? `<a class="ghost-button" href="/flashcards/${set.id}/publish">${escapeHtml(t("fcPublish"))}</a>` : ""}
       </div>
-    </article>`).join("");
+    </article>`;
+  }).join("");
 }
 
 function init() {
@@ -64,4 +68,7 @@ function init() {
   load();
 }
 
+// Back from the publish page restores this page from the back/forward cache with the
+// badges it had before publishing; fetch the real state again instead.
+window.addEventListener("pageshow", event => { if (event.persisted) load(); });
 document.addEventListener("DOMContentLoaded", init);

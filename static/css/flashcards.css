@@ -112,6 +112,15 @@ button.danger, .danger-button { color: #b3261e; }
 .status-approved { background: #e5f6ec; color: #1a7f4b; }
 .status-rejected { background: #fdecea; color: #b3261e; }
 .status-pending_manual_review, .status-pending_ai_review { background: #fff3e0; color: #b06a00; }
+/* Who can see a set (server-derived visibility). Same hues as the status chips above;
+   learnova-dark.css keeps them readable in the dark theme. */
+:is(.ln-status, .review-status).visibility-private { background: #eef0f5; color: #3f4859; }
+:is(.ln-status, .review-status).visibility-published { background: #e5f6ec; color: #1a7f4b; }
+:is(.ln-status, .review-status).visibility-pending,
+:is(.ln-status, .review-status).visibility-update-pending { background: #fff3e0; color: #b06a00; }
+:is(.ln-status, .review-status):is(.visibility-action_needed, .visibility-hidden, .visibility-update-action_needed) { background: #fdecea; color: #b3261e; }
+.status-detail { margin-inline-start: .4rem; color: var(--ln-muted); font-size: .85rem; }
+.status-detail:empty { display: none; }
 .review-scores { display: flex; flex-wrap: wrap; gap: .6rem; font-size: .85rem; margin: .5rem 0; }
 
 .detail-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
@@ -185,28 +194,29 @@ a.ghost-button { text-decoration: none; display: inline-block; }
 .card-num { font-weight: 800; color: #9a8fd0; font-size: .9rem; min-width: 1.2rem; }
 .drag-handle { cursor: grab; color: #cfc8e6; user-select: none; }
 .card-row-tools { display: flex; align-items: center; gap: .25rem; margin-inline-start: auto; }
-.card-row-tools button, .card-menu-trigger {
+/* The row's own icon buttons only (`>`): the menu items sit inside .card-row-tools too,
+   and a descendant selector here once squeezed them into 44x44 boxes on phones, with the
+   labels running letter by letter into each other. The items are .ln-menu-item
+   (learnova-components.css). */
+.card-row-tools > button, .card-menu-trigger {
   display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px;
   background: none; color: #6b6480; font-size: 1rem; line-height: 1; cursor: pointer;
 }
-.card-row-tools button:hover, .card-menu-trigger:hover { background: #f4f1ff; color: #5a4bd0; }
+.card-row-tools > button:hover, .card-menu-trigger:hover { background: #f4f1ff; color: #5a4bd0; }
 
-/* Row actions: one menu instead of a column of icon buttons. */
+/* Row actions: one menu instead of a column of icon buttons. It sits above the fixed
+   save bar (z-index 50) and below the app bar (100); create.js opens it upwards when
+   there is no room between the row and the save bar or the bottom of the screen. */
 .card-menu { position: relative; }
 .card-menu-trigger { list-style: none; }
 .card-menu-trigger::-webkit-details-marker { display: none; }
 .card-menu-body {
-  position: absolute; z-index: 5; inset-inline-end: 0; top: calc(100% + 4px);
-  display: flex; flex-direction: column; min-width: 190px; padding: .3rem;
+  position: absolute; z-index: 60; inset-inline-end: 0; top: calc(100% + 4px);
+  display: flex; flex-direction: column; min-width: 190px; max-inline-size: calc(100vw - 24px); padding: .3rem;
   border: 1px solid #e0daf3; border-radius: 12px; background: #fff;
   box-shadow: 0 12px 30px rgba(80, 60, 160, .16);
 }
-.card-menu-body button {
-  display: flex; align-items: center; gap: .55rem; width: 100%; height: auto;
-  padding: .5rem .6rem; border: 0; border-radius: 8px; background: none;
-  font: inherit; font-size: .88rem; text-align: start; cursor: pointer;
-}
-.card-menu-body button:hover { background: #f4f1ff; }
+.card-menu.opens-up .card-menu-body { top: auto; bottom: calc(100% + 4px); }
 
 /* Underlined fields: the writing is the interface, the box around it is not. */
 .card-row-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1.6rem; margin-top: .35rem; }

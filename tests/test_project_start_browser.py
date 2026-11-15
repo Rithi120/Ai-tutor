@@ -334,7 +334,10 @@ class StartPageLoopTests(unittest.TestCase):
 
     def test_a_page_read_offline_because_the_ai_is_busy_stops_the_reading(self):
         # Review B B-1: the provisional offline reading counted as read, so the page went on
-        # and asked the rate-limited vision model again for every following photo.
+        # and asked the rate-limited vision model again for every following photo. The fix
+        # stopped sending pages there, which left the later photos unread (live 2026-11-14:
+        # the Kompetenzraster); now they are sent with {"offline": true} and read offline
+        # without asking the AI - the busy model is still asked once.
         from unittest.mock import patch
 
         from learnova.ocr.local import LocalOcrResult
@@ -360,9 +363,11 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 """)
         project_id, page_ids = self.photo_project(3)
-        recognized = []
+        recognized, bodies = [], []
         page.on("response", lambda response: recognized.append(response.url)
                 if response.url.endswith("/recognize") else None)
+        page.on("request", lambda request: bodies.append(request.post_data or "")
+                if request.url.endswith("/recognize") else None)
         with patch.object(application.local_ocr, "available", return_value=True), \
                 patch.object(application.local_ocr, "recognize", return_value=offline), \
                 patch.object(application.ai_service, "remaining_hourly_requests", return_value=40):
@@ -371,12 +376,14 @@ document.addEventListener("DOMContentLoaded", () => {
                                       timeout=60000):
                 page.goto(f"{self.base}/projects/{project_id}/start?auto=1")
         self.assertEqual(self.ocr_calls, 1, "one refused request, not one per photo")
-        self.assertEqual(len(recognized), 1, "the page stopped sending pages")
-        self.assertTrue(any("Learnova read this page offline for now" in text for text in notices), notices)
+        self.assertEqual(len(recognized), 3, "every photo is read - none is left unread")
+        self.assertEqual([json.loads(body or "{}").get("offline") for body in bodies], [None, True, True],
+                         "after the busy reading the next photos go offline")
+        self.assertTrue(any("Learnova read your pages offline for now" in text for text in notices), notices)
         with application.app.app_context():
             statuses = [application.db.session.get(application.ProjectPage, page_id).extraction_status
                         for page_id in page_ids]
-        self.assertEqual(statuses, ["ready", "pending", "pending"])
+        self.assertEqual(statuses, ["ready", "ready", "ready"], "the later photos are read offline")
         self.assertEqual(self.errors, [])
 
 

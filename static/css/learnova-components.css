@@ -129,3 +129,63 @@ img, svg, video, canvas { max-width: 100%; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Popup menu items (the flashcard editor's row menu, the chat's conversation menu): one
+   style for every three-dot menu. Each item is a full-width row at least one tap target
+   tall, its icon a fixed slot that never squeezes or covers the label, and a long label
+   wraps between words inside its own row. Page stylesheets load before this file, so a
+   menu must not restyle its items with `.menu button` rules (0,1,1 beats 0,1,0); the
+   menu's own placement (absolute, fixed, flipping) stays with the menu. */
+.ln-menu-item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--ln-tap);
+  padding: .5rem .75rem;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ln-ink);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: pointer;
+}
+.ln-menu-item > [aria-hidden="true"] { flex: none; inline-size: 1.25em; text-align: center; }
+.ln-menu-item:hover { background: color-mix(in srgb, var(--ln-violet) 11%, transparent); }
+.ln-menu-item:focus-visible { outline: 3px solid var(--ln-focus); outline-offset: -3px; }
+.ln-menu-item.danger { color: var(--ln-danger-text); }
+.ln-menu-item.danger:hover { background: color-mix(in srgb, var(--ln-danger) 12%, transparent); }
+
+/* "Show more" for long lists (static/js/show-more.js, owner request 2026-11-13). Items are
+   hidden only by that script (the hidden attribute); this rule makes `hidden` win over the
+   display a list item's own class sets (.saved-lesson is flex, .fc-dash-card grid). */
+[data-show-more] > [hidden] { display: none !important; }
+/* The script scrolls a revealed item, or the button after "Show less", into view: keep it
+   below the sticky top navigation instead of under it (as tour.css does for tour steps). */
+[data-show-more] > *, .show-more-button { scroll-margin-top: calc(var(--app-nav-height, 72px) + 12px); }
+.show-more-button { display: flex; width: fit-content; min-width: min(100%, 220px); min-height: 44px; margin: 12px auto 0; padding: 0 18px; cursor: pointer; }
+@media (max-width: 760px) { .show-more-button { width: 100%; } }
+
+/* Delete controls (dashboard projects and saved lessons, project workspace). Red from the
+   danger token in both themes; a 44px tap target; never inside a card's link. */
+.item-delete-form { margin: 0; }
+.item-delete-button, .saved-actions .item-delete-button {
+  display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; gap: 6px;
+  padding: 0 10px; border: 1px solid transparent; border-radius: 12px; background: transparent;
+  color: var(--ln-danger-text); font: inherit; font-weight: 750; line-height: 1.2; cursor: pointer;
+}
+.item-delete-button span { color: inherit; }
+.item-delete-button:hover { border-color: color-mix(in srgb, var(--ln-danger) 32%, transparent); background: color-mix(in srgb, var(--ln-danger) 10%, transparent); }
+.item-delete-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--ln-danger) 50%, transparent); outline-offset: 2px; }
+.item-delete-icon { flex: none; }
+.dashboard-project-item { position: relative; display: grid; min-width: 0; }
+.dashboard-project-item > .dashboard-project-card { min-width: 0; padding-right: 52px; overflow-wrap: anywhere; }
+.dashboard-project-item > .item-delete-form { position: absolute; top: 4px; right: 4px; }
+.pm-delete .item-delete-button { margin-top: 4px; border-color: color-mix(in srgb, var(--ln-danger) 40%, transparent); }

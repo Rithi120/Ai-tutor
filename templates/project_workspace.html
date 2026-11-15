@@ -10,7 +10,9 @@
     project_complete; not_taught_important; overlaps[] = {a, b, explanation, mergeable, blocked_reason};
     dropped {count, titles, pages}; unplaced [titles]; unread {pages, documents, waiting, message};
     stale_message; page_picker; flashcard_set, flashcard_count, due_cards, flashcards_enabled;
-    reviews, practise_first; time_warnings; minute_options; workspace_sections. -#}
+    reviews, practise_first; time_warnings; minute_options; workspace_sections.
+    competency_inventory {enabled, check, by_section, unassigned, gaps, total, removed, addressed,
+    identified, grid_files, waiting}; topics[].competencies (spec 1.1, app.py competency_inventory). -#}
 {% set csrf %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endset %}
 {% macro task_label(task) -%}
   {%- if task.kind == 'learn' -%}{{ _('Learn') }}: {{ task.title }}{% if task.parts and task.parts > 1 %} ({{ task.part }}/{{ task.parts }}){% endif %}
@@ -32,9 +34,12 @@
   <ul class="pm-files">
     {% for file in rows %}
     <li class="pm-file-row{{ ' is-ok' if file.ok }}" data-state="{{ file.state }}" data-reading="{{ file.reading_state }}" data-file-id="{{ file.file_id }}">
-      <div class="pm-file-head"><strong>{{ file.message }}</strong><small>{{ file.filename }}</small></div>
+      <div class="pm-file-head"><strong>{{ file.message }}</strong><small>{{ file.filename }}{% if file.source_kind == 'grid' %} · {{ _('Kompetenzraster') }}{% endif %}</small></div>
       {% if file.detail %}<p class="pm-file-detail">{{ file.detail }}</p>{% endif %}
       {% for line in file.extra %}<p class="pm-file-detail">{{ line }}</p>{% endfor %}
+      {% if fixes and not file.failed_upload and file.pages_total %}
+      <form class="pm-grid-toggle" method="post" action="{{ url_for('toggle_project_grid_file', project_id=project.id, file_id=file.file_id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('This is not my Kompetenzraster') if file.source_kind == 'grid' else _('This file is my Kompetenzraster') }}</button></form>
+      {% endif %}
       {% if fixes and file.failed_upload %}
       {# A file the upload could not use (it has no pages): retry, replace or remove it. #}
       <div class="pm-failed-actions">
@@ -146,6 +151,87 @@
   </div>
   {% endif %}
 {%- endmacro %}
+{#- nested: the list sits inside another form (the topic review's "Start learning" form). A
+    nested <form> is dropped by the HTML parser, so its button would submit the outer form
+    and start learning; the button posts to its own route with formaction instead (the
+    outer form carries the CSRF token). -#}
+{% macro competency_list(rows, nested=False) -%}
+  <ul class="pm-competencies">
+    {% for row in rows %}
+    <li id="competency-{{ row.id }}" class="pm-competency{{ ' is-removed' if row.removed }}" data-state="{{ row.state }}">
+      <div class="pm-competency-head">
+        <span class="pm-competency-text">{{ row.statement }}</span>
+        <span class="pm-chip comp-{{ row.state }}">{{ row.label }}</span>
+      </div>
+      {% if row.group_path or row.source %}<small class="pm-competency-meta">{% if row.group_path %}{{ row.group_path }}{% endif %}{% if row.group_path and row.source %} · {% endif %}{{ row.source }}</small>{% endif %}
+      {% if row.topic_excluded and not row.removed %}<small class="pm-competency-meta">{{ _('Its topic is not in your plan – it still counts until you mark it “Not in this exam”.') }}</small>{% endif %}
+      {% if nested %}
+      <button class="text-link" type="submit" formmethod="post" formnovalidate formaction="{{ url_for('toggle_competency_in_exam', project_id=project.id, competency_id=row.id) }}">{{ _('Back in this exam') if row.removed else _('Not in this exam') }}</button>
+      {% else %}
+      <form method="post" action="{{ url_for('toggle_competency_in_exam', project_id=project.id, competency_id=row.id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('Back in this exam') if row.removed else _('Not in this exam') }}</button></form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+{%- endmacro %}
+{% macro competency_card() -%}
+  {% set inv = competency_inventory %}
+  {% if inv and inv.enabled %}
+  <div id="competencies" class="pm-competency-card" aria-labelledby="competencyTitle">
+    <h3 id="competencyTitle">{{ _('Kompetenzraster') }} · {{ _('{count} competencies', count=inv.total) }}</h3>
+    <p class="pm-note">{{ _('{done} of {total} practised. Every competency is tracked on its own – a similar one never counts for it.', done=inv.addressed, total=inv.total) }}</p>
+    {% for gap in inv.gaps %}
+    <div class="pm-gap" role="alert" data-page-id="{{ gap.page_id }}">
+      {% if gap.unread %}
+      {# Not read for its current text yet: its rows are missing from the list until it is. #}
+      <p>{{ _('{page} is not read yet, so its competencies are not in the list.', page=gap.label) }}</p>
+      <div class="pm-gap-actions">
+        <form method="post" action="{{ url_for('reread_competency_page', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Read again') }}</button></form>
+        {% if gap.missing %}<form method="post" action="{{ url_for('add_missing_competency_rows', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Add the missing rows') }}</button></form>{% endif %}
+      </div>
+      {% elif gap.waiting and not gap.missing and not gap.rejected and not gap.dropped %}
+      <p>{{ _('{page}: the AI is busy, so the rows are listed as the page writes them. Learnova reads the page again soon.', page=gap.label) }}</p>
+      {% else %}
+      {% if gap.missing %}<p><b>{{ _('{page} lists {expected} “Ich kann” rows, Learnova found {found}.', page=gap.label, expected=gap.expected, found=gap.found) }}</b></p>{% endif %}
+      {% if gap.rejected %}<p>{{ _('{page}: {count} row(s) the AI read are not on the page, so they were not added.', page=gap.label, count=gap.rejected) }}</p>{% endif %}
+      {% if gap.dropped %}<p>{{ _('{page}: {count} row(s) are over the limit and not in the list yet.', page=gap.label, count=gap.dropped) }}</p>{% endif %}
+      <div class="pm-gap-actions">
+        <form method="post" action="{{ url_for('reread_competency_page', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Read again') }}</button></form>
+        {% if gap.missing %}<form method="post" action="{{ url_for('add_missing_competency_rows', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Add the missing rows') }}</button></form>{% endif %}
+        <form method="post" action="{{ url_for('complete_competency_page', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('The list is complete') }}</button></form>
+      </div>
+      <details class="pm-edit"><summary>{{ _('Add a missing one') }}</summary>
+        <form class="pm-add-competency" method="post" action="{{ url_for('add_competency', project_id=project.id, page_id=gap.page_id) }}">{{ csrf }}
+          <label for="addCompetency{{ gap.page_id }}">{{ _('The row as your Kompetenzraster writes it') }}</label>
+          <input id="addCompetency{{ gap.page_id }}" name="statement" maxlength="400" required placeholder="{{ _('Ich kann …') }}">
+          <button class="secondary-button" type="submit">{{ _('Add') }}</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if inv.identified %}
+    <form method="post" action="{{ url_for('confirm_project_competencies', project_id=project.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('These competencies are right ({count})', count=inv.identified) }}</button></form>
+    {% endif %}
+    {% if inv.unassigned %}
+    <h4>{{ _('Not in a topic yet') }}</h4>
+    <ul class="pm-competencies">
+      {% for row in inv.unassigned %}
+      <li id="competency-{{ row.id }}" class="pm-competency{{ ' is-removed' if row.removed }}" data-state="{{ row.state }}">
+        <div class="pm-competency-head"><span class="pm-competency-text">{{ row.statement }}</span><span class="pm-chip comp-{{ row.state }}">{{ row.label }}</span></div>
+        {% if row.source %}<small class="pm-competency-meta">{{ row.source }}</small>{% endif %}
+        <span class="pm-row-actions">
+          {% if not row.removed %}<form method="post" action="{{ url_for('competency_to_topic', project_id=project.id, competency_id=row.id) }}">{{ csrf }}<button class="secondary-button" type="submit">{{ _('Make it a topic') }}</button></form>{% endif %}
+          <form method="post" action="{{ url_for('toggle_competency_in_exam', project_id=project.id, competency_id=row.id) }}">{{ csrf }}<button class="text-link" type="submit">{{ _('Back in this exam') if row.removed else _('Not in this exam') }}</button></form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if not inv.total and not inv.gaps %}<p class="pm-note">{{ _('Learnova reads the rows of your Kompetenzraster after the topics.') }}</p>{% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}
 <main class="pm-shell">
   <nav class="pm-breadcrumb" aria-label="{{ _('Breadcrumb') }}"><a href="{{ url_for('projects') }}">{{ _('Project Mode') }}</a> <span aria-hidden="true">›</span> <span>{{ _('Project overview') }}</span></nav>
   <header class="pm-head">
@@ -196,6 +282,7 @@
     {% if not curriculum_available %}<p class="pm-note">{{ _('No official curriculum documents are imported yet, so the topics come from your notes only.') }}</p>{% endif %}
     <p class="pm-note">{{ _('Every topic is included. Untick a topic you do not need.') }}</p>
     {{ dropped_note() }}
+    {{ competency_card() }}
     {{ overlap_list() }}
     <form id="confirmTopics" method="post" action="{{ url_for('confirm_project_topics', project_id=project.id) }}">{{ csrf }}
       <input type="hidden" name="choice" value="manual">
@@ -212,6 +299,7 @@
             {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
             {% if item.uncertain %}<p><b>{{ _('partly unclear in the scan') }}</b></p>{% endif %}
             {% set goals = json_value(section.learning_goals_json) %}{% if goals %}<ul>{% for goal in goals[:3] %}<li>{{ goal|entry_text }}</li>{% endfor %}</ul>{% endif %}
+            {% if item.competencies %}<p class="pm-note">{{ _('Competencies') }} ({{ item.competencies|length }})</p>{{ competency_list(item.competencies, nested=True) }}{% endif %}
             {% if item.curriculum.status == 'matched' %}<p class="pm-note">{{ _('Bildungsplan') }}: {% for match in item.curriculum.matches %}{{ match.band }}{% if not loop.last %}, {% endif %}{% endfor %}{% if item.curriculum.review %} · {{ _('later grade - check with your teacher') }}{% endif %}</p>{% endif %}
           </details>
         </li>
@@ -306,6 +394,9 @@
             {% if section.next_review_on and section.learned_at %}<small class="pm-review">{{ _('Revision') }} {{ section.next_review_on.strftime('%d.%m.') }}</small>{% elif item.state == 'practising' %}<small class="pm-review">{{ _('Practise first') }}</small>{% endif %}
           {% endif %}
         </p>
+        {% if item.competencies %}
+        <details class="pm-competency-details"><summary>{{ _('Competencies') }} ({{ item.competencies|length }})</summary>{{ competency_list(item.competencies) }}</details>
+        {% endif %}
         <div class="pm-topic-actions">
           {{ next_button(item) }}
           <a href="{{ url_for('learn_section', project_id=project.id, section_id=section.id) }}">{{ _('Notes') }}</a>
@@ -314,6 +405,7 @@
       </li>
       {% endfor %}
     </ul>
+    {{ competency_card() }}
     {{ dropped_note() }}
     {{ overlap_list() }}
     {{ edit_topics('2') }}
@@ -463,13 +555,60 @@
       {% endfor %}
     </div>
     {% endif %}
-    <details><summary>{{ _('Your pages') }} ({{ project.pages|length }}) · {{ _('Add more pages') }}</summary>
+    {#- The student's pages as thumbnails, in reading order (project-pages.js): open one full
+        screen, move it, retake it, or delete it while no topic refers to it yet. The
+        thumbnails are small cached JPEGs ('thumb' variant), loaded only when scrolled to. -#}
+    {% set gallery_pages = project.pages|sort(attribute='page_order') %}
+    {% if gallery_pages %}
+    <div class="pm-pages" data-project-pages data-reorder-url="{{ url_for('reorder_project_pages', project_id=project.id) }}">
+      <h3 id="pagesGalleryTitle">{{ _('Your pages') }} ({{ gallery_pages|length }})</h3>
+      {% if project.sections %}<p class="pm-page-note">{{ _('Pages cannot be deleted once the topics exist, because the topics refer to them. You can still retake a photo or change the order.') }}</p>{% endif %}
+      <ol class="imgcol-grid pm-page-gallery" id="projectPageGallery" aria-labelledby="pagesGalleryTitle">
+        {% for page in gallery_pages %}
+        {% set name = page.label or page.source_file.original_filename %}
+        <li class="imgcol-item" data-page-id="{{ page.id }}" data-full="{{ url_for('project_page_image', project_id=project.id, page_id=page.id, variant='processed') }}" data-title="{{ _('Page {number}', number=loop.index) }}{% if name %} · {{ name }}{% endif %}">
+          <a class="imgcol-thumb" href="{{ url_for('project_page_image', project_id=project.id, page_id=page.id, variant='processed') }}" aria-label="{{ _('Show page {number} full screen', number=loop.index) }}"><img src="{{ url_for('project_page_image', project_id=project.id, page_id=page.id, variant='thumb') }}" alt="" width="270" height="360" loading="lazy" decoding="async"></a>
+          <span class="imgcol-number" aria-hidden="true">{{ loop.index }}</span>
+          <p class="imgcol-caption">{{ name }}{% if page.source_file.mime_type == 'application/pdf' %} · {{ _('p. {page}', page=page.page_number) }}{% endif %}</p>
+          {% if page.extraction_status == 'ready' %}<span class="imgcol-state is-ready">{{ _('Read') }}</span>{% elif page.extraction_status in ('failed', 'unreadable') %}<span class="imgcol-state is-problem">{{ _('could not be read') }}</span>{% else %}<span class="imgcol-state">{{ _('not read yet') }}</span>{% endif %}
+          <div class="imgcol-tools">
+            <button class="imgcol-earlier" type="button" data-move="-1" aria-label="{{ _('Move page {number} earlier', number=loop.index) }}" title="{{ _('Move page {number} earlier', number=loop.index) }}" hidden>←</button>
+            <button class="imgcol-later" type="button" data-move="1" aria-label="{{ _('Move page {number} later', number=loop.index) }}" title="{{ _('Move page {number} later', number=loop.index) }}" hidden>→</button>
+            <form method="post" enctype="multipart/form-data" action="{{ url_for('replace_project_page', project_id=project.id, page_id=page.id) }}" data-retake>{{ csrf }}<input type="hidden" name="next" value="workspace"><label class="imgcol-retake" title="{{ _('Retake photo') }}"><span aria-hidden="true">↻</span><span class="visually-hidden">{{ _('Retake photo') }} {{ loop.index }}</span><input class="visually-hidden" name="replacement_{{ page.id }}" type="file" accept="image/*"></label><noscript><button class="secondary-button" type="submit">{{ _('Upload new photo') }}</button></noscript></form>
+            {% if not project.sections %}<form method="post" action="{{ url_for('delete_project_page', project_id=project.id, page_id=page.id) }}" data-delete-page>{{ csrf }}<button class="imgcol-delete" type="submit" aria-label="{{ _('Delete page {number}', number=loop.index) }}" title="{{ _('Delete page {number}', number=loop.index) }}">×</button></form>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      <p class="imgcol-announce" id="projectPagesStatus" role="status" aria-live="polite"></p>
+    </div>
+    {% endif %}
+    <details id="addPages" class="pm-add-pages"><summary>{{ _('Add more pages') }}</summary>
+      <form id="addPagesForm" method="post" enctype="multipart/form-data" action="{{ url_for('add_project_pages', project_id=project.id) }}" data-max="{{ [upload_limits.pages - project.pages|length, 0]|max }}" data-max-bytes="{{ upload_limits.size * 1024 * 1024 }}">{{ csrf }}
+        <div class="imgcol-add">
+          <label class="pm-file imgcol-add-button">{{ _('Choose photos or PDFs') }}<input id="addPagesInput" name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required></label>
+          <label class="imgcol-add-button" data-camera-button hidden>📷 {{ _('Take a photo') }}<input id="addPagesCamera" type="file" accept="image/*" capture="environment"></label>
+        </div>
+        <div id="addPagesImages"></div>
+        <p id="addPagesStatus" class="imgcol-progress" role="status" aria-live="polite"></p>
+        <button class="secondary-button" type="submit">{{ _('Add and read') }}</button>
+      </form>
       <form method="post" enctype="multipart/form-data" action="{{ url_for('add_project_pages', project_id=project.id) }}">{{ csrf }}
-        <label class="pm-file">{{ _('Add more pages') }}<input name="materials" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required></label>
+        <label class="pm-file">{{ _('Add a Kompetenzraster') }}<input name="competency_grid" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required></label>
         <button class="secondary-button" type="submit">{{ _('Add and read') }}</button>
       </form>
     </details>
     <p class="pm-links"><a href="{{ url_for('review_project_recognition', project_id=project.id) }}">{{ _('Check every recognized page in detail') }} →</a></p>
   </section>
+
+  {# Delete the whole project (owner request 2026-11-13; delete_project in app.py). One
+     confirmation in the browser (static/js/confirm-delete.js); a plain form without it. #}
+  <section id="delete-project" class="pm-card pm-delete" aria-labelledby="deleteProjectTitle">
+    <details><summary id="deleteProjectTitle">{{ _('Delete this project') }}</summary>
+      <p>{{ _('Removes the pages, topics, lessons, plan and practice exams of this project. Your XP, your progress in each concept and the project’s flashcards are kept. This cannot be undone.') }}</p>
+      <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}" data-confirm-delete="{{ _('Delete the project “{title}” with its pages, topics, lessons and exams? This cannot be undone. Your XP and your flashcards are kept.', title=project.title) }}">{{ csrf }}<input type="hidden" name="next" value="{{ url_for('projects') }}"><button class="item-delete-button item-delete-labelled" type="submit"><svg class="item-delete-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4.5h6V7m-8 0 1 13h8l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>{{ _('Delete project') }}</span></button></form>
+    </details>
+  </section>
 </main>
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('static', filename='js/project-pages.js') }}"></script>{% endblock %}

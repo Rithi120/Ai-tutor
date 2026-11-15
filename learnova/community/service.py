@@ -23,6 +23,49 @@ PUBLICATION_STATES = {
     "draft", "pending_moderation", "pending_ai_review", "pending_manual_review",
     "approved", "changes_requested", "rejected", "hidden", "unpublished",
 }
+# What the AUTHOR is told about who can see their set. One label per publication, derived
+# on the server from the same rule the public reads use (app.visible_set_filters), so the
+# set list, the overview and the publish page can never disagree with real access.
+VISIBILITY_STATES = ("private", "published", "pending", "action_needed", "hidden")
+# The state of a newer version waiting behind a live one ("Published · update being
+# checked"). The live, approved snapshot stays public whatever happens to the update.
+UPDATE_STATES = ("pending", "action_needed")
+
+
+def publication_visibility(
+    status: str | None, moderation_decision: str | None, *, moderation_on: bool,
+) -> str:
+    """The author-facing visibility of one publication row.
+
+    'published' holds exactly when the row passes `visible_set_filters` (status approved
+    and, with moderation on, a safety decision of allow) - the Python twin of that SQL
+    rule; tests cross-check the two so they cannot drift. Everything that is neither
+    public nor withdrawn gets an honest label instead of collapsing to 'private'.
+    """
+
+    state = str(status or "")
+    if not state or state == "unpublished":
+        return "private"
+    if state == "approved" and (not moderation_on or moderation_decision == "allow"):
+        return "published"
+    if state == "hidden":
+        return "hidden"
+    if state in {"rejected", "changes_requested"}:
+        return "action_needed"
+    return "pending"
+
+
+def update_state(submission_status: str | None) -> str | None:
+    """How a newer, not-yet-live version of a published set is doing (None = no update)."""
+
+    state = str(submission_status or "")
+    if state in {"rejected", "changes_requested", "hidden"}:
+        return "action_needed"
+    if state in {"draft", "pending_moderation", "pending_ai_review", "pending_manual_review"}:
+        return "pending"
+    return None
+
+
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 AUTHOR_DISPLAY = {"username", "nickname", "anonymous"}
 REPORT_REASONS = {
@@ -167,6 +210,18 @@ def _folded(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
+_DIVISION_SIGNS = str.maketrans({":": "/", "÷": "/", "∶": "/"})
+
+
+def _division_sign_only(quoted: str, suggestion: str) -> bool:
+    """The suggestion only writes the division sign another way (":" / "/" / "÷")."""
+
+    def plain(value: str) -> str:
+        return "".join(str(value or "").split()).casefold().translate(_DIVISION_SIGNS)
+
+    return quoted != suggestion and plain(quoted) == plain(suggestion) and "/" in plain(quoted)
+
+
 def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep only warnings that name a real entry and quote text that is in it.
 
@@ -207,6 +262,11 @@ def normalize_entry_warnings(raw: Any, cards: list[dict[str, Any]]) -> list[dict
             continue
         seen.add(key)
         suggestion = " ".join(str(item.get("suggestion") or "").split())[:200]
+        if suggestion and _division_sign_only(quoted, suggestion):
+            # ":" is the division sign German schools teach ("Z = K · p · t : 36000"); live
+            # 2026-11-14 the reviewer flagged all four such formulas of a deck as "grammar",
+            # suggesting "/". A change of notation only is no mistake in the card.
+            continue
         if _folded(suggestion) == _folded(quoted):
             suggestion = ""
         result.append({

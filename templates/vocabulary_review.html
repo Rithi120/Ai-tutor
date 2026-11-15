@@ -25,6 +25,7 @@
         {% if vocabulary_import and vocabulary_import.source_kind == 'file' %}
         {# A word the reader could not make out is typed in above - or the page is
            photographed again. The new reading replaces only the rows still open. #}
+        <select id="vocabularyRescanPage" class="rescan-page" aria-label="{{ _('Which page to rescan') }}" hidden></select>
         <label class="ghost-button rescan-button" for="vocabularyRescanFile">{{ _('Rescan page') }}
           <input type="file" id="vocabularyRescanFile" accept="image/*,.pdf" class="visually-hidden-input"></label>
         {% endif %}

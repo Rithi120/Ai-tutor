@@ -33,10 +33,11 @@ GRADER_SOURCE = ("An answer that a sentence of uploaded_source supports is not w
 
 class VersionTests(unittest.TestCase):
     def test_the_bumped_versions(self):
-        self.assertEqual(PROMPT_VERSIONS["lesson_generation"], "lesson_generation:v9")
-        self.assertEqual(PROMPT_VERSIONS["answer_evaluation"], "answer_evaluation:v8")
+        # Spec Phase 2: lesson_generation v10 (formulas taught first), question_generation v3 (formula tasks).
+        self.assertEqual(PROMPT_VERSIONS["lesson_generation"], "lesson_generation:v12")
+        self.assertEqual(PROMPT_VERSIONS["answer_evaluation"], "answer_evaluation:v9")
         self.assertEqual(PROMPT_VERSIONS["answer_diagnosis"], "answer_diagnosis:v4")
-        self.assertEqual(PROMPT_VERSIONS["question_generation"], "question_generation:v2")
+        self.assertEqual(PROMPT_VERSIONS["question_generation"], "question_generation:v4")
 
     def test_the_cached_page_readings_and_topic_batches_keep_their_versions(self):
         # A bump would invalidate every project's topic cache and every cached page reading.
@@ -88,7 +89,7 @@ class PromptsSentTests(teaching.TeachingEngineCase):
 
     def test_the_lesson_prompt_carries_the_v8_rules(self):
         call = self.lesson_call()
-        self.assertEqual(call.get("prompt_version", PROMPT_VERSIONS["lesson_generation"]), "lesson_generation:v9")
+        self.assertEqual(call.get("prompt_version", PROMPT_VERSIONS["lesson_generation"]), "lesson_generation:v12")
         for rule in (KEY_CHECK, DISTRACTOR_CHECK, FIRST_QUESTION, STUDENT_ADDRESS_RULE):
             self.assertIn(rule, call["input"])
 

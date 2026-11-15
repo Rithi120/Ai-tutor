@@ -32,6 +32,7 @@ EVIDENCE_KEYS = ("misunderstandings", "wrong_answers", "known")
 MAX_EVIDENCE_ITEMS = 5
 MAX_EVIDENCE_CHARACTERS = 200
 MAX_SUBJECT_CHOICES = 6
+MAX_SERIES_NAMES = 19
 
 # Offered first when the student has no lessons yet to say which subjects they use.
 COMMON_SUBJECTS = (
@@ -154,14 +155,31 @@ PHOTOS_RULE = (
     "reliably - never teach from them, and if one matters say that this part of the photo was unclear):")
 
 
+def series_line(topic: str, other_topics: Sequence[str], subtopics: Sequence[str] = ()) -> str:
+    """The scope of one topic lesson of exam material (spec 1.2): this topic only, completely."""
+
+    others = [str(item).strip() for item in other_topics if str(item or "").strip()][:MAX_SERIES_NAMES]
+    covers = ", ".join(str(item).strip() for item in subtopics if str(item or "").strip())
+    line = (f"This is one lesson of a series: teach ONLY \"{topic}\", completely - objective, key terms, the "
+            "method, worked steps, typical mistakes - as if it were the only lesson on it.")
+    if covers:
+        line += f" It covers: {covers}."
+    if others:
+        line += (" The other topics (" + "; ".join(others) + ") have their own lessons: do not teach them, "
+                 "only name a link to one when this topic needs it.")
+    return line
+
+
 def lesson_prompt(*, subject: str, topic: str, objective: str, teaching: str, mistakes: Sequence[str],
-                  transcript: str, photos: str, json_shape: str, notes_rule: str) -> str:
+                  transcript: str, photos: str, json_shape: str, notes_rule: str, scope: str = "",
+                  short_rule: str = "") -> str:
     """The lesson request for one conversation.
 
     Mirrors the project lesson for a topic without notes: the same TEACHING METHOD block
     (`teaching`, from lesson_plan.lesson_prompt_block), the same JSON shape and the same
     no-notes rule (both passed in, so they cannot drift from the project path), plus the
-    conversation and the stored photo readings as data.
+    conversation and the stored photo readings as data. A topic lesson of exam material
+    adds its `scope` (series_line) and the Short Lesson rule (lesson_plan.SHORT_LESSON_RULE).
     """
 
     mistakes_block = ("Mistakes the student made on this topic before (address them in the mistakes part): "
@@ -172,7 +190,9 @@ def lesson_prompt(*, subject: str, topic: str, objective: str, teaching: str, mi
         f"Subject: {subject}",
         f"Topic: {topic}" if str(topic or "").strip() else "Topic: derive the main topic from the conversation",
         f"Learning objective: {objective}",
+        str(scope or "").strip(),
         SESSION_GOAL,
+        str(short_rule or "").strip(),
         teaching,
         mistakes_block,
         EVIDENCE_RULE,
@@ -207,6 +227,6 @@ def sanitize_evidence(raw: Any) -> dict[str, list[str]]:
 
 __all__ = [
     "COMMON_SUBJECTS", "DATA_RULE", "EVIDENCE_RULE", "Gate", "LESSON_OPENING", "PHOTOS_RULE", "REASONS",
-    "SESSION_GOAL", "lesson_gate", "lesson_prompt", "sanitize_evidence", "select_transcript",
+    "SESSION_GOAL", "lesson_gate", "lesson_prompt", "sanitize_evidence", "select_transcript", "series_line",
     "subject_choice_order",
 ]

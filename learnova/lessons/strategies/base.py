@@ -22,8 +22,11 @@ ITEM_KINDS = ("term", "example", "experiment", "theory", "person", "argument", "
 PART_KINDS = ("objective", "why", "explanation", "terms", "rule", "structure", "example",
               "worked_example", "experiment", "thought_experiment", "theory", "argument",
               "perspectives", "timeline", "cause_effect", "process", "diagram", "source_analysis",
-              "model_analysis", "mistakes", "guided_exercise", "summary")
+              "model_analysis", "mistakes", "guided_exercise", "summary", "alternative")
 SERVER_PART_KINDS = ("flashcards",)   # inserted by the server, never requested from the model
+# "alternative" (spec Phase 2): another formula form or method as a labelled additional tip,
+# after the notes' own method; never from the notes (lesson_context.guard_parts), never an
+# explaining part (it does not count as teaching the topic first).
 KNOWLEDGE_STATES = ("new", "developing", "secure")
 
 PLAN_MODES = ("learn", "review", "reteach")
@@ -134,6 +137,18 @@ def _interleave(*groups: tuple[str, ...], limit: int) -> tuple[str, ...]:
 
 def _joined(*texts: str) -> str:
     return " ".join(dict.fromkeys(text.strip() for text in texts if text.strip()))
+
+
+# Spec Phase 2: formulas of the notes are taught first, in their notation; one other form or
+# method may follow as an "Additional tip" - only when the topic has a formula, and only when
+# it really helps (the instruction says so; it is not required in every lesson).
+FORMULA_RULE_STEP = LessonStep(
+    "rule", "State each formula of the notes exactly as written: what it means, every symbol with its quantity "
+    "and unit, when it is valid, and how to rearrange it.", when_items=("formula",))
+ALTERNATIVE_STEP = LessonStep(
+    "alternative", "Only if it really helps: one other formula form or method as an additional tip - what it is, "
+    "when it is useful, and that the notes use the method above. Otherwise leave this part out.",
+    when_items=("formula",))
 
 
 def combine(key: str, name: str, *strategies: SubjectStrategy) -> SubjectStrategy:

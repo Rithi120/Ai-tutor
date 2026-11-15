@@ -1222,7 +1222,8 @@ class MigrationTests(unittest.TestCase):
                 for table_name, names in self.NEW.items():
                     self.assertTrue(set(names) <= {column["name"] for column in inspector.get_columns(table_name)})
                 self.assertIn("conversation_lesson", inspector.get_table_names())
-                self.assertIn("uq_conversation_lesson_source",
+                # 044 (spec 1.2) widened the key to one row per topic: uq_conversation_lesson_topic.
+                self.assertIn("uq_conversation_lesson_topic",
                               {item["name"] for item in inspector.get_unique_constraints("conversation_lesson")}
                               | {item["name"] for item in inspector.get_indexes("conversation_lesson")})
 

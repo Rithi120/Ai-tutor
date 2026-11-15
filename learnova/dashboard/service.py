@@ -8,6 +8,10 @@ from learnova.quizzes.adaptive import estimated_question_count, mastery_status, 
 
 
 VALID_MASTERY_FILTERS = {"weak", "learning", "strong", "mastered", "understood"}
+# How many rows each dashboard list loads. The page shows the first few of each and a
+# "Show more" button for the rest (static/js/show-more.js), so these are generous but
+# bounded; every list is one query (or two, for the lesson counts), never one per row.
+LIST_CAPS = {"lessons": 50, "projects": 50, "concepts": 30, "improvements": 30, "exams": 30}
 
 
 def dashboard_context(
@@ -88,7 +92,7 @@ def dashboard_context(
     )
     due_concepts = [
         item for item in masteries if review_is_due(item.next_review_at, now)
-    ][:5]
+    ][:LIST_CAPS["concepts"]]
     recent_improvements = database.session.scalars(
         database.select(mastery_history_model)
         .where(
@@ -96,7 +100,7 @@ def dashboard_context(
             mastery_history_model.delta > 0,
         )
         .order_by(mastery_history_model.practised_at.desc())
-        .limit(5)
+        .limit(LIST_CAPS["improvements"])
     ).all()
     trend_attempts = database.session.scalars(
         database.select(attempt_model)
@@ -108,32 +112,58 @@ def dashboard_context(
     ).all()
     lessons = database.session.scalars(
         database.select(lesson_model)
-        .options(
-            selectinload(lesson_model.attempts),
-            selectinload(lesson_model.chat_messages),
-            selectinload(lesson_model.study_session),
-        )
+        .options(selectinload(lesson_model.study_session))
         .where(lesson_model.user_id == user_id)
         .order_by(lesson_model.created_at.desc())
-        .limit(20)
+        .limit(LIST_CAPS["lessons"])
     ).all()
+    # The list shows how many answers and chat messages each lesson has: counted in the
+    # database (one grouped query each), not by loading every message of fifty lessons.
+    lesson_ids = [lesson.id for lesson in lessons]
+    lesson_counts = {lesson_id: {"attempts": 0, "messages": 0} for lesson_id in lesson_ids}
+    if lesson_ids:
+        for relationship, key in ((lesson_model.attempts, "attempts"), (lesson_model.chat_messages, "messages")):
+            child = relationship.property.mapper.class_
+            for lesson_id, count in database.session.execute(
+                database.select(child.lesson_id, func.count(child.id))
+                .where(child.lesson_id.in_(lesson_ids))
+                .group_by(child.lesson_id)
+            ).all():
+                lesson_counts[lesson_id][key] = int(count or 0)
+    # Only what a project card shows: the page count (counted, not loaded - page text is
+    # long) and each topic's mastery and exclusion (not its explanations and topic map).
+    section_model = project_model.sections.property.mapper.class_
+    page_model = project_model.pages.property.mapper.class_
     projects = database.session.scalars(
         database.select(project_model)
-        .options(selectinload(project_model.pages), selectinload(project_model.sections))
+        .options(selectinload(project_model.sections).load_only(
+            section_model.id, section_model.project_id, section_model.excluded, section_model.mastery_score))
         .where(project_model.user_id == user_id)
         .order_by(project_model.updated_at.desc())
-        .limit(6)
+        .limit(LIST_CAPS["projects"])
     ).all()
+    project_page_counts = {project.id: 0 for project in projects}
+    if projects:
+        for project_id, count in database.session.execute(
+            database.select(page_model.project_id, func.count(page_model.id))
+            .where(page_model.project_id.in_(list(project_page_counts)))
+            .group_by(page_model.project_id)
+        ).all():
+            project_page_counts[project_id] = int(count or 0)
     recent_exams = database.session.scalars(
         database.select(final_exam_model)
         .join(project_model, final_exam_model.project_id == project_model.id)
         .options(selectinload(final_exam_model.project))
         .where(project_model.user_id == user_id, final_exam_model.status == "submitted")
         .order_by(final_exam_model.submitted_at.desc())
-        .limit(5)
+        .limit(LIST_CAPS["exams"])
     ).all()
     return {
         "masteries": masteries[:3],
+        # The "Weakest concepts" list (masteries above stays the three the signals use): only
+        # concepts not yet strong, so "Show more" reveals more weak spots, never mastered ones.
+        "weakest_concepts": [item for item in masteries if mastery_status(
+            item.mastery_score or 0) in {"weak", "learning"}][:LIST_CAPS["concepts"]],
         "subjects": subject_rows,
         "mistakes": mistakes,
         "mistake_subjects": mistake_subjects,
@@ -145,7 +175,9 @@ def dashboard_context(
         "recent_improvements": recent_improvements,
         "mastery_trend": list(reversed(trend_attempts)),
         "lessons": lessons,
+        "lesson_counts": lesson_counts,
         "projects": projects,
+        "project_page_counts": project_page_counts,
         "recent_exams": recent_exams,
     }
 
